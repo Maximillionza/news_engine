@@ -23,6 +23,7 @@ class ConsentRepositoryImpl @Inject constructor(
     private val consentDao: ConsentDao,
     private val sessionStore: SessionStore,
     private val ioDispatcher: CoroutineDispatcher,
+    private val accessLogger: com.minimoney.app.data.db.AccessLogger,
 ) : ConsentRepository {
 
     override suspend fun getCurrentDocument(): AppResult<ConsentDocument> = safeCall {
@@ -58,6 +59,12 @@ class ConsentRepositoryImpl @Inject constructor(
                 ),
             )
             sessionStore.markConsentComplete()
+            // ConsentRecord is a named PII table under the incident-response constraint.
+            accessLogger.log(
+                "consent_records",
+                com.minimoney.app.data.db.PiiAction.WRITE,
+                session.parentAccountId,
+            )
         }
         return result
     }

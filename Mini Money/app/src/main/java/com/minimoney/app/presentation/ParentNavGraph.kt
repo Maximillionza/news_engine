@@ -10,6 +10,7 @@ import com.minimoney.app.BuildConfig
 import com.minimoney.app.presentation.child.ChildDetailRoute
 import com.minimoney.app.presentation.exambonus.ExamBonusRoute
 import com.minimoney.app.presentation.home.HomeRoute
+import com.minimoney.app.presentation.linking.AccountLinkingRoute
 import com.minimoney.app.presentation.mpoints.MpointsRoute
 import com.minimoney.app.presentation.payslips.PayslipsRoute
 import com.minimoney.app.presentation.tasks.ChildTasksRoute
@@ -23,8 +24,13 @@ fun ParentNavGraph() {
 
     NavHost(navController = navController, startDestination = "home") {
         composable("home") {
-            HomeRoute(onOpenChild = { navController.navigate("child/$it") })
+            HomeRoute(
+                onOpenChild = { navController.navigate("child/$it") },
+                onOpenAccountLinking = { navController.navigate("linking") },
+            )
         }
+        // Flag-gated: entry point only rendered while ACCOUNT_LINKING_ENABLED is on.
+        composable("linking") { AccountLinkingRoute() }
         composable("child/{childId}", arguments = listOf(childIdArg)) {
             ChildDetailRoute(
                 onOpenTasks = { navController.navigate("child/$it/tasks") },

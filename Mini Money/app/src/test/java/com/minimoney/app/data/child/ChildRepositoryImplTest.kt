@@ -18,11 +18,12 @@ import org.junit.Test
 class ChildRepositoryImplTest {
 
     private val childDao: ChildDao = mockk(relaxed = true)
+    private val accessLogger: com.minimoney.app.data.db.AccessLogger = mockk(relaxed = true)
     private val sessionStore: SessionStore = mockk {
         every { session } returns flowOf(ParentSession("acc-1", "tok", true))
     }
 
-    private fun repo() = ChildRepositoryImpl(childDao, sessionStore, Clock { 0L })
+    private fun repo() = ChildRepositoryImpl(childDao, sessionStore, Clock { 0L }, accessLogger)
 
     @Test
     fun `fifth child is refused - 4 per parent enforced at write`() = runTest {

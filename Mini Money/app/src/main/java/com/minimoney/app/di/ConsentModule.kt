@@ -28,9 +28,10 @@ abstract class ConsentModule {
         @Singleton
         fun provideDatabase(@ApplicationContext context: Context): MiniMoneyDatabase =
             Room.databaseBuilder(context, MiniMoneyDatabase::class.java, "minimoney.db")
-                // Pre-release only: no shipped users, so schema bumps may drop data.
-                // Replace with real migrations before the first pilot family enrolls.
-                .fallbackToDestructiveMigration()
+                .addMigrations(
+                    com.minimoney.app.data.db.MIGRATION_1_2,
+                    com.minimoney.app.data.db.MIGRATION_2_3,
+                )
                 .build()
 
         @Provides

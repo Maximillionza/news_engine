@@ -27,6 +27,7 @@ class ConsentRepositoryImplTest {
 
     private val api: ConsentApi = mockk()
     private val dao: ConsentDao = mockk(relaxed = true)
+    private val accessLogger: com.minimoney.app.data.db.AccessLogger = mockk(relaxed = true)
     private val sessionStore: SessionStore = mockk(relaxed = true) {
         every { session } returns flowOf(ParentSession("acc-1", "tok", consentComplete = false))
     }
@@ -37,7 +38,7 @@ class ConsentRepositoryImplTest {
 
     @Test
     fun `accept success writes versioned local record and marks session`() = runTest {
-        val repo = ConsentRepositoryImpl(api, dao, sessionStore, StandardTestDispatcher(testScheduler))
+        val repo = ConsentRepositoryImpl(api, dao, sessionStore, StandardTestDispatcher(testScheduler), accessLogger)
         coEvery { api.acceptConsent(ConsentAcceptBody("v1")) } returns
             ConsentAcceptResponse(documentVersion = "v1", acceptedAtEpochMillis = 1_720_000_000_000L)
 
@@ -55,7 +56,7 @@ class ConsentRepositoryImplTest {
 
     @Test
     fun `accept failure writes nothing and leaves session untouched`() = runTest {
-        val repo = ConsentRepositoryImpl(api, dao, sessionStore, StandardTestDispatcher(testScheduler))
+        val repo = ConsentRepositoryImpl(api, dao, sessionStore, StandardTestDispatcher(testScheduler), accessLogger)
         coEvery { api.acceptConsent(any()) } throws httpException(500)
 
         val result = repo.acceptConsent("v1")
@@ -67,7 +68,7 @@ class ConsentRepositoryImplTest {
 
     @Test
     fun `stale version maps to Conflict`() = runTest {
-        val repo = ConsentRepositoryImpl(api, dao, sessionStore, StandardTestDispatcher(testScheduler))
+        val repo = ConsentRepositoryImpl(api, dao, sessionStore, StandardTestDispatcher(testScheduler), accessLogger)
         coEvery { api.acceptConsent(any()) } throws httpException(409)
 
         assertEquals(AppResult.Failure(AppError.Conflict), repo.acceptConsent("v0"))
@@ -78,7 +79,7 @@ class ConsentRepositoryImplTest {
         val noSessionStore: SessionStore = mockk(relaxed = true) {
             every { session } returns flowOf(null)
         }
-        val repo = ConsentRepositoryImpl(api, dao, noSessionStore, StandardTestDispatcher(testScheduler))
+        val repo = ConsentRepositoryImpl(api, dao, noSessionStore, StandardTestDispatcher(testScheduler), accessLogger)
 
         val result = repo.acceptConsent("v1")
 
@@ -88,7 +89,7 @@ class ConsentRepositoryImplTest {
 
     @Test
     fun `document fetch maps DTO and IO failure to Network`() = runTest {
-        val repo = ConsentRepositoryImpl(api, dao, sessionStore, StandardTestDispatcher(testScheduler))
+        val repo = ConsentRepositoryImpl(api, dao, sessionStore, StandardTestDispatcher(testScheduler), accessLogger)
         coEvery { api.getCurrentDocument() } returns ConsentDocumentDto(
             version = "v2",
             sections = listOf(ConsentSectionDto("Title", "Body")),

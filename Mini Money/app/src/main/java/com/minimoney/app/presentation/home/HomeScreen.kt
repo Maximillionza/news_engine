@@ -33,10 +33,12 @@ import com.minimoney.app.domain.core.AppError
 @Composable
 fun HomeRoute(
     onOpenChild: (Long) -> Unit,
+    onOpenAccountLinking: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val children by viewModel.children.collectAsStateWithLifecycle()
     val addChild by viewModel.addChild.collectAsStateWithLifecycle()
+    val linkingEnabled by viewModel.accountLinkingEnabled.collectAsStateWithLifecycle()
 
     Scaffold { padding ->
         Column(
@@ -71,6 +73,12 @@ fun HomeRoute(
                     .fillMaxWidth()
                     .padding(vertical = 16.dp),
             ) { Text(stringResource(R.string.parent_home_add_child)) }
+            if (linkingEnabled) {
+                TextButton(
+                    onClick = onOpenAccountLinking,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.parent_home_account_linking)) }
+            }
         }
     }
 

@@ -8,6 +8,7 @@ import com.minimoney.app.domain.child.ChildRepository
 import com.minimoney.app.domain.child.MAX_CHILDREN_PER_PARENT
 import com.minimoney.app.domain.core.AppError
 import com.minimoney.app.domain.core.AppResult
+import com.minimoney.app.domain.flags.FeatureFlags
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -31,10 +32,15 @@ data class AddChildState(
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val childRepository: ChildRepository,
+    featureFlags: FeatureFlags,
 ) : ViewModel() {
 
     val children: StateFlow<List<ChildProfile>> = childRepository.children()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Drives visibility of the linking entry point — hidden while the flag is OFF. */
+    val accountLinkingEnabled: StateFlow<Boolean> = featureFlags.accountLinkingEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     private val _addChild = MutableStateFlow(AddChildState())
     val addChild: StateFlow<AddChildState> = _addChild.asStateFlow()

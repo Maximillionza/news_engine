@@ -70,5 +70,9 @@ abstract class CoreModule {
         @Provides
         fun provideExamBonusDao(db: MiniMoneyDatabase): com.minimoney.app.data.db.ExamBonusDao =
             db.examBonusDao()
+
+        @Provides
+        fun provideAccessLogDao(db: MiniMoneyDatabase): com.minimoney.app.data.db.AccessLogDao =
+            db.accessLogDao()
     }
 }

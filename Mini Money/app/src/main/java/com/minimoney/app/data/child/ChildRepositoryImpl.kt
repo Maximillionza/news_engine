@@ -21,6 +21,7 @@ class ChildRepositoryImpl @Inject constructor(
     private val childDao: ChildDao,
     private val sessionStore: SessionStore,
     private val clock: Clock,
+    private val accessLogger: com.minimoney.app.data.db.AccessLogger,
 ) : ChildRepository {
 
     override fun children(): Flow<List<ChildProfile>> =
@@ -46,6 +47,8 @@ class ChildRepositoryImpl @Inject constructor(
                 createdAtMillis = clock.nowMillis(),
             ),
         )
+        // ChildProfile is a named PII table under the incident-response constraint.
+        accessLogger.log("child_profiles", com.minimoney.app.data.db.PiiAction.WRITE, id.toString())
         return AppResult.Success(id)
     }
 
@@ -55,6 +58,7 @@ class ChildRepositoryImpl @Inject constructor(
         if (budgetRand <= 0) return AppResult.Failure(AppError.Unknown())
         childDao.get(childId) ?: return AppResult.Failure(AppError.Unknown())
         childDao.setBudget(childId, budgetRand)
+        accessLogger.log("child_profiles", com.minimoney.app.data.db.PiiAction.WRITE, childId.toString())
         return AppResult.Success(Unit)
     }
 }

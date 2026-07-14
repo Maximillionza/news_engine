@@ -110,4 +110,8 @@
     <string name="parent_mpoints_title">Mpoints</string>
     <string name="parent_mpoints_balance">Balance: %1$d Mpoints</string>
     <string name="parent_mpoints_store_pending">The cosmetic store unlocks when Mpoints are enabled.</string>
+
+    <string name="parent_linking_title">Account linking</string>
+    <string name="parent_linking_pending">Optional bank-account linking is being prepared. It never moves money — it only confirms, read-only, that a payment you made yourself has cleared.</string>
+    <string name="parent_home_account_linking">Account linking</string>
 </resources>

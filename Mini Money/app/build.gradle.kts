@@ -15,8 +15,8 @@ android {
         applicationId = "com.minimoney.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6.0"
+        versionCode = 7
+        versionName = "0.7.0"
 
         // Backend platform choice is open per BuildSpec §Architecture; the URL is a
         // config point, not a commitment to a specific provider.

@@ -15,8 +15,9 @@ import androidx.room.RoomDatabase
         LatePenaltyEventEntity::class,
         DisputeEntity::class,
         ExamBonusRecordEntity::class,
+        AccessLogEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class MiniMoneyDatabase : RoomDatabase() {
@@ -27,4 +28,5 @@ abstract class MiniMoneyDatabase : RoomDatabase() {
     abstract fun payslipDao(): PayslipDao
     abstract fun disputeDao(): DisputeDao
     abstract fun examBonusDao(): ExamBonusDao
+    abstract fun accessLogDao(): AccessLogDao
 }
