@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PARENT-FACING strings only (BuildSpec §Compliance: terminology governance).
+     Debt-coded terms are permitted here and ONLY here. -->
+<resources>
+    <string name="parent_auth_title">Welcome to MiniMoney</string>
+    <string name="parent_auth_subtitle">Sign in with your mobile number. We\'ll send you a one-time code.</string>
+    <string name="parent_auth_phone_label">Mobile number</string>
+    <string name="parent_auth_phone_placeholder">082 123 4567</string>
+    <string name="parent_auth_phone_invalid">Enter a valid South African mobile number</string>
+    <string name="parent_auth_continue">Continue</string>
+
+    <string name="parent_auth_otp_title">Enter the code</string>
+    <string name="parent_auth_otp_sent_to">Sent to %1$s</string>
+    <string name="parent_auth_otp_label">6-digit code</string>
+    <string name="parent_auth_verify">Verify</string>
+    <string name="parent_auth_resend">Resend code</string>
+    <string name="parent_auth_resend_in">Resend in %1$d s</string>
+    <string name="parent_auth_edit_number">Use a different number</string>
+
+    <string name="parent_auth_error_network">No connection. Check your network and try again.</string>
+    <string name="parent_auth_error_invalid_phone">That number couldn\'t be used. Check it and try again.</string>
+    <string name="parent_auth_error_otp_mismatch">That code isn\'t right. Try again.</string>
+    <string name="parent_auth_error_otp_expired">That code has expired. Request a new one.</string>
+    <string name="parent_auth_error_too_many">Too many attempts. Wait a moment before trying again.</string>
+    <string name="parent_auth_error_server">Something went wrong on our side. Try again shortly.</string>
+    <string name="parent_auth_error_unknown">Something unexpected went wrong. Try again.</string>
+
+    <string name="parent_consent_title">Your consent</string>
+    <string name="parent_consent_ack">I have read and understood the above, and I consent to MiniMoney processing my and my child\'s information as described.</string>
+    <string name="parent_consent_accept">Agree and continue</string>
+    <string name="parent_consent_decline">I don\'t agree — sign out</string>
+    <string name="parent_consent_retry">Try again</string>
+    <string name="parent_consent_version_changed">The consent terms have been updated. Please review the new version below.</string>
+
+    <string name="parent_error_network">No connection. Check your network and try again.</string>
+    <string name="parent_error_server">Something went wrong on our side. Try again shortly.</string>
+    <string name="parent_error_unknown">Something unexpected went wrong. Try again.</string>
+
+    <string name="parent_home_title">Your family</string>
+    <string name="parent_home_empty">No child profiles yet. Add your first child to get started.</string>
+    <string name="parent_home_add_child">Add child</string>
+    <string name="parent_add_child_title">New child profile</string>
+    <string name="parent_add_child_name">Child\'s name</string>
+    <string name="parent_add_child_age_band">Age group</string>
+    <string name="parent_age_band_6_9">6–9</string>
+    <string name="parent_age_band_10_14">10–14</string>
+    <string name="parent_age_band_15_18">15–18</string>
+    <string name="parent_add_child_save">Create profile</string>
+    <string name="parent_add_child_cancel">Cancel</string>
+    <string name="parent_add_child_limit">You\'ve reached the limit of 4 child profiles per family.</string>
+
+    <string name="parent_mbucks_format">M %1$d</string>
+    <string name="parent_budget_title">Budget</string>
+    <string name="parent_budget_current">Current budget: R %1$d</string>
+    <string name="parent_budget_none">No budget set yet.</string>
+    <string name="parent_budget_label">Budget (whole Rand)</string>
+    <string name="parent_budget_save">Save budget</string>
+    <string name="parent_open_tasks">Tasks</string>
+    <string name="parent_open_payslips">Payslips</string>
+    <string name="parent_open_child_view">Open child view</string>
+
+    <string name="parent_tasks_title">Tasks</string>
+    <string name="parent_tasks_empty">No tasks yet.</string>
+    <string name="parent_task_new">New task</string>
+    <string name="parent_task_title_label">What needs doing?</string>
+    <string name="parent_task_mode_fixed">Fixed Mbucks</string>
+    <string name="parent_task_mode_percentage">% of budget</string>
+    <string name="parent_task_value_fixed_label">Mbucks (whole number)</string>
+    <string name="parent_task_value_percent_label">Percent of budget (whole number)</string>
+    <string name="parent_task_percent_preview">Will earn: M %1$d</string>
+    <string name="parent_task_percent_needs_budget">Set a budget first to use percentage mode.</string>
+    <string name="parent_task_save">Create task</string>
+    <string name="parent_task_status_assigned">Assigned</string>
+    <string name="parent_task_status_completed">Done — awaiting your check</string>
+    <string name="parent_task_status_verified">Verified</string>
+    <string name="parent_task_status_disputed">In dispute</string>
+    <string name="parent_task_verify">Verify</string>
+    <string name="parent_task_dispute">Dispute</string>
+    <string name="parent_dispute_accept">Accept</string>
+    <string name="parent_dispute_decline">Decline</string>
+    <string name="parent_dispute_escalate">Send for review</string>
+    <string name="parent_dispute_past_due">Past the 48-hour window</string>
+    <string name="parent_disputes_title">Disputes</string>
+
+    <string name="parent_payslips_title">Payslips</string>
+    <string name="parent_payslips_empty">No payslips yet. Verified tasks are gathered into the next payslip.</string>
+    <string name="parent_payslip_generate">Generate payslip</string>
+    <string name="parent_payslip_earned">Earned: M %1$d</string>
+    <string name="parent_payslip_penalty">Late penalty: M %1$d</string>
+    <string name="parent_payslip_total">Total owed: M %1$d</string>
+    <string name="parent_payslip_status_generated">Awaiting payment</string>
+    <string name="parent_payslip_status_paid">Paid</string>
+    <string name="parent_payslip_confirm_paid">I have paid</string>
+    <string name="parent_payslip_confirm_paid_note">Pay via your own banking app, then confirm here. MiniMoney never moves money.</string>
+    <string name="parent_payslip_apply_penalty">Add late-penalty step (M 1)</string>
+
+    <string name="parent_reminder_payslip_title">Payment reminder</string>
+    <string name="parent_reminder_payslip_body">%1$d payslip(s) awaiting payment past the grace period. Pay via your banking app to avoid a late penalty.</string>
+    <string name="parent_reminder_dispute_title">Disputes need attention</string>
+    <string name="parent_reminder_dispute_body">%1$d dispute(s) past the 48-hour window. Open MiniMoney to review or escalate.</string>
+
+    <string name="parent_exam_bonus_title">Exam bonus (QA build only)</string>
+    <string name="parent_exam_bonus_gate_note">This mechanic is not available to families until the child-development specialist\'s review completes.</string>
+    <string name="parent_exam_bonus_grade_label">Grade (self-reported)</string>
+    <string name="parent_exam_bonus_behavior_1">Kept a regular study routine</string>
+    <string name="parent_exam_bonus_behavior_2">Completed homework without reminders</string>
+    <string name="parent_exam_bonus_behavior_3">Asked for help when stuck</string>
+    <string name="parent_exam_bonus_save">Save record</string>
+
+    <string name="parent_mpoints_title">Mpoints</string>
+    <string name="parent_mpoints_balance">Balance: %1$d Mpoints</string>
+    <string name="parent_mpoints_store_pending">The cosmetic store unlocks when Mpoints are enabled.</string>
+</resources>

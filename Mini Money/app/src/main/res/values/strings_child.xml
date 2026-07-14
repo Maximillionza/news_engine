@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CHILD-FACING strings only (BuildSpec §Compliance: terminology governance).
+     Debt-coded language is reserved to parent-facing surfaces — the term list
+     lives in the childFacingTermLint task (app/build.gradle.kts), which fails
+     the build on violation. Softened framing only, per cohort rules in
+     PRD §Personas. -->
+<resources>
+    <string name="child_tasks_title">Your jobs</string>
+    <string name="child_tasks_empty">No jobs right now. Check back soon!</string>
+    <string name="child_task_reward">Earns %1$d Mbucks</string>
+    <string name="child_task_mark_done">I did it!</string>
+    <string name="child_task_waiting_check">Waiting for a grown-up to check</string>
+    <string name="child_task_done">Nice work! ⭐</string>
+    <string name="child_task_being_looked_at">Being looked at</string>
+</resources>

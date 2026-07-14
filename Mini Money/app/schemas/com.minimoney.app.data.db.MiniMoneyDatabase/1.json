@@ -1,0 +1,52 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "5d502522afe26eab3affe1bb179ebe9d",
+    "entities": [
+      {
+        "tableName": "consent_records",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `parent_account_id` TEXT NOT NULL, `document_version` TEXT NOT NULL, `accepted_at_epoch_millis` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parentAccountId",
+            "columnName": "parent_account_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentVersion",
+            "columnName": "document_version",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "acceptedAtEpochMillis",
+            "columnName": "accepted_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5d502522afe26eab3affe1bb179ebe9d')"
+    ]
+  }
+}
