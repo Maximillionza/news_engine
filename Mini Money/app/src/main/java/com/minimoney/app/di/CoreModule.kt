@@ -1,6 +1,7 @@
 package com.minimoney.app.di
 
 import com.minimoney.app.BuildConfig
+import com.minimoney.app.data.child.ChildLinkRepositoryImpl
 import com.minimoney.app.data.child.ChildRepositoryImpl
 import com.minimoney.app.data.db.ChildDao
 import com.minimoney.app.data.db.DisputeDao
@@ -12,6 +13,7 @@ import com.minimoney.app.data.dispute.DisputeRepositoryImpl
 import com.minimoney.app.data.flags.FeatureFlagsImpl
 import com.minimoney.app.data.payslip.PayslipRepositoryImpl
 import com.minimoney.app.data.tasks.TaskRepositoryImpl
+import com.minimoney.app.domain.child.ChildLinkRepository
 import com.minimoney.app.domain.child.ChildRepository
 import com.minimoney.app.domain.core.Clock
 import com.minimoney.app.domain.dispute.DisputeRepository
@@ -31,6 +33,9 @@ abstract class CoreModule {
 
     @Binds
     abstract fun bindChildRepository(impl: ChildRepositoryImpl): ChildRepository
+
+    @Binds
+    abstract fun bindChildLinkRepository(impl: ChildLinkRepositoryImpl): ChildLinkRepository
 
     @Binds
     abstract fun bindTaskRepository(impl: TaskRepositoryImpl): TaskRepository

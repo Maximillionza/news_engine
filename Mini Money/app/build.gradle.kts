@@ -15,12 +15,15 @@ android {
         applicationId = "com.minimoney.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.7.0"
+        versionCode = 9
+        versionName = "0.9.0"
 
-        // Backend platform choice is open per BuildSpec §Architecture; the URL is a
-        // config point, not a commitment to a specific provider.
-        buildConfigField("String", "API_BASE_URL", "\"https://api.minimoney.example/\"")
+        // Backend: Supabase Edge Functions (see supabase/README.md).
+        buildConfigField("String", "API_BASE_URL", "\"https://iftunypqqptuzoscuiub.supabase.co/functions/v1/\"")
+
+        // Google OAuth Web Client ID — the audience for Credential Manager's
+        // Google Sign-In ID tokens (verified server-side in auth-google).
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"148178496329-keig9g4apiorhsng4firv1ps84436jn8.apps.googleusercontent.com\"")
 
         // Pilot stage: late-penalty cap is 3 Mbucks (vs 7 in production).
         // Flip to false only at the wider-release milestone.
@@ -113,6 +116,10 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

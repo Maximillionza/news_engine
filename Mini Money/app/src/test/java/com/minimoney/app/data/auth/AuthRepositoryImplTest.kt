@@ -6,6 +6,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -21,18 +22,19 @@ class AuthRepositoryImplTest {
     private val api: AuthApi = mockk()
     private val sessionStore: SessionStore = mockk(relaxed = true)
 
+    private fun TestScope.repo() = AuthRepositoryImpl(api, sessionStore, StandardTestDispatcher(testScheduler))
+
     private fun httpException(code: Int) = HttpException(
         Response.error<Any>(code, "{}".toResponseBody("application/json".toMediaType())),
     )
 
     @Test
-    fun `verify success persists session`() = runTest {
-        val repo = AuthRepositoryImpl(api, sessionStore, StandardTestDispatcher(testScheduler))
-        coEvery { api.verifyOtp(any()) } returns OtpVerifyResponse(
+    fun `sign-in success persists session`() = runTest {
+        coEvery { api.signInWithGoogle(any()) } returns GoogleSignInResponse(
             parentAccountId = "acc-1", accessToken = "tok", consentComplete = false,
         )
 
-        val result = repo.verifyOtp("ch-1", "123456")
+        val result = repo().signInWithGoogle("google-id-token")
 
         assertTrue(result is AuthResult.Success)
         coVerify(exactly = 1) { sessionStore.save(any()) }
@@ -41,46 +43,26 @@ class AuthRepositoryImplTest {
     }
 
     @Test
-    fun `verify failure does not persist session`() = runTest {
-        val repo = AuthRepositoryImpl(api, sessionStore, StandardTestDispatcher(testScheduler))
-        coEvery { api.verifyOtp(any()) } throws httpException(401)
+    fun `rejected token does not persist a session`() = runTest {
+        coEvery { api.signInWithGoogle(any()) } throws httpException(401)
 
-        val result = repo.verifyOtp("ch-1", "000000")
+        val result = repo().signInWithGoogle("bad-token")
 
-        assertEquals(AuthResult.Failure(AuthError.OtpMismatch), result)
+        assertTrue(result is AuthResult.Failure)
         coVerify(exactly = 0) { sessionStore.save(any()) }
     }
 
     @Test
-    fun `expired code maps to OtpExpired`() = runTest {
-        val repo = AuthRepositoryImpl(api, sessionStore, StandardTestDispatcher(testScheduler))
-        coEvery { api.verifyOtp(any()) } throws httpException(410)
+    fun `server error maps to Server`() = runTest {
+        coEvery { api.signInWithGoogle(any()) } throws httpException(500)
 
-        assertEquals(
-            AuthResult.Failure(AuthError.OtpExpired),
-            repo.verifyOtp("ch-1", "123456"),
-        )
-    }
-
-    @Test
-    fun `rate limit on request maps to TooManyAttempts`() = runTest {
-        val repo = AuthRepositoryImpl(api, sessionStore, StandardTestDispatcher(testScheduler))
-        coEvery { api.requestOtp(any()) } throws httpException(429)
-
-        assertEquals(
-            AuthResult.Failure(AuthError.TooManyAttempts),
-            repo.requestOtp("+27821234567"),
-        )
+        assertEquals(AuthResult.Failure(AuthError.Server(500)), repo().signInWithGoogle("tok"))
     }
 
     @Test
     fun `io failure maps to Network`() = runTest {
-        val repo = AuthRepositoryImpl(api, sessionStore, StandardTestDispatcher(testScheduler))
-        coEvery { api.requestOtp(any()) } throws IOException("offline")
+        coEvery { api.signInWithGoogle(any()) } throws IOException("offline")
 
-        assertEquals(
-            AuthResult.Failure(AuthError.Network),
-            repo.requestOtp("+27821234567"),
-        )
+        assertEquals(AuthResult.Failure(AuthError.Network), repo().signInWithGoogle("tok"))
     }
 }

@@ -4,14 +4,12 @@ import retrofit2.http.Body
 import retrofit2.http.POST
 
 /**
- * Parent auth endpoints. Phone + SMS-OTP only — there is no password, and no
- * child login exists independent of the parent account (BuildSpec §Data Model).
+ * Parent auth: Google Sign-In only, verified server-side (supabase/functions/
+ * auth-google). No password, no phone/OTP path — decision made 2026-07-15 to
+ * replace phone+OTP entirely rather than run two parent-auth paths.
  */
 interface AuthApi {
 
-    @POST("v1/auth/otp/request")
-    suspend fun requestOtp(@Body body: OtpRequestBody): OtpRequestResponse
-
-    @POST("v1/auth/otp/verify")
-    suspend fun verifyOtp(@Body body: OtpVerifyBody): OtpVerifyResponse
+    @POST("auth-google")
+    suspend fun signInWithGoogle(@Body body: GoogleSignInBody): GoogleSignInResponse
 }
