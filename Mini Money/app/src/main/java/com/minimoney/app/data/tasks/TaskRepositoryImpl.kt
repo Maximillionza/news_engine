@@ -11,10 +11,13 @@ import com.minimoney.app.domain.core.AppResult
 import com.minimoney.app.domain.core.Clock
 import com.minimoney.app.domain.core.MbuckCalculator
 import com.minimoney.app.domain.flags.FeatureFlags
+import com.minimoney.app.domain.child.AgeBand
 import com.minimoney.app.domain.tasks.ChildTask
 import com.minimoney.app.domain.tasks.EarnMode
+import com.minimoney.app.domain.tasks.Frequency
 import com.minimoney.app.domain.tasks.TaskRepository
 import com.minimoney.app.domain.tasks.TaskStatus
+import com.minimoney.app.domain.tasks.totalWeightFor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -40,25 +43,44 @@ class TaskRepositoryImpl @Inject constructor(
         title: String,
         earnMode: EarnMode,
         earnValue: Int,
+        frequency: Frequency,
     ): AppResult<Long> {
         if (title.isBlank()) return AppResult.Failure(AppError.Unknown())
         val child = childDao.get(childId) ?: return AppResult.Failure(AppError.Unknown())
+        val occurrences = frequency.occurrencesPerMonth
 
         val mbuckValue = when (earnMode) {
-            // FIXED: parent-entered whole Mbucks; no calculation, so neither
-            // truncation nor the floor applies — but the 1-Mbuck minimum is
-            // enforced at input: 0 is rejected, not floored.
+            // FIXED: earnValue is the TOTAL monthly Mbucks; frequency spreads
+            // it across occurrences (truncate, then floor 0 -> 1). The
+            // 1-Mbuck minimum is enforced on the pre-split total: 0 is
+            // rejected, not floored.
             EarnMode.FIXED -> {
                 if (earnValue < 1) return AppResult.Failure(AppError.Unknown())
-                earnValue
+                MbuckCalculator.taskEarnValueFixed(earnValue, occurrences)
             }
-            // PERCENTAGE: whole-number percent against the budget in effect
-            // NOW — the value is snapshotted; later budget changes never
-            // re-price this task. Truncate, then floor 0 -> 1.
+            // PERCENTAGE: whole-number percent of the budget in effect NOW —
+            // the value is snapshotted; later budget changes never re-price
+            // this task. Truncate the monthly total, truncate the per-
+            // occurrence split, then floor 0 -> 1.
             EarnMode.PERCENTAGE -> {
                 if (earnValue !in 1..100) return AppResult.Failure(AppError.Unknown())
                 val budget = child.budgetRand ?: return AppResult.Failure(AppError.Conflict)
-                MbuckCalculator.taskEarnValue(budget, earnValue)
+                MbuckCalculator.taskEarnValue(budget, earnValue, occurrences)
+            }
+            // TIER: earnValue is the preset's relative weight within its
+            // (ageBand, frequency) pool (Task Tier model). The pool's total
+            // weight is summed from the current template catalog — if a
+            // template later changes, only NEW tasks are affected; this
+            // task's snapshot never re-prices.
+            EarnMode.TIER -> {
+                if (earnValue < 1) return AppResult.Failure(AppError.Unknown())
+                val budget = child.budgetRand ?: return AppResult.Failure(AppError.Conflict)
+                val ageBand = AgeBand.valueOf(child.ageBand)
+                val totalWeight = totalWeightFor(ageBand, frequency)
+                if (totalWeight < earnValue) return AppResult.Failure(AppError.Unknown())
+                MbuckCalculator.tieredTaskEarnValue(
+                    budget, frequency.tierBudgetSharePercent, earnValue, totalWeight, occurrences,
+                )
             }
         }
 
@@ -68,6 +90,7 @@ class TaskRepositoryImpl @Inject constructor(
                 title = title.trim(),
                 earnMode = earnMode.name,
                 earnValue = earnValue,
+                frequency = frequency.name,
                 mbuckValue = mbuckValue,
                 status = TaskStatus.ASSIGNED.name,
                 createdAtMillis = clock.nowMillis(),
@@ -129,6 +152,7 @@ private fun TaskEntity.toDomain() = ChildTask(
     title = title,
     earnMode = EarnMode.valueOf(earnMode),
     earnValue = earnValue,
+    frequency = Frequency.valueOf(frequency),
     mbuckValue = mbuckValue,
     status = TaskStatus.valueOf(status),
     createdAtMillis = createdAtMillis,

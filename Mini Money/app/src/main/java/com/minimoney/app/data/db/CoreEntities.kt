@@ -24,6 +24,8 @@ data class TaskEntity(
     @ColumnInfo(name = "title") val title: String,
     @ColumnInfo(name = "earn_mode") val earnMode: String,
     @ColumnInfo(name = "earn_value") val earnValue: Int,
+    /** Frequency enum name. Spreads earnValue's TOTAL across occurrences (see MbuckCalculator). */
+    @ColumnInfo(name = "frequency", defaultValue = "MONTHLY") val frequency: String = "MONTHLY",
     /** Snapshot computed at creation; a later budget change never re-prices this task. */
     @ColumnInfo(name = "mbuck_value") val mbuckValue: Int,
     @ColumnInfo(name = "status") val status: String,

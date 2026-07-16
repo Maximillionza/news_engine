@@ -31,6 +31,7 @@ abstract class ConsentModule {
                 .addMigrations(
                     com.minimoney.app.data.db.MIGRATION_1_2,
                     com.minimoney.app.data.db.MIGRATION_2_3,
+                    com.minimoney.app.data.db.MIGRATION_3_4,
                 )
                 .build()
 

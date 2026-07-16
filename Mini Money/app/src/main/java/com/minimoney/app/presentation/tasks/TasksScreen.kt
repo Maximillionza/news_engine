@@ -31,7 +31,9 @@ import com.minimoney.app.domain.dispute.Dispute
 import com.minimoney.app.domain.dispute.DisputeStatus
 import com.minimoney.app.domain.tasks.ChildTask
 import com.minimoney.app.domain.tasks.EarnMode
+import com.minimoney.app.domain.tasks.Frequency
 import com.minimoney.app.domain.tasks.TaskStatus
+import com.minimoney.app.domain.tasks.TaskTemplate
 
 /** Parent-facing task management: creation, verification, dispute handling. */
 @Composable
@@ -40,6 +42,7 @@ fun TasksRoute(viewModel: TasksViewModel = hiltViewModel()) {
     val disputes by viewModel.disputes.collectAsStateWithLifecycle()
     val createTask by viewModel.createTask.collectAsStateWithLifecycle()
     val child by viewModel.child.collectAsStateWithLifecycle()
+    val templates by viewModel.templates.collectAsStateWithLifecycle()
 
     Scaffold { padding ->
         Column(
@@ -99,10 +102,13 @@ fun TasksRoute(viewModel: TasksViewModel = hiltViewModel()) {
     if (createTask.visible) {
         CreateTaskDialog(
             state = createTask,
+            templates = templates,
             hasBudget = child?.budgetRand != null,
+            onTemplateSelected = viewModel::onTemplateSelected,
             onTitleChanged = viewModel::onTitleChanged,
             onEarnModeChanged = viewModel::onEarnModeChanged,
             onValueChanged = viewModel::onValueInputChanged,
+            onFrequencyChanged = viewModel::onFrequencyChanged,
             onSubmit = viewModel::onSubmitCreateTask,
             onDismiss = viewModel::onDismissCreateTask,
         )
@@ -115,7 +121,8 @@ private fun TaskCard(task: ChildTask, onVerify: () -> Unit, onDispute: () -> Uni
         Column(Modifier.padding(12.dp)) {
             Text(task.title, style = MaterialTheme.typography.titleMedium)
             Text(
-                text = stringResource(R.string.parent_mbucks_format, task.mbuckValue),
+                text = stringResource(R.string.parent_mbucks_format, task.mbuckValue) +
+                    if (task.frequency != Frequency.MONTHLY) " · ${task.frequency.parentLabel()}" else "",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(task.status.parentLabel(), style = MaterialTheme.typography.bodySmall)
@@ -164,66 +171,135 @@ private fun DisputeCard(
 @Composable
 private fun CreateTaskDialog(
     state: CreateTaskState,
+    templates: List<TaskTemplate>,
     hasBudget: Boolean,
+    onTemplateSelected: (TaskTemplate?) -> Unit,
     onTitleChanged: (String) -> Unit,
     onEarnModeChanged: (EarnMode) -> Unit,
     onValueChanged: (String) -> Unit,
+    onFrequencyChanged: (Frequency) -> Unit,
     onSubmit: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val isCustom = state.selectedTemplate == null
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.parent_task_new)) },
         text = {
             Column {
+                Text(
+                    text = stringResource(R.string.parent_task_pick_from_list),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    FilterChip(
+                        selected = isCustom,
+                        onClick = { onTemplateSelected(null) },
+                        label = { Text(stringResource(R.string.parent_task_custom)) },
+                    )
+                }
+                // Grouped by tier so a parent can see at a glance which chores
+                // are daily/weekly/monthly, instead of one undifferentiated list.
+                Frequency.entries.forEach { tier ->
+                    val tierTemplates = templates.filter { it.tier == tier }
+                    if (tierTemplates.isNotEmpty()) {
+                        Text(
+                            text = tier.parentLabel(),
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            tierTemplates.forEach { template ->
+                                FilterChip(
+                                    selected = state.selectedTemplate == template,
+                                    onClick = { onTemplateSelected(template) },
+                                    label = { Text(template.title) },
+                                )
+                            }
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = state.title,
                     onValueChange = onTitleChanged,
                     label = { Text(stringResource(R.string.parent_task_title_label)) },
+                    // Renaming is purely cosmetic — it doesn't affect the reward
+                    // calculation, so it's always editable, preset or not.
+                    modifier = Modifier.padding(top = 12.dp),
                     singleLine = true,
                 )
-                // Per-task earn-mode selector (restored 2026-07-14).
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(vertical = 12.dp),
-                ) {
-                    FilterChip(
-                        selected = state.earnMode == EarnMode.FIXED,
-                        onClick = { onEarnModeChanged(EarnMode.FIXED) },
-                        label = { Text(stringResource(R.string.parent_task_mode_fixed)) },
-                    )
-                    FilterChip(
-                        selected = state.earnMode == EarnMode.PERCENTAGE,
-                        onClick = { onEarnModeChanged(EarnMode.PERCENTAGE) },
-                        label = { Text(stringResource(R.string.parent_task_mode_percentage)) },
-                    )
-                }
-                OutlinedTextField(
-                    value = state.valueInput,
-                    onValueChange = onValueChanged,
-                    label = {
-                        Text(
-                            stringResource(
-                                if (state.earnMode == EarnMode.FIXED) R.string.parent_task_value_fixed_label
-                                else R.string.parent_task_value_percent_label,
-                            ),
+                // Per-task earn-mode + value entry — only meaningful for custom
+                // tasks; a preset's reward is fixed by its tier and weight, so
+                // showing a disabled numeric field here would look broken rather
+                // than intentional. Show what it means in plain words instead.
+                if (isCustom) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(vertical = 12.dp),
+                    ) {
+                        FilterChip(
+                            selected = state.earnMode == EarnMode.FIXED,
+                            onClick = { onEarnModeChanged(EarnMode.FIXED) },
+                            label = { Text(stringResource(R.string.parent_task_mode_fixed)) },
                         )
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                )
-                if (state.earnMode == EarnMode.PERCENTAGE) {
-                    val preview = state.percentagePreviewMbucks
-                    Text(
-                        text = when {
-                            !hasBudget -> stringResource(R.string.parent_task_percent_needs_budget)
-                            preview != null -> stringResource(R.string.parent_task_percent_preview, preview)
-                            else -> ""
+                        FilterChip(
+                            selected = state.earnMode == EarnMode.PERCENTAGE,
+                            onClick = { onEarnModeChanged(EarnMode.PERCENTAGE) },
+                            label = { Text(stringResource(R.string.parent_task_mode_percentage)) },
+                        )
+                    }
+                    OutlinedTextField(
+                        value = state.valueInput,
+                        onValueChange = onValueChanged,
+                        label = {
+                            Text(
+                                stringResource(
+                                    if (state.earnMode == EarnMode.FIXED) R.string.parent_task_value_fixed_label
+                                    else R.string.parent_task_value_percent_label,
+                                ),
+                            )
                         },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    Text(
+                        text = stringResource(R.string.parent_task_frequency_label),
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    ) {
+                        Frequency.entries.forEach { freq ->
+                            FilterChip(
+                                selected = state.frequency == freq,
+                                onClick = { onFrequencyChanged(freq) },
+                                label = { Text(freq.parentLabel()) },
+                            )
+                        }
+                    }
+                } else {
+                    Text(
+                        text = stringResource(R.string.parent_task_tier_locked_note, state.frequency.parentLabel()),
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier = Modifier.padding(top = 12.dp),
                     )
                 }
+                val preview = state.previewMbucks
+                Text(
+                    text = when {
+                        state.earnMode != EarnMode.FIXED && !hasBudget ->
+                            stringResource(R.string.parent_task_percent_needs_budget)
+                        preview != null -> stringResource(R.string.parent_task_percent_preview, preview)
+                        else -> ""
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
             }
         },
         confirmButton = {
@@ -237,6 +313,13 @@ private fun CreateTaskDialog(
             }
         },
     )
+}
+
+@Composable
+private fun Frequency.parentLabel(): String = when (this) {
+    Frequency.DAILY -> stringResource(R.string.parent_task_frequency_daily)
+    Frequency.WEEKLY -> stringResource(R.string.parent_task_frequency_weekly)
+    Frequency.MONTHLY -> stringResource(R.string.parent_task_frequency_monthly)
 }
 
 @Composable
