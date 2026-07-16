@@ -2,26 +2,18 @@
 <!-- PARENT-FACING strings only (BuildSpec §Compliance: terminology governance).
      Debt-coded terms are permitted here and ONLY here. -->
 <resources>
-    <string name="parent_auth_title">Welcome to MiniMoney</string>
-    <string name="parent_auth_subtitle">Sign in with your mobile number. We\'ll send you a one-time code.</string>
-    <string name="parent_auth_phone_label">Mobile number</string>
-    <string name="parent_auth_phone_placeholder">082 123 4567</string>
-    <string name="parent_auth_phone_invalid">Enter a valid South African mobile number</string>
-    <string name="parent_auth_continue">Continue</string>
+    <string name="parent_splash_wordmark">Mini Money</string>
+    <string name="parent_splash_tagline">Chores in. Mbucks out.</string>
+    <string name="parent_splash_get_started">Get started</string>
+    <string name="parent_splash_log_in">Log in</string>
 
-    <string name="parent_auth_otp_title">Enter the code</string>
-    <string name="parent_auth_otp_sent_to">Sent to %1$s</string>
-    <string name="parent_auth_otp_label">6-digit code</string>
-    <string name="parent_auth_verify">Verify</string>
-    <string name="parent_auth_resend">Resend code</string>
-    <string name="parent_auth_resend_in">Resend in %1$d s</string>
-    <string name="parent_auth_edit_number">Use a different number</string>
+    <string name="parent_auth_title">Welcome to MiniMoney</string>
+    <string name="parent_auth_subtitle">Sign in with your Google account to get started.</string>
+    <string name="parent_auth_google_button">Continue with Google</string>
 
     <string name="parent_auth_error_network">No connection. Check your network and try again.</string>
-    <string name="parent_auth_error_invalid_phone">That number couldn\'t be used. Check it and try again.</string>
-    <string name="parent_auth_error_otp_mismatch">That code isn\'t right. Try again.</string>
-    <string name="parent_auth_error_otp_expired">That code has expired. Request a new one.</string>
-    <string name="parent_auth_error_too_many">Too many attempts. Wait a moment before trying again.</string>
+    <string name="parent_auth_error_cancelled">Sign-in was cancelled.</string>
+    <string name="parent_auth_error_no_account">No Google account is available on this device. Add one in Settings and try again.</string>
     <string name="parent_auth_error_server">Something went wrong on our side. Try again shortly.</string>
     <string name="parent_auth_error_unknown">Something unexpected went wrong. Try again.</string>
 
@@ -48,6 +40,10 @@
     <string name="parent_add_child_save">Create profile</string>
     <string name="parent_add_child_cancel">Cancel</string>
     <string name="parent_add_child_limit">You\'ve reached the limit of 4 child profiles per family.</string>
+    <string name="parent_add_child_link_hint">Optional: let your child sign in on their own device with their Google account. They must already have one set up through Google Family Link.</string>
+    <string name="parent_add_child_email_label">Child\'s Google account email (optional)</string>
+    <string name="parent_add_child_link_conflict">That email is already linked to another family.</string>
+    <string name="parent_add_child_link_failed">The profile was saved, but linking the Google account failed. Check your connection and try adding the email again.</string>
 
     <string name="parent_mbucks_format">M %1$d</string>
     <string name="parent_budget_title">Budget</string>
@@ -62,12 +58,19 @@
     <string name="parent_tasks_title">Tasks</string>
     <string name="parent_tasks_empty">No tasks yet.</string>
     <string name="parent_task_new">New task</string>
+    <string name="parent_task_pick_from_list">Pick from the list, or set up your own</string>
+    <string name="parent_task_custom">Custom</string>
     <string name="parent_task_title_label">What needs doing?</string>
     <string name="parent_task_mode_fixed">Fixed Mbucks</string>
     <string name="parent_task_mode_percentage">% of budget</string>
-    <string name="parent_task_value_fixed_label">Mbucks (whole number)</string>
-    <string name="parent_task_value_percent_label">Percent of budget (whole number)</string>
-    <string name="parent_task_percent_preview">Will earn: M %1$d</string>
+    <string name="parent_task_value_fixed_label">Total Mbucks per month (whole number)</string>
+    <string name="parent_task_value_percent_label">Total percent of budget per month (whole number)</string>
+    <string name="parent_task_tier_locked_note">Part of the %1$s task list — the reward is set automatically and can\'t be edited here. Choose Custom to set your own rate for a similar task.</string>
+    <string name="parent_task_frequency_label">How often?</string>
+    <string name="parent_task_frequency_daily">Daily</string>
+    <string name="parent_task_frequency_weekly">Weekly</string>
+    <string name="parent_task_frequency_monthly">Monthly</string>
+    <string name="parent_task_percent_preview">Will earn per completion: M %1$d</string>
     <string name="parent_task_percent_needs_budget">Set a budget first to use percentage mode.</string>
     <string name="parent_task_save">Create task</string>
     <string name="parent_task_status_assigned">Assigned</string>
@@ -114,4 +117,37 @@
     <string name="parent_linking_title">Account linking</string>
     <string name="parent_linking_pending">Optional bank-account linking is being prepared. It never moves money — it only confirms, read-only, that a payment you made yourself has cleared.</string>
     <string name="parent_home_account_linking">Account linking</string>
+    <string name="parent_home_family_chip">Family</string>
+    <string name="parent_home_month_to_date">Month to date</string>
+    <string name="parent_home_mbuck_total">M %1$d</string>
+    <string name="parent_home_to_verify">%1$d to verify</string>
+    <string name="parent_home_manage">Manage</string>
+    <string name="parent_home_verify">Verify</string>
+    <string name="parent_home_my_tasks">My tasks</string>
+    <string name="parent_home_payslip">Payslip</string>
+    <string name="parent_home_hero_kicker">%1$s · Month to date</string>
+    <string name="parent_home_of_budget">of R%1$d monthly budget</string>
+    <string name="parent_home_week_tasks">This week\'s tasks</string>
+    <string name="parent_home_task_mbucks">+%1$d Mb</string>
+    <string name="parent_home_more">More</string>
+
+    <string name="parent_profile_greeting">Hey there</string>
+    <string name="parent_profile_signed_in_google">Signed in with Google</string>
+    <string name="parent_profile_children_linked">Children linked</string>
+    <string name="parent_profile_dark_mode">Dark mode</string>
+    <string name="parent_profile_sign_out">Sign out</string>
+
+    <string name="parent_more_title">More</string>
+    <string name="parent_more_tab_family">Family</string>
+    <string name="parent_more_tab_tools">Tools</string>
+    <string name="parent_more_tab_rewards">Rewards</string>
+    <string name="parent_more_manage_children">Manage children</string>
+    <string name="parent_more_add_child">Add child</string>
+    <string name="parent_more_profile">My profile</string>
+    <string name="parent_more_exam_bonus">Exam bonus</string>
+    <string name="parent_more_disputes">Disputes</string>
+    <string name="parent_more_late_penalty">Late penalty</string>
+    <string name="parent_more_mpoint_store">Mpoint store</string>
+    <string name="parent_more_account_linking">Account linking</string>
+    <string name="parent_more_coming_soon">Coming soon</string>
 </resources>

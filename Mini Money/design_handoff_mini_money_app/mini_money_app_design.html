@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    @keyframes mmLogoPop { 0% { transform: scale(0.35) rotate(-10deg); opacity: 0; } 55% { transform: scale(1.1) rotate(3deg); opacity: 1; } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }
+    @keyframes mmFloat1 { 0% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-16px) rotate(6deg); } 100% { transform: translateY(0) rotate(0deg); } }
+    @keyframes mmFloat2 { 0% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-10px) rotate(-8deg); } 100% { transform: translateY(0) rotate(0deg); } }
+    @keyframes mmFadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes mmFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes mmSpin { to { transform: rotate(360deg); } }
+    @keyframes mmCheckPop { 0% { transform: scale(0); opacity: 0; } 60% { transform: scale(1.25); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, 'Segoe UI', Roboto, system-ui, sans-serif; }
+  </style>
+</helmet>
+
+<x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" hint-size="412,892">
+  <div style="width:412px;height:892px;position:relative;overflow:hidden;background:{{ theme.bg }};color:{{ theme.text }};">
+
+    <!-- ===================== SPLASH ===================== -->
+    <sc-if value="{{ isSplash }}" hint-placeholder-val="{{ true }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;background:{{ theme.bg }};overflow:hidden;">
+        <div style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+          <div style="position:absolute;inset:0;background:radial-gradient(circle at 30% 25%, {{ theme.glow1 }}, transparent 55%),radial-gradient(circle at 75% 65%, {{ theme.glow2 }}, transparent 50%);"></div>
+          <div style="position:absolute;top:64px;left:44px;width:8px;height:8px;border-radius:50%;background:{{ theme.dotColor }};animation:mmFloat1 4.5s ease-in-out infinite;"></div>
+          <div style="position:absolute;top:150px;right:52px;width:6px;height:6px;border-radius:50%;background:{{ theme.dotColor }};animation:mmFloat2 3.6s ease-in-out infinite;"></div>
+          <div style="position:absolute;bottom:200px;left:64px;width:7px;height:7px;border-radius:50%;background:{{ theme.dotColor }};animation:mmFloat1 5.2s ease-in-out infinite reverse;"></div>
+
+          <div style="width:96px;height:96px;border-radius:50%;background:{{ theme.accentGradient }};display:flex;align-items:center;justify-content:center;position:relative;z-index:1;animation:mmLogoPop 0.9s cubic-bezier(.2,.9,.3,1.2) both;box-shadow:0 16px 40px {{ theme.accentShadow }};">
+            <div style="position:absolute;inset:8px;border-radius:50%;border:2px solid rgba(255,255,255,0.5);"></div>
+            <span style="font-size:40px;font-weight:800;color:#fff;letter-spacing:-0.02em;">M</span>
+          </div>
+          <div style="text-align:center;margin-top:18px;z-index:1;animation:mmFadeUp 0.7s ease 0.3s both;">
+            <div style="font-size:24px;font-weight:800;letter-spacing:-0.01em;">Mini Money</div>
+            <div style="font-size:13px;color:{{ theme.textMuted }};margin-top:4px;">Chores in. Mbucks out.</div>
+          </div>
+        </div>
+        <div style="padding:0 28px 40px;display:flex;flex-direction:column;gap:12px;animation:mmFadeUp 0.7s ease 0.5s both;">
+          <button onClick="{{ goToRegister }}" style="{{ pillPrimaryBtn }}">Get started</button>
+          <button onClick="{{ goToLogin }}" style="background:transparent;border:none;color:{{ theme.text }};font-weight:700;font-size:14px;padding:10px;cursor:pointer;">Log in</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ===================== LOGIN ===================== -->
+    <sc-if value="{{ isLogin }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;animation:mmFadeIn 0.3s ease both;">
+        <div style="padding:20px 24px 0;">
+          <button onClick="{{ goBack }}" style="{{ backBtn }}">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>
+          </button>
+        </div>
+        <div style="padding:12px 24px;display:flex;flex-direction:column;gap:10px;flex:1;">
+          <h1 style="font-size:26px;font-weight:800;margin:26px 0 0;">Welcome back</h1>
+          <p style="font-size:13px;color:{{ theme.textMuted }};margin:0 0 12px;">Log in with the number on your account.</p>
+          <label style="{{ inputLabel }}">Mobile number</label>
+          <input type="tel" placeholder="071 234 5678" value="{{ phone }}" onChange="{{ onPhoneChange }}" style="{{ inputStyle }}" />
+          <div style="flex:1;"></div>
+          <button onClick="{{ handleLoginSubmit }}" disabled="{{ registerDisabled }}" style="{{ pillPrimaryBtn }}">Continue</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ===================== ONBOARDING SHELL ===================== -->
+    <sc-if value="{{ showOnboardHeader }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;animation:mmFadeIn 0.3s ease both;">
+        <div style="display:flex;align-items:center;gap:12px;padding:20px 20px 8px;">
+          <button onClick="{{ goBack }}" style="{{ backBtn }}">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>
+          </button>
+          <div style="flex:1;display:flex;gap:6px;">
+            <sc-for list="{{ stepDots }}" as="dot" hint-placeholder-count="5">
+              <div style="height:4px;border-radius:2px;flex:1;background:{{ dot.color }};"></div>
+            </sc-for>
+          </div>
+        </div>
+
+        <sc-if value="{{ isRegister }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:16px 24px;display:flex;flex-direction:column;gap:8px;flex:1;">
+            <h1 style="font-size:26px;font-weight:800;margin:0;">Create your account</h1>
+            <p style="font-size:13px;color:{{ theme.textMuted }};margin:0 0 16px;">You're the sole parent/guardian. We'll text a code to verify your number.</p>
+            <label style="{{ inputLabel }}">Mobile number</label>
+            <input type="tel" placeholder="071 234 5678" value="{{ phone }}" onChange="{{ onPhoneChange }}" style="{{ inputStyle }}" />
+            <div style="flex:1;"></div>
+            <button onClick="{{ handleRegisterSubmit }}" disabled="{{ registerDisabled }}" style="{{ pillPrimaryBtn }}">
+              <sc-if value="{{ registerLoading }}" hint-placeholder-val="{{ false }}">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="animation:mmSpin 0.8s linear infinite;"><circle cx="12" cy="12" r="9" stroke-opacity="0.3"></circle><path d="M21 12a9 9 0 00-9-9"></path></svg>
+              </sc-if>
+              <sc-if value="{{ registerNotLoading }}" hint-placeholder-val="{{ true }}"><span>Send code</span></sc-if>
+            </button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isOtp }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:16px 24px;display:flex;flex-direction:column;gap:8px;flex:1;">
+            <h1 style="font-size:26px;font-weight:800;margin:0;">Enter the code</h1>
+            <p style="font-size:13px;color:{{ theme.textMuted }};margin:0 0 20px;">We sent a 6-digit code to {{ phoneDisplay }}.</p>
+            <input type="text" inputmode="numeric" maxlength="6" placeholder="000000" value="{{ otp }}" onChange="{{ onOtpChange }}" style="{{ inputStyle }} font-size:26px;letter-spacing:0.5em;text-align:center;font-weight:700;" />
+            <button onClick="{{ handleResend }}" style="background:none;border:none;color:{{ theme.accentText }};font-size:13px;font-weight:700;text-align:left;padding:10px 0;cursor:pointer;">Resend code</button>
+            <div style="flex:1;"></div>
+            <button onClick="{{ handleOtpSubmit }}" disabled="{{ otpDisabled }}" style="{{ pillPrimaryBtn }}">
+              <sc-if value="{{ otpLoading }}" hint-placeholder-val="{{ false }}">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="animation:mmSpin 0.8s linear infinite;"><circle cx="12" cy="12" r="9" stroke-opacity="0.3"></circle><path d="M21 12a9 9 0 00-9-9"></path></svg>
+              </sc-if>
+              <sc-if value="{{ otpVerified }}" hint-placeholder-val="{{ false }}">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="animation:mmCheckPop 0.35s ease both;"><path d="M20 6L9 17l-5-5"></path></svg>
+              </sc-if>
+              <sc-if value="{{ otpIdle }}" hint-placeholder-val="{{ true }}"><span>Verify</span></sc-if>
+            </button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isConsent }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:16px 24px;display:flex;flex-direction:column;gap:8px;flex:1;min-height:0;">
+            <h1 style="font-size:24px;font-weight:800;margin:0;">Consent to proceed</h1>
+            <p style="font-size:13px;color:{{ theme.textMuted }};margin:0 0 12px;">Before we set up a child profile, please review and accept.</p>
+            <div style="flex:1;min-height:0;overflow:auto;background:{{ theme.surface2 }};border-radius:16px;padding:14px;font-size:12.5px;line-height:1.6;color:{{ theme.textMuted }};">
+              <p style="margin:0 0 10px;">Mini Money never holds, moves, or has custody of any money. You pay your child directly through your own banking app — the amount owed is only ever tracked here as Mbucks.</p>
+              <p style="margin:0 0 10px;">We collect your phone number and your child's profile details to run the account. You can request deletion at any time.</p>
+              <p style="margin:0;">By continuing you agree to how we handle your and your child's information, in line with POPIA.</p>
+            </div>
+            <label style="display:flex;align-items:center;gap:10px;padding:14px 2px;cursor:pointer;font-size:13px;">
+              <input type="checkbox" checked="{{ consentChecked }}" onChange="{{ toggleConsent }}" style="width:18px;height:18px;accent-color:{{ theme.accentSolid }};" />
+              <span>I have read and accept the terms above</span>
+            </label>
+            <button onClick="{{ handleConsentSubmit }}" disabled="{{ consentDisabled }}" style="{{ pillPrimaryBtn }}">Agree and continue</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isChildSetup }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:16px 24px;display:flex;flex-direction:column;gap:8px;flex:1;">
+            <h1 style="font-size:26px;font-weight:800;margin:0;">Add your child</h1>
+            <p style="font-size:13px;color:{{ theme.textMuted }};margin:0 0 16px;">Up to 4 profiles per account. You can add more later from Family.</p>
+            <label style="{{ inputLabel }}">Child's first name</label>
+            <input type="text" placeholder="e.g. Alex" value="{{ childName }}" onChange="{{ onChildNameChange }}" style="{{ inputStyle }} margin-bottom:16px;" />
+            <label style="{{ inputLabel }} margin-bottom:8px;">Age band</label>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <sc-for list="{{ ageBandOptions }}" as="band" hint-placeholder-count="3">
+                <div onClick="{{ band.select }}" style="{{ band.style }}">
+                  <div style="{{ band.dotStyle }}"></div>
+                  <div>
+                    <div style="font-size:14px;font-weight:700;">{{ band.label }}</div>
+                    <div style="font-size:11.5px;color:{{ theme.textMuted }};">{{ band.sub }}</div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="flex:1;"></div>
+            <button onClick="{{ handleChildSubmit }}" disabled="{{ childDisabled }}" style="{{ pillPrimaryBtn }}">Continue</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isBudget }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:16px 24px;display:flex;flex-direction:column;gap:8px;flex:1;">
+            <h1 style="font-size:26px;font-weight:800;margin:0;">Set {{ childName }}'s budget</h1>
+            <p style="font-size:13px;color:{{ theme.textMuted }};margin:0 0 16px;">Whole Rand only — no cents. This becomes {{ childName }}'s monthly Mbuck pool.</p>
+            <div style="display:flex;align-items:center;background:{{ theme.surface2 }};border-radius:16px;padding:0 14px;">
+              <span style="font-size:22px;font-weight:700;color:{{ theme.textMuted }};">R</span>
+              <input type="text" inputmode="numeric" placeholder="0" value="{{ budgetInput }}" onChange="{{ onBudgetChange }}" style="flex:1;min-height:56px;padding:12px 8px;font-size:26px;font-weight:700;color:{{ theme.text }};background:transparent;border:none;outline:none;" />
+              <span style="font-size:12px;color:{{ theme.textMuted }};">/ month</span>
+            </div>
+            <div style="flex:1;"></div>
+            <button onClick="{{ handleBudgetSubmit }}" disabled="{{ budgetDisabled }}" style="{{ pillPrimaryBtn }}">Finish setup</button>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <!-- ===================== MAIN APP SHELL ===================== -->
+    <sc-if value="{{ showAppShell }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;animation:mmFadeIn 0.3s ease both;">
+
+        <!-- top bar (home/tasks/payslip/more) -->
+        <sc-if value="{{ showTopBar }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px 8px;">
+            <div style="font-size:20px;font-weight:800;">{{ headerTitle }}</div>
+            <div style="display:flex;gap:10px;">
+              <div style="{{ iconBtnStyle }}">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1112 0c0 4 1.5 5 1.5 6.5H4.5C4.5 13 6 12 6 8z"></path><path d="M9.5 17a2.5 2.5 0 005 0"></path></svg>
+              </div>
+              <div onClick="{{ goToPayslip }}" style="{{ iconBtnStyle }}">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"></rect><path d="M3 10h18"></path></svg>
+              </div>
+              <div onClick="{{ goToProfile }}" style="{{ avatarChipStyle }}">{{ userInitial }}</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- stack header (profile / verify) -->
+        <sc-if value="{{ showStackHeader }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 20px 6px;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <button onClick="{{ goBack }}" style="{{ backBtn }}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>
+              </button>
+              <div style="font-size:19px;font-weight:800;">{{ stackTitle }}</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- child selector chips (home only) -->
+        <sc-if value="{{ isHome }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:8px;padding:6px 20px 14px;overflow:auto;">
+            <div onClick="{{ selectFamily }}" style="{{ familyChipStyle }}">Family</div>
+            <sc-for list="{{ childChips }}" as="chip" hint-placeholder-count="2">
+              <div onClick="{{ chip.select }}" style="{{ chip.style }}">{{ chip.label }}</div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <div style="flex:1;overflow:auto;padding:0 20px 20px;">
+
+          <!-- HOME: FAMILY OVERVIEW -->
+          <sc-if value="{{ isFamilyView }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:14px;">
+              <sc-for list="{{ familyCards }}" as="c" hint-placeholder-count="2">
+                <div style="border-radius:22px;padding:20px;background:{{ c.gradient }};color:#fff;position:relative;overflow:hidden;">
+                  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+                    <div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,0.22);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;">{{ c.initial }}</div>
+                    <div>
+                      <div style="font-size:15px;font-weight:800;">{{ c.name }}</div>
+                      <div style="font-size:11px;opacity:0.85;">{{ c.ageLabel }}</div>
+                    </div>
+                    <sc-if value="{{ c.hasPending }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-left:auto;background:rgba(0,0,0,0.28);border-radius:100px;padding:4px 10px;font-size:11px;font-weight:800;">{{ c.pendingCount }} to verify</div>
+                    </sc-if>
+                  </div>
+                  <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;opacity:0.8;">Month to date</div>
+                  <div style="font-size:32px;font-weight:800;margin:2px 0 14px;">{{ c.mtd }} Mb</div>
+                  <div style="display:flex;gap:10px;">
+                    <button onClick="{{ c.manage }}" style="flex:1;background:rgba(255,255,255,0.92);color:#161b2e;border:none;border-radius:100px;padding:12px;font-weight:800;font-size:13px;cursor:pointer;">Manage</button>
+                    <button onClick="{{ c.verify }}" style="flex:1;background:rgba(255,255,255,0.16);color:#fff;border:none;border-radius:100px;padding:12px;font-weight:800;font-size:13px;cursor:pointer;">Verify</button>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <!-- HOME: SINGLE CHILD VIEW -->
+          <sc-if value="{{ isChildHomeView }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:16px;">
+              <div style="border-radius:24px;padding:24px;background:{{ activeChild.gradient }};color:#fff;">
+                <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;opacity:0.82;">{{ activeChild.name }} · Month to date</div>
+                <div style="font-size:40px;font-weight:800;margin:4px 0 2px;">{{ activeChild.mtd }} Mb</div>
+                <div style="font-size:12px;opacity:0.85;margin-bottom:18px;">of R{{ activeChild.budget }} monthly budget</div>
+                <div style="display:flex;gap:10px;">
+                  <button onClick="{{ goToTasks }}" style="flex:1;background:rgba(255,255,255,0.92);color:#161b2e;border:none;border-radius:100px;padding:12px;font-weight:800;font-size:13px;cursor:pointer;">My tasks</button>
+                  <button onClick="{{ goToPayslip }}" style="flex:1;background:rgba(255,255,255,0.16);color:#fff;border:none;border-radius:100px;padding:12px;font-weight:800;font-size:13px;cursor:pointer;">Payslip</button>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:14px;font-weight:800;margin-bottom:10px;">This week's tasks</div>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                  <sc-for list="{{ activeChildTasks }}" as="t" hint-placeholder-count="2">
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:{{ theme.surface }};border-radius:16px;">
+                      <div>
+                        <div style="font-size:14px;font-weight:700;">{{ t.title }}</div>
+                        <div style="font-size:11px;color:{{ theme.textMuted }};">{{ t.status }}</div>
+                      </div>
+                      <div style="font-size:14px;font-weight:800;color:{{ theme.accentText }};">+{{ t.mbuck }} Mb</div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- TASKS -->
+          <sc-if value="{{ isTasks }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:14px;">
+              <div style="font-size:13px;color:{{ theme.textMuted }};">{{ tasksSubtitle }}</div>
+              <div style="display:flex;flex-direction:column;gap:8px;">
+                <sc-for list="{{ activeChildTasks }}" as="t" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:{{ theme.surface }};border-radius:16px;">
+                    <div>
+                      <div style="font-size:14px;font-weight:700;">{{ t.title }}</div>
+                      <div style="font-size:11px;color:{{ theme.textMuted }};">{{ t.modeLabel }} · {{ t.status }}</div>
+                    </div>
+                    <div style="font-size:14px;font-weight:800;color:{{ theme.accentText }};">{{ t.mbuck }} Mb</div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <sc-if value="{{ showTaskForm }}" hint-placeholder-val="{{ false }}">
+                <div style="border-radius:18px;padding:16px;background:{{ theme.surface }};display:flex;flex-direction:column;gap:10px;">
+                  <input type="text" placeholder="Task name" value="{{ newTaskTitle }}" onChange="{{ onNewTaskTitle }}" style="{{ inputStyle }}" />
+                  <div style="display:inline-flex;border-radius:100px;background:{{ theme.surface2 }};padding:4px;">
+                    <div onClick="{{ setModeFixed }}" style="{{ fixedTabStyle }}">Fixed</div>
+                    <div onClick="{{ setModePercent }}" style="{{ percentTabStyle }}">% of budget</div>
+                  </div>
+                  <input type="text" inputmode="numeric" placeholder="{{ valuePlaceholder }}" value="{{ newTaskValue }}" onChange="{{ onNewTaskValue }}" style="{{ inputStyle }}" />
+                  <div style="font-size:12px;color:{{ theme.textMuted }};">Earns <strong style="color:{{ theme.accentText }};">{{ newTaskComputed }} Mbucks</strong> per completion</div>
+                  <div style="display:flex;gap:8px;">
+                    <button onClick="{{ cancelTaskForm }}" style="flex:1;background:transparent;border:1.5px solid {{ theme.divider }};color:{{ theme.text }};padding:12px;border-radius:100px;font-weight:800;font-size:13px;cursor:pointer;">Cancel</button>
+                    <button onClick="{{ handleAddTask }}" disabled="{{ addTaskDisabled }}" style="flex:1;background:{{ theme.accentSolid }};border:none;color:#fff;padding:12px;border-radius:100px;font-weight:800;font-size:13px;cursor:pointer;opacity:{{ addTaskOpacity }};">Add task</button>
+                  </div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ hideTaskForm }}" hint-placeholder-val="{{ true }}">
+                <button onClick="{{ openTaskForm }}" style="width:100%;background:transparent;border:1.5px dashed {{ theme.divider }};color:{{ theme.accentText }};padding:14px;border-radius:16px;font-weight:800;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                  New task
+                </button>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <!-- PAYSLIP -->
+          <sc-if value="{{ isPayslip }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:16px;">
+              <div>
+                <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:{{ theme.accentText }};margin-bottom:4px;">This period · {{ activeChild.name }}</div>
+                <div style="font-size:34px;font-weight:800;">R{{ payslipTotal }}</div>
+                <div style="font-size:12px;color:{{ theme.textMuted }};">{{ payslipTotal }} Mbucks earned</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px;">
+                <sc-for list="{{ activeChildTasks }}" as="t" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:{{ theme.surface }};border-radius:14px;">
+                    <div style="font-size:13.5px;">{{ t.title }}</div>
+                    <div style="font-size:13.5px;font-weight:700;">{{ t.mbuck }} Mb</div>
+                  </div>
+                </sc-for>
+              </div>
+              <p style="font-size:11.5px;color:{{ theme.textMuted }};margin:0;">Pay {{ activeChild.name }} directly through your own banking app, then confirm below. Mini Money never moves money for you.</p>
+              <sc-if value="{{ paymentConfirmed }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 0;">
+                  <div style="width:52px;height:52px;border-radius:50%;background:{{ theme.accentSolid }};display:flex;align-items:center;justify-content:center;animation:mmCheckPop 0.4s ease both;">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+                  </div>
+                  <div style="font-size:14px;font-weight:700;">Payment confirmed</div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ paymentNotConfirmed }}" hint-placeholder-val="{{ true }}">
+                <button onClick="{{ handleConfirmPayment }}" style="{{ pillPrimaryBtn }}">I've paid {{ activeChild.name }}</button>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <!-- VERIFY -->
+          <sc-if value="{{ isVerify }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              <div style="font-size:13px;color:{{ theme.textMuted }};margin-bottom:4px;">Pending requests for {{ verifyChildName }}</div>
+              <sc-for list="{{ verifyRows }}" as="v" hint-placeholder-count="2">
+                <div style="padding:14px;background:{{ theme.surface }};border-radius:16px;display:flex;flex-direction:column;gap:10px;">
+                  <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="width:34px;height:34px;border-radius:10px;background:{{ v.iconBg }};display:flex;align-items:center;justify-content:center;flex:none;color:{{ theme.accentText }};">
+                      <sc-if value="{{ v.isTask }}" hint-placeholder-val="{{ false }}">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path></svg>
+                      </sc-if>
+                      <sc-if value="{{ v.isStudy }}" hint-placeholder-val="{{ false }}">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"></path><path d="M4 4.5A2.5 2.5 0 016.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15z"></path></svg>
+                      </sc-if>
+                      <sc-if value="{{ v.isPayment }}" hint-placeholder-val="{{ false }}">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"></rect><path d="M3 10h18"></path></svg>
+                      </sc-if>
+                    </div>
+                    <div>
+                      <div style="font-size:13.5px;font-weight:700;">{{ v.title }}</div>
+                      <div style="font-size:11px;color:{{ theme.textMuted }};">{{ v.typeLabel }}</div>
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:8px;">
+                    <button onClick="{{ v.decline }}" style="flex:1;background:transparent;border:1.5px solid {{ theme.divider }};color:{{ theme.text }};padding:10px;border-radius:100px;font-weight:800;font-size:12.5px;cursor:pointer;">Decline</button>
+                    <button onClick="{{ v.approve }}" style="flex:1;background:{{ theme.accentSolid }};border:none;color:#fff;padding:10px;border-radius:100px;font-weight:800;font-size:12.5px;cursor:pointer;">Approve</button>
+                  </div>
+                </div>
+              </sc-for>
+              <sc-if value="{{ verifyEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="text-align:center;padding:40px 0;color:{{ theme.textMuted }};font-size:13px;">Nothing pending — all caught up.</div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <!-- MORE -->
+          <sc-if value="{{ isMore }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:16px;">
+              <div style="display:flex;gap:8px;overflow:auto;">
+                <sc-for list="{{ moreTabs }}" as="tab" hint-placeholder-count="3">
+                  <div onClick="{{ tab.select }}" style="{{ tab.style }}">{{ tab.label }}</div>
+                </sc-for>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                <sc-for list="{{ moreTiles }}" as="tile" hint-placeholder-count="3">
+                  <div onClick="{{ tile.select }}" style="background:{{ theme.surface }};border-radius:18px;padding:16px 10px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;position:relative;cursor:pointer;opacity:{{ tile.opacity }};">
+                    <sc-if value="{{ tile.badge }}" hint-placeholder-val="{{ false }}">
+                      <div style="position:absolute;top:8px;right:8px;background:{{ theme.surface2 }};color:{{ theme.textMuted }};font-size:9px;font-weight:800;padding:2px 6px;border-radius:100px;">{{ tile.badge }}</div>
+                    </sc-if>
+                    <div style="width:44px;height:44px;border-radius:12px;background:{{ tile.iconBg }};display:flex;align-items:center;justify-content:center;color:{{ theme.accentText }};">
+                      <sc-if value="{{ tile.isUsers }}" hint-placeholder-val="{{ false }}">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2"></path><circle cx="10" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 00-3-3.87"></path><path d="M16 3.13a4 4 0 010 7.75"></path></svg>
+                      </sc-if>
+                      <sc-if value="{{ tile.isPlus }}" hint-placeholder-val="{{ false }}">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                      </sc-if>
+                      <sc-if value="{{ tile.isBell }}" hint-placeholder-val="{{ false }}">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1112 0c0 4 1.5 5 1.5 6.5H4.5C4.5 13 6 12 6 8z"></path><path d="M9.5 17a2.5 2.5 0 005 0"></path></svg>
+                      </sc-if>
+                      <sc-if value="{{ tile.isBook }}" hint-placeholder-val="{{ false }}">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"></path><path d="M4 4.5A2.5 2.5 0 016.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15z"></path></svg>
+                      </sc-if>
+                      <sc-if value="{{ tile.isFlag }}" hint-placeholder-val="{{ false }}">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V3"></path><path d="M4 4h14l-3 4 3 4H4"></path></svg>
+                      </sc-if>
+                      <sc-if value="{{ tile.isGift }}" hint-placeholder-val="{{ false }}">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="13" rx="1"></rect><path d="M12 8v13M3 12h18"></path><path d="M8 8a2.5 2.5 0 010-5c1.5 0 4 2 4 5"></path><path d="M16 8a2.5 2.5 0 000-5c-1.5 0-4 2-4 5"></path></svg>
+                      </sc-if>
+                      <sc-if value="{{ tile.isLink }}" hint-placeholder-val="{{ false }}">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1"></path><path d="M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1"></path></svg>
+                      </sc-if>
+                    </div>
+                    <div style="font-size:11.5px;font-weight:700;">{{ tile.label }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- PROFILE -->
+          <sc-if value="{{ isProfile }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:16px;">
+              <div style="display:flex;align-items:center;gap:14px;">
+                <div style="width:56px;height:56px;border-radius:50%;background:{{ theme.accentGradient }};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:20px;">{{ userInitial }}</div>
+                <div>
+                  <div style="font-size:17px;font-weight:800;">Hey, {{ parentName }}</div>
+                  <div style="font-size:12.5px;color:{{ theme.textMuted }};">{{ parentEmail }}</div>
+                </div>
+              </div>
+              <div style="background:{{ theme.surface }};border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px;">
+                <div style="display:flex;justify-content:space-between;font-size:12px;color:{{ theme.textMuted }};">
+                  <span>Children linked</span>
+                  <span>Paid out this month</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;">
+                  <span style="font-size:20px;font-weight:800;">{{ childCount }}</span>
+                  <span style="font-size:20px;font-weight:800;">R{{ totalMtd }}</span>
+                </div>
+              </div>
+              <div style="display:flex;gap:10px;">
+                <div style="flex:1;background:{{ theme.surface }};border-radius:16px;padding:14px;">
+                  <div style="font-size:11px;color:{{ theme.textMuted }};margin-bottom:16px;">Verification</div>
+                  <div style="display:inline-block;background:{{ theme.successSoft }};color:{{ theme.successText }};font-size:11px;font-weight:800;padding:4px 10px;border-radius:100px;">Verified</div>
+                </div>
+                <div style="flex:1;background:{{ theme.surface }};border-radius:16px;padding:14px;">
+                  <div style="font-size:11px;color:{{ theme.textMuted }};margin-bottom:8px;">Notifications</div>
+                  <div style="font-size:13px;font-weight:700;">Reminders on</div>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;">
+                <div onClick="{{ toggleDarkMode }}" style="{{ profileRowStyle }}">
+                  <span>Dark mode</span>
+                  <div style="{{ switchTrackStyle }}"><div style="{{ switchThumbStyle }}"></div></div>
+                </div>
+                <div style="{{ profileRowStyle }}"><span>Support</span></div>
+                <div style="{{ profileRowStyleLast }}"><span>Sign out</span></div>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+
+        <!-- bottom nav -->
+        <sc-if value="{{ showBottomNav }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;background:{{ theme.surface }};border-radius:24px 24px 0 0;padding:6px 8px;">
+            <div onClick="{{ selectNavHome }}" style="{{ navItemStyle }}">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{ homeNavColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"></path><path d="M5 10v10h14V10"></path></svg>
+              <span style="font-size:10.5px;font-weight:700;color:{{ homeNavColor }};">Home</span>
+            </div>
+            <div onClick="{{ selectNavTasks }}" style="{{ navItemStyle }}">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{ tasksNavColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path></svg>
+              <span style="font-size:10.5px;font-weight:700;color:{{ tasksNavColor }};">Tasks</span>
+            </div>
+            <div onClick="{{ selectNavPayslip }}" style="{{ navItemStyle }}">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{ payslipNavColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1"></rect><path d="M8 8h8M8 12h8M8 16h5"></path></svg>
+              <span style="font-size:10.5px;font-weight:700;color:{{ payslipNavColor }};">Payslip</span>
+            </div>
+            <div onClick="{{ selectNavMore }}" style="{{ navItemStyle }}">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{ moreNavColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>
+              <span style="font-size:10.5px;font-weight:700;color:{{ moreNavColor }};">More</span>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+  </div>
+</x-import>
+
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: {&quot;width&quot;: 460, &quot;height&quot;: 940},
+  &quot;startScreen&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;splash&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;splash&quot;, &quot;login&quot;, &quot;register&quot;, &quot;otp&quot;, &quot;consent&quot;, &quot;childSetup&quot;, &quot;budget&quot;, &quot;home&quot;, &quot;tasks&quot;, &quot;payslip&quot;, &quot;verify&quot;, &quot;more&quot;, &quot;profile&quot;], &quot;section&quot;: &quot;Preview&quot;},
+  &quot;darkModeDefault&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Preview&quot;}
+}">
+
+class Component extends DCLogic {
+  state = {
+    screen: this.props.startScreen || 'splash',
+    darkMode: this.props.darkModeDefault !== false,
+    phone: '',
+    registerLoading: false,
+    otp: '',
+    otpLoading: false,
+    otpDone: false,
+    consentChecked: false,
+    childName: '',
+    childAge: '10-14',
+    budgetInput: '',
+    parentName: 'Masood',
+    parentEmail: 'msdtitus@gmail.com',
+    children: [
+      { id: 'alex', name: 'Alex', age: '10-14', budget: 450, mtd: 128, gradient: 'linear-gradient(135deg,#6a5cf0,#a24bd8 55%,#e94f9a)' },
+      { id: 'sam', name: 'Sam', age: '6-9', budget: 250, mtd: 42, gradient: 'linear-gradient(135deg,#2f8bf0,#4fd6c4)' },
+    ],
+    selectedChildId: null,
+    navChildId: 'alex',
+    tasks: [
+      { id: 1, childId: 'alex', title: 'Make bed', mode: 'FIXED', value: 5, mbuck: 5, status: 'verified' },
+      { id: 2, childId: 'alex', title: 'Homework on time', mode: 'PERCENTAGE', value: 5, mbuck: 22, status: 'verified' },
+      { id: 3, childId: 'sam', title: 'Feed pet', mode: 'FIXED', value: 4, mbuck: 4, status: 'verified' },
+    ],
+    pendingVerifications: [
+      { id: 1, childId: 'alex', type: 'task', title: 'Dishes after dinner' },
+      { id: 2, childId: 'alex', type: 'payment', title: "July payslip — R150" },
+      { id: 3, childId: 'sam', type: 'study', title: 'Reading log — 15 min' },
+    ],
+    verifyChildId: null,
+    moreTab: 'family',
+    showTaskForm: false,
+    newTaskTitle: '',
+    newTaskMode: 'FIXED',
+    newTaskValue: '',
+    paymentConfirmed: false,
+  };
+
+  history = ['splash'];
+
+  goTo(screen) { this.history.push(screen); this.setState({ screen }); }
+  goBack = () => { this.history.pop(); this.setState({ screen: this.history[this.history.length - 1] || 'splash' }); };
+  goToRegister = () => this.goTo('register');
+  goToLogin = () => this.goTo('login');
+  goToProfile = () => this.goTo('profile');
+  goToTasks = () => this.setState({ screen: 'tasks', navChildId: this.state.selectedChildId || this.state.navChildId }, () => this.goTo('tasks'));
+  goToPayslip = () => this.goTo('payslip');
+
+  onPhoneChange = (e) => this.setState({ phone: e.target.value });
+  handleRegisterSubmit = () => {
+    if (!this.state.phone.trim()) return;
+    this.setState({ registerLoading: true });
+    setTimeout(() => { this.setState({ registerLoading: false }); this.goTo('otp'); }, 800);
+  };
+  handleLoginSubmit = () => {
+    if (!this.state.phone.trim()) return;
+    this.goTo('home');
+  };
+
+  onOtpChange = (e) => this.setState({ otp: e.target.value.replace(/\D/g, '').slice(0, 6) });
+  handleResend = () => {};
+  handleOtpSubmit = () => {
+    if (this.state.otp.length !== 6) return;
+    this.setState({ otpLoading: true });
+    setTimeout(() => {
+      this.setState({ otpLoading: false, otpDone: true });
+      setTimeout(() => this.goTo('consent'), 500);
+    }, 800);
+  };
+
+  toggleConsent = () => this.setState(s => ({ consentChecked: !s.consentChecked }));
+  handleConsentSubmit = () => { if (this.state.consentChecked) this.goTo('childSetup'); };
+
+  onChildNameChange = (e) => this.setState({ childName: e.target.value });
+  selectAge = (band) => this.setState({ childAge: band });
+  handleChildSubmit = () => { if (this.state.childName.trim()) this.goTo('budget'); };
+
+  onBudgetChange = (e) => this.setState({ budgetInput: e.target.value.replace(/\D/g, '') });
+  handleBudgetSubmit = () => {
+    if (!this.state.budgetInput) return;
+    const newChild = {
+      id: 'c' + Date.now(), name: this.state.childName.trim(), age: this.state.childAge,
+      budget: parseInt(this.state.budgetInput, 10), mtd: 0,
+      gradient: 'linear-gradient(135deg,#f0a24b,#e9574f 60%,#c94bd8)',
+    };
+    this.setState(s => ({ children: [...s.children, newChild], navChildId: newChild.id }));
+    this.goTo('home');
+  };
+
+  toggleDarkMode = () => this.setState(s => ({ darkMode: !s.darkMode }));
+
+  selectFamily = () => this.setState({ selectedChildId: null });
+  selectChildChip = (id) => this.setState({ selectedChildId: id, navChildId: id });
+
+  manageChild = (id) => { this.setState({ selectedChildId: id, navChildId: id, screen: 'tasks' }); this.history.push('tasks'); };
+  openVerify = (id) => { this.setState({ verifyChildId: id, screen: 'verify' }); this.history.push('verify'); };
+
+  approveVerification = (id) => this.setState(s => ({ pendingVerifications: s.pendingVerifications.filter(v => v.id !== id) }));
+  declineVerification = (id) => this.setState(s => ({ pendingVerifications: s.pendingVerifications.filter(v => v.id !== id) }));
+
+  selectNav = (screen) => { this.history.push(screen); this.setState({ screen }); };
+
+  openTaskForm = () => this.setState({ showTaskForm: true, newTaskTitle: '', newTaskMode: 'FIXED', newTaskValue: '' });
+  cancelTaskForm = () => this.setState({ showTaskForm: false });
+  onNewTaskTitle = (e) => this.setState({ newTaskTitle: e.target.value });
+  onNewTaskValue = (e) => this.setState({ newTaskValue: e.target.value.replace(/\D/g, '') });
+  setModeFixed = () => this.setState({ newTaskMode: 'FIXED', newTaskValue: '' });
+  setModePercent = () => this.setState({ newTaskMode: 'PERCENTAGE', newTaskValue: '' });
+
+  calcMbuck(mode, value, budget) {
+    const v = parseInt(value, 10) || 0;
+    if (mode === 'FIXED') return v;
+    const b = parseInt(budget, 10) || 0;
+    let result = Math.floor((b * v) / 100);
+    if (result <= 0) result = 1;
+    return result;
+  }
+
+  handleAddTask = () => {
+    const { newTaskTitle, newTaskMode, newTaskValue, tasks, navChildId, children } = this.state;
+    if (!newTaskTitle.trim() || !newTaskValue) return;
+    const child = children.find(c => c.id === navChildId) || children[0];
+    const mbuck = this.calcMbuck(newTaskMode, newTaskValue, child.budget);
+    const task = { id: Date.now(), childId: child.id, title: newTaskTitle.trim(), mode: newTaskMode, value: parseInt(newTaskValue, 10), mbuck, status: 'assigned' };
+    this.setState({ tasks: [task, ...tasks], showTaskForm: false });
+  };
+
+  handleConfirmPayment = () => this.setState({ paymentConfirmed: true });
+  selectMoreTab = (tab) => this.setState({ moreTab: tab });
+
+  renderVals() {
+    const s = this.state;
+    const dark = s.darkMode;
+
+    const darkT = {
+      bg: '#0c1220', surface: '#161d30', surface2: '#1e2740', text: '#f4f6fb',
+      textMuted: 'rgba(244,246,251,0.58)', divider: 'rgba(244,246,251,0.14)',
+      accentSolid: '#6c8dff', accentText: '#93a9ff', accentGradient: 'linear-gradient(135deg,#6c8dff,#a26cf0)',
+      accentShadow: 'rgba(108,141,255,0.4)', glow1: 'rgba(108,141,255,0.22)', glow2: 'rgba(162,108,240,0.18)',
+      dotColor: 'rgba(255,255,255,0.5)', successSoft: 'rgba(51,209,122,0.16)', successText: '#33d17a',
+    };
+    const lightT = {
+      bg: '#f4f5fa', surface: '#ffffff', surface2: '#eceef7', text: '#161b2e',
+      textMuted: 'rgba(22,27,46,0.58)', divider: 'rgba(22,27,46,0.12)',
+      accentSolid: '#4c6bef', accentText: '#3d55c9', accentGradient: 'linear-gradient(135deg,#4c6bef,#8a4cef)',
+      accentShadow: 'rgba(76,107,239,0.32)', glow1: 'rgba(76,107,239,0.16)', glow2: 'rgba(138,76,239,0.13)',
+      dotColor: 'rgba(22,27,46,0.35)', successSoft: 'rgba(24,163,94,0.14)', successText: '#189a5a',
+    };
+    const theme = dark ? darkT : lightT;
+
+    const screen = s.screen;
+    const isSplash = screen === 'splash';
+    const isLogin = screen === 'login';
+    const isRegister = screen === 'register';
+    const isOtp = screen === 'otp';
+    const isConsent = screen === 'consent';
+    const isChildSetup = screen === 'childSetup';
+    const isBudget = screen === 'budget';
+    const isHome = screen === 'home';
+    const isTasks = screen === 'tasks';
+    const isPayslip = screen === 'payslip';
+    const isVerify = screen === 'verify';
+    const isMore = screen === 'more';
+    const isProfile = screen === 'profile';
+
+    const showOnboardHeader = isRegister || isOtp || isConsent || isChildSetup || isBudget;
+    const showAppShell = isHome || isTasks || isPayslip || isVerify || isMore || isProfile;
+    const showTopBar = isHome || isTasks || isPayslip || isMore;
+    const showStackHeader = isVerify || isProfile;
+    const showBottomNav = isHome || isTasks || isPayslip || isMore;
+
+    const onboardSteps = ['register', 'otp', 'consent', 'childSetup', 'budget'];
+    const curIdx = onboardSteps.indexOf(screen);
+    const stepDots = onboardSteps.map((_, i) => ({ color: i <= curIdx ? theme.accentSolid : theme.divider }));
+
+    const pillPrimaryBtn = {
+      width: '100%', background: theme.accentGradient, color: '#fff', border: 'none',
+      padding: '16px', borderRadius: 100, fontWeight: 800, fontSize: 14, cursor: 'pointer',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8,
+    };
+    const backBtn = { width: 36, height: 36, borderRadius: '50%', border: 'none', background: theme.surface, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: theme.text, padding: 0 };
+    const inputLabel = { display: 'block', fontSize: 12, color: theme.textMuted, marginBottom: 6 };
+    const inputStyle = { width: '100%', minHeight: 50, padding: '12px 16px', fontSize: 15, color: theme.text, background: theme.surface2, border: 'none', borderRadius: 16, outline: 'none' };
+    const iconBtnStyle = { width: 36, height: 36, borderRadius: '50%', background: theme.surface, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.text, cursor: 'pointer' };
+    const avatarChipStyle = { width: 36, height: 36, borderRadius: '50%', background: theme.accentGradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer' };
+
+    const ageBands = [
+      { id: '6-9', label: '6 – 9 years', sub: 'Early childhood' },
+      { id: '10-14', label: '10 – 14 years', sub: 'Pre-teen' },
+      { id: '15-18', label: '15 – 18 years', sub: 'Teen' },
+    ];
+    const ageBandOptions = ageBands.map(b => {
+      const active = s.childAge === b.id;
+      return {
+        label: b.label, sub: b.sub, select: () => this.selectAge(b.id),
+        style: { display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', borderRadius: 16, border: `1.5px solid ${active ? theme.accentSolid : 'transparent'}`, background: theme.surface2, cursor: 'pointer' },
+        dotStyle: { width: 16, height: 16, borderRadius: '50%', flex: 'none', border: `1.5px solid ${active ? theme.accentSolid : theme.divider}`, background: active ? theme.accentSolid : 'transparent' },
+      };
+    });
+
+    const children = s.children;
+    const tasksFor = (id) => s.tasks.filter(t => t.childId === id);
+    const mtdOf = (id) => children.find(c => c.id === id)?.mtd || 0;
+
+    const familyCards = children.map(c => {
+      const pending = s.pendingVerifications.filter(v => v.childId === c.id);
+      return {
+        initial: c.name[0], name: c.name, ageLabel: c.age + ' yrs', mtd: c.mtd, gradient: c.gradient,
+        hasPending: pending.length > 0, pendingCount: pending.length,
+        manage: () => this.manageChild(c.id), verify: () => this.openVerify(c.id),
+      };
+    });
+
+    const childChips = children.map(c => ({
+      label: c.name, select: () => this.selectChildChip(c.id),
+      style: { padding: '8px 16px', borderRadius: 100, fontSize: 13, fontWeight: 700, cursor: 'pointer', flex: 'none', background: s.selectedChildId === c.id ? theme.accentSolid : theme.surface, color: s.selectedChildId === c.id ? '#fff' : theme.text },
+    }));
+    const familyChipStyle = { padding: '8px 16px', borderRadius: 100, fontSize: 13, fontWeight: 700, cursor: 'pointer', flex: 'none', background: s.selectedChildId === null ? theme.accentSolid : theme.surface, color: s.selectedChildId === null ? '#fff' : theme.text };
+
+    const isFamilyView = isHome && s.selectedChildId === null;
+    const isChildHomeView = isHome && s.selectedChildId !== null;
+    const activeChildId = s.selectedChildId || s.navChildId || (children[0] && children[0].id);
+    const activeChild = children.find(c => c.id === activeChildId) || children[0] || { name: '', budget: 0, mtd: 0, gradient: theme.accentGradient };
+
+    const modeLabel = (t) => t.mode === 'FIXED' ? 'Fixed amount' : `${t.value}% of budget`;
+    const activeChildTasks = tasksFor(activeChildId).map(t => ({ title: t.title, mbuck: t.mbuck, modeLabel: modeLabel(t), status: t.status }));
+    const payslipTotal = tasksFor(activeChildId).reduce((a, t) => a + t.mbuck, 0);
+    const tasksSubtitle = `Tasks for ${activeChild.name}`;
+
+    const newTaskComputed = this.calcMbuck(s.newTaskMode, s.newTaskValue || 0, activeChild.budget);
+    const tabStyleBase = (active) => ({ flex: 1, textAlign: 'center', padding: '9px 0', fontSize: 12.5, fontWeight: 800, borderRadius: 100, cursor: 'pointer', background: active ? theme.accentSolid : 'transparent', color: active ? '#fff' : theme.text });
+
+    const verifyChildName = (children.find(c => c.id === s.verifyChildId) || {}).name || '';
+    const typeLabelMap = { task: 'Task completion', study: 'Study / behavior log', payment: 'Payment confirmation' };
+    const verifyRows = s.pendingVerifications.filter(v => v.childId === s.verifyChildId).map(v => ({
+      title: v.title, typeLabel: typeLabelMap[v.type], iconBg: theme.surface2,
+      isTask: v.type === 'task', isStudy: v.type === 'study', isPayment: v.type === 'payment',
+      approve: () => this.approveVerification(v.id), decline: () => this.declineVerification(v.id),
+    }));
+    const verifyEmpty = verifyRows.length === 0;
+
+    const moreTabDefs = [
+      { id: 'family', label: 'Family' },
+      { id: 'tools', label: 'Tools' },
+      { id: 'rewards', label: 'Rewards' },
+    ];
+    const moreTabs = moreTabDefs.map(t => ({ label: t.label, select: () => this.selectMoreTab(t.id), style: { padding: '9px 18px', borderRadius: 100, fontSize: 13, fontWeight: 800, cursor: 'pointer', flex: 'none', background: s.moreTab === t.id ? theme.accentSolid : theme.surface, color: s.moreTab === t.id ? '#fff' : theme.text } }));
+
+    const tileDefs = {
+      family: [
+        { label: 'Manage children', icon: 'users' },
+        { label: 'Add child', icon: 'plus', select: () => { this.goTo('childSetup'); } },
+        { label: 'Notifications', icon: 'bell' },
+      ],
+      tools: [
+        { label: 'Exam bonus', icon: 'book' },
+        { label: 'Disputes', icon: 'flag' },
+        { label: 'Late penalty', icon: 'bell' },
+      ],
+      rewards: [
+        { label: 'Mpoint store', icon: 'gift', badge: 'Coming soon', opacity: 0.55 },
+        { label: 'Account linking', icon: 'link', badge: 'Coming soon', opacity: 0.55 },
+      ],
+    };
+    const moreTiles = (tileDefs[s.moreTab] || []).map(t => ({
+      label: t.label, iconBg: theme.surface2, badge: t.badge || null, opacity: t.opacity || 1, select: t.select || (() => {}),
+      isUsers: t.icon === 'users', isPlus: t.icon === 'plus', isBell: t.icon === 'bell',
+      isBook: t.icon === 'book', isFlag: t.icon === 'flag', isGift: t.icon === 'gift', isLink: t.icon === 'link',
+    }));
+
+    const homeNavColor = isHome ? theme.accentText : theme.textMuted;
+    const tasksNavColor = isTasks ? theme.accentText : theme.textMuted;
+    const payslipNavColor = isPayslip ? theme.accentText : theme.textMuted;
+    const moreNavColor = isMore ? theme.accentText : theme.textMuted;
+    const navItemStyle = { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '10px 0 8px', cursor: 'pointer' };
+
+    const headerTitleMap = { home: 'Home', tasks: 'Tasks', payslip: 'Payslip', more: 'More' };
+    const stackTitleMap = { verify: 'Verify', profile: 'My Profile' };
+
+    const profileRowStyle = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 4px', borderBottom: `1px solid ${theme.divider}`, fontSize: 14, fontWeight: 600, cursor: 'pointer' };
+    const profileRowStyleLast = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 4px', fontSize: 14, fontWeight: 600, cursor: 'pointer', color: '#e9574f' };
+    const switchTrackStyle = { width: 40, height: 24, borderRadius: 100, background: dark ? theme.accentSolid : theme.divider, position: 'relative', transition: 'background 0.2s' };
+    const switchThumbStyle = { width: 18, height: 18, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: dark ? 19 : 3, transition: 'left 0.2s' };
+
+    const totalMtd = children.reduce((a, c) => a + c.mtd, 0);
+
+    return {
+      theme, isSplash, isLogin, isRegister, isOtp, isConsent, isChildSetup, isBudget,
+      isHome, isTasks, isPayslip, isVerify, isMore, isProfile,
+      showOnboardHeader, showAppShell, showTopBar, showStackHeader, showBottomNav,
+      stepDots, pillPrimaryBtn, backBtn, inputLabel, inputStyle, iconBtnStyle, avatarChipStyle,
+      goToRegister: this.goToRegister, goToLogin: this.goToLogin, goBack: this.goBack,
+      goToProfile: this.goToProfile, goToTasks: this.goToTasks, goToPayslip: this.goToPayslip,
+      phone: s.phone, onPhoneChange: this.onPhoneChange,
+      registerLoading: s.registerLoading, registerNotLoading: !s.registerLoading,
+      registerDisabled: !s.phone.trim() || s.registerLoading,
+      handleRegisterSubmit: this.handleRegisterSubmit, handleLoginSubmit: this.handleLoginSubmit,
+      phoneDisplay: s.phone || 'your number',
+      otp: s.otp, onOtpChange: this.onOtpChange,
+      otpLoading: s.otpLoading, otpVerified: s.otpDone, otpIdle: !s.otpLoading && !s.otpDone,
+      otpDisabled: s.otp.length !== 6 || s.otpLoading || s.otpDone,
+      handleOtpSubmit: this.handleOtpSubmit, handleResend: this.handleResend,
+      consentChecked: s.consentChecked, toggleConsent: this.toggleConsent,
+      consentDisabled: !s.consentChecked, handleConsentSubmit: this.handleConsentSubmit, accentSolid: theme.accentSolid,
+      childName: s.childName, onChildNameChange: this.onChildNameChange,
+      ageBandOptions, childDisabled: !s.childName.trim(), handleChildSubmit: this.handleChildSubmit,
+      budgetInput: s.budgetInput, onBudgetChange: this.onBudgetChange,
+      budgetDisabled: !s.budgetInput, handleBudgetSubmit: this.handleBudgetSubmit,
+      headerTitle: headerTitleMap[screen] || 'Mini Money', stackTitle: stackTitleMap[screen] || '',
+      userInitial: s.parentName[0], parentName: s.parentName, parentEmail: s.parentEmail,
+      selectFamily: this.selectFamily, familyChipStyle, childChips,
+      isFamilyView, isChildHomeView, familyCards, activeChild, activeChildTasks, tasksSubtitle,
+      showTaskForm: s.showTaskForm, hideTaskForm: !s.showTaskForm,
+      openTaskForm: this.openTaskForm, cancelTaskForm: this.cancelTaskForm,
+      newTaskTitle: s.newTaskTitle, onNewTaskTitle: this.onNewTaskTitle,
+      newTaskValue: s.newTaskValue, onNewTaskValue: this.onNewTaskValue,
+      setModeFixed: this.setModeFixed, setModePercent: this.setModePercent,
+      fixedTabStyle: tabStyleBase(s.newTaskMode === 'FIXED'), percentTabStyle: tabStyleBase(s.newTaskMode === 'PERCENTAGE'),
+      valuePlaceholder: s.newTaskMode === 'FIXED' ? 'Mbucks e.g. 5' : 'Percent e.g. 5',
+      newTaskComputed, addTaskDisabled: !s.newTaskTitle.trim() || !s.newTaskValue,
+      addTaskOpacity: (!s.newTaskTitle.trim() || !s.newTaskValue) ? 0.5 : 1, handleAddTask: this.handleAddTask,
+      payslipTotal, paymentConfirmed: s.paymentConfirmed, paymentNotConfirmed: !s.paymentConfirmed, handleConfirmPayment: this.handleConfirmPayment,
+      verifyChildName, verifyRows, verifyEmpty,
+      moreTabs, moreTiles,
+      childCount: children.length, totalMtd,
+      toggleDarkMode: this.toggleDarkMode, profileRowStyle, profileRowStyleLast, switchTrackStyle, switchThumbStyle,
+      selectNavHome: () => this.selectNav('home'), selectNavTasks: () => this.selectNav('tasks'),
+      selectNavPayslip: () => this.selectNav('payslip'), selectNavMore: () => this.selectNav('more'),
+      homeNavColor, tasksNavColor, payslipNavColor, moreNavColor, navItemStyle,
+    };
+  }
+}
+
+</script>
+</body>
+</html>

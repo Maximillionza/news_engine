@@ -2,6 +2,7 @@ package com.minimoney.app.presentation.home
 
 import com.minimoney.app.MainDispatcherRule
 import com.minimoney.app.domain.child.AgeBand
+import com.minimoney.app.domain.child.ChildLinkRepository
 import com.minimoney.app.domain.child.ChildRepository
 import com.minimoney.app.domain.core.AppError
 import com.minimoney.app.domain.core.AppResult
@@ -30,31 +31,44 @@ class HomeViewModelTest {
     private val repository: ChildRepository = mockk(relaxed = true) {
         every { children() } returns flowOf(emptyList())
     }
+    private val linkRepository: ChildLinkRepository = mockk(relaxed = true)
+    private val ledgerDao: com.minimoney.app.data.db.LedgerDao = mockk {
+        every { mbucksPerChildSince(any()) } returns flowOf(emptyList())
+    }
+    private val taskDao: com.minimoney.app.data.db.TaskDao = mockk {
+        every { pendingVerificationCounts() } returns flowOf(emptyList())
+        every { forChild(any()) } returns flowOf(emptyList())
+    }
 
     private fun flags(linking: Boolean): FeatureFlags = mockk {
         every { accountLinkingEnabled } returns flowOf(linking)
         every { mpointsEnabled } returns flowOf(false)
     }
 
+    private fun viewModel(linking: Boolean = false) = HomeViewModel(
+        repository, linkRepository, flags(linking), ledgerDao, taskDao,
+        com.minimoney.app.domain.core.Clock { 0L },
+    )
+
     @Test
     fun `linking entry hidden while flag off and shown when on - both launch configs`() = runTest {
         // OFF (launch configuration)
-        val vmOff = HomeViewModel(repository, flags(linking = false))
+        val vmOff = viewModel(linking = false)
         backgroundScope.launch { vmOff.accountLinkingEnabled.collect {} }
         runCurrent()
         assertFalse(vmOff.accountLinkingEnabled.value)
 
         // ON (post-recheck configuration)
-        val vmOn = HomeViewModel(repository, flags(linking = true))
+        val vmOn = viewModel(linking = true)
         backgroundScope.launch { vmOn.accountLinkingEnabled.collect {} }
         runCurrent()
         assertTrue(vmOn.accountLinkingEnabled.value)
     }
 
     @Test
-    fun `add child submits and resets dialog on success`() = runTest {
+    fun `add child with no email submits and resets dialog on success - Google linking untouched`() = runTest {
         coEvery { repository.createChild("Nia", AgeBand.SIX_TO_NINE) } returns AppResult.Success(1L)
-        val vm = HomeViewModel(repository, flags(false))
+        val vm = viewModel()
 
         vm.onShowAddChild()
         vm.onNameChanged("Nia")
@@ -63,13 +77,50 @@ class HomeViewModelTest {
         runCurrent()
 
         coVerify(exactly = 1) { repository.createChild("Nia", AgeBand.SIX_TO_NINE) }
+        coVerify(exactly = 0) { linkRepository.linkChild(any(), any(), any()) }
         assertFalse(vm.addChild.value.visible)
+    }
+
+    @Test
+    fun `add child with an email also registers the Google link`() = runTest {
+        coEvery { repository.createChild("Nia", AgeBand.SIX_TO_NINE) } returns AppResult.Success(1L)
+        coEvery { linkRepository.linkChild("nia@example.com", "Nia", AgeBand.SIX_TO_NINE) } returns
+            AppResult.Success(Unit)
+        val vm = viewModel()
+
+        vm.onShowAddChild()
+        vm.onNameChanged("Nia")
+        vm.onAgeBandSelected(AgeBand.SIX_TO_NINE)
+        vm.onChildEmailChanged("nia@example.com")
+        vm.onSubmitAddChild()
+        runCurrent()
+
+        coVerify(exactly = 1) { linkRepository.linkChild("nia@example.com", "Nia", AgeBand.SIX_TO_NINE) }
+        assertFalse(vm.addChild.value.visible)
+    }
+
+    @Test
+    fun `local profile still exists even if Google linking fails - dialog stays open with the link error`() = runTest {
+        coEvery { repository.createChild("Nia", AgeBand.SIX_TO_NINE) } returns AppResult.Success(1L)
+        coEvery { linkRepository.linkChild(any(), any(), any()) } returns AppResult.Failure(AppError.Network)
+        val vm = viewModel()
+
+        vm.onShowAddChild()
+        vm.onNameChanged("Nia")
+        vm.onAgeBandSelected(AgeBand.SIX_TO_NINE)
+        vm.onChildEmailChanged("nia@example.com")
+        vm.onSubmitAddChild()
+        runCurrent()
+
+        coVerify(exactly = 1) { repository.createChild("Nia", AgeBand.SIX_TO_NINE) } // local write still happened
+        assertEquals(AppError.Network, vm.addChild.value.linkError)
+        assertTrue(vm.addChild.value.visible)
     }
 
     @Test
     fun `limit conflict surfaces in dialog`() = runTest {
         coEvery { repository.createChild(any(), any()) } returns AppResult.Failure(AppError.Conflict)
-        val vm = HomeViewModel(repository, flags(false))
+        val vm = viewModel()
 
         vm.onShowAddChild()
         vm.onNameChanged("Nia")
@@ -83,7 +134,7 @@ class HomeViewModelTest {
 
     @Test
     fun `submit without age band is inert`() = runTest {
-        val vm = HomeViewModel(repository, flags(false))
+        val vm = viewModel()
         vm.onShowAddChild()
         vm.onNameChanged("Nia")
         vm.onSubmitAddChild()

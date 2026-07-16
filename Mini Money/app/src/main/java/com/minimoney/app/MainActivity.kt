@@ -3,6 +3,7 @@ package com.minimoney.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -23,9 +24,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MiniMoneyTheme {
-                MiniMoneyRoot()
-            }
+            MiniMoneyRoot()
         }
     }
 }
@@ -34,10 +33,16 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MiniMoneyRoot(appViewModel: AppViewModel = hiltViewModel()) {
     val destination by appViewModel.destination.collectAsStateWithLifecycle()
-    when (destination) {
-        RootDestination.LOADING -> Box(Modifier.fillMaxSize())
-        RootDestination.AUTH -> AuthRoute()
-        RootDestination.CONSENT -> ConsentRoute()
-        RootDestination.HOME -> ParentNavGraph()
+    val darkModeChoice by appViewModel.darkMode.collectAsStateWithLifecycle()
+
+    // Dark-first design: the Profile toggle's persisted choice wins; before
+    // any choice is made we follow the system (handoff §Visual Direction).
+    MiniMoneyTheme(darkTheme = darkModeChoice ?: isSystemInDarkTheme()) {
+        when (destination) {
+            RootDestination.LOADING -> Box(Modifier.fillMaxSize())
+            RootDestination.AUTH -> AuthRoute()
+            RootDestination.CONSENT -> ConsentRoute()
+            RootDestination.HOME -> ParentNavGraph()
+        }
     }
 }

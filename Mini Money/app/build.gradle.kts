@@ -15,8 +15,8 @@ android {
         applicationId = "com.minimoney.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.9.0"
+        versionCode = 10
+        versionName = "0.10.0"
 
         // Backend: Supabase Edge Functions (see supabase/README.md).
         buildConfigField("String", "API_BASE_URL", "\"https://iftunypqqptuzoscuiub.supabase.co/functions/v1/\"")

@@ -2,11 +2,13 @@ package com.minimoney.app.presentation
 
 import app.cash.turbine.test
 import com.minimoney.app.MainDispatcherRule
+import com.minimoney.app.data.settings.ThemeStore
 import com.minimoney.app.domain.auth.AuthRepository
 import com.minimoney.app.domain.auth.ParentSession
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -25,10 +27,13 @@ class AppViewModelTest {
     private val repository: AuthRepository = mockk {
         every { session } returns sessionFlow
     }
+    private val themeStore: ThemeStore = mockk(relaxed = true) {
+        every { darkMode } returns flowOf(null)
+    }
 
     @Test
     fun `starts at LOADING then routes by session state`() = runTest {
-        val vm = AppViewModel(repository)
+        val vm = AppViewModel(repository, themeStore)
         vm.destination.test {
             assertEquals(RootDestination.LOADING, awaitItem())
             assertEquals(RootDestination.AUTH, awaitItem())

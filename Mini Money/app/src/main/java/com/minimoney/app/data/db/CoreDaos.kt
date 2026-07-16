@@ -6,6 +6,9 @@ import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
+/** Result row for per-child GROUP BY aggregations (totals, counts). */
+data class ChildCount(val childId: Long, val total: Int)
+
 @Dao
 interface ChildDao {
     @Insert
@@ -38,6 +41,13 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun get(id: Long): TaskEntity?
 
+    /** Per-child count of tasks awaiting parent verification — the "{n} to verify" badge on Home. */
+    @Query(
+        "SELECT child_id AS childId, COUNT(*) AS total FROM tasks " +
+            "WHERE status = 'COMPLETED' GROUP BY child_id",
+    )
+    fun pendingVerificationCounts(): Flow<List<ChildCount>>
+
     @Query("UPDATE tasks SET status = :status, completed_at = :completedAt WHERE id = :id")
     suspend fun setCompleted(id: Long, status: String, completedAt: Long)
 
@@ -64,6 +74,13 @@ interface LedgerDao {
 
     @Query("SELECT COALESCE(SUM(amount_mbucks), 0) FROM mbuck_ledger WHERE child_id = :childId")
     fun totalMbucksFor(childId: Long): Flow<Int>
+
+    /** Per-child earned totals since a timestamp — feeds the Home cards' month-to-date figures. */
+    @Query(
+        "SELECT child_id AS childId, COALESCE(SUM(amount_mbucks), 0) AS total " +
+            "FROM mbuck_ledger WHERE earned_at >= :sinceMillis GROUP BY child_id",
+    )
+    fun mbucksPerChildSince(sinceMillis: Long): Flow<List<ChildCount>>
 
     @Query("SELECT COALESCE(SUM(amount_mpoints), 0) FROM mpoint_ledger WHERE child_id = :childId")
     fun totalMpointsFor(childId: Long): Flow<Int>
