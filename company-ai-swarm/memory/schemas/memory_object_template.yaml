@@ -1,0 +1,37 @@
+# Universal Memory Object template.
+# Schema source: Specifications/1 - enterprise-architecture/Enterprise Memory Architecture Specification (EMAS).md
+# This is a TEMPLATE, not stored memory. Memory tiers below are the EMAS 5-tier model:
+#   working -> project -> department -> enterprise -> historical
+# (see memory/working/, memory/project/, memory/department/, memory/enterprise/, memory/historical/)
+
+memory_object:
+  memory_id: ""
+  type: ""                  # fact | observation | finding | lesson | pattern | principle
+  content: ""
+  source: ""
+  creator: ""
+  date_created: ""
+
+  context:
+    project: ""
+    domain: ""
+    applicability: ""
+
+  domain: ""                 # which memory tier this belongs to: working | project | department | enterprise | historical
+
+  confidence: null           # 0.0 - 1.0, reliability under known conditions, not truth
+
+  validation_status: unvalidated   # unvalidated | reviewed | validated | deprecated
+
+  applicability:
+    applicable_situations: []
+    non_applicable_situations: []
+    known_limitations: []
+
+  expiration: ""
+
+  relationships: []
+
+  access_controls:
+    classification: internal   # public | internal | confidential | restricted
+    owner: ""

@@ -1,0 +1,26 @@
+# Department definition. Schema: Specifications/1 - enterprise-architecture/Department Operating Model Specification (DOMS).md
+# MVP department — canonical per MVP Validation Specification (MVS).
+
+department:
+  id: research
+  name: "Research Department"
+  purpose: "Information acquisition, analysis, and intelligence generation."
+  leader: ""
+  mission: "Acquire and analyse information required by enterprise objectives."
+  capabilities:
+    - market_research
+    - data_analysis
+    - report_generation
+  roles: []
+  agents:
+    - research_agent
+  resources: []
+  policies: []
+  memory_domain: department
+  services_provided: []
+  dependencies: []
+  performance_metrics:
+    capability_quality: null
+    task_success: null
+    response_time: null
+  lifecycle_state: proposed

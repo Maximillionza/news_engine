@@ -1,0 +1,26 @@
+# Department definition. Schema: Specifications/1 - enterprise-architecture/Department Operating Model Specification (DOMS).md
+# MVP department — canonical per MVP Validation Specification (MVS).
+
+department:
+  id: engineering
+  name: "Engineering Department"
+  purpose: "Build and maintain technical capabilities."
+  leader: ""
+  mission: "Transform approved technical requirements into working software."
+  capabilities:
+    - software_development
+    - architecture
+    - testing
+  roles: []
+  agents:
+    - engineering_agent
+  resources: []
+  policies: []
+  memory_domain: department
+  services_provided: []
+  dependencies: []
+  performance_metrics:
+    capability_quality: null
+    task_success: null
+    response_time: null
+  lifecycle_state: proposed

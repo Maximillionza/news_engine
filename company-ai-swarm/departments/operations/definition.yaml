@@ -1,0 +1,27 @@
+# Department definition. Schema: Specifications/1 - enterprise-architecture/Department Operating Model Specification (DOMS).md
+# MVP department — canonical per MVP Validation Specification (MVS). Houses the Review Agent
+# (quality assurance / validation), matching the MVS four-agent MVP roster.
+
+department:
+  id: operations
+  name: "Operations Department"
+  purpose: "Process management, quality assurance, and execution monitoring."
+  leader: ""
+  mission: "Validate outputs and monitor workflow execution across the enterprise."
+  capabilities:
+    - validation
+    - quality_review
+    - workflow_monitoring
+  roles: []
+  agents:
+    - review_agent
+  resources: []
+  policies: []
+  memory_domain: department
+  services_provided: []
+  dependencies: []
+  performance_metrics:
+    capability_quality: null
+    task_success: null
+    response_time: null
+  lifecycle_state: proposed

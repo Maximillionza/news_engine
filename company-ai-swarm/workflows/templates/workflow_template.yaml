@@ -1,0 +1,38 @@
+# Universal Workflow Definition template.
+# Schema source: Specifications/2 - construction-framework/Enterprise Configuration Language Specification (ECLS).md
+# and Specifications/1 - enterprise-architecture/Enterprise Workflow Orchestration Specification (EWOS).md
+# This is a TEMPLATE, not a functioning workflow. Copy into workflows/active/<workflow_name>/workflow.yaml and fill in.
+
+workflow:
+  id: ""
+  name: ""
+  purpose: ""
+  owner: ""
+
+  trigger: ""                # what starts execution
+
+  objective: ""
+
+  tasks: []                  # ordered or graph-structured list of task references
+
+  dependencies: []
+
+  participants:
+    agents: []
+    departments: []
+    humans: []
+
+  policies: []                # required governance gates, see governance/policies/
+
+  inputs: []
+  outputs: []
+
+  completion_criteria: []
+
+  metrics:
+    completion_time: null
+    success_rate: null
+    cost: null
+    quality: null
+
+  lifecycle_state: designed   # Designed -> Validated -> Activated -> Executing -> Completed -> Reviewed -> Improved -> Retired

@@ -1,0 +1,20 @@
+# Universal Knowledge Graph Object template.
+# Schema source: Specifications/1 - enterprise-architecture/Enterprise Knowledge Graph Specification (EKGS).md
+# This is a TEMPLATE, not stored knowledge.
+
+knowledge_object:
+  object_id: ""
+  object_type: ""            # organization | operational | knowledge | governance | resource entity
+  name: ""
+  description: ""
+
+  attributes: {}
+
+  relationships: []          # e.g. [{ type: REQUIRES, target: "" }, { type: GOVERNS, target: "" }]
+
+  source: ""
+  confidence: null
+  validation_status: unvalidated
+
+  created_date: ""
+  modified_date: ""

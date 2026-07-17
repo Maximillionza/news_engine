@@ -1,0 +1,26 @@
+# Department definition. Schema: Specifications/1 - enterprise-architecture/Department Operating Model Specification (DOMS).md
+# MVP department — canonical per MVP Validation Specification (MVS).
+
+department:
+  id: compliance
+  name: "Compliance Department"
+  purpose: "Validate governance, regulatory, and risk requirements."
+  leader: ""
+  mission: "Identify applicable obligations and assess risk before and during execution."
+  capabilities:
+    - regulatory_analysis
+    - risk_identification
+    - policy_review
+  roles: []
+  agents:
+    - compliance_agent
+  resources: []
+  policies: []
+  memory_domain: department
+  services_provided: []
+  dependencies: []
+  performance_metrics:
+    capability_quality: null
+    task_success: null
+    response_time: null
+  lifecycle_state: proposed

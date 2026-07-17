@@ -1,0 +1,21 @@
+# Department definition. Schema: Specifications/1 - enterprise-architecture/Department Operating Model Specification (DOMS).md
+# NOT part of the MVP canonical scope (MVS defines Research/Engineering/Compliance/Operations only).
+# Listed here because it appears in CRBS's repository example. Future/post-MVP department — do not
+# activate before the MVS acceptance criteria for the four core departments are met.
+
+department:
+  id: strategy
+  name: "Strategy Department"
+  purpose: "Market analysis, business planning, and competitive intelligence."
+  leader: ""
+  mission: ""
+  capabilities: []
+  roles: []
+  agents: []
+  resources: []
+  policies: []
+  memory_domain: department
+  services_provided: []
+  dependencies: []
+  performance_metrics: {}
+  lifecycle_state: proposed

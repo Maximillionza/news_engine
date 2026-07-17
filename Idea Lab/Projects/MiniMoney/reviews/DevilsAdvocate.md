@@ -1,72 +1,108 @@
-# Devil's Advocate Review: MiniMoney — v1
+# Devil's Advocate Review: MiniMoney — v24
 
-> Objections below each cite a specific Business Case section by name
-> and argue the strongest case against proceeding as currently scoped.
+> Objections below each cite a specific `BusinessCase_v24.md` section by
+> name and argue the strongest case against reading this cycle's two
+> resolutions as adequate to route directly to Developing Committee.
+> Regenerated this cycle following `Clarifications_v24.md`'s resolution of
+> two of `Verdict_v7.md`'s six required changes and the user-authorized
+> deviation sending this case directly to Developing Committee with four
+> required changes still outstanding.
 
----
+## Objection 1 — v23's own Devil's Advocate predicted this exact outcome, and the document should say so more plainly than it does (Constraints; Financial Considerations; Risks)
 
-### Objection 1 — Legal & Compliance is not merely incomplete, it may be disqualifying
+`DevilsAdvocate.md` v23's Objection 2 warned explicitly: "the underlying
+research itself found that NYDA's eligibility hinges entirely on a single
+fact — the founder's age — that remains unconfirmed... A reader skimming
+the word 'RESOLVED'... could reasonably conclude the funding-fallback
+risk has been meaningfully reduced, when in fact the *research* is
+resolved and the *risk* is essentially where it was." This cycle confirms
+that warning was correct: the founder's age excludes NYDA outright, and
+company-registration status excludes SEDA. **Constraints**, **Financial
+Considerations**, and **Risks** all now carry substantially rewritten,
+more honest language acknowledging "a genuine increase in financial and
+execution risk, not a routine confirmation." That is real improvement.
+But the document should be more explicit that this is not a new,
+unforeseeable discovery — it is the realization of a risk this
+document's own prior-cycle Devil's Advocate process had already flagged
+by name. A reader should be told plainly that the process worked as
+designed here (the risk was flagged, then materialized), not merely that
+the finding is now honestly characterized after the fact.
 
-The **Legal & Compliance** section of `BusinessCase_v1.md` currently
-carries no jurisdiction, no licensing analysis, and no confirmation of
-whether MiniMoney's invoice-triggered bank payment constitutes regulated
-money transmission. This is not a gap that can be filled later with
-"more detail" — if the answer turns out to be "yes, this requires an
-e-money or payment-facilitator license," the entire cost structure,
-timeline, and even viability of the product changes. The Business Case
-should not proceed to Investment Committee review with this section
-still Incomplete; a preliminary legal opinion (even informal) should be
-a prerequisite, not a downstream task.
+## Objection 2 — "genuine increase in risk, stated as such" changes the prose but not a single Status tag, which is exactly the pattern the Investment Committee's Gate Integrity Check already criticized (Readiness Score; Critical Gaps)
 
-### Objection 2 — The Business Model section provides no reason to believe this is a viable business, only a viable feature
+**Readiness Score** and **Critical Gaps** both now contain extensive,
+well-written language emphasizing that this cycle's finding is "a genuine
+increase in risk, not a routine confirmation." That framing is
+substantively correct. But when the actual scoring is inspected, nothing
+changes: the Readiness Score stays at 94/130 = 72.3%, every section's
+Status is identical to v23, and Constraints remains Complete. The
+document does introduce a "newly-disclosed conservative tension" (a
+stricter reading that would score 88/130 = 67.7%, below the gate) — but
+explicitly declines to adopt it, calling it a flagged tension for
+"the Developing Committee and any future review to weigh," not this
+Business Case's own operative score. This is the precise structural move
+`Verdict_v7.md`'s Gate Integrity Check already named as a concern:
+defining, naming, or disclosing a harder truth in prose, without that
+truth changing the number the completion gate is actually measured
+against. Disclosure is not the same as consequence. If the case's own
+authors believe the stricter reading is plausible enough to compute and
+publish, the document should explain more concretely why it is not the
+operative reading, rather than presenting both and letting the reader
+choose.
 
-The **Business Model** section is entirely Incomplete: no monetization
-mechanism is specified anywhere in the source. It is entirely possible
-that MiniMoney is a compelling feature bolted onto an existing family
-banking app (e.g. a bank-partnership feature) rather than a standalone
-venture with its own defensible revenue model. Without at minimum a
-directional answer — subscription vs. freemium vs. B2B2C — the
-**Market & Competition** section cannot be meaningfully populated either,
-since pricing and competitive position are inseparable. As written, this
-Business Case describes a product mechanic, not a business.
+## Objection 3 — naming four acquisition channels with zero volume estimates resolves a required change's letter, not its purpose (Market & Competition; Roadmap; Validation Strategy)
 
-### Objection 3 — The Value Proposition section asserts differentiation the case study does not actually support
+`Verdict_v7.md`'s Required Change 5 asked for "a concrete, named organic-
+acquisition channel plan underlying the 0.3-1% Year-1 install-capture
+assumption." **Market & Competition**, **Roadmap**, and **Validation
+Strategy** now name four channels (founder network/word of mouth; organic
+social; ASO; parent/community forums) and, to their credit, state plainly
+that none carries a volume estimate. But the Investment Committee's
+underlying concern was never "which channels" in the abstract — it was
+whether the 0.3-1% install-capture assumption has any South Africa-
+specific, bottom-up grounding at all, as opposed to being borrowed wholesale
+from GoHenry/Greenlight UK/US. Four named channels with no volume
+attached do not address that concern; they satisfy the required change's
+literal wording while leaving its substantive purpose exactly as
+unaddressed as before. The document should be clearer that this required
+change is resolved only in the narrowest procedural sense.
 
-The **Value Proposition** section claims the payroll-simulation mechanic
-(payslip, overtime, invoice) is "the strongest, most concrete part of
-the original submission," but this framing risks over-crediting the
-idea's novelty. The case study never claims to have researched whether
-this mechanic already exists in competing products, and the
-**Market & Competition** section confirms zero competitive analysis was
-performed. The Investment Committee should treat the Value Proposition
-section's confidence rating (Medium) with skepticism until a
-competitive scan actually confirms the payslip/invoice framing is
-differentiated rather than assumed differentiated.
+## Objection 4 — routing directly to Developing Committee with four required changes explicitly unresolved shifts risk downstream rather than retiring it, and the document underplays what "traceability" actually guarantees (Outstanding Questions; Roadmap)
 
-### Objection 4 — The Risks section identifies a "terminology risk" but the Business Case does not go far enough on child-psychology implications
+**Outstanding Questions** and **Roadmap** both now list, correctly and
+honestly, the four items explicitly out of scope this cycle: the two
+specialist reviews, the P&L/break-even model, the child-welfare
+stop/redesign threshold, and the aggregate founder-capacity assessment.
+The document frames the Developing Committee's traceability obligation as
+sufficient reassurance that these items "are not silently dropped." But
+traceability is not resolution — the Developing Committee's architectural
+mandate, per the framework's own routing rules, is to ensure these items
+are *traceable in execution instructions*, not to independently verify a
+P&L exists or that a stop/redesign threshold is scientifically sound. A
+plan that faithfully documents an unfunded, unmodeled venture is not the
+same as a viable one. The Business Case should state more directly that
+this routing decision means these four items will not receive further
+Incubator- or Investment-Committee-level scrutiny before build resources
+are potentially committed — a genuine trade-off the user has made
+deliberately, but one the document's own confident "carried forward, not
+dropped" language somewhat softens.
 
-The **Risks** section flags that framing a child's allowance as
-"payslip," "overtime," and "expenses" could raise concerns about
-normalizing labor-like relationships between parent and child, but this
-is listed as a single bullet among five and not escalated to a Critical
-gap or given its own domain-extension section, unlike Legal & Compliance
-and Child Data & Consent. Given that this product is explicitly aimed at
-children as young as 6, the psychological/developmental framing of
-"earning a payslip for chores" deserves the same weight as the
-regulatory gaps — the current Business Case under-weights this by
-treating it as a minor risk bullet rather than a section requiring its
-own expert sign-off (partially addressed via the Curriculum Design
-extension, but that section focuses on educational content, not on the
-psychological appropriateness of the payroll metaphor itself).
+## Objection 5 — the aggregate founder-capacity load has grown again this cycle, and naming it as "explicitly out of scope" does not reduce the load itself (Operations; Risks; Critical Gaps)
 
-### Objection 5 — Outstanding Questions section is marked "Complete," which may understate how foundational these gaps are
-
-The **Outstanding Questions** section is tagged Status: Complete because
-it successfully lists ten open questions — but "Complete" as a status
-here is somewhat misleading to a reader skimming statuses, since the
-existence of ten unresolved foundational questions (jurisdiction,
-whether funds are ever held by the app, monetization model, enforcement
-mechanism) is itself evidence the underlying case is far from ready.
-The Investment Committee should not read "Outstanding Questions:
-Complete" as a positive signal — it means the list-making task is
-complete, not that the questions have answers.
+**Operations**, **Risks**, and **Critical Gaps** all correctly identify
+that an aggregate founder-capacity assessment remains unproduced and is
+explicitly out of scope this cycle. But this cycle's own content adds to,
+rather than merely restates, that load: the founder must now decide
+whether to pursue CIPC registration and SARS tax clearance to make SEDA
+reachable, monitor Injini for a future cohort opening, and potentially
+initiate direct contact with TIA to clarify its own eligibility question —
+three new, concrete tasks layered onto a founder who already owns the
+build, an instrumented pilot, two regulatory rechecks, two specialist-
+review coordination efforts, and manual dispute adjudication, all inside
+a 6-month runway with a self-fund ceiling the document itself says buys
+"days, not months" of professional backup. Naming the aggregate-capacity
+gap as "out of scope" is honest about what was not analyzed this cycle,
+but it is not neutral: each cycle that adds new individual tasks without
+reassessing the total is itself evidence for, not against, the concern
+that no one has yet checked whether the total is achievable by one person
+in the time available.

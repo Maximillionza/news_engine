@@ -1,0 +1,12 @@
+# Universal Service Contract template.
+# Schema source: Specifications/3 - execution-framework/Runtime Contract Specification (RCS).md, section 13.
+# This is a TEMPLATE. Copy into services/<service_name>/service.yaml when implementation begins.
+
+service:
+  name: ""
+  version: "0.1.0"
+  purpose: ""
+  inputs: []
+  outputs: []
+  dependencies: []
+  health_status: unknown       # unknown | healthy | degraded | down

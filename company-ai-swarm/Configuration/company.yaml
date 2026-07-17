@@ -1,0 +1,48 @@
+# Root enterprise configuration template.
+# Schema source: Specifications/2 - construction-framework/Enterprise Configuration Language Specification (ECLS).md
+# This is a TEMPLATE. No runtime reads this file yet. Fill in values when Phase 1 (Foundation) begins.
+
+company:
+  identity:
+    company_name: "The Company"
+    version: "0.1.0"
+    environment: development   # development | testing | staging | production
+    owner: ""
+    created_date: ""
+    status: draft
+
+  organisation:
+    director: ""               # agent/human identifier acting as Director
+    coo: ""                    # agent identifier acting as COO Orchestrator
+    departments: []            # populated from departments/*/definition.yaml
+    governance_model: ""       # reference to governance/policies/
+
+  departments: []              # list of department IDs, see departments/
+
+  agents: []                   # list of agent IDs, see agents/active/
+
+  workflows: []                # list of workflow IDs, see workflows/active/
+
+  policies: []                 # list of policy IDs, see governance/policies/
+
+  infrastructure:
+    compute: ""
+    storage: ""
+    network: ""
+    deployment: ""
+    backup: ""
+    recovery: ""
+
+  runtime:
+    execution_mode: ""         # e.g. managed
+    agent_concurrency: null
+    workflow_limits: null
+    timeout_rules: null
+    failure_strategy: ""
+
+  monitoring:
+    metrics: enabled
+    logs: enabled
+    alerts: enabled
+    dashboards: enabled
+    reporting: enabled

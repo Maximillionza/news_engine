@@ -1,0 +1,21 @@
+# Universal Policy template.
+# Schema source: Specifications/2 - construction-framework/Enterprise Configuration Language Specification (ECLS).md
+# This is a TEMPLATE, not an enforced policy.
+
+policy:
+  id: ""
+  name: ""
+  category: ""               # security | compliance | operational | constitutional
+  authority_level: ""        # board | enterprise | department | capability | workflow | task
+
+  rules: []
+
+  enforcement: ""            # allow | deny | require_approval | require_review | require_evidence | require_escalation
+
+  exceptions: []
+
+  effective_date: ""
+  expiry_date: ""
+  review_cycle: ""
+
+  related_regulations: []

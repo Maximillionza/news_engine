@@ -1,0 +1,14 @@
+# Universal Component Registration template.
+# Schema source: Specifications/2 - construction-framework/The Company Repository Blueprint Specification (CRBS).md, section 24.
+# Every new component (service, agent, workflow, plugin, etc.) SHALL contain a component.yaml
+# in its own directory using this shape.
+
+component:
+  name: ""
+  type: ""                   # service | agent | workflow | plugin | capability | sdk_module
+  owner: ""
+  version: "0.1.0"
+  dependencies: []
+  permissions: []
+  tests: []
+  status: draft               # draft | testing | approved | active | deprecated | archived

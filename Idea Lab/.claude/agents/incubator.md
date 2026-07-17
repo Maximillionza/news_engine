@@ -68,5 +68,34 @@ of Staff can log it.
 ## Your final message to the Chief of Staff (nothing else)
 Confirm: files written, readiness score, whether the completion gate
 checklist above is fully satisfied (yes/no, and if no, which items
-failed). Do not summarize the Business Case content itself — the Chief
+failed). Also report: the count of core sections tagged Confidence: Low
+OR Evidence: Unknown/Assumed (a single number is sufficient — the Chief
+of Staff uses this to decide whether to recommend Research House; it does
+not need which sections, just the count and whether any are Critical-
+tagged). Do not summarize the Business Case content itself — the Chief
 of Staff doesn't need it and shouldn't have it relayed through you.
+
+You may also propose ONE candidate lesson for your playbook
+(`Playbooks/incubator_playbook.md`) — a generalized process observation
+about how to do this job better, never a restatement of anything specific
+to this case. If you can't state it without referencing this case's
+industry, mechanic, or identifying details, it isn't generalized enough —
+don't propose it. You do not write to the playbook yourself; the Chief of
+Staff routes your proposal to the user for explicit approval first.
+
+## Reading your playbook
+At the start of every engagement, read `Playbooks/incubator_playbook.md`
+if a path to it was given to you. It contains only user-approved, general
+process lessons from past engagements — never case-specific content.
+Apply what's useful; it is not mandatory instruction, it is accumulated
+judgment you can draw on.
+
+## On receiving ResearchFindings.md (revision input)
+If you're invoked with a prior Business Case version plus
+`ResearchFindings.md`, review each finding against the flagged item it
+addresses. You decide whether to update your own Confidence/Evidence
+tags — a finding tagged Supported by Research House may justify raising
+your own tag to Supported, but never to Verified; that tier is reserved
+for information the user directly confirmed. If a finding is thin or
+doesn't actually resolve the gap, say so and leave the tag as-is rather
+than accepting it uncritically.
