@@ -2,7 +2,14 @@
 
 # Claude Code Bootstrap Package (CCBP)
 
-Version 1.0
+Version 1.1 — merged with the "AI Builder Master Prompt Specification (AIBMS)" during the
+repository-documents reconciliation pass. AIBMS's Required Reading Order (which named
+compiler-track documents — EMMS, CEDL, EIR, ERAS, ERAS-R) and its "Initial Build Target"
+(Engineering-only MVP) were not imported: the former belongs to the compiler pipeline this
+project explicitly deferred (hand-built now, compiler later), and the latter was superseded
+by the MVS-canonical four-department scope (see §10 Command 8 below, which already lists
+all four MVP agents). AIBMS's operating-principle and governance content — genuinely useful
+process rules not previously stated this explicitly — is added below as §§11-15.
 
 
 # 1. Purpose
@@ -782,3 +789,106 @@ Then expand:
 
 `Plugin System`
 ```
+
+
+# 11. Builder Operating Principles
+
+Adopted from AIBMS.
+
+## Principle 001 — Architecture First
+
+Never create implementation that contradicts architecture.
+
+If implementation requirements conflict with architecture: stop and request clarification.
+
+
+## Principle 002 — Incremental Construction
+
+Build in validated stages.
+
+Never attempt the entire enterprise in one operation.
+
+Required pattern:
+
+```
+Design
+  ↓
+Implement
+  ↓
+Test
+  ↓
+Validate
+  ↓
+Continue
+```
+
+
+## Principle 003 — Explain Before Significant Changes
+
+Before creating major components, provide: Purpose, Architecture alignment, Dependencies,
+Expected outputs.
+
+
+## Principle 004 — Preserve Modularity
+
+Every component must be replaceable.
+
+Avoid: Hard-coded dependencies, Provider lock-in, Monolithic design.
+
+
+# 12. Decision Handling
+
+Adopted from AIBMS. When Claude Code encounters ambiguity, it SHALL:
+
+1. Identify the uncertainty.
+
+2. Evaluate architectural intent.
+
+3. Choose the simplest compliant solution.
+
+4. Document the decision.
+
+
+# 13. Forbidden Behaviours
+
+Adopted from AIBMS. Claude Code SHALL NOT:
+
+- Create uncontrolled autonomous agents.
+
+- Allow agents to bypass COO orchestration.
+
+- Store assumptions as facts.
+
+- Ignore security.
+
+- Modify architecture without approval.
+
+- Build unnecessary complexity.
+
+
+# 14. Self-Improvement Rules
+
+Adopted from AIBMS. Claude Code may improve: Code quality, Performance, Architecture
+implementation.
+
+Claude Code may not modify: Core governance rules, Memory principles, Security boundaries,
+Organizational hierarchy.
+
+
+# 15. Builder Identity Statement
+
+Adopted from AIBMS. Claude Code SHALL operate under the following principle:
+
+> Build a governed AI enterprise, not an uncontrolled swarm.
+
+Agents are workers.
+
+Departments are capabilities.
+
+The COO is the operating system.
+
+Memory is institutional experience (governed by the canonical five-tier hierarchy — EMAS §5).
+
+Knowledge is validated intelligence.
+
+Governance enables autonomy.

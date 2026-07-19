@@ -4,7 +4,16 @@
 
 # Department Operating Model Specification (DOMS)
 
-Version 1.0.0
+Version 1.1 — merged with content from Volume II (Organization Definition Language, ODL)
+and Volume X (Reference Architecture Specification, RAS) during the repository-documents
+reconciliation pass. ODL's generic department schema and lifecycle were judged redundant
+with this document's own (§5, §22-23) and were not imported; ODL's executive org chart and
+15-department catalogue, and RAS's four worked department examples, were genuinely new and
+are added below (§§28-30) as new closing sections. Note: RAS's worked examples use richer,
+multi-agent department rosters (e.g. Engineering: Software Architect, Developer, Tester,
+DevOps Engineer) that go well beyond the MVS-canonical single-agent-per-department MVP —
+treat them as illustrative post-MVP expansion, not the MVP target (see FATS for the MVP
+roster).
 
 
 # 1. Purpose
@@ -89,43 +98,31 @@ Departments SHALL evolve based on measurable performance and enterprise needs.
 # 4. Department Architecture
 
 ```
-`                Department`
+                Department
 
+                    │
 
-`                    │`
+            Department Leader
 
+                    │
 
-`            Department Leader`
+        ┌───────────┼───────────┐
 
+        ▼           ▼           ▼
 
-`                    │`
+  Capabilities   Policies    Knowledge
 
+        │
 
-`        ┌───────────┼───────────┐`
+ Capability Groups
 
+        │
 
-`        ▼           ▼           ▼`
+ Specialist Agents
 
+        │
 
-`  Capabilities   Policies    Knowledge`
-
-
-`        │`
-
-
-` Capability Groups`
-
-
-`        │`
-
-
-` Specialist Agents`
-
-
-`        │`
-
-
-` Tools + Resources`
+ Tools + Resources
 ```
 
 
@@ -134,49 +131,21 @@ Departments SHALL evolve based on measurable performance and enterprise needs.
 Every Department SHALL contain:
 
 ```
-`DepartmentID`
-
-
-`Name`
-
-
-`Purpose`
-
-
-`Leader`
-
-
-`Mission`
-
-
-`Capabilities`
-
-
-`Roles`
-
-
-`Agents`
-
-
-`Resources`
-
-
-`Policies`
-
-
-`Memory Domain`
-
-
-`Services Provided`
-
-
-`Dependencies`
-
-
-`Performance Metrics`
-
-
-`Lifecycle State`
+DepartmentID
+Name
+Purpose
+Leader
+Mission
+Capabilities
+Roles
+Agents
+Resources
+Policies
+Memory Domain
+Services Provided
+Dependencies
+Performance Metrics
+Lifecycle State
 ```
 
 
@@ -196,43 +165,19 @@ Enterprise complexity exceeds current structure.
 # 7. Department Creation Process
 
 ```
-`Capability Need Identified`
-
-
-`↓`
-
-
-`Business Case Created`
-
-
-`↓`
-
-
-`Capability Analysis`
-
-
-`↓`
-
-
-`Policy Review`
-
-
-`↓`
-
-
-`Leadership Assigned`
-
-
-`↓`
-
-
-`Resources Allocated`
-
-
-`↓`
-
-
-`Department Activated`
+Capability Need Identified
+  ↓
+Business Case Created
+  ↓
+Capability Analysis
+  ↓
+Policy Review
+  ↓
+Leadership Assigned
+  ↓
+Resources Allocated
+  ↓
+Department Activated
 ```
 
 
@@ -288,21 +233,12 @@ Example:
 Engineering Department:
 
 ```
-`Software Development`
-
-
-`Architecture`
-
-
-`Testing`
-
-
-`DevOps`
-
-
-`Infrastructure`
+Software Development
+Architecture
+Testing
+DevOps
+Infrastructure
 ```
-
 
 Each capability SHALL define:
 
@@ -341,18 +277,11 @@ Example:
 Security Department:
 
 ```
-`Security Architecture Agents`
-
-
-`Threat Analysis Agents`
-
-
-`Compliance Agents`
-
-
-`Incident Response Agents`
+Security Architecture Agents
+Threat Analysis Agents
+Compliance Agents
+Incident Response Agents
 ```
-
 
 Agent pools allow:
 
@@ -392,49 +321,21 @@ Services are accessed through the Enterprise Service Bus.
 Every Department SHALL operate through:
 
 ```
-`Receive Demand`
-
-
-`↓`
-
-
-`Analyze Requirement`
-
-
-`↓`
-
-
-`Allocate Capability`
-
-
-`↓`
-
-
-`Assign Agents`
-
-
-`↓`
-
-
-`Execute Work`
-
-
-`↓`
-
-
-`Review Quality`
-
-
-`↓`
-
-
-`Capture Learning`
-
-
-`↓`
-
-
-`Improve Capability`
+Receive Demand
+  ↓
+Analyze Requirement
+  ↓
+Allocate Capability
+  ↓
+Assign Agents
+  ↓
+Execute Work
+  ↓
+Review Quality
+  ↓
+Capture Learning
+  ↓
+Improve Capability
 ```
 
 
@@ -497,7 +398,8 @@ Closure criteria.
 
 # 18. Department Memory
 
-Each Department SHALL maintain departmental memory.
+Each Department SHALL maintain departmental memory (the "Department" tier of the canonical
+five-tier hierarchy — see EMAS §5).
 
 Department memory includes:
 
@@ -678,7 +580,100 @@ The following SHALL always be true:
 - No department creates uncontrolled knowledge.
 
 
-# 27. Design Philosophy
+# 27. Executive Layer Above Departments
+
+Adopted from ODL. Departments sit beneath an executive governance structure:
+
+```
+Board of Directors
+        │
+        ▼
+Director (CEO)
+        │
+        ▼
+Chief Operating Officer (COO)
+        │
+        ▼
+Enterprise Management Office
+        │
+        ├─────────────┬──────────────┬──────────────┐
+        ▼             ▼              ▼              ▼
+Departments      Shared Services   Governance   Innovation
+```
+
+Authority SHALL always flow downward. Accountability SHALL always flow upward.
+
+The Enterprise Management Office (EMO) supports executive operations and MAY contain, as
+sub-offices: Project Management Office, Human Resources, Enterprise Knowledge Office,
+Internal Audit, Risk Office, Financial Operations, Resource Operations. These sub-offices
+are not part of the MVS-canonical MVP — their responsibilities are covered by the MVP's
+Governance Layer (Security, Audit, Monitoring) and COO until enterprise scale justifies
+splitting them out.
+
+
+# 28. Standard Department Catalogue
+
+Adopted from ODL. The MVS-canonical MVP requires exactly four departments (Research,
+Engineering, Compliance, Operations — see MVS §3, FATS §8). At enterprise scale, The Company
+MAY grow toward this fuller catalogue; each entry names what the department owns:
+
+```
+Executive Office        — Enterprise governance, executive decision making, strategic planning
+Operations              — Execution, scheduling, coordination, monitoring, workflow optimization
+Project Management      — Projects, roadmaps, planning, milestones, reporting
+Enterprise Architecture — System design, technology strategy, reference/solution architecture
+Engineering             — Implementation, software, infrastructure, automation, testing, deployment
+Research & Intelligence — Fact finding, analysis, competitive intelligence, validation
+Data & AI               — Machine learning, LLM systems, RAG, knowledge graphs, evaluation
+Security                — Cybersecurity, threat modelling, identity, access control, cryptography
+Legal & Compliance      — Regulations, privacy, licensing, governance, contract analysis
+Quality Assurance       — Verification, validation, peer review, testing, quality metrics
+Documentation           — Technical writing, knowledge publication, standards, user docs
+Finance & Resources     — Budgets, cost optimisation, token accounting, compute allocation
+Human Resources         — Agent lifecycle, competency management, performance, training
+Enterprise Knowledge    — Corporate memory, knowledge governance, retrieval policies
+Innovation Laboratory   — Research initiatives, experimental workflows, prototypes
+```
+
+Every capability SHALL have exactly one owning Department; multiple Departments MAY consume
+a capability owned elsewhere (see §11 Capability Ownership).
+
+
+# 29. Worked Department Examples (post-MVP illustration)
+
+Adopted from RAS. These illustrate a more mature, multi-agent department structure — not
+the MVP target. Each department here has 3-4 named specialist agent roles, versus the MVP's
+one agent per department (FATS).
+
+## Engineering Department
+
+Capabilities: Software Development, Architecture, Testing, DevOps, Infrastructure.
+
+Agents: Software Architect, Developer, Tester, DevOps Engineer.
+
+
+## Legal & Compliance Department
+
+Capabilities: Regulatory Analysis, Contract Review, Privacy Assessment, Risk Evaluation.
+
+Agents: Legal Analyst, Compliance Officer, Privacy Specialist.
+
+
+## Research Department
+
+Capabilities: Information Discovery, Market Research, Scientific Analysis, Competitive Intelligence.
+
+Agents: Research Analyst, Data Analyst, Strategist.
+
+
+## Security Department
+
+Capabilities: Threat Analysis, Security Architecture, Risk Assessment, Incident Analysis.
+
+Agents: Security Analyst, Threat Specialist, Security Architect.
+
+
+# 30. Design Philosophy
 
 Departments are the organs of The Company.
 
@@ -699,4 +694,3 @@ It creates the right organizational structure to apply intelligence where it cre
 The Company is not a swarm.
 
 It is an adaptive enterprise.
-

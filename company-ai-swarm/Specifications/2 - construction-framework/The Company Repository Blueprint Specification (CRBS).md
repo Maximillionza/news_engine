@@ -873,7 +873,34 @@ The AI Builder creates the repository in this order:
 ```
 
 
-# 26. Completion Criteria
+# 26. Reconciliation Note — Enterprise Repository Architecture Specification (ERAS-R)
+
+A second repository-layout document (ERAS-R) was reviewed during the repository-documents
+reconciliation pass and judged non-authoritative — this document (CRBS) remains the
+canonical repository blueprint, already reflected in the actual repository structure.
+Two of ERAS-R's differences are worth recording:
+
+1. **Top-level layout**: ERAS-R proposed additional top-level directories not present here
+   (`architecture/`, `packages/`, `models/`, `scripts/`) and grouped agent directories under
+   `engineering/research/compliance/review` rather than this document's `active/` +
+   department-named subfolders. Not adopted — CRBS's structure is authoritative.
+
+2. **Memory directory layout — explicitly rejected**: ERAS-R proposed
+   `memory/{working, episodic, semantic, procedural}`. This SHALL NOT be used. The canonical
+   memory tiers are EMAS's five: `memory/{working, project, department, enterprise,
+   historical}`, already reflected in this repository. ERAS-R's four-tier naming was one of
+   at least five incompatible memory taxonomies found across the source corpus during
+   reconciliation; EMAS's was selected as canonical and every other document's memory
+   references were normalized to match it.
+
+ERAS-R's per-agent internal file breakdown (`identity.yaml`, `capabilities.yaml`,
+`tools.yaml`, `memory-policy.yaml`, `prompts/`, `logic/`, `tests/`) is a more granular
+alternative to this document's single `agent.yaml` (§8). Either is valid; the repository as
+built uses the simpler single-file form. Split into separate files if a given agent's
+definition grows large enough to warrant it.
+
+
+# 27. Completion Criteria
 
 The Repository Blueprint is complete when:
 

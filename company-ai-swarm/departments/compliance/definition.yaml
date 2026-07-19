@@ -7,13 +7,15 @@ department:
   purpose: "Validate governance, regulatory, and risk requirements."
   leader: ""
   mission: "Identify applicable obligations and assess risk before and during execution."
+  # Aligned to agents/active/compliance_agent/agent.yaml (Phase 5 capability-naming fix,
+  # see departments/research/definition.yaml for the full explanation).
   capabilities:
-    - regulatory_analysis
+    - policy_analysis
     - risk_identification
-    - policy_review
   roles: []
+  # Value must match agents/active/compliance_agent/agent.yaml's identity.id exactly.
   agents:
-    - compliance_agent
+    - compliance_agent_001
   resources: []
   policies: []
   memory_domain: department

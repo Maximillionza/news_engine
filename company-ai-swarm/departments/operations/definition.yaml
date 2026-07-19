@@ -8,13 +8,16 @@ department:
   purpose: "Process management, quality assurance, and execution monitoring."
   leader: ""
   mission: "Validate outputs and monitor workflow execution across the enterprise."
+  # Aligned to agents/active/review_agent/agent.yaml (Phase 5 capability-naming fix,
+  # see departments/research/definition.yaml for the full explanation).
   capabilities:
     - validation
-    - quality_review
-    - workflow_monitoring
+    - evaluation
+    - improvement_recommendations
   roles: []
+  # Value must match agents/active/review_agent/agent.yaml's identity.id exactly.
   agents:
-    - review_agent
+    - review_agent_001
   resources: []
   policies: []
   memory_domain: department

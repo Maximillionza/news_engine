@@ -1,0 +1,13 @@
+component:
+  name: plugin_service
+  type: service
+  owner: ""
+  version: "0.1.0"
+  dependencies:
+    - shared.db
+    - shared.contracts
+    - security_service
+  permissions: []
+  tests:
+    - Tests/integration/test_plugin_service.py
+  status: active

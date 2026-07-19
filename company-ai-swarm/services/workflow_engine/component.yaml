@@ -1,0 +1,19 @@
+component:
+  name: workflow_engine
+  type: service
+  owner: ""
+  version: "0.3.0"
+  dependencies:
+    - orchestrator.department_registry
+    - orchestrator.allocator
+    - orchestrator.router
+    - orchestrator.evaluator
+    - agent_runtime
+    - shared.model_gateway
+    - knowledge_service
+  permissions: []
+  tests:
+    - Tests/integration/test_workflow_orchestration.py
+    - Tests/integration/test_knowledge_graph_review.py
+    - Tests/integration/test_escalation_policy.py
+  status: active

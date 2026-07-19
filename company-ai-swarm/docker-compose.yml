@@ -1,0 +1,25 @@
+# Development infrastructure for The Company.
+# Per Specifications/3 - execution-framework/Claude Code Bootstrap Package (CCBP).md sec.6:
+# PostgreSQL is the operational database. Vector and graph store services are added in
+# later phases (Phase 2 - Data Layer & Memory Substrate) once the schemas that need them exist.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: the-company-postgres
+    environment:
+      POSTGRES_USER: the_company
+      POSTGRES_PASSWORD: development_only_change_in_production
+      POSTGRES_DB: the_company
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U the_company"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

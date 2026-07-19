@@ -1,0 +1,11 @@
+component:
+  name: web_interface
+  type: app
+  owner: ""
+  version: "0.1.0"
+  dependencies:
+    - api_gateway
+  permissions: []
+  tests:
+    - Tests/integration/test_api_gateway_dashboard.py
+  status: active

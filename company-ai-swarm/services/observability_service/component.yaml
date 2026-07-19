@@ -1,0 +1,13 @@
+component:
+  name: observability_service
+  type: service
+  owner: ""
+  version: "0.2.0"
+  dependencies:
+    - orchestrator.decisions
+    - orchestrator.escalations
+  permissions: []
+  tests:
+    - Tests/integration/test_communication_backbone.py
+    - Tests/integration/test_observability_platform.py
+  status: active

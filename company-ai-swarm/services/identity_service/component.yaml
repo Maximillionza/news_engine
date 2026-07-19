@@ -1,0 +1,11 @@
+component:
+  name: identity_service
+  type: service
+  owner: ""
+  version: "0.1.0"
+  dependencies:
+    - shared.db
+  permissions: []
+  tests:
+    - Tests/security/test_mvs_007_security_validation.py
+  status: active

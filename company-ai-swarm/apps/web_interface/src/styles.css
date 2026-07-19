@@ -1,0 +1,327 @@
+/* The Company dashboard. Day palette from the approved mockups; .night overrides swap the
+   scene into the after-6pm look (dark sky, dimmed facade, lit windows for active offices). */
+
+:root {
+  --page: #f7f5ef;
+  --card: #ffffff;
+  --card-border: #d6d2c6;
+  --ink: #2c2c2a;
+  --ink-2: #5f5e5a;
+  --ink-3: #888780;
+  --sky: #d6eaf5;
+  --skyline: #c3d5e0;
+  --skyline-win: #abc2cf;
+  --facade: #c9c5ba;
+  --facade-shade: #b0ac9f;
+  --slab: #a8a295;
+  --interior: #f3efe4;
+  --interior-coo: #ece8f6;
+  --interior-dim: #f3efe4;
+  --plate: #55524c;
+  --plate-text: #f5f2ea;
+  --floor-wood: #dcbc8f;
+  --floor-line: #cba678;
+  --wall: #bbb49f;
+  --road: #8a8880;
+  --sidewalk: #c2bfb4;
+  --working: #639922;
+  --idle: #888780;
+  --accent: #534ab7;
+}
+
+.app.night {
+  --sky: #1f2b40;
+  --skyline: #2c3b54;
+  --skyline-win: #e8c86e;
+  --facade: #8f8c82;
+  --facade-shade: #726f66;
+  --slab: #6e6a60;
+  --interior: #565349;
+  --interior-dim: #565349;
+  --interior-lit: #f6e3ae;
+  --interior-coo: #4f4a66;
+  --wall: #7d7767;
+  --floor-wood: #b39468;
+  --floor-line: #9e8158;
+  --road: #55534e;
+  --sidewalk: #83817a;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; height: 100%; }
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--page);
+  color: var(--ink);
+}
+
+.app { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ---- top nav ---- */
+.topnav {
+  margin: 12px auto 4px;
+  display: flex;
+  gap: 8px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 22px;
+  padding: 6px 14px;
+  z-index: 30;
+}
+.topnav button {
+  position: relative;
+  border: none;
+  background: none;
+  padding: 6px 10px;
+  border-radius: 14px;
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 17px;
+  line-height: 1;
+}
+.topnav button:hover { background: var(--page); color: var(--ink); }
+.topnav button.active { background: var(--accent); color: #fff; }
+.badge {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  background: #e24b4a;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 10px;
+  min-width: 15px;
+  height: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+}
+
+/* ---- layout ---- */
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 230px minmax(420px, 1fr) 230px;
+  gap: 14px;
+  padding: 8px 16px 16px;
+  min-height: 0;
+}
+.side { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.center { position: relative; min-height: 0; display: flex; flex-direction: column; }
+.scene-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  min-height: 0;
+}
+.scene-wrap svg { width: 100%; height: 100%; display: block; }
+.center.faded .scene-wrap { filter: blur(3px) brightness(0.6); pointer-events: none; }
+
+.scene-title {
+  text-align: center;
+  font-size: 17px;
+  font-weight: 600;
+  padding: 4px 0 8px;
+}
+.scene-title .back {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 400;
+  float: left;
+  padding: 4px 8px;
+}
+.scene-title .back:hover { color: var(--ink); }
+.scene-title .clock { float: right; font-size: 12px; font-weight: 400; color: var(--ink-2); padding: 4px 8px; }
+
+/* ---- info boxes ---- */
+.infobox {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.infobox:hover { border-color: var(--accent); }
+.infobox h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--card-border);
+  padding-bottom: 6px;
+}
+.infobox .row { font-size: 12px; color: var(--ink-2); padding: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.infobox .more { font-size: 11px; color: var(--ink-3); margin-top: 6px; }
+
+/* ---- SVG agents ---- */
+.svg-clickable { cursor: pointer; }
+.svg-clickable:hover .floor-hover { stroke: var(--accent); stroke-width: 2; }
+.agent-working { animation: bob 1.3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.agent-working.d2 { animation-duration: 1.7s; animation-delay: 0.3s; }
+.agent-working.d3 { animation-duration: 1.5s; animation-delay: 0.6s; }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.6px); } }
+.zzz { animation: zzz 2.6s ease-out infinite; transform-box: fill-box; opacity: 0; }
+.zzz.z2 { animation-delay: 0.8s; }
+.zzz.z3 { animation-delay: 1.6s; }
+@keyframes zzz { 0% { opacity: 0; transform: translate(0, 0); } 25% { opacity: 1; } 100% { opacity: 0; transform: translate(7px, -13px); } }
+.dot-working { animation: pulse 2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.cloud { animation: drift 14s ease-in-out infinite alternate; transform-box: fill-box; }
+@keyframes drift { from { transform: translateX(-8px); } to { transform: translateX(10px); } }
+
+/* ---- boot animation ---- */
+.boot-cam { animation: bootcam 4.2s cubic-bezier(0.45, 0, 0.25, 1) forwards; transform-origin: 50% 12%; }
+@keyframes bootcam {
+  0% { transform: scale(2.6) translateY(10%); }
+  22% { transform: scale(2.6) translateY(10%); }
+  100% { transform: scale(1) translateY(0); }
+}
+.boot-title {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--page) 55%, transparent);
+  animation: boottitle 4.2s ease forwards;
+  pointer-events: none;
+  z-index: 5;
+}
+@keyframes boottitle { 0% { opacity: 1; } 45% { opacity: 1; } 75% { opacity: 0; } 100% { opacity: 0; display: none; } }
+
+/* ---- overlays (COO chat, panels, expanded boxes) ---- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+.panel {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  width: min(560px, 92%);
+  max-height: 88%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+.panel header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--card-border);
+  font-weight: 600;
+  font-size: 14px;
+}
+.panel header button { border: none; background: none; font-size: 16px; cursor: pointer; color: var(--ink-2); }
+.panel .body { padding: 10px 16px; overflow-y: auto; flex: 1; }
+.list-item { padding: 9px 4px; border-bottom: 1px solid var(--page); font-size: 12.5px; }
+.list-item .meta { color: var(--ink-3); font-size: 11px; margin-top: 3px; }
+.list-item .actions { margin-top: 6px; display: flex; gap: 8px; }
+.list-item .actions button {
+  font-size: 11.5px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: var(--card);
+  cursor: pointer;
+}
+.list-item .actions button.approve { background: #639922; border-color: #639922; color: #fff; }
+.list-item .actions button.reject { background: #fff; border-color: #e24b4a; color: #e24b4a; }
+.list-item .actions button.implement { background: var(--accent); border-color: var(--accent); color: #fff; }
+.status-pill { display: inline-block; font-size: 10.5px; padding: 1px 8px; border-radius: 8px; background: var(--page); color: var(--ink-2); margin-left: 6px; }
+.status-pill.pending { background: #faeeda; color: #854f0b; }
+.status-pill.approved { background: #eaf3de; color: #3b6d11; }
+.status-pill.implemented { background: #eeedfe; color: #3c3489; }
+.status-pill.rejected { background: #fcebeb; color: #a32d2d; }
+.empty { color: var(--ink-3); font-size: 12.5px; text-align: center; padding: 24px 0; }
+
+/* ---- COO chat ---- */
+.chat-log { display: flex; flex-direction: column; gap: 8px; }
+.chat-msg { max-width: 82%; padding: 8px 12px; border-radius: 12px; font-size: 12.5px; white-space: pre-wrap; word-break: break-word; }
+.chat-msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+.chat-msg.coo { align-self: flex-start; background: var(--page); border-bottom-left-radius: 4px; }
+.chat-archived { text-align: center; font-size: 11px; color: var(--ink-3); padding-bottom: 4px; }
+.chat-input { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--card-border); align-items: center; }
+.chat-input input[type="text"] {
+  flex: 1;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  outline: none;
+}
+.chat-input input[type="text"]:focus { border-color: var(--accent); }
+.chat-input button {
+  border: none;
+  border-radius: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  background: var(--accent);
+  color: #fff;
+}
+.chat-input .attach { background: var(--page); color: var(--ink-2); }
+.attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 16px;
+  padding: 6px 10px;
+  background: var(--page);
+  border: 1px dashed var(--card-border);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.attachment-chip button { border: none; background: none; cursor: pointer; color: var(--ink-3); }
+.coo-avatar { display: flex; justify-content: center; padding: 8px 0 0; }
+
+/* ---- settings ---- */
+.settings { max-width: 460px; margin: 20px auto; width: 100%; }
+.settings .field { display: flex; justify-content: space-between; align-items: center; padding: 12px 4px; border-bottom: 1px solid var(--page); font-size: 13px; }
+.settings select, .settings input[type="text"] {
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  background: var(--card);
+}
+.settings .buttons { display: flex; gap: 10px; justify-content: flex-end; padding: 16px 4px 4px; }
+.settings .buttons button { padding: 8px 18px; border-radius: 10px; border: 1px solid var(--card-border); background: var(--card); cursor: pointer; font-size: 13px; }
+.settings .buttons button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.switch { appearance: none; width: 38px; height: 21px; border-radius: 12px; background: var(--card-border); position: relative; cursor: pointer; transition: background 0.15s; }
+.switch:checked { background: var(--working); }
+.switch::after { content: ""; position: absolute; top: 2.5px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left 0.15s; }
+.switch:checked::after { left: 19px; }
+
+.toast {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: #fff;
+  font-size: 12.5px;
+  padding: 8px 18px;
+  border-radius: 10px;
+  z-index: 50;
+  animation: toastfade 3.5s forwards;
+}
+@keyframes toastfade { 0% { opacity: 0; } 8% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+
+.legend { display: flex; gap: 16px; justify-content: center; font-size: 11.5px; color: var(--ink-2); padding: 6px 0 0; }
+.legend .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }

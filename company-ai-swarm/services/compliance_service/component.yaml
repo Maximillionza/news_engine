@@ -1,0 +1,12 @@
+component:
+  name: compliance_service
+  type: service
+  owner: ""
+  version: "0.1.0"
+  dependencies:
+    - shared.db
+    - orchestrator.department_registry
+  permissions: []
+  tests:
+    - Tests/integration/test_compliance_intelligence.py
+  status: active

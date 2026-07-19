@@ -1,5 +1,11 @@
 # Department definition. Schema: Specifications/1 - enterprise-architecture/Department Operating Model Specification (DOMS).md
 # MVP department — canonical per MVP Validation Specification (MVS).
+# Capabilities aligned to agents/active/research_agent/agent.yaml during IMPLEMENTATION_PLAN.md
+# Phase 5: department.capabilities and agent.capabilities used different naming conventions
+# (e.g. "market_research" vs "research") which broke capability-matching in the Department
+# Selection Engine (services/orchestrator/allocator.py). agent.yaml is the operational ground
+# truth already loaded by agent_runtime/registry.py, so department definitions were corrected
+# to match it, not the other way around.
 
 department:
   id: research
@@ -8,12 +14,14 @@ department:
   leader: ""
   mission: "Acquire and analyse information required by enterprise objectives."
   capabilities:
-    - market_research
-    - data_analysis
-    - report_generation
+    - research
+    - analysis
+    - reporting
   roles: []
+  # Value must match agents/active/research_agent/agent.yaml's identity.id exactly -
+  # AgentRegistry (agent_runtime/registry.py) keys agents by identity.id, not folder name.
   agents:
-    - research_agent
+    - research_agent_001
   resources: []
   policies: []
   memory_domain: department

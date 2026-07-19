@@ -1,0 +1,17 @@
+component:
+  name: simulation_service
+  type: service
+  owner: ""
+  version: "0.1.0"
+  dependencies:
+    - shared.db
+    - shared.model_gateway
+    - agent_runtime
+    - workflow_engine
+    - identity_service
+    - security_service
+    - observability_service
+  permissions: []
+  tests:
+    - Tests/integration/test_digital_twin_and_simulation.py
+  status: active

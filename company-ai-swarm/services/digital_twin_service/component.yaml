@@ -1,0 +1,14 @@
+component:
+  name: digital_twin_service
+  type: service
+  owner: ""
+  version: "0.1.0"
+  dependencies:
+    - shared.db
+    - agent_runtime
+    - orchestrator.department_registry
+    - orchestrator.decisions
+  permissions: []
+  tests:
+    - Tests/integration/test_digital_twin_and_simulation.py
+  status: active

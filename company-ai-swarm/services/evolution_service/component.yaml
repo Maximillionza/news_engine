@@ -1,0 +1,17 @@
+component:
+  name: evolution_service
+  type: service
+  owner: ""
+  version: "0.1.0"
+  dependencies:
+    - shared.db
+    - orchestrator.escalation
+    - orchestrator.escalations
+    - simulation_service
+    - memory_service
+    - security_service
+  permissions:
+    - "evolution:change_proposal:approve"
+  tests:
+    - Tests/integration/test_evolution_engine.py
+  status: active

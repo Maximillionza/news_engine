@@ -1,0 +1,16 @@
+component:
+  name: agent_runtime
+  type: service
+  owner: ""
+  version: "0.1.0"
+  dependencies:
+    - shared.contracts
+    - shared.model_gateway
+    - security_service
+    - memory_service
+    - observability_service
+  permissions:
+    - "agent_execution:*:execute"
+  tests:
+    - Tests/integration/test_agent_runtime.py
+  status: active

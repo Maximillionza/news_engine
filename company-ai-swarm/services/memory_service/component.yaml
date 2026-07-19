@@ -1,0 +1,24 @@
+component:
+  name: memory_service
+  type: service
+  owner: ""
+  version: "0.2.0"
+  dependencies:
+    - shared.db
+    - shared.vector_store
+    - security_service
+  tests:
+    - Tests/integration/test_memory_substrate.py
+    - Tests/integration/test_lesson_promotion.py
+  permissions:
+    - "memory:working:read"
+    - "memory:working:write"
+    - "memory:project:read"
+    - "memory:project:write"
+    - "memory:department:read"
+    - "memory:department:write"
+    - "memory:enterprise:read"
+    - "memory:enterprise:write"
+    - "memory:historical:read"
+    - "memory:historical:write"
+  status: active
