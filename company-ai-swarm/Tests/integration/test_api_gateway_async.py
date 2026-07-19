@@ -205,3 +205,34 @@ def test_chat_third_round_forces_proceed_and_enqueues() -> None:
     assert "round one" in result["objective"]
     assert "round two" in result["objective"]
     assert "round three" in result["objective"]
+
+
+def test_chat_returns_502_when_sufficiency_check_raises(monkeypatch) -> None:
+    """Reviewer-flagged gap from Task 6 (Documentation/plans/
+    2026-07-19-dynamic-department-routing-design.md Section 4's error handling requirement):
+    a sufficiency-check *infrastructure* failure (the model gateway's generate() raising on a
+    network/timeout/provider error) must surface as a distinct 502 - not get silently folded
+    into either a "sufficient" or "insufficient" verdict. dashboard_api.chat_send's
+    try/except around coo.assess_sufficiency(...) (apps/api_gateway/dashboard_api.py) was
+    reviewed as correct but no test actually drove this path.
+
+    Monkeypatches assess_sufficiency directly on `gateway_main._coo` - the same COOOrchestrator
+    instance main.py passes into `dashboard_api.build_router(coo=_coo, ...)`, so patching the
+    instance in place reaches the router's closure too, without needing a FastAPI dependency
+    override (coo is a module-level singleton here, not a Depends-injected value; see
+    main.py's comment on _queue_handler for why). This is narrower than forcing the underlying
+    ModelGateway/provider to fail, but exercises the same boundary chat_send actually guards:
+    "assess_sufficiency raised". pytest's monkeypatch fixture restores the original bound
+    method after the test, so this doesn't leak into the other tests in this file that share
+    the same singleton and persistent dev database."""
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated model gateway failure")
+
+    monkeypatch.setattr(gateway_main._coo, "assess_sufficiency", _boom)
+
+    client = _client()
+    response = client.post("/chat", headers=HEADERS, json={"message": "trigger infra failure"})
+
+    assert response.status_code == 502
+    assert "simulated model gateway failure" in response.json()["detail"]
