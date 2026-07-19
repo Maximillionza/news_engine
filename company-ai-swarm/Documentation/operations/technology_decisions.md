@@ -490,3 +490,26 @@ structure. Services live at `services/<service_name>/` and apps at `apps/<app_na
 as CRBS defines; `pyproject.toml`'s `pythonpath` is set to `services/` so cross-service
 imports (e.g. `from shared.contracts import RequestContract`) work without a `src/` layer
 CRBS never specified.
+
+## Department classification and COO sufficiency check (2026-07-19 design doc)
+
+`orchestrator/planner.py`'s keyword-overlap department matcher is gone - relocated behind a
+swappable `DepartmentClassifier` interface (`orchestrator/classification.py`), exactly
+parallel to `shared/model_gateway.py`'s `ModelProvider` pattern. `KeywordDepartmentClassifier`
+(the exact old logic, unchanged) is still the dev/test default; `LLMDepartmentClassifier`
+(real Claude-backed routing) is selected via `DEPARTMENT_CLASSIFIER=llm`, mirroring
+`MODEL_PROVIDER`. `COOOrchestrator.receive_objective()` now makes exactly one classification
+call per objective (previously two redundant keyword-matching calls - harmless when free,
+wasteful once real).
+
+`orchestrator/intake.py`'s `assess_sufficiency()` adds a COO-level check, chat-only (`POST
+/objectives` and `POST /chat/sync` don't use it): round 1 asks a normal clarifying question if
+detail is lacking; round 2 reframes as an explicit "proceed as-is or give more detail" choice;
+round 3 is a hard cap enforced in code (no model call), guaranteeing the loop terminates.
+`DashboardChatMessage.is_clarifying_question` (new column) is how `dashboard_api.py` counts
+which round it's in.
+
+Both new model calls reuse whatever `ModelGateway`/provider is already configured (Sonnet 5 by
+default per `SDK_MIGRATION_PLAN.md` Phase C) - no new tiering axis. Real model tier selection,
+Department Head triage, dynamic agent selection, and token budget management remain
+deliberately out of scope - see `2026-07-19-dynamic-department-routing-design.md` Section 6.

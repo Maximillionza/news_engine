@@ -1,6 +1,8 @@
 # Design: COO Intent Understanding & Sufficiency Check (Phase 1 of Dynamic Model Selection)
 
-**Status:** Approved design, not yet implemented.
+**Status:** Implemented. See Documentation/plans/
+2026-07-19-dynamic-department-routing-implementation-plan.md for the task-by-task build log
+(commit history from this plan's Task 1 through Task 8).
 **Date:** 2026-07-19
 **Relationship to Documentation/plans/SDK_MIGRATION_PLAN.md:** independent of that plan. This
 originated from a request to make the swarm's model selection dynamic (COO picks a starting
