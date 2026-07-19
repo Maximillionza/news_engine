@@ -34,6 +34,7 @@ from agent_runtime.registry import AgentRegistry
 from identity_service.models import EntityType
 from identity_service.repository import create_identity, get_identity
 from observability_service.telemetry import TelemetrySink
+from orchestrator.classification import create_classifier_from_env
 from orchestrator.controller import COOOrchestrator, NoMatchingDepartmentError, WorkflowObjectiveOutcome
 from orchestrator.decisions import get_decision
 from orchestrator.department_registry import DepartmentRegistry
@@ -67,6 +68,10 @@ _coo = COOOrchestrator(
     agent_registry=_agent_registry,
     model_gateway=_model_gateway,
     telemetry=_telemetry,
+    # DEPARTMENT_CLASSIFIER env var selects keyword (default, no credentials) / llm (real
+    # Claude-backed routing) - see orchestrator/classification.py and Documentation/plans/
+    # 2026-07-19-dynamic-department-routing-design.md Section 3.3.
+    classifier=create_classifier_from_env(_model_gateway),
 )
 
 

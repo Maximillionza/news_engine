@@ -47,10 +47,10 @@ from memory_service.repository import write_memory
 from observability_service.telemetry import TelemetrySink
 from orchestrator import decisions, escalations
 from orchestrator.allocator import select_agent
+from orchestrator.classification import DepartmentClassifier, KeywordDepartmentClassifier
 from orchestrator.department_registry import DepartmentDefinition, DepartmentRegistry
 from orchestrator.escalation import EscalationCondition
 from orchestrator.evaluator import OutcomeValidation, validate_outcome
-from orchestrator.planner import TaskProfile, analyze_objective, select_all_matching_departments
 from orchestrator.router import dispatch
 from security_service.audit import write_audit_record
 from shared.model_gateway import ModelGateway
@@ -61,6 +61,20 @@ from workflow_engine.models import WorkflowRun
 
 class NoMatchingDepartmentError(Exception):
     pass
+
+
+@dataclass
+class TaskProfile:
+    """Replaces orchestrator/planner.py's TaskProfile (Documentation/plans/
+    2026-07-19-dynamic-department-routing-design.md Section 3.3) - same fields except
+    match_score is dropped (a keyword-overlap count with no LLM-classification equivalent;
+    confirmed unused outside planner.py before removing it)."""
+
+    task_id: str
+    objective: str
+    complexity_level: str
+    matched_department: DepartmentDefinition | None
+    reasoning: str
 
 
 @dataclass
@@ -96,12 +110,14 @@ class COOOrchestrator:
         agent_registry: AgentRegistry,
         model_gateway: ModelGateway,
         telemetry: TelemetrySink | None = None,
+        classifier: DepartmentClassifier = KeywordDepartmentClassifier(),
     ) -> None:
         self.coo_id = coo_id
         self._departments = department_registry
         self._agents = agent_registry
         self._model_gateway = model_gateway
         self._telemetry = telemetry
+        self._classifier = classifier
 
     def receive_objective(
         self, session: Session, objective: str, *, required_output: str
@@ -109,40 +125,65 @@ class COOOrchestrator:
         decision_id = f"DEC-{uuid4().hex[:8]}"
 
         # Understand Intent -> Classify Task -> Assess Complexity -> Identify Capabilities
-        # -> Select Departments. Phase 6: an objective can now match more than one
-        # department (select_all_matching_departments) - if it matches exactly one, this
-        # falls through to the unchanged Phase 5 single-agent path below.
+        # -> Select Departments. One classification call (Documentation/plans/
+        # 2026-07-19-dynamic-department-routing-design.md Section 3.3) replaces what used
+        # to be two separate keyword-matching calls (select_all_matching_departments() then,
+        # for the single-department path, a second internal match inside analyze_objective())
+        # - wasteful even when both were free, and actively costly now that a real classifier
+        # may make a network call. Both the multi-department decision and the
+        # single-department TaskProfile are derived from this one result.
         #
-        # Phase 8 fix: a lone match on "operations" (the Review Agent's department) must
-        # NOT take that single-agent shortcut - it would dispatch the original objective
-        # straight to the Review Agent as if it were primary work, contradicting
-        # review_agent/agent.yaml's own mission ("does not perform the original work it
-        # reviews"). Found while writing this phase's Gate Integrity Check test: an
-        # "operations only" objective is exactly the case that check needs to exercise, and
-        # the pre-Phase-8 routing had no path to it at all. Routed through the Workflow
-        # Engine instead, same as any other multi-department match, so it goes through the
-        # review-only branch (workflow_engine/engine.py) instead of a raw dispatch.
-        matched_departments = select_all_matching_departments(objective, self._departments)
+        # Phase 8 fix (unchanged): a lone match on "operations" (the Review Agent's
+        # department) must NOT take the single-agent shortcut - it would dispatch the
+        # original objective straight to the Review Agent as if it were primary work,
+        # contradicting review_agent/agent.yaml's own mission ("does not perform the
+        # original work it reviews"). Routed through the Workflow Engine instead, same as
+        # any other multi-department match.
+        try:
+            classification = self._classifier.classify(objective, self._departments)
+        except Exception as exc:
+            # Mirrors dispatch()'s and execute_workflow()'s existing failure handling further
+            # down this method (and in _receive_multi_department_objective) - a classifier
+            # failure must leave the same audit trail (Decision Record + TECHNICAL_FAILURE
+            # escalation) any other technical failure does, not silently propagate with
+            # nothing written. Found during this plan's self-review: the first draft let this
+            # raise before any record existed at all.
+            decisions.write_decision(
+                session,
+                id=decision_id,
+                objective=objective,
+                reasoning=f"Classification failed: {type(exc).__name__}: {exc}",
+                chosen_action="reject: classification failed",
+            )
+            escalations.write_escalation(
+                session,
+                condition=EscalationCondition.TECHNICAL_FAILURE,
+                reasoning=f"{type(exc).__name__}: {exc}",
+                decision_id=decision_id,
+                is_technical_failure=True,
+            )
+            raise
+
+        matched_departments = classification.matched_departments
         routes_through_workflow_engine = len(matched_departments) > 1 or (
             len(matched_departments) == 1 and matched_departments[0].id == REVIEW_DEPARTMENT_ID
         )
 
         if not matched_departments:
-            task_profile = analyze_objective(objective, self._departments)
             decisions.write_decision(
                 session,
                 id=decision_id,
                 objective=objective,
-                reasoning=task_profile.reasoning,
+                reasoning=classification.reasoning,
                 chosen_action="reject: no matching department",
             )
             escalations.write_escalation(
                 session,
                 condition=EscalationCondition.NO_MATCHING_DEPARTMENT,
-                reasoning=task_profile.reasoning,
+                reasoning=classification.reasoning,
                 decision_id=decision_id,
             )
-            raise NoMatchingDepartmentError(task_profile.reasoning)
+            raise NoMatchingDepartmentError(classification.reasoning)
 
         if routes_through_workflow_engine:
             return self._receive_multi_department_objective(
@@ -153,7 +194,15 @@ class COOOrchestrator:
                 matched_departments=matched_departments,
             )
 
-        task_profile = analyze_objective(objective, self._departments)
+        task_profile = TaskProfile(
+            task_id=f"TSK-{uuid4().hex[:8]}",
+            objective=objective,
+            # Fixed default - real complexity scoring is deferred (design doc Section 2);
+            # unchanged from orchestrator/planner.py's original placeholder.
+            complexity_level="Level 2 Standard",
+            matched_department=matched_departments[0],
+            reasoning=classification.reasoning,
+        )
 
         # Select Agents
         allocation = select_agent(task_profile.matched_department, self._agents)
