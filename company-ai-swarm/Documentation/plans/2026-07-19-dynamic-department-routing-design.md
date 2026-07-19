@@ -237,7 +237,7 @@ before removing it.
 |---|---|---|
 | Sufficiency call: network/timeout/provider error | `POST /chat` | Distinct error response - not silently swallowed into either sufficient/insufficient branch. |
 | Sufficiency call: unparseable JSON | `POST /chat` | Fail toward `sufficient=False`, generic fallback clarifying question. |
-| Classifier call: any exception | Queue worker (`receive_objective()`) | No new mechanism needed - `queue_worker.py`'s existing catch-all marks the objective `failed`, visible via `GET /objectives/{id}/result`. |
+| Classifier call: any exception | `receive_objective()` | Wrapped the same way `dispatch()`/`execute_workflow()` already are elsewhere in this method: writes a Decision Record + `TECHNICAL_FAILURE` escalation, then re-raises. The re-raise still reaches `queue_worker.py`'s existing catch-all, which marks the objective `failed` (visible via `GET /objectives/{id}/result`) - but now with a full audit trail instead of nothing. (Caught during the implementation plan's self-review - the first draft let this propagate with no record written at all.) |
 | Classifier: empty result | `receive_objective()` | `NoMatchingDepartmentError`, unchanged from today. |
 | Classifier: hallucinated department ID | `classify_objective()` | Dropped before use, not trusted. |
 
