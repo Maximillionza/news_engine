@@ -136,3 +136,19 @@ class TestObjectiveExecutionMVS001:
         rejected = [r for r in all_records if r.chosen_action.startswith("reject")]
         assert len(rejected) == 1
         assert rejected[0].objective == "xyz qqq zzz"
+
+
+def test_assess_sufficiency_delegates_to_intake_with_configured_departments(coo: COOOrchestrator) -> None:
+    """COOOrchestrator.assess_sufficiency() is a thin wrapper - this proves it actually
+    reaches a real model_gateway call and returns a SufficiencyAssessment, using the same
+    StubModelProvider-backed COO every other test in this file builds. StubModelProvider's
+    fixed text isn't parseable JSON, so this exercises the 'fails toward insufficient with
+    fallback question' path - a real assertion, not a placeholder."""
+
+    from orchestrator.intake import FALLBACK_CLARIFYING_QUESTION, SufficiencyAssessment
+
+    result = coo.assess_sufficiency("Do something", [], round_number=1)
+
+    assert isinstance(result, SufficiencyAssessment)
+    assert result.sufficient is False
+    assert result.clarifying_question == FALLBACK_CLARIFYING_QUESTION

@@ -45,7 +45,7 @@ from memory_service.models import MemoryTier, MemoryType
 from memory_service.promotion import request_promotion
 from memory_service.repository import write_memory
 from observability_service.telemetry import TelemetrySink
-from orchestrator import decisions, escalations
+from orchestrator import decisions, escalations, intake
 from orchestrator.allocator import select_agent
 from orchestrator.classification import DepartmentClassifier, KeywordDepartmentClassifier
 from orchestrator.department_registry import DepartmentDefinition, DepartmentRegistry
@@ -118,6 +118,18 @@ class COOOrchestrator:
         self._model_gateway = model_gateway
         self._telemetry = telemetry
         self._classifier = classifier
+
+    def assess_sufficiency(
+        self, objective: str, recent_messages: list[tuple[str, str]], *, round_number: int
+    ) -> intake.SufficiencyAssessment:
+        """Documentation/plans/2026-07-19-dynamic-department-routing-design.md Section 3.2 -
+        thin delegation to orchestrator/intake.py, keeping ModelGateway access encapsulated
+        inside COOOrchestrator (the same discipline this class already applies to
+        receive_objective()'s use of self._model_gateway)."""
+
+        return intake.assess_sufficiency(
+            self._model_gateway, objective, recent_messages, self._departments, round_number
+        )
 
     def receive_objective(
         self, session: Session, objective: str, *, required_output: str

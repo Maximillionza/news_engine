@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from evolution_service.models import ChangeProposal, ProposalStatus
@@ -78,6 +78,11 @@ class DashboardChatMessage(Base):
     role: Mapped[str] = mapped_column(String, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     decision_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Documentation/plans/2026-07-19-dynamic-department-routing-design.md Section 3.2: set
+    # True on "coo" replies written by the sufficiency check, so dashboard_api.py can count
+    # trailing consecutive clarifying rounds (the 3-round cap) and distinguish a clarifying
+    # question from a normal completed-objective reply.
+    is_clarifying_question: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
