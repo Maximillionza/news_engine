@@ -19,6 +19,7 @@ class DepartmentDefinition(BaseModel):
     name: str
     purpose: str = ""
     mission: str = ""
+    leader: str = ""
     capabilities: list[str] = Field(default_factory=list)
     agents: list[str] = Field(default_factory=list)
     lifecycle_state: str = "proposed"
@@ -30,7 +31,7 @@ def load_department_definition(path: str | Path) -> DepartmentDefinition:
     with path.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f)
     data = raw["department"]
-    known_fields = {"id", "name", "purpose", "mission", "capabilities", "agents", "lifecycle_state"}
+    known_fields = {"id", "name", "purpose", "mission", "leader", "capabilities", "agents", "lifecycle_state"}
     extra = {k: v for k, v in data.items() if k not in known_fields}
     return DepartmentDefinition(**{k: v for k, v in data.items() if k in known_fields}, extra=extra)
 
