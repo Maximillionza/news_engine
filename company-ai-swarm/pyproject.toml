@@ -18,6 +18,14 @@ dev = [
     "pytest-cov>=5.0",
     "httpx>=0.27",
 ]
+providers = [
+    # Real ModelProvider implementations (shared/providers/) - optional because
+    # StubModelProvider needs neither package, and CI must not require API credentials
+    # to install or import the codebase. See Documentation/plans/SDK_MIGRATION_PLAN.md
+    # Section 4.1.
+    "anthropic>=0.75",
+    "claude-agent-sdk>=0.1",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["Tests"]

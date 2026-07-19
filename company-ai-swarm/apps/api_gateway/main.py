@@ -39,7 +39,8 @@ from orchestrator.decisions import get_decision
 from orchestrator.department_registry import DepartmentRegistry
 from security_service.permissions import grant_permission
 from shared.db import Base, make_engine, make_session_factory
-from shared.model_gateway import ModelGateway, StubModelProvider
+from shared.model_gateway import ModelGateway
+from shared.providers import create_provider_from_env
 
 app = FastAPI(title="The Company - API Gateway", version="0.2.0")
 
@@ -52,7 +53,10 @@ Base.metadata.create_all(_engine)
 _SessionFactory = make_session_factory(_engine)
 
 _telemetry = TelemetrySink()
-_model_gateway = ModelGateway(StubModelProvider(), telemetry=_telemetry)
+# MODEL_PROVIDER env var selects stub (default, no credentials) / anthropic (API-key
+# billing) / agent_sdk (subscription-capable) - see shared/providers/__init__.py and
+# Documentation/plans/SDK_MIGRATION_PLAN.md Section 4.1.
+_model_gateway = ModelGateway(create_provider_from_env(), telemetry=_telemetry)
 _department_registry = DepartmentRegistry(_REPO_ROOT / "departments")
 _department_registry.load_all()
 _agent_registry = AgentRegistry(_REPO_ROOT / "agents" / "active")
