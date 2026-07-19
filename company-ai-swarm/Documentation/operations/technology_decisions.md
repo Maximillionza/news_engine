@@ -166,7 +166,7 @@ simply chosen to exercise Research + Engineering specifically.
 
 **Dev/test and current production implementation:** `workflow_engine/review.py` implements
 TDL sec.17's full Routine/Standard/Advanced/Critical review-tier table, keyed by
-`orchestrator/planner.py`'s `complexity_level`. Since that value is still a fixed
+`orchestrator/controller.py`'s `TaskProfile.complexity_level`. Since that value is still a fixed
 `"Level 2 Standard"` default everywhere in this corpus (no numeric Task Complexity or Task
 Risk scoring exists anywhere - TDL sec.7-8 define the scales, not how to compute a score),
 `"peer_review"` is the only tier this codebase can ever actually produce right now. This is
@@ -242,9 +242,12 @@ silent `False` - defaulting an unrecognized regulation to not-applicable would b
 negative with real consequences; "we don't know, a human must review" is the honest failure
 mode, the same escalate-rather-than-guess spirit as the four-condition escalation policy.
 
-`compliance_service/policy_impact.py`'s Impact Analysis (MVS sec.12 Test Category 008) reuses
-`orchestrator/planner.py`'s keyword-overlap matcher against department capabilities rather
-than inventing a second one - same known weakness, not fixed here either.
+`compliance_service/policy_impact.py`'s Impact Analysis (MVS sec.12 Test Category 008) carries
+its own inlined copy of the keyword-overlap matcher against department capabilities
+(historically mirrored `orchestrator/planner.py`'s logic, which has since been relocated to
+`orchestrator/classification.py` - `policy_impact.py`'s own copy was not touched by that
+relocation), rather than inventing a second mechanism from scratch - same known weakness, not
+fixed here either.
 
 ## Observability Command Centre and Alerting scope (Phase 8)
 
@@ -403,8 +406,9 @@ caller's real session. This is ESDTS sec.9's Environment Separation taken litera
 simulation cannot write production state because it never touches the production session at
 all, not because of a policy that trusts callers to be careful. `confidence` is fixed at 0.4
 and the reason is spelled out in `limitations` - no real model or business-outcome measure
-exists anywhere in this corpus (same honesty as `orchestrator/planner.py`'s complexity
-default and `workflow_engine/review.py`'s tier mapping), so "predicted_results" means
+exists anywhere in this corpus (the same honesty `orchestrator/planner.py` originally
+established for its complexity default, now carried forward in `orchestrator/controller.py`'s
+`TaskProfile`, and `workflow_engine/review.py`'s tier mapping), so "predicted_results" means
 "observed dry-run metrics," never a forecast.
 
 `evolution_service.pipeline.EvolutionEngine.implement_change()` writes an EESIS sec.14
@@ -458,7 +462,8 @@ because either is being built yet.
 **Four-condition escalation policy** (Phase 8 deliverable, see `IMPLEMENTATION_PLAN.md`).
 Adopted in place of inventing a numeric risk/complexity score for ESTAS §10, since COOS §9
 has no such algorithm anywhere in the source corpus (confirmed during the Specifications/
-reconciliation, re-confirmed in `orchestrator/planner.py`'s docstring). Idea Lab escalates to
+reconciliation, re-confirmed in the module's docstring at the time - since relocated to
+`orchestrator/classification.py`). Idea Lab escalates to
 its human user for exactly four named framework-verdict conditions plus technical failures,
 logged separately; The Company's four conditions are COOS-equivalents of those, not a literal
 port (no viable department match, outcome validation failure, a review gate flagging a
