@@ -1,6 +1,6 @@
 # Design: Department Head Triage (Phase 2 of Dynamic Model Selection)
 
-**Status:** Approved design, not yet implemented.
+**Status:** Implemented.
 **Date:** 2026-07-19
 **Relationship to Documentation/plans/2026-07-19-dynamic-department-routing-design.md:** that
 spec's Section 6 listed this as the first of four deferred sub-projects, in dependency order
