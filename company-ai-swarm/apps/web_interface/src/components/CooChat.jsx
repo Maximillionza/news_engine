@@ -65,11 +65,20 @@ export default function CooChat({ onClose, onActivityRefresh, showAvatar }) {
         const saved = await api.uploadFile(attachment.name, b64);
         filePath = saved.path;
       }
-      const { objective_id: objectiveId } = await api.chatSend(text.trim(), filePath);
+      const response = await api.chatSend(text.trim(), filePath);
       setText("");
       setAttachment(null);
-      await load(); // shows the user's own message immediately; coo's reply isn't in yet
+      await load(); // shows the user's own message immediately either way
 
+      // Documentation/plans/2026-07-19-dynamic-department-routing-design.md: the COO may
+      // come back needing more detail instead of an objective_id - its reply is already in
+      // the transcript load() just fetched, so there's nothing to poll.
+      if (response.status === "needs_clarification") {
+        onActivityRefresh?.();
+        return;
+      }
+
+      const objectiveId = response.objective_id;
       for (let attempt = 0; attempt < RESULT_POLL_MAX_ATTEMPTS; attempt++) {
         await sleep(RESULT_POLL_INTERVAL_MS);
         const result = await api.objectiveResult(objectiveId);
