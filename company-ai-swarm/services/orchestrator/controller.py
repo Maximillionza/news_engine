@@ -51,6 +51,7 @@ from orchestrator.classification import DepartmentClassifier, KeywordDepartmentC
 from orchestrator.department_registry import DepartmentDefinition, DepartmentRegistry
 from orchestrator.escalation import EscalationCondition
 from orchestrator.evaluator import OutcomeValidation, validate_outcome
+from orchestrator.head import AutoAcceptDepartmentHead, DepartmentHead
 from orchestrator.router import dispatch
 from security_service.audit import write_audit_record
 from shared.model_gateway import ModelGateway
@@ -60,6 +61,10 @@ from workflow_engine.models import WorkflowRun
 
 
 class NoMatchingDepartmentError(Exception):
+    pass
+
+
+class DepartmentRejectedError(Exception):
     pass
 
 
@@ -111,6 +116,7 @@ class COOOrchestrator:
         model_gateway: ModelGateway,
         telemetry: TelemetrySink | None = None,
         classifier: DepartmentClassifier = KeywordDepartmentClassifier(),
+        head: DepartmentHead = AutoAcceptDepartmentHead(),
     ) -> None:
         self.coo_id = coo_id
         self._departments = department_registry
@@ -118,6 +124,7 @@ class COOOrchestrator:
         self._model_gateway = model_gateway
         self._telemetry = telemetry
         self._classifier = classifier
+        self._head = head
 
     def assess_sufficiency(
         self, objective: str, recent_messages: list[tuple[str, str]], *, round_number: int
@@ -206,13 +213,17 @@ class COOOrchestrator:
                 matched_departments=matched_departments,
             )
 
+        department = self._triage_single_department(
+            session, objective, decision_id=decision_id, initial_department=matched_departments[0]
+        )
+
         task_profile = TaskProfile(
             task_id=f"TSK-{uuid4().hex[:8]}",
             objective=objective,
             # Fixed default - real complexity scoring is deferred (design doc Section 2);
             # unchanged from orchestrator/planner.py's original placeholder.
             complexity_level="Level 2 Standard",
-            matched_department=matched_departments[0],
+            matched_department=department,
             reasoning=classification.reasoning,
         )
 
@@ -298,6 +309,91 @@ class COOOrchestrator:
             execution_result=execution_result,
             validation=validation,
         )
+
+    def _triage_single_department(
+        self,
+        session: Session,
+        objective: str,
+        *,
+        decision_id: str,
+        initial_department: DepartmentDefinition,
+    ) -> DepartmentDefinition:
+        """Documentation/plans/2026-07-19-department-head-triage-design.md Section 3.1's
+        single-department path: up to 2 attempts total - the classifier's original match,
+        then (if rejected with a valid suggested department) one retry at that department. A
+        suggested department is valid only if it is registered and has at least one
+        dispatchable agent (mirrors KeywordDepartmentClassifier's own exclusion of agentless
+        departments) and has not already been attempted in this call. Mirrors
+        NoMatchingDepartmentError's pattern on terminal reject: a Decision Record and a
+        DEPARTMENT_REJECTED Escalation Record before raising."""
+
+        attempted_ids: set[str] = set()
+        department = initial_department
+
+        for attempt in (1, 2):
+            attempted_ids.add(department.id)
+            try:
+                verdict = self._head.evaluate(
+                    department,
+                    objective,
+                    agent_registry=self._agents,
+                    model_gateway=self._model_gateway,
+                    session=session,
+                    coo_id=self.coo_id,
+                    telemetry=self._telemetry,
+                )
+            except Exception as exc:
+                # Same audit trail any other technical failure gets - mirrors the classifier
+                # failure handling above in receive_objective().
+                decisions.write_decision(
+                    session,
+                    id=decision_id,
+                    objective=objective,
+                    reasoning=f"Department Head triage failed: {type(exc).__name__}: {exc}",
+                    chosen_action="reject: triage failed",
+                )
+                escalations.write_escalation(
+                    session,
+                    condition=EscalationCondition.TECHNICAL_FAILURE,
+                    reasoning=f"{type(exc).__name__}: {exc}",
+                    decision_id=decision_id,
+                    is_technical_failure=True,
+                )
+                raise
+
+            if verdict.accepted:
+                return department
+
+            suggested = (
+                self._departments.get(verdict.suggested_department_id)
+                if verdict.suggested_department_id
+                else None
+            )
+            suggestion_valid = (
+                suggested is not None
+                and bool(suggested.agents)
+                and suggested.id not in attempted_ids
+            )
+
+            if attempt == 2 or not suggestion_valid:
+                decisions.write_decision(
+                    session,
+                    id=decision_id,
+                    objective=objective,
+                    reasoning=verdict.reasoning,
+                    chosen_action=f"reject: department head rejected ({department.id})",
+                )
+                escalations.write_escalation(
+                    session,
+                    condition=EscalationCondition.DEPARTMENT_REJECTED,
+                    reasoning=verdict.reasoning,
+                    decision_id=decision_id,
+                )
+                raise DepartmentRejectedError(verdict.reasoning)
+
+            department = suggested
+
+        raise AssertionError("unreachable: loop must return or raise within 2 attempts")
 
     def _receive_multi_department_objective(
         self,
