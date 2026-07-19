@@ -56,6 +56,7 @@ from evolution_service.pipeline import EvolutionApprovalError, EvolutionEngine
 from orchestrator.controller import NoMatchingDepartmentError
 from orchestrator.decisions import list_decisions
 from orchestrator.escalations import list_pending_escalations
+from orchestrator.intake import SufficiencyAssessment
 from shared.db import Base
 
 # apps/ is not a package (see apps/api_gateway/main.py's note on this same import there) -
@@ -321,6 +322,51 @@ def build_router(
             "archived": max(0, total - 10),
         }
 
+    def _count_trailing_clarifying_rounds(session: Session, *, limit: int = 20) -> int:
+        """How many clarifying questions the COO has already asked in a row, walking backward
+        from the most recent message and stopping at the first non-clarifying "coo" reply (or
+        the start of the transcript) - see this module's docstring on why there's no separate
+        "session" concept to reset on."""
+
+        recent = (
+            session.query(DashboardChatMessage)
+            .order_by(DashboardChatMessage.id.desc())
+            .limit(limit)
+            .all()
+        )
+        count = 0
+        for message in recent:
+            if message.role != "coo":
+                continue
+            if message.is_clarifying_question:
+                count += 1
+            else:
+                break
+        return count
+
+    def _consolidate_intake_conversation(session: Session, *, limit: int = 20) -> str:
+        """Builds the full objective text to hand to receive_objective() once the COO decides
+        (or is forced) to proceed: the original request plus all clarifying Q&A since the last
+        resolved objective, not just the most recent message typed. Assumes the current user
+        message has already been written to DashboardChatMessage (chat_send() writes it before
+        calling this) - it is always included, since it's the most recent row and has
+        role="user", which never matches this loop's break condition."""
+
+        recent = (
+            session.query(DashboardChatMessage)
+            .order_by(DashboardChatMessage.id.desc())
+            .limit(limit)
+            .all()
+        )
+        trailing: list[DashboardChatMessage] = []
+        for message in recent:
+            if message.role == "coo" and not message.is_clarifying_question:
+                break
+            trailing.append(message)
+        trailing.reverse()  # oldest first
+
+        return "\n".join(f"{m.role}: {m.content}" for m in trailing)
+
     def _build_objective_from_chat_body(body: dict[str, Any]) -> tuple[str, str]:
         """Shared by chat_send and chat_send_sync: validates the request body and returns
         (objective_text, required_output). Also writes the user's DashboardChatMessage row -
@@ -344,10 +390,14 @@ def build_router(
         session: Session = Depends(get_session),
         _: None = Depends(require_api_key),
     ) -> dict[str, Any]:
-        """Phase B (SDK_MIGRATION_PLAN.md Section 4.2): fire-and-forget. Enqueues the
-        objective and returns immediately - contrast with the pre-Phase-B behavior, still
-        available at POST /chat/sync below. The "coo" reply is written later, by
-        build_queue_handler()'s handler, once a queue worker process picks this row up."""
+        """Phase B (SDK_MIGRATION_PLAN.md Section 4.2) made this fire-and-forget; this adds
+        a sufficiency pre-flight check (Documentation/plans/
+        2026-07-19-dynamic-department-routing-design.md) before anything is enqueued.
+        Round 1/2: one Claude call via coo.assess_sufficiency(). Round 3+: no call, forced
+        sufficient (see orchestrator/intake.py). Insufficient -> writes the COO's clarifying
+        question as a coo reply (is_clarifying_question=True) and returns without
+        enqueueing. Sufficient -> enqueues the full consolidated exchange, same
+        {objective_id, status} contract POST /chat has had since Phase B."""
 
         objective, required_output = _build_objective_from_chat_body(body)
 
@@ -355,9 +405,42 @@ def build_router(
         session.add(user_msg)
         session.commit()
 
+        round_number = _count_trailing_clarifying_rounds(session) + 1
+        recent_for_model = [
+            (m.role, m.content)
+            for m in (
+                session.query(DashboardChatMessage)
+                .order_by(DashboardChatMessage.id.desc())
+                .limit(10)
+                .all()
+            )
+        ][::-1]
+
+        try:
+            assessment: SufficiencyAssessment = coo.assess_sufficiency(
+                objective, recent_for_model, round_number=round_number
+            )
+        except Exception as exc:
+            # An infrastructure failure (network/timeout/provider error), not a "the model
+            # said no" verdict - surfaced distinctly rather than silently treated as either
+            # sufficient or insufficient. See orchestrator/intake.py's assess_sufficiency()
+            # docstring.
+            raise HTTPException(
+                status_code=502, detail=f"Could not assess the request: {exc}"
+            ) from exc
+
+        if not assessment.sufficient:
+            coo_msg = DashboardChatMessage(
+                role="coo", content=assessment.clarifying_question, is_clarifying_question=True
+            )
+            session.add(coo_msg)
+            session.commit()
+            return {"status": "needs_clarification", "reply": assessment.clarifying_question}
+
+        consolidated_objective = _consolidate_intake_conversation(session)
         record = enqueue_objective(
             session,
-            objective=objective,
+            objective=consolidated_objective,
             required_output=required_output,
             submitted_by=DASHBOARD_CHAT_SUBMITTER,
         )
