@@ -269,32 +269,33 @@ Agent Execution (real Claude Code sessions)
 
 ## 5. Execution Sequence
 
-### Phase A: Foundation (Week 1)
-1. **ModelGateway providers** (8h)
-   - AnthropicModelProvider scaffold + tests
-   - Env var bootstrap in gateway
-   - Smoke test: call Claude API from within gateway container
+### Phase A: Foundation (Week 1) — ✅ done, commit `a271c64`
+1. **ModelGateway providers** (14h, revised - see Section 4.1)
+   - AnthropicModelProvider scaffold + tests — done
+   - AgentSDKModelProvider scaffold + tests (subscription-capable) — done
+   - Env var bootstrap in gateway (`MODEL_PROVIDER`) — done
+   - Smoke test: call Claude API from within gateway container — implemented as a gated/skipped test (needs real credentials + an explicit opt-in env var to actually run; not run live as part of this rollout)
 
 2. **ObjectiveQueue schema & CRUD** (10h)
-   - Database table + ORM model
-   - Queue worker skeleton (doesn't execute yet, just transitions state)
-   - Integration tests
+   - Database table + ORM model — done
+   - Queue worker skeleton (doesn't execute yet, just transitions state) — done, via an injectable handler (Phase A shipped no dependency on COOOrchestrator)
+   - Integration tests — done
 
-3. **Status: stubs still work, but infrastructure is in place**
+3. **Status: stubs still work, but infrastructure is in place** — confirmed: full pre-existing test suite passed unchanged throughout
 
-### Phase B: Async Execution (Week 2)
+### Phase B: Async Execution (Week 2) — ✅ done, commit `ce6b41f`
 4. **Queue worker core loop** (8h)
-   - Poll queued objectives
-   - Call `receive_objective()` in background
-   - Handle failures, write results
+   - Poll queued objectives — done (`run_forever()`, ~100ms interval, runs as its own OS process per this section's original intent — see `Scripts/run_queue_worker.py`, not an in-process thread)
+   - Call `receive_objective()` in background — done (`dashboard_api.build_queue_handler()`)
+   - Handle failures, write results — done
 
 5. **Gateway endpoint refactor** (12h)
-   - `POST /chat` → fire-and-forget + queue insert
-   - `GET /objectives/{id}/result` → polls for completion
-   - `/activity` → includes in_flight_objectives
-   - Update dashboard to poll result endpoint
+   - `POST /chat` → fire-and-forget + queue insert — done (`POST /chat/sync` added alongside, preserving the old blocking behavior per Section 6)
+   - `GET /objectives/{id}/result` → polls for completion — done
+   - `/activity` → includes in_flight_objectives — done
+   - Update dashboard to poll result endpoint — done (`CooChat.jsx` polls, verified end-to-end in-browser with the gateway and queue worker running as separate processes)
 
-6. **Status: async execution works; voice interface can submit + poll**
+6. **Status: async execution works; voice interface can submit + poll** — the dashboard chat submits + polls; no voice interface exists yet (Phase D). Not implemented: the plan's three-state agent status (idle/working/**waiting**) - no real signal in this codebase's execution model to derive "waiting" from; documented as a conscious scope decision in `dashboard_api.py` rather than guessed at.
 
 ### Phase C: Real Agents (Week 3)
 7. **AnthropicModelProvider full implementation** (12h)
@@ -373,14 +374,14 @@ Agent Execution (real Claude Code sessions)
 
 ## 9. Success Criteria
 
-- [ ] Objective queue persists and survives gateway restart
-- [ ] `/chat` returns immediately; background worker executes objective
-- [ ] `/objectives/{id}/result` polls for completion and returns result when ready
-- [ ] Voice interface submits an objective and polls until complete
-- [ ] A research objective produces real Claude reasoning (not stub), takes 5–15 seconds
-- [ ] Dashboard shows in-flight objectives and their progress
-- [ ] All existing tests pass (with endpoint behavior updates)
-- [ ] Voice Director can approve/reject Evolution proposals
+- [x] Objective queue persists and survives gateway restart (SQLite file on disk, same as every other table in this dev/test setup)
+- [x] `/chat` returns immediately; background worker executes objective
+- [x] `/objectives/{id}/result` polls for completion and returns result when ready
+- [ ] Voice interface submits an objective and polls until complete (Phase D — no voice interface exists yet)
+- [ ] A research objective produces real Claude reasoning (not stub), takes 5–15 seconds (providers exist since Phase A — `AnthropicModelProvider`/`AgentSDKModelProvider` — but `MODEL_PROVIDER` still defaults to `stub`; flipping the default and validating real latency is Phase C)
+- [x] Dashboard shows in-flight objectives and their progress (verified end-to-end in-browser, not just unit tests — gateway + queue worker run as separate processes, submitted an objective via the dashboard chat, confirmed the reply and in-flight-then-empty transition)
+- [x] All existing tests pass (with endpoint behavior updates) — 202 passed, 2 skipped by design (gated real-API smoke tests)
+- [ ] Voice Director can approve/reject Evolution proposals (Phase D)
 
 ---
 
