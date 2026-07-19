@@ -243,6 +243,16 @@ before removing it.
 | Classifier: empty result | `receive_objective()` | `NoMatchingDepartmentError`, unchanged from today. |
 | Classifier: hallucinated department ID | `classify_objective()` | Dropped before use, not trusted. |
 
+Both new model calls interpolate user-submitted chat content directly into their prompts
+(the objective text and, for the sufficiency check, the recent conversation history), so a
+user could in principle attempt prompt injection against either - e.g. asking the model to
+respond with a specific classification or sufficiency verdict regardless of the actual
+request. This is accepted as a known, bounded-risk limitation for this phase, not something
+addressed further here: `LLMDepartmentClassifier`'s output is validated against the real
+department registry regardless of what the model returns (see "hallucinated department ID"
+above), and `assess_sufficiency()`'s output only ever gates a clarifying question versus
+proceeding - it grants no elevated access or capability either way.
+
 ---
 
 ## 5. Testing Strategy

@@ -121,28 +121,33 @@ executes them.
 
 ## Objective-to-department routing
 
-**Dev/test and current production implementation:** a keyword-overlap classifier
-(`orchestrator/planner.py`) matches an objective's text against each department's
-name/purpose/mission/capabilities. This is a genuine, working algorithm - not a stub - but
-it is weak: it found and mis-ranked a real routing dead-end during Phase 5 testing (the
-empty, deliberately-out-of-MVP-scope "Strategy Department" outscored Research on "Create a
-market intelligence report" purely on shared vocabulary; fixed by excluding departments with
-no assigned agents from consideration, not by tuning the scorer). A real implementation
-would use the Model Gateway to interpret the objective semantically rather than matching
-keywords - not done yet, since Phase 5 has no evidence this is worth the added complexity
-against the one department/objective shape it's actually been tested with. Revisit once
-Phase 6 adds Engineering and Compliance and objectives start requiring genuine disambiguation
-between departments with overlapping vocabulary.
+**Original Phase 5 implementation, superseded by the 2026-07-19 dynamic-department-routing
+work (see "Department classification and COO sufficiency check" below):** a keyword-overlap
+classifier (`orchestrator/planner.py` at the time; the exact same logic now lives, unchanged,
+in `orchestrator/classification.py`'s `KeywordDepartmentClassifier`) matched an objective's
+text against each department's name/purpose/mission/capabilities. This was a genuine, working
+algorithm - not a stub - but weak: it found and mis-ranked a real routing dead-end during
+Phase 5 testing (the empty, deliberately-out-of-MVP-scope "Strategy Department" outscored
+Research on "Create a market intelligence report" purely on shared vocabulary; fixed by
+excluding departments with no assigned agents from consideration, not by tuning the scorer).
+A real implementation would use the Model Gateway to interpret the objective semantically
+rather than matching keywords - that gap is exactly what `LLMDepartmentClassifier`
+(`classification.py`, selected via `DEPARTMENT_CLASSIFIER=llm`) now fills;
+`KeywordDepartmentClassifier` remains the dev/test default, same known weakness, unchanged.
+Phase 6 (below) extended this same keyword matcher to multi-department routing well before
+the semantic-disambiguation gap noted here was actually addressed.
 
 ## Multi-department objective routing (Phase 6)
 
-**Dev/test and current production implementation:** `orchestrator/planner.py`'s
-`select_all_matching_departments()` extends the Phase 5 keyword-overlap matcher (still the
-same weak mechanism flagged above) to return every department scoring above zero, ordered by
-a fixed canonical sequence (Research, Engineering, Compliance, Operations - this plan's own
-documented MVP activation order) rather than by score, since no dependency-graph mechanism
-exists anywhere in the corpus to derive a real execution order from EWOS sec.5's
-`Dependencies` field.
+**Phase 6 implementation, relocated (not rewritten) in the 2026-07-19 dynamic-department-
+routing work:** `orchestrator/planner.py`'s `select_all_matching_departments()` extended the
+Phase 5 keyword-overlap matcher (still the same weak mechanism flagged above) to return every
+department scoring above zero, ordered by a fixed canonical sequence (Research, Engineering,
+Compliance, Operations - this plan's own documented MVP activation order) rather than by
+score, since no dependency-graph mechanism exists anywhere in the corpus to derive a real
+execution order from EWOS sec.5's `Dependencies` field. This logic now lives in
+`orchestrator/classification.py`'s `KeywordDepartmentClassifier.classify()` (canonical
+ordering via its `_canonical_sort_key` helper), carried over unchanged rather than reworked.
 
 **Discovery made while building this, not a Phase 6 design choice:** all four MVP
 departments' `definition.yaml` files already carry a capability-aligned `agents:` entry as of
@@ -342,7 +347,7 @@ Department Builder (sec.5.2) - it was skipped entirely for this reason, not an o
 `WorkflowTemplate` objects (Schema Validation only - see their own module docstrings for why
 Security Review/Capability Test/Architecture Check don't apply to definitions with no
 runtime) but are **not** wired into anything else in this codebase yet: department/agent
-capability matching (`orchestrator/planner.py`, `allocator.py`) still compares plain
+capability matching (`orchestrator/classification.py`, `allocator.py`) still compares plain
 strings, and `workflow_engine.execute_workflow()` still derives its task list from
 department keyword-matching, not from a stored `WorkflowTemplate`. Both are named gaps, not
 silently dropped - closing them is real, separate follow-up work. "Tool interface" (ESDKS
@@ -500,7 +505,10 @@ parallel to `shared/model_gateway.py`'s `ModelProvider` pattern. `KeywordDepartm
 (real Claude-backed routing) is selected via `DEPARTMENT_CLASSIFIER=llm`, mirroring
 `MODEL_PROVIDER`. `COOOrchestrator.receive_objective()` now makes exactly one classification
 call per objective (previously two redundant keyword-matching calls - harmless when free,
-wasteful once real).
+wasteful once real). The Decision Record's `reasoning` string also changed shape as part of
+this relocation - from `"Matched department 'X' with keyword-overlap score N..."` to
+`"Matched N department(s) via keyword overlap: [...]"` - a non-breaking, informational change
+only, since nothing in this codebase parses that string.
 
 `orchestrator/intake.py`'s `assess_sufficiency()` adds a COO-level check, chat-only (`POST
 /objectives` and `POST /chat/sync` don't use it): round 1 asks a normal clarifying question if

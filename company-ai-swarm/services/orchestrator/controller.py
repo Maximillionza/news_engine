@@ -312,7 +312,8 @@ class COOOrchestrator:
         Phase 7 (Version 0.3): Create Workflow + Execute + Validate for an objective spanning
         multiple departments, via workflow_engine.execute_workflow(). Select Agents/Select
         Models happen inside the Workflow Engine, once per department, in the fixed
-        canonical order select_all_matching_departments() already resolved. If "operations"
+        canonical order the classifier already resolved (`orchestrator/classification.py`'s
+        `_canonical_sort_key`). If "operations"
         (the Review Agent's department) is among the matched departments, the Workflow
         Engine appends TDL sec.17's risk-proportional review step after the others succeed -
         this method doesn't special-case that, it only reports whatever workflow.tasks and

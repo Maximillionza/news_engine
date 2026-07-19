@@ -15,16 +15,32 @@ this directory used five empty subdirectories (`planner/`, `allocator/`, `router
 names, for consistency with every other service in this codebase (`identity_service/
 models.py`, `security_service/permissions.py`, etc. are all flat, not subdirectory packages).
 
-- `planner.py` - Objective Understanding + Task Classification + Department Selection
-  (COOS sec.7-9, sec.12). Complexity scoring is a fixed default, not computed - see the
-  module docstring for why (no numeric algorithm exists anywhere in the source corpus). The
-  default's label was corrected in Phase 7 from "Level 2 Moderate" to "Level 2 Standard" -
-  nothing consumed the string before Phase 7's TDL sec.17 review-tier table needed it to
-  match TDL sec.7's tier names exactly. Phase 6 adds `select_all_matching_departments()`,
-  extending the same keyword-overlap matcher to multi-department objectives (EWOS sec.16
-  Department Routing), ordered by a fixed canonical department sequence rather than a real
-  dependency graph - see its docstring for why, and for the discovery that all four MVP
-  departments already have capability-aligned agents since Phase 5, not just Research.
+- `classification.py` - Department Selection (COOS sec.7-9, sec.12), formerly `planner.py`'s
+  keyword-overlap matcher, relocated behind a swappable `DepartmentClassifier` Protocol as
+  part of the 2026-07-19 dynamic-department-routing work - exactly parallel to
+  `shared/model_gateway.py`'s `ModelProvider` pattern. `KeywordDepartmentClassifier` is the
+  exact old logic (multi-department support included, via the same fixed canonical
+  department sequence rather than a real dependency graph - see its docstring for why, and
+  for the discovery that all four MVP departments already have capability-aligned agents
+  since Phase 5, not just Research), unchanged and still the dev/test default.
+  `LLMDepartmentClassifier` wraps a `ModelGateway` call to classify objectives semantically
+  instead of by keyword overlap, selected via `DEPARTMENT_CLASSIFIER=llm`; it validates every
+  department ID the model returns against the real registry rather than trusting it.
+  `create_classifier_from_env()` picks between them, mirroring
+  `shared/providers.create_provider_from_env()`. Complexity scoring remains a fixed default,
+  not computed - unrelated to this relocation, and still unchanged since Phase 5/7 (no
+  numeric algorithm exists anywhere in the source corpus; the label itself was corrected in
+  Phase 7 from "Level 2 Moderate" to "Level 2 Standard" to match TDL sec.7's tier names
+  exactly) - now set directly in `controller.py`.
+- `intake.py` - COO-level sufficiency check (2026-07-19 design doc), chat-only:
+  `assess_sufficiency()` decides whether an objective has enough detail to act on before
+  `apps/api_gateway/dashboard_api.py`'s `POST /chat` ever enqueues it (`POST /chat/sync` and
+  `POST /objectives` skip it). Round 1 asks one clarifying question if detail is lacking;
+  round 2 reframes as an explicit proceed-as-is-or-clarify choice; round 3+ is a hard cap
+  enforced in code, with no model call - `sufficient=True` unconditionally, guaranteeing the
+  clarification loop terminates. A model-call failure propagates to the caller rather than
+  being swallowed as an insufficient verdict; a malformed-but-successful response is caught
+  and fails toward insufficient with a generic fallback question instead.
 - `allocator.py` - Agent Allocation Engine (COOS sec.13). Capability Match only; Performance
   History, Availability, Cost, and Risk are explicitly not yet implemented (see docstring).
 - `router.py` - dispatches to Phase 4's `AgentRuntime` via an `AgentMessageContract`. Reused
