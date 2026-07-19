@@ -270,10 +270,17 @@ default" decision:
 
 ## 6. Open Items for Future Sub-Projects (explicitly not designed here)
 
+**Deferred, not abandoned.** Splitting these out was a sequencing decision, not a scope cut -
+each is substantial enough to deserve its own brainstorm -> spec -> plan cycle, the same
+process this document went through. The intended order is roughly the dependency order below
+(each later item depends on the ones above it actually working), starting with Department Head
+triage once this phase ships:
+
 - Department Head triage (accept current department / reassign to COO / decline as
   not-worth-the-swarm-use-Claude-chat-instead).
 - Dynamic agent count and specialist agent selection within a department (possibly building
   on `sdk/agent_builder/` from Phase 10).
 - Token/cost budget management as a decision input.
 - Real model tier selection (Reasoning Tier Classification, RDL sec.8) replacing the current
-  fixed default provider/model for actual task execution.
+  fixed default provider/model for actual task execution - the original ask that started this
+  whole design process, and the smallest, most downstream piece of it.
