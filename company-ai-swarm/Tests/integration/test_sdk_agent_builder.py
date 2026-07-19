@@ -93,7 +93,7 @@ class TestSDKAgentBuilderMVPPhase10:
 
         # Registers in the Agent Registry:
         assert agent_registry.get("data_science_agent_001") is new_agent
-        assert len(agent_registry) == 5  # original four + this one
+        assert len(agent_registry) == 9  # original eight (4 agents + 4 heads) + this one
 
         # Written to disk without touching any existing file (agents_root=tmp_path, not the
         # real agents/active/), and round-trips through the unmodified loader:

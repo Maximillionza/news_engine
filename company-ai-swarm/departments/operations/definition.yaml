@@ -6,7 +6,7 @@ department:
   id: operations
   name: "Operations Department"
   purpose: "Process management, quality assurance, and execution monitoring."
-  leader: ""
+  leader: operations_head_001
   mission: "Validate outputs and monitor workflow execution across the enterprise."
   # Aligned to agents/active/review_agent/agent.yaml (Phase 5 capability-naming fix,
   # see departments/research/definition.yaml for the full explanation).

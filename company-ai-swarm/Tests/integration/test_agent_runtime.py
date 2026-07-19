@@ -71,7 +71,7 @@ def test_agent_registry_loads_all_active_agents() -> None:
     registry.load_all()
 
     assert registry.get("research_agent_001") is not None
-    assert len(registry) == 4  # research, engineering, compliance, review
+    assert len(registry) == 8  # research, engineering, compliance, review + 4 heads
 
 
 class TestAgentExecutesTaskWithoutCOO:

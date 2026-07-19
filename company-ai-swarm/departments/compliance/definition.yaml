@@ -5,7 +5,7 @@ department:
   id: compliance
   name: "Compliance Department"
   purpose: "Validate governance, regulatory, and risk requirements."
-  leader: ""
+  leader: compliance_head_001
   mission: "Identify applicable obligations and assess risk before and during execution."
   # Aligned to agents/active/compliance_agent/agent.yaml (Phase 5 capability-naming fix,
   # see departments/research/definition.yaml for the full explanation).

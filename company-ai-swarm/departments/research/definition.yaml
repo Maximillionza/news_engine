@@ -11,7 +11,7 @@ department:
   id: research
   name: "Research Department"
   purpose: "Information acquisition, analysis, and intelligence generation."
-  leader: ""
+  leader: research_head_001
   mission: "Acquire and analyse information required by enterprise objectives."
   capabilities:
     - research

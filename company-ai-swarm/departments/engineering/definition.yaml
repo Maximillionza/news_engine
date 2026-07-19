@@ -5,7 +5,7 @@ department:
   id: engineering
   name: "Engineering Department"
   purpose: "Build and maintain technical capabilities."
-  leader: ""
+  leader: engineering_head_001
   mission: "Transform approved technical requirements into working software."
   # Aligned to agents/active/engineering_agent/agent.yaml (Phase 5 capability-naming fix,
   # see departments/research/definition.yaml for the full explanation).
