@@ -159,13 +159,18 @@ to hallucinated department IDs.
 
 ### 3.3 Agent registration
 
-Each department gets a new `agents/active/<dept>_head/agent.yaml` (5 files: research,
-engineering, compliance, operations, strategy - strategy's head exists for completeness even
-though strategy has no worker agents and is out of MVP-canonical scope). Mission is explicitly
-triage, not work product - e.g. research_head's mission: "Evaluate whether an objective
-genuinely requires the Research Department's capabilities, or belongs elsewhere, or isn't
-worth the swarm at all." `department.leader` is set to the head's identity ID (e.g.
-`research_head_001`) and promoted from `extra` to a first-class field on `DepartmentDefinition`.
+Each department that can actually be dispatched to gets a new
+`agents/active/<dept>_head/agent.yaml` (4 files: research, engineering, compliance,
+operations). Strategy is deliberately excluded - it has an empty `agents` list today, which
+means the classifier already filters it out of `matched_departments` before anything reaches
+triage (the same reason it has no worker agent). A Strategy head would never be invoked, so
+building one is unnecessary work, not a completeness gap. Mission is explicitly triage, not
+work product - e.g. research_head's mission: "Evaluate whether an objective genuinely requires
+the Research Department's capabilities, or belongs elsewhere, or isn't worth the swarm at
+all." `department.leader` is set to the head's identity ID (e.g. `research_head_001`) and
+promoted from `extra` to a first-class field on `DepartmentDefinition`. If Strategy is ever
+activated with real agents (out of scope here), it needs a head added at that time, same as any
+new department per Section 3.6.
 
 **Important:** the head's identity stays *out* of `department.agents`. That list is what
 `allocator.py`'s capability-based `select_agent()` picks real work from - if the head were
