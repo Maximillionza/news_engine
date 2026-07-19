@@ -1,8 +1,12 @@
-"""Phase A exit-criteria test (Documentation/plans/SDK_MIGRATION_PLAN.md Section 6):
-queue lifecycle (queued -> executing -> completed / failed), against the ORM model and CRUD
-functions directly - no HTTP layer involved yet (that's Phase B's "Gateway endpoint
-refactor"), and no COOOrchestrator involved (queue_worker.py's `handler` is a plain stub
-here, per that module's docstring on Phase A vs Phase B scope).
+"""Queue lifecycle test (Documentation/plans/SDK_MIGRATION_PLAN.md Section 6): queued ->
+executing -> completed / failed, against the ORM model and CRUD functions directly - no HTTP
+layer here (that's Tests/integration/test_api_gateway_async.py), and no COOOrchestrator
+involved (the `handler` in every test below is a plain stub - the real one lives in
+apps/api_gateway/dashboard_api.py's `build_queue_handler`).
+
+Phase B updated `Handler`'s signature from `(objective, required_output) -> dict` to
+`(session, record) -> dict` (queue_worker.py's docstring explains why); the stub handlers
+here were updated to match.
 
 apps/ is not a package (see apps/api_gateway/main.py's note on dashboard_api), so this test
 sys.path-inserts apps/api_gateway and imports objective_queue / queue_worker as top-level
@@ -12,6 +16,7 @@ sibling modules, the same way Tests/integration/test_api_gateway_health.py impor
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "apps" / "api_gateway"))
@@ -102,8 +107,9 @@ def test_mark_executing_unknown_id_raises(session: Session) -> None:
 def test_worker_run_once_completes_objective_via_handler(session: Session) -> None:
     enqueue_objective(session, objective="Research blockchain app ideas", required_output="ideas")
 
-    def handler(objective: str, required_output: str) -> dict[str, str]:
-        return {"output": f"handled: {objective} -> {required_output}"}
+    def handler(worker_session: Session, record) -> dict[str, str]:
+        assert worker_session is session
+        return {"output": f"handled: {record.objective} -> {record.required_output}"}
 
     result = run_once(session, handler=handler)
 
@@ -119,7 +125,7 @@ def test_worker_run_once_completes_objective_via_handler(session: Session) -> No
 def test_worker_run_once_marks_failed_on_handler_exception(session: Session) -> None:
     enqueue_objective(session, objective="obj", required_output="out")
 
-    def failing_handler(objective: str, required_output: str) -> dict[str, str]:
+    def failing_handler(worker_session: Session, record) -> dict[str, str]:
         raise RuntimeError("orchestrator exploded")
 
     result = run_once(session, handler=failing_handler)
@@ -138,10 +144,10 @@ def test_worker_processes_batch_independently(session: Session) -> None:
     bad = enqueue_objective(session, objective="bad", required_output="out")
     ok_two = enqueue_objective(session, objective="ok-two", required_output="out")
 
-    def handler(objective: str, required_output: str) -> dict[str, str]:
-        if objective == "bad":
+    def handler(worker_session: Session, record) -> dict[str, str]:
+        if record.objective == "bad":
             raise ValueError("bad objective")
-        return {"output": objective}
+        return {"output": record.objective}
 
     worker = QueueWorker(handler=handler)
     result = worker.run_once(session)
@@ -156,7 +162,55 @@ def test_worker_respects_batch_size(session: Session) -> None:
     for i in range(5):
         enqueue_objective(session, objective=f"obj-{i}", required_output="out")
 
-    result = run_once(session, handler=lambda o, r: {"output": o}, batch_size=2)
+    result = run_once(session, handler=lambda s, record: {"output": record.objective}, batch_size=2)
 
     assert len(result.claimed) == 2
     assert len(list_queued_objectives(session)) == 3
+
+
+def test_run_forever_processes_until_stop_event_and_uses_fresh_sessions(tmp_path) -> None:
+    """`run_forever()` opens one session per cycle (not one held open for its whole life) -
+    proven by writing an objective mid-loop and asserting it still gets picked up, since a
+    stale single-session view would not see a commit made from a different session."""
+
+    import threading
+
+    from shared.db import make_session_factory
+
+    engine = make_engine(f"sqlite:///{tmp_path / 'run_forever.sqlite3'}")
+    Base.metadata.create_all(engine)
+    factory = make_session_factory(engine)
+
+    from queue_worker import run_forever
+
+    processed: list[str] = []
+
+    def handler(worker_session: Session, record) -> dict[str, str]:
+        processed.append(record.objective)
+        return {"output": record.objective}
+
+    with factory() as seed_session:
+        enqueue_objective(seed_session, objective="seeded-before-start", required_output="out")
+
+    stop_event = threading.Event()
+    worker_thread = threading.Thread(
+        target=run_forever,
+        kwargs={
+            "session_factory": factory,
+            "handler": handler,
+            "poll_interval_seconds": 0.01,
+            "stop_event": stop_event,
+        },
+        daemon=True,
+    )
+    worker_thread.start()
+
+    deadline = time.monotonic() + 5
+    while "seeded-before-start" not in processed and time.monotonic() < deadline:
+        time.sleep(0.02)
+
+    stop_event.set()
+    worker_thread.join(timeout=2)
+
+    assert "seeded-before-start" in processed
+    assert not worker_thread.is_alive()

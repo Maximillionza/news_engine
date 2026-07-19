@@ -94,6 +94,24 @@ def list_queued_objectives(session: Session, *, limit: int = 50) -> list[Objecti
     )
 
 
+def list_in_flight_objectives(session: Session, *, limit: int = 50) -> list[ObjectiveQueueRecord]:
+    """Phase B addition (SDK_MIGRATION_PLAN.md Section 4.3): `queued` or `executing` rows,
+    oldest-first, for `GET /activity`'s `in_flight_objectives`. Deliberately excludes
+    `completed`/`failed` - those are done, not in flight."""
+
+    return (
+        session.query(ObjectiveQueueRecord)
+        .filter(
+            ObjectiveQueueRecord.status.in_(
+                (ObjectiveStatus.QUEUED.value, ObjectiveStatus.EXECUTING.value)
+            )
+        )
+        .order_by(ObjectiveQueueRecord.created_at)
+        .limit(limit)
+        .all()
+    )
+
+
 def mark_executing(session: Session, objective_id: str) -> ObjectiveQueueRecord:
     record = _require(session, objective_id)
     record.status = ObjectiveStatus.EXECUTING.value

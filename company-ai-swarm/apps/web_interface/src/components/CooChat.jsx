@@ -6,6 +6,18 @@ import { FrontAgent } from "./avatars.jsx";
 // 10 most recent lines (older ones stay archived server-side). File attach shows a
 // paperclip-document chip on pickup; send is assumed successful - an error reply appears
 // only if the save fails.
+//
+// Phase B (Documentation/plans/SDK_MIGRATION_PLAN.md Section 4.2): POST /chat is now
+// fire-and-forget - send() gets back an objective_id, not an immediate reply, so it polls
+// GET /objectives/{id}/result until the queue worker (a separate process, see
+// Scripts/run_queue_worker.py) finishes, then reloads the transcript to pick up the coo's
+// reply. "Working on it…" (below) now covers that whole wait, not just the request itself.
+
+const RESULT_POLL_INTERVAL_MS = 800;
+const RESULT_POLL_MAX_ATTEMPTS = 25; // ~20s - generous for a synchronous single-agent task,
+// not a promise the swarm always replies within this window; see the timeout note in send().
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default function CooChat({ onClose, onActivityRefresh, showAvatar }) {
   const [messages, setMessages] = useState([]);
@@ -53,9 +65,20 @@ export default function CooChat({ onClose, onActivityRefresh, showAvatar }) {
         const saved = await api.uploadFile(attachment.name, b64);
         filePath = saved.path;
       }
-      await api.chatSend(text.trim(), filePath);
+      const { objective_id: objectiveId } = await api.chatSend(text.trim(), filePath);
       setText("");
       setAttachment(null);
+      await load(); // shows the user's own message immediately; coo's reply isn't in yet
+
+      for (let attempt = 0; attempt < RESULT_POLL_MAX_ATTEMPTS; attempt++) {
+        await sleep(RESULT_POLL_INTERVAL_MS);
+        const result = await api.objectiveResult(objectiveId);
+        if (result.status === "completed" || result.status === "failed") break;
+      }
+      // Reload either way: on settlement the reply is there; on timeout this at least
+      // shows nothing-new rather than leaving "Working on it…" up after busy clears - the
+      // dashboard's own periodic /activity refresh, or reopening chat, will pick up a reply
+      // that arrives after this window.
       await load();
       onActivityRefresh?.();
     } catch (e) {

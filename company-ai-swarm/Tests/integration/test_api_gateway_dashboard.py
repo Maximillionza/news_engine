@@ -1,9 +1,15 @@
 """Dashboard API endpoints (apps/api_gateway/dashboard_api.py).
 
 Follows test_api_gateway_objectives.py's pattern (sys.path insert, fresh TestClient, real
-COOOrchestrator underneath - no mocks). Covers the aggregated /activity poll target, the
-COO chat round-trip (message -> objective -> reply), file upload to the pickup inbox, and
-the proposal endpoints' auth surface.
+COOOrchestrator underneath - no mocks). Covers the aggregated /activity poll target, file
+upload to the pickup inbox, and the proposal endpoints' auth surface.
+
+Phase B (Documentation/plans/SDK_MIGRATION_PLAN.md Section 4.2) made `POST /chat`
+fire-and-forget - it no longer returns a decision_id immediately, and the "coo" reply isn't
+written until a queue worker processes the objective. The full async round-trip (POST /chat
+-> drain the queue -> GET /objectives/{id}/result -> GET /chat shows the reply) is covered in
+Tests/integration/test_api_gateway_async.py; this file keeps `/chat/sync`'s test, since that
+endpoint preserves the exact pre-Phase-B synchronous behavior these tests originally covered.
 """
 
 from __future__ import annotations
@@ -42,11 +48,19 @@ def test_activity_aggregates_departments_agents_and_metrics() -> None:
     for agent in data["agents"]:
         assert agent["status"] in {"working", "idle"}
 
+    # Phase B addition (SDK_MIGRATION_PLAN.md Section 4.3) - present even when nothing is
+    # in flight.
+    assert isinstance(data["in_flight_objectives"], list)
+    assert data["metrics"]["objectives_in_flight"] == len(data["in_flight_objectives"])
 
-def test_chat_message_routes_through_coo_and_returns_last_ten() -> None:
+
+def test_chat_sync_message_routes_through_coo_and_returns_last_ten() -> None:
+    """POST /chat/sync preserves the pre-Phase-B blocking behavior these dashboard tests
+    originally exercised - see this module's docstring."""
+
     client = _client()
     response = client.post(
-        "/chat", headers=HEADERS, json={"message": "Research current market trends."}
+        "/chat/sync", headers=HEADERS, json={"message": "Research current market trends."}
     )
     assert response.status_code == 200
     assert response.json()["decision_id"] is not None

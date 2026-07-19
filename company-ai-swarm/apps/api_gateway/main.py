@@ -227,12 +227,15 @@ def list_agents(_: None = Depends(require_api_key)) -> list[dict[str, Any]]:
 # The dashboard's aggregation/command endpoints live in dashboard_api.py; its chat table is
 # registered on shared.db.Base by that import, so create_all runs again (idempotent) after.
 # apps/ is not a package (tests sys.path-insert this directory and `import main`), so
-# dashboard_api is imported the same sibling-module way.
+# dashboard_api is imported the same sibling-module way. objective_queue and queue_worker
+# (Phase A/B, Documentation/plans/SDK_MIGRATION_PLAN.md) are sibling modules too.
 
 import sys  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dashboard_api  # noqa: E402
+from objective_queue import get_objective  # noqa: E402
+from queue_worker import QueueWorker, WorkerCycleResult  # noqa: E402
 
 Base.metadata.create_all(_engine)
 app.include_router(
@@ -247,6 +250,61 @@ app.include_router(
         uploads_dir=_REPO_ROOT / "uploads" / "inbox",
     )
 )
+
+
+@app.get("/objectives/{objective_id}/result")
+def get_objective_result(
+    objective_id: str,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    """Phase B (SDK_MIGRATION_PLAN.md Section 4.2 item 4): polling target for anything
+    submitted via `POST /chat`'s fire-and-forget response. Distinct from
+    `GET /objectives/{decision_id}` above - that looks up a Decision Record (COOS sec.22) by
+    `decision_id`, which does not exist until a worker actually runs `receive_objective()`;
+    this looks up the `objective_queue` row by `objective_id`, which exists from the moment
+    `POST /chat` returns. No ETA field - nothing in this codebase estimates remaining
+    execution time."""
+
+    record = get_objective(session, objective_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Unknown objective_id: {objective_id}")
+
+    return {
+        "objective_id": record.id,
+        "status": record.status,
+        "objective": record.objective,
+        "required_output": record.required_output,
+        "result": record.result,
+        "error": record.error,
+        "submitted_by": record.submitted_by,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+        "started_at": record.started_at.isoformat() if record.started_at else None,
+        "completed_at": record.completed_at.isoformat() if record.completed_at else None,
+    }
+
+
+# The queue worker itself does NOT run here - Section 4.2 item 3 calls for it to run "as a
+# background worker (separate from FastAPI process)", not an in-process thread inside this
+# module. See Scripts/run_queue_worker.py, which imports `_queue_handler` and
+# `_SessionFactory` from this module and calls queue_worker.run_forever() in its own OS
+# process. Kept out of this module's import-time side effects deliberately: main.py is
+# imported repeatedly across Tests/integration/*.py against the same on-disk dev sqlite
+# file, and a live background thread racing test assertions would be a flakiness source for
+# no benefit - tests call `drain_queue_once()` below to force one deterministic cycle
+# instead of waiting on a poll interval.
+_queue_handler = dashboard_api.build_queue_handler(coo=_coo, serialize_outcome=_serialize_outcome)
+_queue_worker = QueueWorker(handler=_queue_handler)
+
+
+def drain_queue_once() -> WorkerCycleResult:
+    """Forces one queue-worker cycle synchronously - the deterministic alternative to
+    waiting on Scripts/run_queue_worker.py's poll interval. Used by tests
+    (Tests/integration/test_api_gateway_async.py) and available for manual/ops use."""
+
+    with _SessionFactory() as session:
+        return _queue_worker.run_once(session)
+
 
 _UI_DIST = Path(__file__).resolve().parents[1] / "web_interface" / "dist"
 if _UI_DIST.exists():

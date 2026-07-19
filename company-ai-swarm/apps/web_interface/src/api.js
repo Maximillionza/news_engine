@@ -27,11 +27,15 @@ async function req(path, options = {}) {
 export const api = {
   activity: () => req("/activity"),
   chatHistory: () => req("/chat"),
+  // Phase B (Documentation/plans/SDK_MIGRATION_PLAN.md Section 4.2): fire-and-forget -
+  // resolves with { objective_id, status: "queued" }, not an immediate reply. Poll
+  // objectiveResult() until it settles, then chatHistory() to pick up the coo's reply.
   chatSend: (message, filePath) =>
     req("/chat", {
       method: "POST",
       body: JSON.stringify({ message, ...(filePath ? { file_path: filePath } : {}) }),
     }),
+  objectiveResult: (objectiveId) => req(`/objectives/${objectiveId}/result`),
   uploadFile: (filename, contentBase64) =>
     req("/files", {
       method: "POST",
