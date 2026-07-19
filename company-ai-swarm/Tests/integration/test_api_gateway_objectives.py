@@ -78,3 +78,25 @@ def test_unknown_decision_id_returns_404() -> None:
 def test_missing_required_fields_returns_422() -> None:
     response = client.post("/objectives", headers=HEADERS, json={"objective": "x"})
     assert response.status_code == 422
+
+
+def test_submit_objective_with_department_rejection_returns_400() -> None:
+    from orchestrator.head import HeadVerdict
+
+    class _AlwaysRejectHead:
+        def evaluate(self, department, objective, **_):
+            return HeadVerdict(accepted=False, reasoning="Rejected for test.", suggested_department_id=None)
+
+    from main import _coo
+
+    original_head = _coo._head
+    _coo._head = _AlwaysRejectHead()
+    try:
+        response = client.post(
+            "/objectives",
+            headers=HEADERS,
+            json={"objective": "Create a market intelligence report", "required_output": "A structured summary"},
+        )
+        assert response.status_code == 400
+    finally:
+        _coo._head = original_head

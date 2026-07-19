@@ -87,3 +87,24 @@ def test_file_upload_saves_to_inbox() -> None:
 def test_proposal_actions_404_on_unknown_id() -> None:
     response = _client().post("/proposals/PROP-nope/approve", headers=HEADERS)
     assert response.status_code == 404
+
+
+def test_chat_sync_department_rejection_is_a_normal_reply_not_an_error() -> None:
+    from orchestrator.head import HeadVerdict
+
+    class _AlwaysRejectHead:
+        def evaluate(self, department, objective, **_):
+            return HeadVerdict(accepted=False, reasoning="Rejected for test.", suggested_department_id=None)
+
+    original_head = gateway_main._coo._head
+    gateway_main._coo._head = _AlwaysRejectHead()
+    try:
+        response = _client().post(
+            "/chat/sync", headers=HEADERS, json={"message": "Research current market trends."}
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["decision_id"] is None
+        assert "rejected" in body["reply"].lower()
+    finally:
+        gateway_main._coo._head = original_head

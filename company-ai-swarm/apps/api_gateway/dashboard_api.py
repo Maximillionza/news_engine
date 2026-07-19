@@ -53,7 +53,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from evolution_service.models import ChangeProposal, ProposalStatus
 from evolution_service.pipeline import EvolutionApprovalError, EvolutionEngine
-from orchestrator.controller import NoMatchingDepartmentError
+from orchestrator.controller import DepartmentRejectedError, NoMatchingDepartmentError
 from orchestrator.decisions import list_decisions
 from orchestrator.escalations import list_pending_escalations
 from orchestrator.intake import SufficiencyAssessment
@@ -126,6 +126,11 @@ def _run_objective_and_format_reply(
         # treated as a normal (non-error) reply. Preserved here so the async path completes
         # the objective_queue row rather than failing it for the same case.
         return {"reply": f"No department matched that objective: {exc}", "decision_id": None}
+    except DepartmentRejectedError as exc:
+        # Same treatment as NoMatchingDepartmentError above - a Department Head reject
+        # (Documentation/plans/2026-07-19-department-head-triage-design.md) is a legitimate
+        # outcome, not a technical failure.
+        return {"reply": f"Every department rejected that objective: {exc}", "decision_id": None}
 
 
 def build_queue_handler(

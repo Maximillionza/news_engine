@@ -35,8 +35,14 @@ from identity_service.models import EntityType
 from identity_service.repository import create_identity, get_identity
 from observability_service.telemetry import TelemetrySink
 from orchestrator.classification import create_classifier_from_env
-from orchestrator.controller import COOOrchestrator, NoMatchingDepartmentError, WorkflowObjectiveOutcome
+from orchestrator.controller import (
+    COOOrchestrator,
+    DepartmentRejectedError,
+    NoMatchingDepartmentError,
+    WorkflowObjectiveOutcome,
+)
 from orchestrator.decisions import get_decision
+from orchestrator.head import create_head_from_env
 from orchestrator.department_registry import DepartmentRegistry
 from security_service.permissions import grant_permission
 from shared.db import Base, make_engine, make_session_factory
@@ -72,6 +78,10 @@ _coo = COOOrchestrator(
     # Claude-backed routing) - see orchestrator/classification.py and Documentation/plans/
     # 2026-07-19-dynamic-department-routing-design.md Section 3.3.
     classifier=create_classifier_from_env(_model_gateway),
+    # DEPARTMENT_HEAD_TRIAGE env var selects auto_accept (default, no credentials) / llm
+    # (real Claude-backed triage) - see orchestrator/head.py and Documentation/plans/
+    # 2026-07-19-department-head-triage-design.md Section 3.2.
+    head=create_head_from_env(),
 )
 
 
@@ -185,6 +195,8 @@ def submit_objective(
         outcome = _coo.receive_objective(session, objective, required_output=required_output)
     except NoMatchingDepartmentError as exc:
         raise HTTPException(status_code=400, detail=f"No department matched this objective: {exc}") from exc
+    except DepartmentRejectedError as exc:
+        raise HTTPException(status_code=400, detail=f"Every department rejected this objective: {exc}") from exc
 
     return _serialize_outcome(outcome)
 
