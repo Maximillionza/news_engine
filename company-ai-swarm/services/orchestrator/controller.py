@@ -323,8 +323,12 @@ class COOOrchestrator:
         then (if rejected with a valid suggested department) one retry at that department. A
         suggested department is valid only if it is registered and has at least one
         dispatchable agent (mirrors KeywordDepartmentClassifier's own exclusion of agentless
-        departments) and has not already been attempted in this call. Mirrors
-        NoMatchingDepartmentError's pattern on terminal reject: a Decision Record and a
+        departments), has not already been attempted in this call, and is not the Review
+        Department (REVIEW_DEPARTMENT_ID) - a lone "operations" match must go through the
+        multi-department workflow engine (see routes_through_workflow_engine in
+        receive_objective()), not the single-department dispatch path, per the Phase 8 fix
+        that keeps the Review Agent from being dispatched raw objectives as primary work.
+        Mirrors NoMatchingDepartmentError's pattern on terminal reject: a Decision Record and a
         DEPARTMENT_REJECTED Escalation Record before raising."""
 
         attempted_ids: set[str] = set()
@@ -373,6 +377,7 @@ class COOOrchestrator:
                 suggested is not None
                 and bool(suggested.agents)
                 and suggested.id not in attempted_ids
+                and suggested.id != REVIEW_DEPARTMENT_ID
             )
 
             if attempt == 2 or not suggestion_valid:

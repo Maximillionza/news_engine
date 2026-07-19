@@ -163,6 +163,26 @@ def test_reject_with_already_attempted_suggestion_is_treated_as_no_suggestion(se
     assert head.calls == ["research"]
 
 
+def test_reject_with_review_department_suggestion_is_treated_as_no_suggestion(session: Session) -> None:
+    """A Head-suggested "operations" (the Review Department) must not be retried via the
+    single-department path even though it is registered and has an agent
+    (review_agent_001) - receive_objective() deliberately routes a lone "operations" match
+    through the multi-department workflow engine instead (routes_through_workflow_engine),
+    because the Review Agent's mission excludes performing the original work it reviews.
+    Without the REVIEW_DEPARTMENT_ID exclusion in _triage_single_department's
+    suggestion_valid check, this would incorrectly retry at "operations" and dispatch the
+    raw objective to review_agent_001 as primary work."""
+    head = _ScriptedHead(
+        [HeadVerdict(accepted=False, reasoning="Not research.", suggested_department_id="operations")]
+    )
+    coo = _make_coo(session, head=head)
+
+    with pytest.raises(DepartmentRejectedError):
+        coo.receive_objective(session, OBJECTIVE, required_output="A structured summary")
+
+    assert head.calls == ["research"]
+
+
 def test_head_call_failure_writes_technical_failure_escalation_then_reraises(session: Session) -> None:
     coo = _make_coo(session, head=_RaisingHead())
 
