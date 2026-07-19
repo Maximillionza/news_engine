@@ -1,8 +1,10 @@
-"""Phase A test (Documentation/plans/SDK_MIGRATION_PLAN.md Section 4.1): AgentSDKModelProvider
-implements ModelProvider correctly, using a fake async runner so no real Agent SDK call, no
-installed `claude-agent-sdk` package, and no Claude Code credentials are required to run
-these in CI. A separate, gated test at the bottom makes one real call - skipped unless the
-SDK is installed and RUN_REAL_AGENT_SDK_SMOKE_TEST=1.
+"""AgentSDKModelProvider implements ModelProvider correctly, using a fake async runner so no
+real Agent SDK call, no installed `claude-agent-sdk` package, and no Claude Code credentials
+are required to run these in CI. A separate, gated test at the bottom makes one real call -
+skipped unless the SDK is installed and RUN_REAL_AGENT_SDK_SMOKE_TEST=1.
+
+`_default_runner`'s own ClaudeAgentOptions construction (model, setting_sources) is covered
+separately below, since the fake-runner tests bypass it entirely by design.
 """
 
 from __future__ import annotations
@@ -12,14 +14,18 @@ from typing import Sequence
 
 import pytest
 
-from shared.providers.agent_sdk_provider import AgentSDKModelProvider, AgentSDKProviderError
+from shared.providers.agent_sdk_provider import (
+    DEFAULT_MODEL,
+    AgentSDKModelProvider,
+    AgentSDKProviderError,
+)
 
 
 def _runner_returning(text: str):
     calls: list[dict[str, object]] = []
 
-    async def runner(prompt: str, allowed_tools: Sequence[str]) -> str:
-        calls.append({"prompt": prompt, "allowed_tools": tuple(allowed_tools)})
+    async def runner(prompt: str, allowed_tools: Sequence[str], model: str | None) -> str:
+        calls.append({"prompt": prompt, "allowed_tools": tuple(allowed_tools), "model": model})
         return text
 
     runner.calls = calls
@@ -27,7 +33,7 @@ def _runner_returning(text: str):
 
 
 def _runner_raising(exc: Exception):
-    async def runner(prompt: str, allowed_tools: Sequence[str]) -> str:
+    async def runner(prompt: str, allowed_tools: Sequence[str], model: str | None) -> str:
         raise exc
 
     return runner
@@ -40,7 +46,7 @@ def test_generate_returns_runner_result() -> None:
     output = provider.generate("say hello")
 
     assert output == "hello from the agent sdk"
-    assert runner.calls == [{"prompt": "say hello", "allowed_tools": ()}]
+    assert runner.calls == [{"prompt": "say hello", "allowed_tools": (), "model": None}]
 
 
 def test_generate_passes_allowed_tools_through() -> None:
@@ -49,7 +55,29 @@ def test_generate_passes_allowed_tools_through() -> None:
 
     provider.generate("prompt")
 
-    assert runner.calls == [{"prompt": "prompt", "allowed_tools": ("Read", "Bash")}]
+    assert runner.calls[0]["allowed_tools"] == ("Read", "Bash")
+
+
+def test_generate_passes_model_through() -> None:
+    runner = _runner_returning("ok")
+    provider = AgentSDKModelProvider(model=DEFAULT_MODEL, runner=runner)
+
+    provider.generate("prompt")
+
+    assert runner.calls[0]["model"] == DEFAULT_MODEL
+
+
+def test_model_defaults_to_none_not_forced() -> None:
+    """Constructing without `model=` should defer to Claude Code's own default, not silently
+    force DEFAULT_MODEL - see the class docstring on why that's a deliberate choice left to
+    the caller (shared.providers.create_provider_from_env does pass it explicitly)."""
+
+    runner = _runner_returning("ok")
+    provider = AgentSDKModelProvider(runner=runner)
+
+    provider.generate("prompt")
+
+    assert runner.calls[0]["model"] is None
 
 
 def test_generate_wraps_runner_exceptions() -> None:
@@ -69,6 +97,45 @@ def test_generate_propagates_provider_error_unwrapped() -> None:
         provider.generate("prompt")
 
 
+def test_default_runner_builds_options_with_model_and_isolated_settings(monkeypatch) -> None:
+    """The real `_default_runner` must actually pass `model=` and `setting_sources=[]` into
+    ClaudeAgentOptions - the isolation fix documented in this module's docstring (a swarm
+    agent call run from inside this repo should not pick up The Company's own .claude/
+    settings). Faked at the claude_agent_sdk module boundary since the package may not be
+    installed in every environment this test suite runs in."""
+
+    import sys
+    import types
+
+    captured_options: list[object] = []
+
+    class _FakeOptions:
+        def __init__(self, **kwargs):
+            captured_options.append(kwargs)
+
+    class _FakeResult:
+        result = "faked output"
+
+    async def _fake_query(*, prompt, options):
+        yield _FakeResult()
+
+    fake_module = types.ModuleType("claude_agent_sdk")
+    fake_module.ClaudeAgentOptions = _FakeOptions
+    fake_module.query = _fake_query
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", fake_module)
+
+    from shared.providers.agent_sdk_provider import _default_runner
+
+    import asyncio
+
+    output = asyncio.run(_default_runner("prompt", ["Read"], "claude-sonnet-5"))
+
+    assert output == "faked output"
+    assert captured_options == [
+        {"allowed_tools": ["Read"], "model": "claude-sonnet-5", "setting_sources": []}
+    ]
+
+
 @pytest.mark.skipif(
     os.environ.get("RUN_REAL_AGENT_SDK_SMOKE_TEST") != "1",
     reason=(
@@ -78,6 +145,6 @@ def test_generate_propagates_provider_error_unwrapped() -> None:
     ),
 )
 def test_real_agent_sdk_call_smoke_test() -> None:
-    provider = AgentSDKModelProvider()
+    provider = AgentSDKModelProvider(model=DEFAULT_MODEL)
     output = provider.generate("Reply with exactly the word: pong")
     assert "pong" in output.lower()

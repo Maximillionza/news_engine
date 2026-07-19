@@ -297,15 +297,18 @@ Agent Execution (real Claude Code sessions)
 
 6. **Status: async execution works; voice interface can submit + poll** — the dashboard chat submits + polls; no voice interface exists yet (Phase D). Not implemented: the plan's three-state agent status (idle/working/**waiting**) - no real signal in this codebase's execution model to derive "waiting" from; documented as a conscious scope decision in `dashboard_api.py` rather than guessed at.
 
-### Phase C: Real Agents (Week 3)
-7. **AnthropicModelProvider full implementation** (12h)
-   - Structured outputs, error handling, timeouts
-   - Integration tests with real API (in optional, gated test suite)
+### Phase C: Real Agents (Week 3) — ✅ code-complete; live verification is yours to run
+7. **AnthropicModelProvider/AgentSDKModelProvider full implementation** (12h)
+   - Error handling — done since Phase A
+   - Timeouts — done (explicit `timeout_seconds`, default 600s, matching this section's original "10 minutes per agent" — was already the `anthropic` client's implicit default, now an intentional, documented, overridable choice)
+   - Structured outputs — not added; nothing in `AgentRuntime`/`ExecutionResult` expects JSON/structured output today (plain `str`), so there was no real requirement to build one against
+   - Model choice: both providers now default to **Sonnet 5** (`claude-sonnet-5`), not Opus — see `Documentation/operations/technology_decisions.md`'s "Model provider" section for the reasoning; overridable per-deployment via `MODEL_NAME` env var
+   - Integration tests with real API (gated test suite) — exist since Phase A (`RUN_REAL_ANTHROPIC_SMOKE_TEST=1` / `RUN_REAL_AGENT_SDK_SMOKE_TEST=1`); **not run for real** — the environment doing this work had no `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` available. Run these yourself once with real credentials before relying on `MODEL_PROVIDER=anthropic`/`agent_sdk` in production.
 
 8. **Agent execution via provider** (4h)
-   - Flip gateway to use AnthropicModelProvider (or keep env var configurable for testing)
+   - `MODEL_PROVIDER` env var flip exists since Phase A (`stub`/`anthropic`/`agent_sdk`) — the code-level "flip" this item calls for. The *default* deliberately stays `stub`: it's an operator env-var choice at deploy time, not a code default, since every test run (and `apps/api_gateway/main.py`'s repeated import across `Tests/integration/*.py`) would otherwise make real, billed calls.
 
-9. **Status: Company swarm now reasons with real Claude**
+9. **Status: Company swarm can reason with real Claude once `MODEL_PROVIDER` + credentials are set — not yet proven end-to-end with a live call in this pass.**
 
 ### Phase D: Voice Interface (Week 4)
 10. **Voice Director scaffold** (24h)
@@ -378,9 +381,9 @@ Agent Execution (real Claude Code sessions)
 - [x] `/chat` returns immediately; background worker executes objective
 - [x] `/objectives/{id}/result` polls for completion and returns result when ready
 - [ ] Voice interface submits an objective and polls until complete (Phase D — no voice interface exists yet)
-- [ ] A research objective produces real Claude reasoning (not stub), takes 5–15 seconds (providers exist since Phase A — `AnthropicModelProvider`/`AgentSDKModelProvider` — but `MODEL_PROVIDER` still defaults to `stub`; flipping the default and validating real latency is Phase C)
+- [ ] A research objective produces real Claude reasoning (not stub), takes 5–15 seconds — code-complete (Sonnet 5 default, configurable timeout, `MODEL_PROVIDER=anthropic`/`agent_sdk`), **not yet verified against a live call** — this environment had no credentials; run `RUN_REAL_ANTHROPIC_SMOKE_TEST=1` or `RUN_REAL_AGENT_SDK_SMOKE_TEST=1` with your own `ANTHROPIC_API_KEY`/`CLAUDE_CODE_OAUTH_TOKEN` to close this out
 - [x] Dashboard shows in-flight objectives and their progress (verified end-to-end in-browser, not just unit tests — gateway + queue worker run as separate processes, submitted an objective via the dashboard chat, confirmed the reply and in-flight-then-empty transition)
-- [x] All existing tests pass (with endpoint behavior updates) — 202 passed, 2 skipped by design (gated real-API smoke tests)
+- [x] All existing tests pass (with endpoint behavior updates) — 210 passed, 2 skipped by design (gated real-API smoke tests)
 - [ ] Voice Director can approve/reject Evolution proposals (Phase D)
 
 ---

@@ -13,7 +13,11 @@ from typing import Any
 
 import pytest
 
-from shared.providers.anthropic_provider import AnthropicModelProvider, AnthropicProviderError
+from shared.providers.anthropic_provider import (
+    DEFAULT_TIMEOUT_SECONDS,
+    AnthropicModelProvider,
+    AnthropicProviderError,
+)
 
 
 @dataclass
@@ -53,8 +57,10 @@ def _factory_for(response: _FakeMessage | None = None, exception: Exception | No
     )
     client = _FakeClient(messages=resource)
 
-    def factory(api_key: str, *, base_url: str | None) -> _FakeClient:
-        factory.calls.append({"api_key": api_key, "base_url": base_url})
+    def factory(api_key: str, *, base_url: str | None, timeout_seconds: float) -> _FakeClient:
+        factory.calls.append(
+            {"api_key": api_key, "base_url": base_url, "timeout_seconds": timeout_seconds}
+        )
         return client
 
     factory.calls = []
@@ -74,7 +80,9 @@ def test_generate_returns_text_content() -> None:
     output = provider.generate("say hello")
 
     assert output == "hello from claude"
-    assert factory.calls == [{"api_key": "sk-ant-fake", "base_url": None}]
+    assert factory.calls == [
+        {"api_key": "sk-ant-fake", "base_url": None, "timeout_seconds": DEFAULT_TIMEOUT_SECONDS}
+    ]
     assert factory.resource.calls[0]["messages"] == [{"role": "user", "content": "say hello"}]
 
 
@@ -109,7 +117,17 @@ def test_reads_api_key_from_environment(monkeypatch: pytest.MonkeyPatch) -> None
 
     AnthropicModelProvider(client_factory=factory)
 
-    assert factory.calls == [{"api_key": "sk-ant-from-env", "base_url": None}]
+    assert factory.calls == [
+        {"api_key": "sk-ant-from-env", "base_url": None, "timeout_seconds": DEFAULT_TIMEOUT_SECONDS}
+    ]
+
+
+def test_custom_timeout_is_passed_to_client_factory() -> None:
+    factory = _factory_for()
+
+    AnthropicModelProvider(api_key="sk-ant-fake", timeout_seconds=30.0, client_factory=factory)
+
+    assert factory.calls[0]["timeout_seconds"] == 30.0
 
 
 @pytest.mark.skipif(

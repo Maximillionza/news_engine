@@ -23,8 +23,25 @@ from __future__ import annotations
 import os
 from typing import Any, Callable, Protocol
 
-DEFAULT_MODEL = "claude-opus-4-8"
-DEFAULT_MAX_TOKENS = 4096
+# Sonnet 5, not Opus: AgentRuntime.execute_task's Execute step (services/agent_runtime/
+# runtime.py) is one bounded, single-shot prompt per call - not a long agentic loop where
+# Opus's extra depth changes the outcome - and this swarm's cost is either per-token
+# (this provider) or drawn from a personal subscription's usage window (AgentSDKProvider);
+# either way, Sonnet gets most of the quality at a fraction of the cost/usage. Override per
+# instance (or per department, once that plumbing exists) if a specific agent's task
+# actually needs Opus's ceiling.
+DEFAULT_MODEL = "claude-sonnet-5"
+# 16000, not a smaller number: this is a non-streaming call (generate() returns once, no
+# SDK timeout risk until ~16K+), and a real agent task (a research summary, a compliance
+# assessment) can legitimately need more than a couple thousand tokens - a low ceiling here
+# would silently truncate real output (stop_reason=max_tokens) exactly when the migration
+# is supposed to start proving real reasoning, not stub text, works.
+DEFAULT_MAX_TOKENS = 16000
+# SDK_MIGRATION_PLAN.md Section 4.4 item 1: "Times out gracefully (10 minutes per agent,
+# then fail the objective)". The anthropic client already defaults to a 10-minute request
+# timeout, so this was already true implicitly; made explicit here so it's a documented,
+# intentional choice rather than "whatever the installed SDK version happens to default to".
+DEFAULT_TIMEOUT_SECONDS = 600.0
 
 
 class AnthropicProviderError(Exception):
@@ -39,7 +56,9 @@ class _MessagesClient(Protocol):
     messages: Any
 
 
-def _default_client_factory(api_key: str, *, base_url: str | None) -> _MessagesClient:
+def _default_client_factory(
+    api_key: str, *, base_url: str | None, timeout_seconds: float
+) -> _MessagesClient:
     try:
         import anthropic
     except ImportError as exc:  # pragma: no cover - exercised only when the extra isn't installed
@@ -48,7 +67,7 @@ def _default_client_factory(api_key: str, *, base_url: str | None) -> _MessagesC
             "Install it with: pip install 'the-company[providers]' (or: pip install anthropic)"
         ) from exc
 
-    kwargs: dict[str, Any] = {"api_key": api_key}
+    kwargs: dict[str, Any] = {"api_key": api_key, "timeout": timeout_seconds}
     if base_url:
         kwargs["base_url"] = base_url
     return anthropic.Anthropic(**kwargs)
@@ -67,6 +86,7 @@ class AnthropicModelProvider:
         *,
         model: str = DEFAULT_MODEL,
         max_tokens: int = DEFAULT_MAX_TOKENS,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         base_url: str | None = None,
         client_factory: Callable[..., _MessagesClient] = _default_client_factory,
     ) -> None:
@@ -78,7 +98,13 @@ class AnthropicModelProvider:
             )
         self._model = model
         self._max_tokens = max_tokens
-        self._client = client_factory(resolved_key, base_url=base_url)
+        self._client = client_factory(resolved_key, base_url=base_url, timeout_seconds=timeout_seconds)
+
+    @property
+    def model(self) -> str:
+        """Read-only - which model this instance actually calls. For introspection/tests
+        and future status surfaces; changing it means constructing a new provider."""
+        return self._model
 
     def generate(self, prompt: str) -> str:
         try:

@@ -68,18 +68,48 @@ as shared infrastructure, like shared/db.py) and no stated production swap yet -
 other Phase 0-3 substitutions, an out-of-process service mesh / API gateway routing layer
 hasn't been decided because nothing outside this codebase calls it yet.
 
-## Model provider
+## Model provider (updated: SDK Migration Plan Phases A-C, `Documentation/plans/SDK_MIGRATION_PLAN.md`)
 
-**Dev/test:** `shared/model_gateway.StubModelProvider` - deterministic, no network access,
-no API key required. `ModelGateway` is the sole holder of any `ModelProvider` reference;
-`AgentRuntime` is constructed with a `ModelGateway` and has no other way to produce agent
-output (see `Tests/integration/test_agent_runtime.py`'s enforcement test). **Production:**
-a real provider (Claude, GPT, etc.) implementing the same `ModelProvider` protocol - not yet
-adopted. Dynamic tier-based routing (RDL sec.8's Reasoning Tier Classification) is also not
-yet implemented: Phase 4 has exactly one agent and one provider, so there is nothing to
-route between. Real routing needs task-complexity scoring, which per COOS sec.9's own note
-has no defined numeric algorithm anywhere in the source corpus - that gap will need to be
-closed with an actual decision (not just a design choice) when the COO is built in Phase 5.
+**Dev/test default, unchanged:** `shared/model_gateway.StubModelProvider` - deterministic, no
+network access, no API key required. `ModelGateway` is still the sole holder of any
+`ModelProvider` reference; `AgentRuntime` is constructed with a `ModelGateway` and has no
+other way to produce agent output (see `Tests/integration/test_agent_runtime.py`'s
+enforcement test).
+
+**Real providers now exist** (`shared/providers/`), selected by the `MODEL_PROVIDER` env var
+via `shared.providers.create_provider_from_env()` (`apps/api_gateway/main.py` uses this
+instead of hardcoding the stub) - `stub` (default), `anthropic` (`AnthropicModelProvider`,
+per-token `ANTHROPIC_API_KEY` billing), or `agent_sdk` (`AgentSDKModelProvider`, invokes
+`claude_agent_sdk.query()` instead of the raw API so it can draw on a personal Claude
+subscription via `CLAUDE_CODE_OAUTH_TOKEN` - see `SDK_MIGRATION_PLAN.md` Section 1 for why
+that's viable here and its caveats). **The default is still `stub`, deliberately** - flipping
+it in code, rather than leaving it an operator env-var choice, would mean every test run
+(and every `import main`, which `Tests/integration/*.py` do repeatedly) makes real, billed
+network calls. "Production" here means: the operator sets `MODEL_PROVIDER=anthropic` (or
+`agent_sdk`) plus `MODEL_NAME` (optional override) when actually running the gateway for
+real use, same as `THE_COMPANY_API_KEY` is already an env-var override, not a code default.
+
+Both real providers default to **Sonnet 5** (`claude-sonnet-5`), not Opus:
+`AgentRuntime.execute_task`'s Execute step is one bounded, single-shot prompt per call, not
+a long agentic loop where Opus's extra depth changes the outcome - and cost is either
+per-token or drawn from a personal subscription's usage window either way, so Sonnet
+stretches either budget considerably further for this task shape. `MODEL_NAME` overrides it
+per-deployment without a code change.
+
+Real-API verification is real but partial: both providers have unit/integration tests
+against fake clients/runners (no real network calls, matching this codebase's usual dev/test
+substitution), plus a gated smoke test each (`RUN_REAL_ANTHROPIC_SMOKE_TEST=1` /
+`RUN_REAL_AGENT_SDK_SMOKE_TEST=1`) that makes one real Claude call - skipped by default, and
+not run as part of this work, since the environment building this had no
+`ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` available. Whoever deploys this for real
+should run those two smoke tests once, with their own credentials, before relying on
+`MODEL_PROVIDER=anthropic`/`agent_sdk` in production.
+
+Dynamic tier-based routing (RDL sec.8's Reasoning Tier Classification) is still not
+implemented: every agent shares one `ModelGateway`/provider instance - there is no
+per-department or per-agent model selection. Real routing still needs task-complexity
+scoring, which per COOS sec.9's own note has no defined numeric algorithm anywhere in the
+source corpus - unchanged since Phase 5's original note here.
 
 ## Agent Runtime location
 

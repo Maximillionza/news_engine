@@ -27,13 +27,19 @@ from __future__ import annotations
 import asyncio
 from typing import Awaitable, Callable, Sequence
 
+# Same reasoning as AnthropicModelProvider's DEFAULT_MODEL (services/shared/providers/
+# anthropic_provider.py): one bounded, single-shot prompt per generate() call is Sonnet 5's
+# sweet spot, not Opus's - doubly so here, since this provider's calls draw down a personal
+# subscription's usage window rather than (or in addition to) per-token API cost.
+DEFAULT_MODEL = "claude-sonnet-5"
+
 
 class AgentSDKProviderError(Exception):
     """Raised when the Agent SDK query fails, or the `claude-agent-sdk` package isn't
     installed."""
 
 
-async def _default_runner(prompt: str, allowed_tools: Sequence[str]) -> str:
+async def _default_runner(prompt: str, allowed_tools: Sequence[str], model: str | None) -> str:
     try:
         from claude_agent_sdk import ClaudeAgentOptions, query
     except ImportError as exc:  # pragma: no cover - exercised only when the extra isn't installed
@@ -47,7 +53,16 @@ async def _default_runner(prompt: str, allowed_tools: Sequence[str]) -> str:
     # precedence caveat still applies - see this module's docstring - but the specific
     # "--bare ignores CLAUDE_CODE_OAUTH_TOKEN" trap (SDK_MIGRATION_PLAN.md Section 1) is a
     # CLI-invocation concern, not one this code path can trigger.
-    options = ClaudeAgentOptions(allowed_tools=list(allowed_tools))
+    #
+    # setting_sources=[] is deliberate: with the default (None), the SDK discovers this
+    # machine's user/project/local Claude Code settings - which, run from inside this very
+    # repo, means a swarm agent's reasoning call would silently pick up The Company's own
+    # .claude/ settings, hooks, or CLAUDE.md. A department agent executing a task has no
+    # business inheriting the operator's personal Claude Code configuration; empty sources
+    # keeps every call deterministic and isolated from whatever machine it happens to run on.
+    options = ClaudeAgentOptions(
+        allowed_tools=list(allowed_tools), model=model, setting_sources=[]
+    )
 
     result_text: str | None = None
     async for message in query(prompt=prompt, options=options):
@@ -65,20 +80,31 @@ class AgentSDKModelProvider:
     SDK harness (built-in tools + agent loop) rather than a single raw Messages API call.
     `allowed_tools` defaults to empty - a swarm agent's reasoning doesn't need Bash/Read/
     Edit access to the host filesystem; pass explicit tools only for agents that are meant
-    to act on the local machine."""
+    to act on the local machine. `model=None` defers to whatever Claude Code itself
+    defaults to (its own `/model` setting) rather than forcing DEFAULT_MODEL - pass
+    `model=DEFAULT_MODEL` explicitly (or another model string) when this provider is
+    selected specifically because it should behave like AnthropicModelProvider's choice."""
 
     def __init__(
         self,
         *,
+        model: str | None = None,
         allowed_tools: Sequence[str] = (),
-        runner: Callable[[str, Sequence[str]], Awaitable[str]] = _default_runner,
+        runner: Callable[[str, Sequence[str], str | None], Awaitable[str]] = _default_runner,
     ) -> None:
+        self._model = model
         self._allowed_tools = tuple(allowed_tools)
         self._runner = runner
 
+    @property
+    def model(self) -> str | None:
+        """Read-only - `None` means "whatever Claude Code itself defaults to", not
+        DEFAULT_MODEL; see the class docstring."""
+        return self._model
+
     def generate(self, prompt: str) -> str:
         try:
-            return asyncio.run(self._runner(prompt, self._allowed_tools))
+            return asyncio.run(self._runner(prompt, self._allowed_tools, self._model))
         except AgentSDKProviderError:
             raise
         except Exception as exc:  # noqa: BLE001 - ModelGateway.generate() records + re-raises
