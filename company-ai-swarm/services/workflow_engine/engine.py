@@ -11,10 +11,11 @@ Phase 6 scope (IMPLEMENTATION_PLAN.md), and what's deliberately not built yet:
   ("Research requirements -> Architecture design -> Security review -> ..."). Phase 6's test
   is a two-department objective, so this is the smallest decomposition that satisfies it -
   not a claim that finer decomposition isn't needed later.
-- Sequencing uses a fixed canonical department order (see orchestrator/planner.py's
-  select_all_matching_departments), not a real dependency graph from EWOS sec.5's
-  `Dependencies` field - no dependency-declaration mechanism exists anywhere in this corpus
-  yet (Task Definition Language defines task fields, not a graph resolver).
+- Sequencing uses a fixed canonical department order (see orchestrator/classification.py's
+  select_all_matching_departments, originally orchestrator/planner.py's), not a real
+  dependency graph from EWOS sec.5's `Dependencies` field - no dependency-declaration
+  mechanism exists anywhere in this corpus yet (Task Definition Language defines task
+  fields, not a graph resolver).
 - Parallel Execution (EWOS sec.13) is not implemented - every Phase 6 workflow runs
   sequentially regardless of whether its departments are actually independent.
 - If a task's outcome is not achieved, later tasks in the workflow do not run. EWOS sec.14's
@@ -22,8 +23,9 @@ Phase 6 scope (IMPLEMENTATION_PLAN.md), and what's deliberately not built yet:
   compensating/rollback logic that would justify continuing past a failed dependency.
 
 Phase 7 addition (MVP Build Order Version 0.3): if the fixed canonical department order
-(orchestrator/planner.py) includes "operations" - the only MVP department carrying
-review/evaluation capability, per agents/active/review_agent/agent.yaml - it is not run as
+(orchestrator/classification.py, originally orchestrator/planner.py) includes "operations" -
+the only MVP department carrying review/evaluation capability, per
+agents/active/review_agent/agent.yaml - it is not run as
 just another substantive task on the original objective (the Review Agent's own mission
 explicitly excludes performing the work it reviews). Instead, once every other matched
 department's task has succeeded, a review task is dispatched to it: TDL sec.17's
@@ -41,6 +43,15 @@ treated as a crash. The review step's TDL sec.14 evidence and
 workflow_engine/gate_integrity.py's verdict on it (escalation condition 3) are also recorded
 onto the WorkflowRun here, for the same reason: this module reports facts, the governance
 layer above decides what to do with them.
+
+Department Head Triage addition (Documentation/plans/
+2026-07-19-department-head-triage-design.md): each substantive department's Head
+(orchestrator/head.py) evaluates the objective immediately before that department's
+select_agent()+dispatch() - a reject halts forward progress the same way the missing-agent
+case above already does (blocked_reason set, no rollback, no reassignment attempted
+mid-workflow), distinguished by a "department_rejected:" prefix instead of
+"unresolvable_dependency_gap:" so the caller can classify it correctly. The review step is
+not triaged - Section 2 of the design doc scopes triage to substantive departments only.
 """
 
 from __future__ import annotations
@@ -54,6 +65,7 @@ from observability_service.telemetry import TelemetrySink
 from orchestrator.allocator import select_agent
 from orchestrator.department_registry import DepartmentDefinition
 from orchestrator.evaluator import validate_outcome
+from orchestrator.head import AutoAcceptDepartmentHead, DepartmentHead
 from orchestrator.router import dispatch
 from shared.model_gateway import ModelGateway
 from workflow_engine.gate_integrity import check_gate_integrity
@@ -75,6 +87,7 @@ def execute_workflow(
     model_gateway: ModelGateway,
     telemetry: TelemetrySink | None = None,
     complexity_level: str = "Level 2 Standard",
+    head: DepartmentHead = AutoAcceptDepartmentHead(),
 ) -> WorkflowRun:
     run = WorkflowRun(workflow_id=f"WF-{uuid4().hex[:8]}", objective=objective)
 
@@ -82,6 +95,20 @@ def execute_workflow(
     review_department = next((d for d in departments if d.id == REVIEW_DEPARTMENT_ID), None)
 
     for department in substantive_departments:
+        verdict = head.evaluate(
+            department,
+            objective,
+            agent_registry=agent_registry,
+            model_gateway=model_gateway,
+            session=session,
+            coo_id=coo_id,
+            telemetry=telemetry,
+        )
+        if not verdict.accepted:
+            run.succeeded = False
+            run.blocked_reason = f"department_rejected: {verdict.reasoning}"
+            return run
+
         try:
             allocation = select_agent(department, agent_registry)
         except ValueError as exc:

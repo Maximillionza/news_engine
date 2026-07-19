@@ -431,6 +431,7 @@ class COOOrchestrator:
                 agent_registry=self._agents,
                 model_gateway=self._model_gateway,
                 telemetry=self._telemetry,
+                head=self._head,
             )
         except Exception as exc:
             # Decision record still needs to exist for the escalation to reference - the
@@ -475,9 +476,14 @@ class COOOrchestrator:
         )
 
         if workflow.blocked_reason is not None:
+            condition = (
+                EscalationCondition.DEPARTMENT_REJECTED
+                if workflow.blocked_reason.startswith("department_rejected:")
+                else EscalationCondition.UNRESOLVABLE_DEPENDENCY_GAP
+            )
             escalations.write_escalation(
                 session,
-                condition=EscalationCondition.UNRESOLVABLE_DEPENDENCY_GAP,
+                condition=condition,
                 reasoning=workflow.blocked_reason,
                 decision_id=decision_id,
             )
