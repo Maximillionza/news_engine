@@ -1,11 +1,19 @@
 # The Company — Milestone-Based Implementation Plan
 
-Version 1.0. No code has been written against this plan — it is a planning artifact only,
-synthesizing the build sequences already defined across `Specifications/2 -
+Version 1.0, synthesizing the build sequences already defined across `Specifications/2 -
 construction-framework/Enterprise Implementation Blueprint (EIB).md`, `Specifications/3 -
 execution-framework/AI Builder Master Execution Package (ABMEP).md`, and `Specifications/3 -
 execution-framework/MVP Validation Specification (MVS).md` into one concrete, testable
 sequence.
+
+**Status note (reconciled 2026-07-23, PRD `Documentation/plans/2026-07-23-closing-the-
+crewai-capability-gap-prd.md` initiative 5.1):** this document previously stated "No code
+has been written against this plan — it is a planning artifact only." That was false and had
+drifted badly out of date. As of this reconciliation, all twelve phases have real,
+substantially-implemented code and passing tests - see the status table below. This
+reconciliation is a repo-state check (do the files and tests described by each phase's
+deliverables exist and pass), not a line-by-line re-audit of every exit-criteria bullet -
+treat "Implemented" below as strong evidence, not a formal phase sign-off.
 
 ## How to read this document
 
@@ -54,12 +62,46 @@ Dependencies chain in EIB §12 (Identity → Security → Runtime → Agents →
 Departments → Expansion Systems).
 
 
+## Actual status (reconciled 2026-07-23)
+
+Full test suite: **266 passed, 4 skipped** (`python -m pytest`). The 4 skipped are all
+gated live-credential smoke tests (real Claude API/Agent SDK calls, opt-in via env var), not
+failures or missing coverage. The MVS acceptance suite (`Tests/acceptance/
+test_mvs_acceptance.py`) covers all 10 of Phase 9's categories in one file (13 test methods)
+and passes in full - this is Phase 9's own exit criteria, met.
+
+| Phase | Name | Status | Evidence |
+|---|---|---|---|
+| 0 | Foundation & Contracts | Implemented | `services/shared/contracts.py` defines `RequestContract`/`ResponseContract`/`EventContract`/`ServiceContract`; `GET /health` exists in `apps/api_gateway/main.py`. |
+| 1 | Identity & Security Core | Implemented | `services/identity_service/{models,repository}.py`; `services/security_service/{permissions,audit,trust,incidents}.py`. |
+| 2 | Data Layer & Memory Substrate | Implemented | `services/memory_service/models.py` defines the five-tier `MemoryTier` enum (working/project/department/enterprise/historical) matching EMAS. |
+| 3 | Runtime & Communication Backbone | Implemented | `services/event_service/bus.py`, `services/shared/service_bus.py`. |
+| 4 | Agent Runtime (single agent) | Implemented | `services/agent_runtime/{runtime,registry}.py`; `ModelGateway` (`services/shared/model_gateway.py`) is the sole permitted path to a provider, enforced by an integration test. |
+| 5 | COO + Single Department (MVP v0.1) | Implemented | `services/orchestrator/{controller,classification,allocator}.py`. |
+| 6 | Multi-Department Expansion (MVP v0.2) | Implemented | `services/workflow_engine/engine.py::execute_workflow`. |
+| 7 | Knowledge Graph + Full Roster (MVP v0.3) | Implemented | `services/knowledge_service/{models,repository}.py`; `agents/active/` has all four department agents plus `review_agent`. |
+| 8 | Governance Completion (MVP v0.4) | Implemented | `services/orchestrator/escalation.py::EscalationCondition` (the four-condition policy) and `escalations.py` (persistence); `services/observability_service/{telemetry,alerting,views}.py`. |
+| 9 | MVP Validation (v1.0) | Implemented | `services/memory_service/promotion.py` (minor/critical tiered promotion); full MVS 001-010 acceptance suite passing (see above). |
+| 10 | Expansion Layer (post-MVP) | Implemented | `sdk/{agent,workflow,capability,plugin}_builder/`; `services/plugin_service/`, `services/marketplace_service/`; tested in `Tests/integration/test_plugin_service.py`, `test_marketplace_service.py`. |
+| 11 | Intelligence Systems (post-MVP) | Implemented | `services/evolution_service/pipeline.py`, `services/digital_twin_service/`, `services/simulation_service/workflow_simulation.py`; `Tests/integration/test_evolution_engine.py::TestEvolutionValidationMVS011` (named directly after MVS Test Category 011), `test_digital_twin_and_simulation.py`. |
+
+**Known real gaps, not covered by the above** (tracked in the PRD referenced at the top of
+this document, not by any phase in this plan): no tool-calling capability exists for any
+department agent yet (agents reason over text only); `Tests/performance/` and
+`Tests/simulation/` are empty scaffold directories - the real Phase 10/11 tests above live
+under `Tests/integration/` instead, and nothing here tests concurrent-load or mid-workflow
+provider-failure behavior specifically, despite `Documentation/plans/SDK_MIGRATION_PLAN.md`
+Section 1 flagging shared subscription-usage-window contention as a real risk.
+
+
 ---
 
 ## Phase 0 — Foundation & Contracts
 
 **Depends on**: nothing (repository structure and configuration templates already exist —
 see `CRBS`, `agents/templates/agent_template.yaml`, `Configuration/company.yaml`).
+
+**Actual status: Implemented** — see the status table above.
 
 **Deliverables**:
 
@@ -75,6 +117,8 @@ see `CRBS`, `agents/templates/agent_template.yaml`, `Configuration/company.yaml`
 ## Phase 1 — Identity & Security Core
 
 **Depends on**: Phase 0 (contracts exist to shape identity/security_context payloads).
+
+**Actual status: Implemented** — see the status table above.
 
 **Deliverables**:
 
@@ -95,6 +139,8 @@ see `CRBS`, `agents/templates/agent_template.yaml`, `Configuration/company.yaml`
 
 **Depends on**: Phase 1 (memory access requires identity/permission checks per `ESTAS` §16).
 
+**Actual status: Implemented** — see the status table above.
+
 **Deliverables**:
 
 - Operational database, vector store, graph store, object storage provisioned (`EIAS` §8).
@@ -113,6 +159,8 @@ see `CRBS`, `agents/templates/agent_template.yaml`, `Configuration/company.yaml`
 ## Phase 3 — Runtime & Communication Backbone
 
 **Depends on**: Phase 0 (contracts), Phase 1 (security_context is mandatory on every message per `RCS` §6).
+
+**Actual status: Implemented** — see the status table above.
 
 **Deliverables**:
 
@@ -133,6 +181,8 @@ see `CRBS`, `agents/templates/agent_template.yaml`, `Configuration/company.yaml`
 
 **Depends on**: Phase 2 (memory access), Phase 3 (communication, telemetry).
 
+**Actual status: Implemented** — see the status table above.
+
 **Deliverables**:
 
 - Agent Runtime engine implementing the Agent Execution Cycle: Receive Task → Load Context → Retrieve Knowledge → Check Policies → Plan → Execute → Validate → Produce Artifact → Report Outcome → Release Context (`ROM` §11).
@@ -151,6 +201,8 @@ see `CRBS`, `agents/templates/agent_template.yaml`, `Configuration/company.yaml`
 ## Phase 5 — COO + Single Department — MVP Version 0.1
 
 **Depends on**: Phase 4.
+
+**Actual status: Implemented** — see the status table above.
 
 **Deliverables**:
 
@@ -171,6 +223,8 @@ see `CRBS`, `agents/templates/agent_template.yaml`, `Configuration/company.yaml`
 
 **Depends on**: Phase 5.
 
+**Actual status: Implemented** — see the status table above.
+
 **Deliverables**:
 
 - Engineering Agent and Compliance Agent activated (`departments/engineering`, `departments/compliance`, already scaffolded).
@@ -189,6 +243,8 @@ see `CRBS`, `agents/templates/agent_template.yaml`, `Configuration/company.yaml`
 ## Phase 7 — Knowledge Graph + Full Roster — MVP Version 0.3
 
 **Depends on**: Phase 6.
+
+**Actual status: Implemented** — see the status table above.
 
 **Deliverables**:
 
@@ -209,12 +265,14 @@ see `CRBS`, `agents/templates/agent_template.yaml`, `Configuration/company.yaml`
 
 **Depends on**: Phase 7.
 
+**Actual status: Implemented** — see the status table above.
+
 **Deliverables**:
 
 - Compliance Intelligence Engine: applicability assessment per `ECRIS` §8 (Business Activity + Location + Data Type + Industry + Entity Type + Risk Profile → Applicability).
 - Observability Platform: Enterprise Command Centre views for Director/COO/Department (`EOCCS` §21-24), alerting (`EOCCS` §25).
 - Security monitoring completion: trust scoring, incident workflow (`ESTAS` §26-28).
-- **Four-condition escalation policy** for ESTAS §10's Risk Assessment step, adopted from an external swarm design (Idea Lab) as a substitute for COOS §9's undefined numeric complexity/risk scoring (no such algorithm exists anywhere in the source corpus — see `planner.py`'s docstring). The COO escalates to a human — and only a human — when one of exactly four named conditions fires; everything else the COO resolves itself:
+- **Four-condition escalation policy** for ESTAS §10's Risk Assessment step, adopted from an external swarm design (Idea Lab) as a substitute for COOS §9's undefined numeric complexity/risk scoring (no such algorithm exists anywhere in the source corpus — `planner.py`'s docstring made this point originally; the same fixed-default honesty note now lives in `controller.py`, since that logic was relocated). The COO escalates to a human — and only a human — when one of exactly four named conditions fires; everything else the COO resolves itself:
   1. Objective Understanding / Department Selection (COOS §7-9) yields no viable department match (`NoMatchingDepartmentError`, already raised in `controller.py`).
   2. Outcome Validation (`evaluator.py`, COOS §20) returns "objective not achieved."
   3. A quality/integrity gate (Review Agent's pass/fail, Phase 7's risk-proportional review loop, `TDL` §17) flags a result as superficial or incomplete despite nominally passing.
@@ -234,6 +292,8 @@ see `CRBS`, `agents/templates/agent_template.yaml`, `Configuration/company.yaml`
 
 **Depends on**: Phase 8.
 
+**Actual status: Implemented** — see the status table above.
+
 **Deliverables**:
 
 - The "Learn" step of COOS §6's Operating Cycle (memory promotion from outcomes), the one step `controller.py` has deliberately left unimplemented since Phase 5. Implemented as **tiered promotion**, not a single uniform gate, adopted from an external swarm design (Idea Lab) and adapted to reuse Phase 8's four-condition escalation policy rather than inventing a second, separate risk classification:
@@ -252,6 +312,8 @@ see `CRBS`, `agents/templates/agent_template.yaml`, `Configuration/company.yaml`
 
 **Depends on**: Phase 9 (MVS acceptance passed).
 
+**Actual status: Implemented** — see the status table above.
+
 **Deliverables**: SDK (agent/workflow/capability builders), Plugin system, Marketplace, external-facing API layer — per `EIB` Phase 3 and the Tier 4 documents (`EAAS`, `EPAS`, `ESDKS`, `EMAS`-marketplace).
 
 **Test**: Use the SDK to define a new agent (not one of the original four) without editing core runtime code; confirm it registers in the Agent Registry and executes a task successfully through the existing COO/workflow path from Phases 5-7.
@@ -262,6 +324,8 @@ see `CRBS`, `agents/templates/agent_template.yaml`, `Configuration/company.yaml`
 ## Phase 11 — Intelligence Systems (post-MVP)
 
 **Depends on**: Phase 9. Independent of Phase 10 (may be built in parallel with it).
+
+**Actual status: Implemented** — see the status table above.
 
 **Deliverables**: Digital Twin state synchronization, Simulation Framework, Evolution Engine improvement-proposal pipeline — per `ESDTS` and `EESIS`.
 
