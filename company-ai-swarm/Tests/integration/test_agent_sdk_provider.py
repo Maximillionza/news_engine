@@ -115,12 +115,14 @@ def test_default_runner_builds_options_with_model_and_isolated_settings(monkeypa
 
     class _FakeResult:
         result = "faked output"
+        is_error = False
 
     async def _fake_query(*, prompt, options):
         yield _FakeResult()
 
     fake_module = types.ModuleType("claude_agent_sdk")
     fake_module.ClaudeAgentOptions = _FakeOptions
+    fake_module.ResultMessage = _FakeResult
     fake_module.query = _fake_query
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", fake_module)
 
@@ -134,6 +136,77 @@ def test_default_runner_builds_options_with_model_and_isolated_settings(monkeypa
     assert captured_options == [
         {"allowed_tools": ["Read"], "model": "claude-sonnet-5", "setting_sources": []}
     ]
+
+
+def _install_fake_claude_agent_sdk(monkeypatch, *, is_error: bool, result: str, api_error_status=None):
+    import sys
+    import types
+
+    class _FakeOptions:
+        def __init__(self, **kwargs):
+            pass
+
+    class _FakeResult:
+        pass
+
+    fake_result = _FakeResult()
+    fake_result.result = result
+    fake_result.is_error = is_error
+    fake_result.api_error_status = api_error_status
+
+    async def _fake_query(*, prompt, options):
+        yield fake_result
+
+    fake_module = types.ModuleType("claude_agent_sdk")
+    fake_module.ClaudeAgentOptions = _FakeOptions
+    fake_module.ResultMessage = _FakeResult
+    fake_module.query = _fake_query
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", fake_module)
+
+
+def test_default_runner_raises_with_http_status_when_api_error_status_present(monkeypatch) -> None:
+    """The quirk this ports from Samaritan's core/provider.py: is_error=True with subtype
+    "success" hides the real HTTP status unless api_error_status is checked explicitly."""
+
+    import asyncio
+
+    _install_fake_claude_agent_sdk(
+        monkeypatch, is_error=True, result="error result text", api_error_status=529
+    )
+
+    from shared.providers.agent_sdk_provider import AgentSDKProviderError, _default_runner
+
+    with pytest.raises(AgentSDKProviderError, match="HTTP 529"):
+        asyncio.run(_default_runner("prompt", [], None))
+
+
+def test_default_runner_raises_with_fallback_message_when_no_api_error_status(monkeypatch) -> None:
+    import asyncio
+
+    _install_fake_claude_agent_sdk(
+        monkeypatch, is_error=True, result="something went wrong", api_error_status=None
+    )
+
+    from shared.providers.agent_sdk_provider import AgentSDKProviderError, _default_runner
+
+    with pytest.raises(AgentSDKProviderError, match="something went wrong"):
+        asyncio.run(_default_runner("prompt", [], None))
+
+
+def test_default_runner_does_not_treat_error_result_text_as_output(monkeypatch) -> None:
+    """Regression test for the exact bug this fix closes: before this change, any ResultMessage
+    with a truthy `.result` was accepted as real output, is_error or not."""
+
+    import asyncio
+
+    _install_fake_claude_agent_sdk(
+        monkeypatch, is_error=True, result="this looks like real output but isn't"
+    )
+
+    from shared.providers.agent_sdk_provider import AgentSDKProviderError, _default_runner
+
+    with pytest.raises(AgentSDKProviderError):
+        asyncio.run(_default_runner("prompt", [], None))
 
 
 @pytest.mark.skipif(

@@ -25,7 +25,7 @@ remains overridable in tests, without the package installed.
 from __future__ import annotations
 
 import asyncio
-from typing import Awaitable, Callable, Sequence
+from typing import Any, Awaitable, Callable, Sequence
 
 # Same reasoning as AnthropicModelProvider's DEFAULT_MODEL (services/shared/providers/
 # anthropic_provider.py): one bounded, single-shot prompt per generate() call is Sonnet 5's
@@ -39,9 +39,31 @@ class AgentSDKProviderError(Exception):
     installed."""
 
 
+def _describe_result_error(message: Any) -> str:
+    """ResultMessage.api_error_status carries the real HTTP status (e.g. 429/500/529) when
+    is_error=True but subtype stays "success" - a documented Agent SDK quirk where a
+    transient API failure surfaces this way. Ported from the sibling Samaritan project's
+    core/provider.py, which hit the same quirk. Prefer api_error_status when present; it's
+    what actually explains an otherwise-opaque "returned an error result: success"-shaped
+    message.
+
+    Note: this only fires when the SDK actually yields a ResultMessage with is_error=True -
+    a failure below that layer (e.g. a transport/control-channel error raised before any
+    ResultMessage is produced) surfaces as a bare Exception from claude_agent_sdk itself,
+    which this can't intercept; AgentSDKModelProvider.generate()'s broader except clause
+    still catches those, just without this extra detail."""
+
+    if getattr(message, "api_error_status", None) is not None:
+        return (
+            f"Agent SDK query failed with HTTP {message.api_error_status} from the "
+            f"underlying API (result: {message.result!r})."
+        )
+    return f"Agent SDK query returned an error result: {message.result}"
+
+
 async def _default_runner(prompt: str, allowed_tools: Sequence[str], model: str | None) -> str:
     try:
-        from claude_agent_sdk import ClaudeAgentOptions, query
+        from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
     except ImportError as exc:  # pragma: no cover - exercised only when the extra isn't installed
         raise AgentSDKProviderError(
             "The 'claude-agent-sdk' package is required for AgentSDKModelProvider. "
@@ -67,8 +89,14 @@ async def _default_runner(prompt: str, allowed_tools: Sequence[str], model: str 
     result_text: str | None = None
     async for message in query(prompt=prompt, options=options):
         # SystemMessage/AssistantMessage/etc. stream first; the terminal ResultMessage
-        # carries `.result` (see agent-sdk quickstart's `if hasattr(message, "result")`).
-        if hasattr(message, "result") and message.result:
+        # carries `.result` and `.is_error` (see agent-sdk quickstart's
+        # `if hasattr(message, "result")`). is_error must be checked explicitly - a prior
+        # version of this loop only checked for a truthy `.result`, which would have
+        # silently treated an error ResultMessage's result text as real output instead of
+        # raising.
+        if isinstance(message, ResultMessage):
+            if message.is_error:
+                raise AgentSDKProviderError(_describe_result_error(message))
             result_text = message.result
     if result_text is None:
         raise AgentSDKProviderError("Agent SDK query produced no result message.")
