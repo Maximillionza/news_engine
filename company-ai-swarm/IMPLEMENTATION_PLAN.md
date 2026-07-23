@@ -27,6 +27,11 @@ Twelve phases. Each phase has:
 Phases 0–9 constitute the MVS-canonical MVP (Director + COO + Research/Engineering/
 Compliance/Operations departments + one agent each + full governance layer). Phases 10–11
 are explicitly post-MVP, per EIB Phase 3/4 and CCBP §10 ("First Expansion After MVP").
+Phases 12 onward (added 2026-07-23, see "Phase 12 and beyond" below) are this document's
+single source of truth for what's built vs. what's next, superseding the standalone
+`Documentation/plans/2026-07-23-closing-the-crewai-capability-gap-prd.md` for status
+tracking — that document's reasoning/evidence stays valid, its initiatives now live here as
+numbered phases instead, so status isn't tracked in two places.
 
 
 ## Phase dependency graph
@@ -55,6 +60,18 @@ Phase 9  MVP validation (MVS 001–010)                 ── MVP v1.0
    ├── Phase 10  Expansion layer (SDK/Plugin/Marketplace/API)
    │
    └── Phase 11  Intelligence systems (Digital Twin/Simulation/Evolution)
+          │
+          ├── Phase 12  Agent tool-calling
+          ├── Phase 13  Failure & load resilience testing
+          ├── Phase 15  Intake sufficiency-check coverage extension
+          │      │
+          │      └── Phase 16  Department Head direct execution + specialist spawning
+          │             │
+          │             └── Phase 17  Specialist spawn ledger + Evolution promotion heuristic
+          │                    │
+          │                    └── Phase 19  Enterprise Compiler / CEDL (long-horizon)
+          │
+          Phase 12 ──→ Phase 14  Operational dogfooding ──→ Phase 18  Department creation (deferred)
 ```
 
 No phase may begin before its predecessor's exit criteria are met. This mirrors the Build
@@ -84,14 +101,20 @@ and passes in full - this is Phase 9's own exit criteria, met.
 | 9 | MVP Validation (v1.0) | Implemented | `services/memory_service/promotion.py` (minor/critical tiered promotion); full MVS 001-010 acceptance suite passing (see above). |
 | 10 | Expansion Layer (post-MVP) | Implemented | `sdk/{agent,workflow,capability,plugin}_builder/`; `services/plugin_service/`, `services/marketplace_service/`; tested in `Tests/integration/test_plugin_service.py`, `test_marketplace_service.py`. |
 | 11 | Intelligence Systems (post-MVP) | Implemented | `services/evolution_service/pipeline.py`, `services/digital_twin_service/`, `services/simulation_service/workflow_simulation.py`; `Tests/integration/test_evolution_engine.py::TestEvolutionValidationMVS011` (named directly after MVS Test Category 011), `test_digital_twin_and_simulation.py`. |
+| 12 | Agent Tool-Calling | Not started | Priority: **High**. See "Phase 12 and beyond" below. |
+| 13 | Failure & Load Resilience Testing | Not started | Priority: **High**. |
+| 14 | Operational Dogfooding | Not started | Priority: **Medium**, ongoing once started (no end date). Depends on Phase 12. |
+| 15 | Intake Sufficiency-Check Coverage Extension | Not started | Priority: **High** — foundational, Phase 16 depends on this holding. |
+| 16 | Department Head Direct Execution + Specialist Spawning | Not started | Priority: **Medium-High**. Depends on Phase 15. |
+| 17 | Specialist Spawn Ledger + Evolution Promotion Heuristic | Not started | Priority: **Medium**. Depends on Phase 16. |
+| 18 | Department Creation Capability | Deferred | Priority: **Low, deliberately deferred** until Phase 14 produces real case data. |
+| 19 | Enterprise Compiler / CEDL (multi-company generation) | Long-horizon | Not scoped. Depends on Phase 17's small-scale self-improvement loop earning a track record first. |
+| — | EEOS (Economics & Optimization) | Needs exploration | No phase/priority assigned yet — scope this before scheduling it. |
+| — | EDIS (Deployment & Infrastructure) | Not a gap | `Infrastructure/`'s empty scaffolding is correct as-is — purpose-built to stay empty until the Company has real operational/project history (Phase 14). Revisit then, not before. |
+| — | EHCAS §13 "Decision Authority Class" | Resolved | Superseded by Phase 8's escalation policy (`orchestrator/escalation.py::EscalationCondition`) — no separate work needed. |
 
-**Known real gaps, not covered by the above** (tracked in the PRD referenced at the top of
-this document, not by any phase in this plan): no tool-calling capability exists for any
-department agent yet (agents reason over text only); `Tests/performance/` and
-`Tests/simulation/` are empty scaffold directories - the real Phase 10/11 tests above live
-under `Tests/integration/` instead, and nothing here tests concurrent-load or mid-workflow
-provider-failure behavior specifically, despite `Documentation/plans/SDK_MIGRATION_PLAN.md`
-Section 1 flagging shared subscription-usage-window contention as a real risk.
+Full detail for Phases 12-19 (deliverables, test approach, open questions) is in "Phase 12
+and beyond" below, in the same format as Phases 0-11 above.
 
 
 ---
@@ -336,6 +359,203 @@ see `CRBS`, `agents/templates/agent_template.yaml`, `Configuration/company.yaml`
 3. Confirm the proposal requires explicit approval before being applied — the Evolution Engine cannot self-approve changes (`EESIS` §10, `ESTAS` §21).
 
 **Exit criteria**: The full loop (Observation → Evolution Engine → Simulation → Recommendation → Approval → Implementation) completes for at least one real inefficiency, with human approval enforced as a hard gate.
+
+
+---
+
+## Phase 12 and beyond — Post-Reconciliation Roadmap (added 2026-07-23)
+
+Unlike Phases 0-11, these phases weren't synthesized from the Tier 1-3 specification corpus
+- they came out of a direct architecture review against CrewAI and a codebase-grounded
+discussion of self-organization concepts, both on 2026-07-23. Same format as above
+(Depends on / Deliverables / Test / Exit criteria) where the work is scoped enough to
+support it; phases still needing scoping say so plainly instead of inventing false
+precision.
+
+### Phase 12 — Agent Tool-Calling
+
+**Depends on**: Phase 4 (Agent Runtime), Phase 10 (SDK).
+
+**Priority: High.**
+
+**Deliverables**: `AgentSDKModelProvider`'s `allowed_tools` mechanism already exists and is
+wired into the Claude Agent SDK's own tool loop - it has simply never been populated. Wire
+one real tool per department, matched to its actual mission: Research gets a web-search
+tool, Engineering gets a sandboxed code-execution/lint/test-runner tool, Compliance gets a
+policy/document-lookup tool. Do not build a general-purpose tool library up front - that's
+explicitly out of scope (see the CrewAI-gap PRD's non-goals).
+
+**Test**: At least one department agent completes a real objective requiring an external
+tool call mid-reasoning, with that call visible in `observability_service/telemetry.py` -
+not just inferable from the final text output.
+
+**Exit criteria**: One department agent demonstrably uses its tool in a real (non-test)
+objective, logged in telemetry.
+
+### Phase 13 — Failure & Load Resilience Testing
+
+**Depends on**: Phase 9 (objective queue, escalation policy).
+
+**Priority: High.**
+
+**Deliverables**: `Documentation/plans/SDK_MIGRATION_PLAN.md` Section 1 already flags shared
+subscription-usage-window contention as a real risk; nothing tests it. Three targeted tests,
+not full Phase 11 simulation scope: (1) N concurrent objectives through `queue_worker.py` -
+no queue corruption, no lost/duplicated jobs; (2) a forced provider failure mid-workflow -
+confirms the technical-failure escalation path Phase 8 already defines fires correctly and
+is distinct from the four framework-verdict conditions; (3) one soak test over an extended
+run, confirming no resource leak or worker deadlock.
+
+**Test**: Automated, committed tests for (1) and (2) at minimum; (3) documented even if run
+manually.
+
+**Exit criteria**: Both (1) and (2) pass as committed tests.
+
+### Phase 14 — Operational Dogfooding
+
+**Depends on**: Phase 12 (enough real tool capability to make it worth running).
+
+**Priority: Medium — ongoing once started, no end date, runs in parallel with later phases.**
+
+**Deliverables**: A passing test suite proves the system handles scenarios its author
+anticipated; it doesn't prove what CrewAI's independent user base proves for free. Route a
+defined set of real (non-test) objectives through the swarm over time. Review every
+Decision Record produced - not just success/failure, but whether department routing,
+escalation, and memory promotion were actually correct. Convert every mistake found into a
+new regression test.
+
+**Test**: N/A - this phase generates test cases, it doesn't consume a pre-written one.
+
+**Exit criteria**: A running log of real objectives processed, each with its Decision Record
+reviewed, and at least one regression test added per incorrect behavior found. Also the data
+source for Phase 18's deferred department-creation work and for scoping real infrastructure
+needs (EDIS, currently correctly unscheduled - see the status table above).
+
+### Phase 15 — Intake Sufficiency-Check Coverage Extension
+
+**Depends on**: Phase 5 (COO). Builds on the existing `orchestrator/intake.py`.
+
+**Priority: High — foundational. Phase 16's Head-spawning conditions depend on this holding
+across every entry point, not just one.**
+
+**Deliverables**: `intake.py::assess_sufficiency()` already does exactly this - checks
+whether an objective has enough detail before dispatch, and asks a bounded clarifying
+question if not (capped at 3 rounds). Its own docstring is explicit that it's wired to only
+one of three entry points: `POST /chat` (the dashboard). `POST /chat/sync` (what Samaritan's
+`dispatch_to_company()` actually calls) and `POST /objectives` (the formal API) skip it
+entirely. Extend the same sufficiency gate to both. Samaritan itself should not need to
+reason about objective completeness - per its own design, it's meant to leverage the swarm,
+not duplicate its judgment - so this belongs entirely on the swarm side.
+
+**Test**: Submit a deliberately under-specified objective via `/chat/sync` and via
+`/objectives`; confirm each surfaces a clarifying-question path equivalent to what `/chat`
+already does today, rather than dispatching on incomplete information.
+
+**Exit criteria**: All three entry points enforce the same completeness gate before an
+objective ever reaches a department.
+
+### Phase 16 — Department Head Direct Execution + Specialist Spawning
+
+**Depends on**: Phase 15 (the completeness gate must hold everywhere first - see below for
+why).
+
+**Priority: Medium-High.**
+
+**Deliverables**: Today, `orchestrator/head.py`'s `DepartmentHead.evaluate()` is a pure
+accept/reject gate - it never executes work itself. Reframe it: a Head attempts execution
+directly, and spawns an additional (specialist) agent only when one of two explicit
+conditions holds:
+1. The information/context provided does not give the Head enough to confidently judge
+   whether more headcount is required.
+2. The Head's own analysis of the work - however complete that analysis is - still falls
+   short of what one agent can deliver.
+
+Condition 1 is deliberately narrow, not a routine escape valve: insufficient information is
+an *intake defect* to fix upstream (Phase 15), not something a Head should be expected to
+absorb by guessing. This is a design principle, not just an implementation detail - it needs
+to be written down somewhere departments/agents can be held to it (a DOMS-adjacent
+documentation update, not only code), so "the Head didn't have enough to go on" stops being
+an acceptable justification for spawning once Phase 15 is in place.
+
+This changes the `HeadVerdict` contract - today `{accepted, reasoning,
+suggested_department_id}` - to something that can carry either a direct result or a
+delegation, e.g. `{resolved_by: "head"|"specialist", output, escalation_reason}`. That
+ripples into the Decision Record schema and Phase 8's escalation classification: a Head that
+genuinely can't finish isn't the same event as the four existing conditions - it's arguably
+a fifth, not a variant of an existing one.
+
+**Test**: Not yet fully specified - needs definition once the contract change above is
+implemented. At minimum: an objective sized for one agent completes via the Head alone with
+no spawn; an objective genuinely exceeding one agent's capacity triggers a spawn with a
+recorded reason matching condition 1 or 2 above, never neither.
+
+**Exit criteria**: TBD at implementation time.
+
+### Phase 17 — Specialist Spawn Ledger + Evolution Promotion Heuristic
+
+**Depends on**: Phase 16 (spawning has to exist before its pattern can be tracked).
+
+**Priority: Medium.**
+
+**Deliverables**: A historical record of every specialist spawned by a Department Head
+(Phase 16), tagged by specialization. A new Evolution Engine detection heuristic reading
+that ledger for a repeated need for the same specialization - note this is a genuinely
+different shape from `evolution_service/detection.py`'s existing
+`detect_inefficiencies()`, which is scoped to one decision at a time; this needs a periodic
+or cross-decision pass, not an inline per-decision check like today's only heuristic. Two
+new `ChangeProposal` types: create a dedicated agent (wired to `sdk/agent_builder`'s
+already-working `build_agent()` - schema-validates, creates identity, grants permissions,
+runs a real smoke-test execution, registers into the live `AgentRegistry`, no restart
+needed) and create a new department (needs Phase 18, since no equivalent builder exists
+yet). Also worth knowing going in: `evolution_service/pipeline.py::implement_change()`
+currently only ever writes a memory record saying a change was "approved and implemented" -
+it does not mutate any runtime behavior for any existing proposal type. Wiring "create
+agent" to actually call `build_agent()` on approval is the first case of this pipeline doing
+real work, not an incremental addition to a pattern that already does.
+
+**Test**: TBD at implementation time.
+
+**Exit criteria**: TBD at implementation time.
+
+### Phase 18 — Department Creation Capability
+
+**Status: Deliberately deferred.**
+
+**Priority: Low.**
+
+**Deliverables**: An `sdk/department_builder`, parallel to `agent_builder`'s `build_agent()`
+- activating `orchestrator/department_registry.py`'s `DepartmentDefinition.lifecycle_state`
+field, which already defaults to `"proposed"` but is never read or enforced anywhere today.
+
+**Why deferred**: not a technical blocker - a deliberate choice. The Company needs to
+process real cases first (Phase 14) before there's tangible information about which new
+department(s), if any, are actually necessary. Building this speculatively risks the same
+"a lot of surface area for one operator" problem already flagged in the CrewAI comparison.
+Revisit once Phase 14 has produced real signal, not before.
+
+### Phase 19 — Enterprise Compiler / CEDL (long-horizon)
+
+**Depends on**: Phase 17 (the small-scale version of this same pattern needs a track record
+first).
+
+**Status: Not scoped. Long-horizon.**
+
+Source: `Specifications/4 - future-expansion/`'s Volumes XXXII (MCDP), XXXIII (EMMS), XXXIV
+(CEDLS), XXXVII (EBAS), and XXXVIII (ERAS) - no code exists against any of them today. These
+describe something categorically bigger than everything else in this document: a declarative
+language (CEDL) for defining an AI-native enterprise as data, compiled and provisioned by a
+generic Enterprise Compiler/Builder/Runtime - not a feature of this Company, but a platform
+for generating companies like it.
+
+Confirmed intent (not superseded, not abandoned): The Company *is* the swarm. The original
+idea was for it to spin up additional companies to fill gaps in its own architecture -
+requiring the self-learning loop already partially built in Phase 11/17 (detect an
+inefficiency, recommend an enhancement, close the gap) to mature to the point where a
+detected gap can be "closed" by compiling and standing up an entirely new company, not just
+promoting one agent or department. Phase 17 is that same pattern at small scale (one
+specialist, one department); Phase 19 is its large-scale maturation. Don't schedule
+concrete work here until Phase 17's proposal/approval loop has enough of a real track record
+to trust extending it to something this consequential.
 
 
 ---

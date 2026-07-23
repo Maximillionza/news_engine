@@ -1,6 +1,10 @@
 # PRD: Closing the Capability Gap with CrewAI
 
-**Status:** Draft, not yet scheduled into a phase.
+**Status:** Superseded for status-tracking purposes by `IMPLEMENTATION_PLAN.md`'s "Phase 12
+and beyond" section (added 2026-07-23) - initiatives 5.2/5.3/5.4 below now live there as
+Phases 12/13/14, with the same acceptance criteria. This document's reasoning and evidence
+stay valid and are referenced from there; check `IMPLEMENTATION_PLAN.md` for current status
+rather than this file, so status isn't tracked in two places.
 **Date:** 2026-07-23
 **Author context:** Follows a direct architecture comparison against CrewAI (hierarchical
 multi-agent OSS framework). The orchestration/governance layer came out ahead; this document
