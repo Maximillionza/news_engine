@@ -13,6 +13,13 @@ COO makes governed decisions yet), so this is COO-specific for now.
 
 Phase 8 adds EscalationRecord: ESTAS sec.10 Risk Assessment persistence for
 orchestrator/escalation.py's four-condition policy - see that module's docstring.
+
+Phase 16 adds SpecialistSpawnRecord (IMPLEMENTATION_PLAN.md, 2026-07-23): a historical
+record of every specialist a Department Head spawned (orchestrator/head.py's
+resolve_verdict_execution()), feeding Phase 17's Evolution Engine promotion detection -
+has this department needed a specialist repeatedly enough to justify a dedicated agent?
+Not in EESIS/COOS's literal spec text - this codebase's own extension for a capability
+(specialist spawning) those documents predate.
 """
 
 from __future__ import annotations
@@ -63,3 +70,18 @@ class EscalationRecord(Base):
     )
     resolved: Mapped[bool] = mapped_column(Boolean, default=False)
     resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class SpecialistSpawnRecord(Base):
+    __tablename__ = "specialist_spawn_records"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    decision_id: Mapped[str] = mapped_column(
+        String, ForeignKey("coo_decision_records.id"), nullable=False, index=True
+    )
+    department_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    head_agent_id: Mapped[str] = mapped_column(String, nullable=False)
+    reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )

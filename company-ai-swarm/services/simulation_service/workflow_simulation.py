@@ -73,6 +73,12 @@ def _run_in_sandbox(
             departments=departments,
             agent_registry=agent_registry,
             model_gateway=gateway,
+            # Phase 17 (IMPLEMENTATION_PLAN.md, 2026-07-23): execute_workflow() now records a
+            # SpecialistSpawnRecord per spawn, keyed to a decision_id - this sandbox never has
+            # a real COO Decision Record (there is no real objective here), so a synthetic id
+            # scoped to this throwaway run is enough; the whole database is discarded when
+            # this function returns.
+            decision_id=f"SIM-{uuid4().hex[:8]}",
             telemetry=telemetry,
         )
 

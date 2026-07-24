@@ -81,6 +81,7 @@ def test_execute_workflow_halts_when_a_substantive_departments_head_rejects(sess
         departments=[department_registry.get("research"), department_registry.get("engineering")],
         agent_registry=agent_registry,
         model_gateway=ModelGateway(StubModelProvider()),
+        decision_id='DEC-test',
         head=head,
     )
 
@@ -161,6 +162,7 @@ def test_execute_workflow_uses_head_direct_resolution_for_one_department(session
         departments=[department_registry.get("research"), department_registry.get("engineering")],
         agent_registry=agent_registry,
         model_gateway=ModelGateway(StubModelProvider()),
+        decision_id='DEC-test',
         head=_ResolvesFirstDepartmentDirectlyHead(),
     )
 
@@ -186,6 +188,7 @@ def test_execute_workflow_spawns_specialist_for_one_department(session: Session)
         departments=[department_registry.get("research"), department_registry.get("engineering")],
         agent_registry=agent_registry,
         model_gateway=ModelGateway(StubModelProvider()),
+        decision_id='DEC-test',
         head=_NeedsSpecialistFirstDepartmentHead(),
     )
 

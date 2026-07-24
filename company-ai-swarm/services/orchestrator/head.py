@@ -42,6 +42,7 @@ from observability_service.telemetry import TelemetrySink
 from orchestrator.department_registry import DepartmentDefinition
 from orchestrator.evaluator import EXPECTED_EXECUTION_STEPS
 from orchestrator.router import dispatch
+from orchestrator.spawns import write_spawn
 from shared.llm_json import strip_code_fence
 from shared.model_gateway import ModelGateway
 
@@ -97,6 +98,7 @@ def resolve_verdict_execution(
     model_gateway: ModelGateway,
     session: Session,
     coo_id: str,
+    decision_id: str,
     telemetry: TelemetrySink | None,
 ) -> ExecutionResult | None:
     """Phase 16 (IMPLEMENTATION_PLAN.md, 2026-07-23): given an accepted HeadVerdict, produces
@@ -113,7 +115,11 @@ def resolve_verdict_execution(
     identity itself was never created. Spawning is realized as the Head adopting a
     specialized mission/capability set for one task, not a separately registered entity -
     matches the deliberately lightweight scope decided for this phase (no new
-    AgentRegistry entry, no permanent identity)."""
+    AgentRegistry entry, no permanent identity).
+
+    Phase 17 addition: every successful specialist spawn writes a SpecialistSpawnRecord
+    (orchestrator/spawns.py), keyed to decision_id, feeding the Evolution Engine's
+    promotion-detection heuristic."""
 
     if verdict.resolved_output is None and not verdict.needs_specialist:
         return None
@@ -160,6 +166,20 @@ def resolve_verdict_execution(
     )
     result.artifact["resolved_by"] = "specialist"
     result.artifact["specialist_reasoning"] = verdict.reasoning
+
+    # Phase 17 (IMPLEMENTATION_PLAN.md, 2026-07-23): a historical record of this spawn,
+    # feeding the Evolution Engine's promotion detection heuristic - has this department
+    # needed a specialist repeatedly enough to justify a dedicated agent? Written after
+    # dispatch() succeeds, not before - a spawn that never actually ran shouldn't count
+    # toward the pattern.
+    write_spawn(
+        session,
+        decision_id=decision_id,
+        department_id=department.id,
+        head_agent_id=head_agent.identity.id,
+        reasoning=verdict.reasoning,
+    )
+
     return result
 
 

@@ -85,6 +85,7 @@ def execute_workflow(
     departments: list[DepartmentDefinition],
     agent_registry: AgentRegistry,
     model_gateway: ModelGateway,
+    decision_id: str,
     telemetry: TelemetrySink | None = None,
     complexity_level: str = "Level 2 Standard",
     head: DepartmentHead = AutoAcceptDepartmentHead(),
@@ -128,6 +129,7 @@ def execute_workflow(
                 model_gateway=model_gateway,
                 session=session,
                 coo_id=coo_id,
+                decision_id=decision_id,
                 telemetry=telemetry,
             )
         except ValueError as exc:

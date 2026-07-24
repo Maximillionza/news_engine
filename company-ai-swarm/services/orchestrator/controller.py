@@ -409,6 +409,7 @@ class COOOrchestrator:
                         model_gateway=self._model_gateway,
                         session=session,
                         coo_id=self.coo_id,
+                        decision_id=decision_id,
                         telemetry=self._telemetry,
                     )
                 except Exception as exc:
@@ -498,6 +499,7 @@ class COOOrchestrator:
                 departments=matched_departments,
                 agent_registry=self._agents,
                 model_gateway=self._model_gateway,
+                decision_id=decision_id,
                 telemetry=self._telemetry,
                 head=self._head,
             )

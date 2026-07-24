@@ -250,6 +250,31 @@ class TestPhase16DepartmentHeadDirectExecution:
         assert "spawned a specialist" in record.reasoning
         assert "deep statistical modeling" in record.reasoning
 
+        # Phase 17 (IMPLEMENTATION_PLAN.md, 2026-07-23): every successful specialist spawn
+        # writes a SpecialistSpawnRecord, feeding the Evolution Engine's promotion heuristic.
+        from orchestrator.spawns import list_spawns_for_department
+
+        spawns = list_spawns_for_department(session, "research")
+        assert len(spawns) == 1
+        assert spawns[0].decision_id == outcome.decision_id
+        assert spawns[0].head_agent_id == "research_head_001"
+        assert "deep statistical modeling" in spawns[0].reasoning
+
+    def test_head_direct_resolution_does_not_write_a_spawn_record(self, session: Session) -> None:
+        """Only an actual specialist spawn counts toward the pattern Phase 17 detects - the
+        Head resolving something itself is the opposite case (one agent was enough)."""
+        from orchestrator.head import HeadVerdict
+        from orchestrator.spawns import list_spawns_for_department
+
+        class _ResolvesDirectlyHead:
+            def evaluate(self, department, objective, **_):
+                return HeadVerdict(accepted=True, reasoning="Simple.", resolved_output="Done.")
+
+        coo = _coo_with_head(session, _ResolvesDirectlyHead())
+        coo.receive_objective(session, "Create a market intelligence report", required_output="A short answer")
+
+        assert list_spawns_for_department(session, "research") == []
+
     def test_auto_accept_head_still_uses_the_normal_agent_selection_path(
         self, session: Session, coo: COOOrchestrator
     ) -> None:
