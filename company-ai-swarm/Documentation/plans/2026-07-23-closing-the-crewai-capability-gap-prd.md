@@ -170,3 +170,29 @@ engineering time, so it should run in parallel with 5.2/5.3, not block on them.
 - What's the actual target cadence/volume for 5.4's dogfooding - a handful of objectives a
   week, or something heavier? This affects how much tool coverage 5.2 needs before dogfooding
   is worth starting.
+
+## 8. Additional Gaps Found During Implementation
+
+Gaps discovered organically while building 5.2/5.3/5.4 (now Phases 12/13/14), not from the
+original CrewAI comparison - logged here rather than left to disappear into a commit message,
+same reasoning as everything else in this document. None of these have an assigned phase or
+fix yet.
+
+- **[Certain] Decision Record doesn't reflect partial progress on a mid-workflow failure.**
+  Found while building Phase 13's genuine mid-workflow failure test
+  (`Tests/integration/test_escalation_policy.py::
+  test_genuine_mid_workflow_failure_preserves_knowledge_but_not_the_decision_record`).
+  Pre-Phase-13, every existing technical-failure test used a provider that fails on the very
+  first call - none of them could distinguish "failed immediately, zero progress" from
+  "failed after real work already completed." A provider that succeeds once (department 1)
+  then fails (department 2) revealed: department 1's knowledge-graph entities
+  (`workflow_engine.knowledge.record_task_knowledge()`) survive the failure and are queryable
+  afterward, but `orchestrator/controller.py`'s `_receive_multi_department_objective()`
+  exception handler writes the Decision Record with only `objective`/`reasoning`/
+  `chosen_action` - `agents_selected` stays `[]` and `outcome` stays `None`, identical to
+  what a zero-progress failure produces. Anyone reading the Decision Record alone (the
+  primary audit surface, per `COOOrchestrator`'s own COOS sec.22 framing) cannot tell a
+  "nothing happened" failure apart from a "half the workflow actually completed" failure -
+  the fact has to be reconstructed from the knowledge graph instead, if anyone thinks to
+  check it. Verified and documented precisely; not fixed - out of Phase 13's charter, and no
+  phase currently owns it.
