@@ -80,7 +80,7 @@ Full test suite: **266 passed, 4 skipped** (`python -m pytest`). The 4 skipped a
 | 11 | Intelligence Systems (post-MVP) | Implemented | `services/evolution\_service/pipeline.py`, `services/digital\_twin\_service/`, `services/simulation\_service/workflow\_simulation.py`; `Tests/integration/test\_evolution\_engine.py::TestEvolutionValidationMVS011` (named directly after MVS Test Category 011), `test\_digital\_twin\_and\_simulation.py`. |
 | 12 | Agent Tool-Calling | Implemented (2026-07-23) | Per-agent `allowed_tools` threaded from `agent.yaml`'s `tools.available` through `AgentRuntime` -> `ModelGateway` -> `AgentSDKModelProvider`, with tool-use events now visible in telemetry. Research's `WebSearch` shipped; Engineering's code-execution tool deliberately deferred (no bash sandboxing on Windows - see Engineering note below). 296 tests passing, 4 skipped, unchanged. |
 | 13 | Failure & Load Resilience Testing | Implemented (2026-07-23), (3) manual | Deliverables (1), (2), (4) automated and committed; (3) documented as a manual runbook per its own exit criteria (real credentials/cost, matching this project's live-test precedent). **Bottleneck finding: not a real constraint** - concurrent `/chat/sync` calls genuinely overlap rather than serialize, measured directly (5 concurrent 0.3s-delay calls completed in ~0.4-0.5s, not the ~1.5s full serialization would produce), reproduced 3x. 299 tests passing, 4 skipped. |
-| 14 | Operational Dogfooding | Not started | Priority: **Medium**, ongoing once started (no end date). Depends on Phase 12. |
+| 14 | Operational Dogfooding | Process started (2026-07-23), inherently never "complete" | `Documentation/operations/dogfooding_log.md` - tracking mechanism and review process ready. The actual dogfooding (submitting real objectives, reviewing Decision Records) needs the user's own credentials and business judgment, same as every other live/gated activity this session - handed off, not run by the agent. |
 | 15 | Intake Sufficiency-Check Coverage Extension | Implemented (2026-07-23) | `apps/api_gateway/dashboard_api.py::chat_send_sync` now runs the same sufficiency gate as `chat_send`; `apps/api_gateway/main.py::submit_objective` runs a single-shot (no round-loop) version, since `/objectives` has no conversation state to count rounds against. 272 tests passing, 4 skipped (same gated live-credential tests as before), including 5 new tests covering the insufficient/third-round/rejection paths on both endpoints. |
 | 16 | Department Head Direct Execution + Specialist Spawning | Implemented (2026-07-23) | `orchestrator/head.py::resolve_verdict_execution()` (shared mechanism), wired into both `controller.py` (single-department) and `workflow_engine.py` (multi-department); `LLMDepartmentHead` now attempts objectives directly. All four head agent.yaml files updated. 282 tests passing, 4 skipped, zero changes to any pre-existing test (full backward compatibility confirmed). |
 | 17 | Specialist Spawn Ledger + Evolution Promotion Heuristic | Implemented (2026-07-23) | `orchestrator/spawns.py` (ledger), `evolution_service/detection.py::detect_specialist_pattern()`, `evolution_service/pipeline.py::EvolutionEngine.propose_specialist_agent()` + `create_agent` actuation in `implement_change()`. "Create department" proposal type deliberately excluded - depends on undelivered Phase 18. 290 tests passing, 4 skipped, unchanged. |
@@ -518,6 +518,17 @@ time, matching this project's established pattern of leaving live/gated tests to
 **Depends on**: Phase 12 (enough real tool capability to make it worth running).
 
 **Priority: Medium — ongoing once started, no end date, runs in parallel with later phases.**
+
+**Actual status: Process started (2026-07-23), not "implemented" in the sense every other
+phase used that word.** `Documentation/operations/dogfooding_log.md` sets up the tracking
+mechanism (a log table matching this phase's own exit criteria columns) and the review
+process (how to submit a real objective through Samaritan/dashboard/API, how to pull its
+Decision Record, what to actually check - routing, escalation, memory promotion, not just
+whether it returned output). No entries logged yet - that requires real credentials and real
+objectives from the user, the same boundary every other live/gated activity this session
+respected (the Agent SDK smoke test, the confirmation-gate verification, this document's own
+Phase 9 Steps 2-4). This phase has no "done" state to reach; it stays open, generating
+regression tests as real usage finds real problems.
 
 **Deliverables**: A passing test suite proves the system handles scenarios its author anticipated; it doesn't prove what CrewAI's independent user base proves for free. Route a defined set of real (non-test) objectives through the swarm over time. Review every Decision Record produced - not just success/failure, but whether department routing, escalation, and memory promotion were actually correct. Convert every mistake found into a new regression test.
 
