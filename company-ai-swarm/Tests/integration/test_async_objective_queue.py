@@ -168,6 +168,49 @@ def test_worker_respects_batch_size(session: Session) -> None:
     assert len(list_queued_objectives(session)) == 3
 
 
+def test_worker_processes_a_large_batch_without_loss_duplication_or_cross_contamination(
+    session: Session,
+) -> None:
+    """Phase 13 (IMPLEMENTATION_PLAN.md, 2026-07-23) deliverable 1: N objectives queued
+    around the same time, processed across however many run_once() cycles batch_size
+    requires - every one accounted for exactly once, and each one's actual result content
+    still corresponds to its OWN input, not another objective's. The failure mode this is
+    actually built to catch is silent cross-contamination (objective A's result ending up
+    attached to objective B), not just a missing or extra id - a plain count check would
+    miss that entirely."""
+
+    n = 30
+    records = [
+        enqueue_objective(session, objective=f"objective-{i}", required_output=f"output-{i}")
+        for i in range(n)
+    ]
+
+    def handler(worker_session: Session, record) -> dict[str, str]:
+        return {"echo": record.objective}
+
+    worker = QueueWorker(handler=handler)
+    claimed_total: list[str] = []
+    completed_total: list[str] = []
+    while list_queued_objectives(session):
+        result = worker.run_once(session, batch_size=10)
+        claimed_total.extend(result.claimed)
+        completed_total.extend(result.completed)
+
+    # Every objective claimed and completed exactly once - no loss, no duplication.
+    assert sorted(claimed_total) == sorted(r.id for r in records)
+    assert sorted(completed_total) == sorted(r.id for r in records)
+    assert len(claimed_total) == len(set(claimed_total))
+
+    # No cross-contamination: each record's result matches its own objective text, not a
+    # different one's.
+    for i, record in enumerate(records):
+        refreshed = get_objective(session, record.id)
+        assert refreshed.status == ObjectiveStatus.COMPLETED.value
+        assert refreshed.result == {"echo": f"objective-{i}"}
+
+    assert list_queued_objectives(session) == []
+
+
 def test_run_forever_processes_until_stop_event_and_uses_fresh_sessions(tmp_path) -> None:
     """`run_forever()` opens one session per cycle (not one held open for its whole life) -
     proven by writing an objective mid-loop and asserting it still gets picked up, since a

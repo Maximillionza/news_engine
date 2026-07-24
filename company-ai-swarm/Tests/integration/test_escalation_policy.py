@@ -214,3 +214,70 @@ class TestTechnicalFailureIsDistinctFromTheFourConditions:
         assert pending[0].is_technical_failure is True
         # Distinct from the four framework verdicts - never classified as one of them.
         assert pending[0].condition != EscalationCondition.OUTCOME_NOT_ACHIEVED.value
+
+    def test_genuine_mid_workflow_failure_preserves_knowledge_but_not_the_decision_record(
+        self, session: Session
+    ) -> None:
+        """Phase 13 (IMPLEMENTATION_PLAN.md, 2026-07-23): FailingModelProvider above fails on
+        the very FIRST call, so the two tests above never actually exercise a failure that
+        happens after real work already completed - they can't distinguish "fails
+        immediately" from "fails partway through." This uses a provider that succeeds once
+        (research) then fails (engineering), and documents what was empirically observed
+        (not assumed) to happen to research's completed work:
+
+        - The escalation and technical-failure classification are unaffected - identical to
+          the immediate-failure case above.
+        - workflow_engine.knowledge.record_task_knowledge() already ran for research before
+          engineering's dispatch() raised, so research's Agent/Capability/Workflow entities
+          are recorded in the knowledge graph and survive the failure.
+        - The COO Decision Record does NOT reflect that research completed real work -
+          agents_selected stays empty and outcome stays None, identical to what an
+          immediate, zero-progress failure produces. Not a bug introduced by this test - a
+          pre-existing gap in orchestrator/controller.py's exception handler (it writes the
+          Decision Record with only objective/reasoning/chosen_action, never touching
+          agents_selected/outcome on the failure path) made visible for the first time by
+          actually testing a failure with real partial progress behind it."""
+
+        class _SucceedsThenFailsProvider:
+            def __init__(self, succeed_count: int) -> None:
+                self._remaining = succeed_count
+                self.calls = 0
+
+            def generate(self, prompt: str, *, allowed_tools=None) -> str:
+                self.calls += 1
+                if self._remaining > 0:
+                    self._remaining -= 1
+                    return f"[stub output for call {self.calls}]"
+                raise RuntimeError("simulated model provider failure")
+
+        provider = _SucceedsThenFailsProvider(succeed_count=1)
+        coo = _make_coo(session, provider=provider)
+        _grant(session, "research_agent_001", "research")
+        _grant(session, "engineering_agent_001", "engineering")
+
+        with pytest.raises(RuntimeError, match="simulated model provider failure"):
+            coo.receive_objective(
+                session,
+                "Research market analysis and build working software",
+                required_output="working code with a supporting summary",
+            )
+
+        # Confirms this genuinely reached department 2 - not an immediate, zero-progress
+        # failure like the test above.
+        assert provider.calls == 2
+
+        pending = list_pending_escalations(session)
+        assert len(pending) == 1
+        assert pending[0].condition == EscalationCondition.TECHNICAL_FAILURE.value
+        assert pending[0].is_technical_failure is True
+
+        from knowledge_service.repository import KnowledgeEntity
+        from orchestrator.decisions import list_decisions
+
+        entities = session.query(KnowledgeEntity).all()
+        assert any(e.id == "agent:research_agent_001" for e in entities)
+
+        records = list_decisions(session)
+        assert len(records) == 1
+        assert records[0].agents_selected == []  # research's completion isn't reflected here
+        assert records[0].outcome is None

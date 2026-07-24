@@ -79,7 +79,7 @@ Full test suite: **266 passed, 4 skipped** (`python -m pytest`). The 4 skipped a
 | 10 | Expansion Layer (post-MVP) | Implemented | `sdk/\{agent,workflow,capability,plugin\}\_builder/`; `services/plugin\_service/`, `services/marketplace\_service/`; tested in `Tests/integration/test\_plugin\_service.py`, `test\_marketplace\_service.py`. |
 | 11 | Intelligence Systems (post-MVP) | Implemented | `services/evolution\_service/pipeline.py`, `services/digital\_twin\_service/`, `services/simulation\_service/workflow\_simulation.py`; `Tests/integration/test\_evolution\_engine.py::TestEvolutionValidationMVS011` (named directly after MVS Test Category 011), `test\_digital\_twin\_and\_simulation.py`. |
 | 12 | Agent Tool-Calling | Implemented (2026-07-23) | Per-agent `allowed_tools` threaded from `agent.yaml`'s `tools.available` through `AgentRuntime` -> `ModelGateway` -> `AgentSDKModelProvider`, with tool-use events now visible in telemetry. Research's `WebSearch` shipped; Engineering's code-execution tool deliberately deferred (no bash sandboxing on Windows - see Engineering note below). 296 tests passing, 4 skipped, unchanged. |
-| 13 | Failure & Load Resilience Testing | Not started | Priority: **High**. Now also the natural place to answer the shared-connection question flagged under Phase 12 below - concurrent-load testing is exactly what would show whether the single shared `ModelProvider` is a real bottleneck. |
+| 13 | Failure & Load Resilience Testing | Implemented (2026-07-23), (3) manual | Deliverables (1), (2), (4) automated and committed; (3) documented as a manual runbook per its own exit criteria (real credentials/cost, matching this project's live-test precedent). **Bottleneck finding: not a real constraint** - concurrent `/chat/sync` calls genuinely overlap rather than serialize, measured directly (5 concurrent 0.3s-delay calls completed in ~0.4-0.5s, not the ~1.5s full serialization would produce), reproduced 3x. 299 tests passing, 4 skipped. |
 | 14 | Operational Dogfooding | Not started | Priority: **Medium**, ongoing once started (no end date). Depends on Phase 12. |
 | 15 | Intake Sufficiency-Check Coverage Extension | Implemented (2026-07-23) | `apps/api_gateway/dashboard_api.py::chat_send_sync` now runs the same sufficiency gate as `chat_send`; `apps/api_gateway/main.py::submit_objective` runs a single-shot (no round-loop) version, since `/objectives` has no conversation state to count rounds against. 272 tests passing, 4 skipped (same gated live-credential tests as before), including 5 new tests covering the insufficient/third-round/rejection paths on both endpoints. |
 | 16 | Department Head Direct Execution + Specialist Spawning | Implemented (2026-07-23) | `orchestrator/head.py::resolve_verdict_execution()` (shared mechanism), wired into both `controller.py` (single-department) and `workflow_engine.py` (multi-department); `LLMDepartmentHead` now attempts objectives directly. All four head agent.yaml files updated. 282 tests passing, 4 skipped, zero changes to any pre-existing test (full backward compatibility confirmed). |
@@ -444,6 +444,30 @@ blast radius, confirmed by all pre-existing tests passing unmodified in behavior
 
 **Priority: High.**
 
+**Actual status: Implemented (2026-07-23), deliverable (3) is a manual runbook, not
+automated code - matches its own exit criteria and this project's precedent for live/gated
+tests.** Deliverable (2)'s existing pre-Phase-13 tests (`test_escalation_policy.py`) turned
+out to only cover a provider that fails on the very first call - never a genuine mid-workflow
+failure with real completed work behind it. A new test with a provider that succeeds once
+then fails found a real, pre-existing gap made visible for the first time: department 1's
+knowledge-graph entries survive a later department's failure, but the COO Decision Record's
+`agents_selected`/`outcome` fields don't reflect that any work happened at all - identical to
+what a zero-progress failure produces. Not fixed here (out of this phase's charter), just
+verified and documented precisely rather than assumed.
+
+Deliverable (4) (the user's bottleneck question from Phase 12) has a clear, reproduced
+answer: **not a real constraint.** A deliberately slow fake provider
+(`Tests/integration/test_concurrent_load.py`) makes serialization directly observable via
+wall-clock time - 5 concurrent `/chat/sync` requests, each with a 0.3s artificial delay,
+completed in ~0.4-0.5s (close to the ~0.3s full-parallelism estimate), not the ~1.5s full
+serialization would produce, reproduced identically across 3 runs. Nothing in
+`ModelGateway`/`AgentSDKModelProvider` serializes concurrent calls - Python releases the GIL
+during I/O waits, and neither holds a lock. Caveat: this measures a simulated I/O-bound delay
+(`time.sleep()`), not the real `AgentSDKModelProvider`'s actual subprocess/IPC behavior under
+concurrent load, which needs live credentials and cost to verify directly - the mechanism
+(both rely on I/O-bound waits releasing the GIL) makes the same result likely, not certain.
+No architecture change recommended based on this evidence.
+
 **Deliverables**: `Documentation/plans/SDK\_MIGRATION\_PLAN.md` Section 1 already flags shared subscription-usage-window contention as a real risk; nothing tests it. Three targeted tests, not full Phase 11 simulation scope: (1) N concurrent objectives through `queue\_worker.py` - no queue corruption, no lost/duplicated jobs; (2) a forced provider failure mid-workflow - confirms the technical-failure escalation path Phase 8 already defines fires correctly and is distinct from the four framework-verdict conditions; (3) one soak test over an extended run, confirming no resource leak or worker deadlock.
 
 
@@ -465,6 +489,29 @@ pass/fail test.
 **Test**: Automated, committed tests for (1) and (2) at minimum; (3) documented even if run manually.
 
 **Exit criteria**: Both (1) and (2) pass as committed tests.
+
+**Manual runbook for (3), the soak test (not automated - real credentials, real cost, real
+time, matching this project's established pattern of leaving live/gated tests to the user):**
+
+1. Set real credentials: `CLAUDE_CODE_OAUTH_TOKEN` (subscription) or `ANTHROPIC_API_KEY`, and
+   `MODEL_PROVIDER=agent_sdk` (or `anthropic`) in `.env`.
+2. Start the API gateway (`python apps/api_gateway/main.py`) and the queue worker
+   (`Scripts/run_queue_worker.py`) as two separate long-running processes.
+3. Note each process's baseline memory (Windows Task Manager, or
+   `Get-Process -Id <pid> | Select WorkingSet64`) right after startup.
+4. Submit a steady trickle of real objectives over an extended window - e.g., one real
+   objective every 5-10 minutes for 2-4 hours (or overnight) via `POST /chat` (the async
+   path, so this also exercises the queue worker continuously, not just the gateway).
+5. Periodically (every 30-60 minutes) recheck: (a) each process's memory - a steady climb
+   with no plateau is a leak; (b) `GET /activity`'s `in_flight_objectives` - anything stuck
+   in `executing` for far longer than a normal objective takes is a worker deadlock;
+   (c) both processes are still alive and responsive (`GET /health`).
+6. At the end: every submitted objective should be `completed` or `failed`, never stuck in
+   `queued`/`executing`; memory in both processes should have plateaued, not grown
+   unboundedly; no unhandled exception should have killed either process.
+7. Record the outcome (pass/fail, and any memory/hang numbers observed) in this document's
+   own status update the same way every other phase's evidence is recorded - this exit
+   criterion is met by that record existing, not by an automated test.
 
 ### Phase 14 — Operational Dogfooding
 
