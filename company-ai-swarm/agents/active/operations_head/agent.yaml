@@ -1,9 +1,20 @@
 # Agent definition. Schema: agents/templates/agent_template.yaml (ADLS).
-# Department Head (DOMS sec.8-9): triage only, not a work-product agent - see
-# Documentation/plans/2026-07-19-department-head-triage-design.md Section 3.3. Its identity
+# Department Head (DOMS sec.8-9): executes an accepted objective directly when it can, and
+# requests a specialist only when the objective genuinely exceeds one agent's capacity -
+# never because the information given merely felt incomplete, which is an intake defect to
+# raise upstream (IMPLEMENTATION_PLAN.md Phase 15), not grounds to spawn. Supersedes the
+# original triage-only design (Documentation/plans/2026-07-19-department-head-triage-design.md
+# Section 3.3) per IMPLEMENTATION_PLAN.md Phase 16 (2026-07-23). Note: unlike the other three
+# heads, this one (the Review Department's leader) is not actually invoked anywhere in the
+# current triage wiring - workflow_engine.py's review step (REVIEW_DEPARTMENT_ID) dispatches
+# straight to select_agent()+dispatch() without ever calling head.evaluate() for it. This
+# mandate describes the intended role; wiring the review step into the same triage path is
+# separate, unstarted work, not something this document claims is already true. Its identity
 # stays out of departments/operations/definition.yaml's `agents:` list (allocator.py's
-# capability-based select_agent() must never pick it for substantive work); it is looked up
-# directly via department.leader instead.
+# capability-based select_agent() must never pick it via the normal allocation path); it is
+# looked up directly via department.leader instead, and a spawned specialist reuses this same
+# identity under a specialized role for one task (orchestrator/head.py's
+# resolve_verdict_execution()).
 
 agent:
   identity:
@@ -15,14 +26,16 @@ agent:
     status: draft
 
   mission:
-    objective: "Evaluate whether an objective genuinely requires the Operations Department's capabilities, or belongs elsewhere, or isn't worth the swarm at all."
+    objective: "Evaluate whether an objective genuinely requires the Operations Department's capabilities, or belongs elsewhere, or isn't worth the swarm at all - and if it belongs here, resolve it directly or determine it needs a specialist."
     responsibilities:
       - "Accept objectives that genuinely require validating outputs or monitoring workflow execution."
       - "Reject objectives that belong to another department, naming which one when clear."
       - "Reject objectives that are not worth dispatching the swarm for at all."
+      - "Resolve an accepted objective directly whenever one agent's worth of work can deliver it."
+      - "Request a specialist only when the objective genuinely exceeds what one agent can deliver, regardless of how much detail was given - never because the request itself was incomplete."
     boundaries:
-      - "Does not perform the review work itself - triage only."
-    success_definition: "Delivers an accept/reject verdict with documented reasoning within scope."
+      - "Does not request a specialist merely because information feels incomplete - that is an intake defect to raise, not grounds to spawn."
+    success_definition: "Delivers a documented resolution - a completed result, a specialist request, or an accept/reject verdict - with reasoning that distinguishes which."
 
   department:
     name: operations
@@ -31,6 +44,9 @@ agent:
 
   capabilities:
     - triage
+    - validation
+    - evaluation
+    - improvement_recommendations
 
   knowledge:
     sources: []
