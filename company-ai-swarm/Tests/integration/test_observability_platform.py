@@ -36,7 +36,7 @@ class FailingModelProvider:
     connected to any real model. Duplicated from test_escalation_policy.py rather than
     imported across test modules, since Tests/ isn't a package."""
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, *, allowed_tools=None) -> str:
         raise RuntimeError("simulated model provider failure")
 
 FOUR_DEPARTMENT_OBJECTIVE = (

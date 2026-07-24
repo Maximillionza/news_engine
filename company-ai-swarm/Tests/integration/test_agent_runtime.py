@@ -109,6 +109,41 @@ class TestAgentExecutesTaskWithoutCOO:
         assert len(report_outcome_records) == 1
         assert report_outcome_records[0].decision == "completed"
 
+    def test_agent_yaml_tools_available_reaches_the_provider(
+        self, session: Session, telemetry: TelemetrySink, authorized_agent_id: str
+    ) -> None:
+        """Phase 12 (IMPLEMENTATION_PLAN.md, 2026-07-23) end-to-end: research_agent/agent.yaml
+        really does have tools.available: [WebSearch] on disk, and the Execute step really
+        does read AgentDefinition.tools (previously present in the schema but never having
+        any runtime effect at all) and pass it all the way through
+        ModelGateway.generate(allowed_tools=...) to the provider - not just plumbing that
+        compiles, an actual value flowing from the yaml file to the model call."""
+
+        class _SpyProvider:
+            def __init__(self) -> None:
+                self.received_allowed_tools: list[object] = []
+
+            def generate(self, prompt: str, *, allowed_tools=None) -> str:
+                self.received_allowed_tools.append(allowed_tools)
+                return "researched it"
+
+        definition = load_agent_definition(RESEARCH_AGENT_YAML)
+        assert definition.tools.get("available") == ["WebSearch"]  # the real file, not a fixture
+
+        provider = _SpyProvider()
+        gateway = ModelGateway(provider, telemetry=telemetry)
+        runtime = AgentRuntime(definition, model_gateway=gateway, telemetry=telemetry)
+
+        message = AgentMessageContract(
+            sender_agent="test-harness",
+            receiver_agent=authorized_agent_id,
+            task="Summarize recent renewable energy market trends",
+            required_output="A structured summary with sources",
+        )
+        runtime.execute_task(session, message)
+
+        assert provider.received_allowed_tools == [["WebSearch"]]
+
     def test_all_execution_cycle_steps_are_observable_via_telemetry(
         self, session: Session, telemetry: TelemetrySink, authorized_agent_id: str
     ) -> None:

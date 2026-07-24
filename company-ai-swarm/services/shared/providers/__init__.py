@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 from typing import Mapping
 
+from observability_service.telemetry import TelemetrySink
 from shared.model_gateway import ModelProvider, StubModelProvider
 
 from .agent_sdk_provider import DEFAULT_MODEL as _AGENT_SDK_DEFAULT_MODEL
@@ -25,8 +26,15 @@ from .anthropic_provider import AnthropicModelProvider, AnthropicProviderError
 _PROVIDERS = ("stub", "anthropic", "agent_sdk")
 
 
-def create_provider_from_env(env: Mapping[str, str] | None = None) -> ModelProvider:
+def create_provider_from_env(
+    env: Mapping[str, str] | None = None, *, telemetry: TelemetrySink | None = None
+) -> ModelProvider:
     """Reads `MODEL_PROVIDER` (default: "stub") and returns the matching provider.
+
+    `telemetry` (Phase 12, IMPLEMENTATION_PLAN.md, 2026-07-23), if given, is only actually
+    used by "agent_sdk" - the one provider that can observe a tool being invoked mid-stream
+    (see AgentSDKModelProvider's docstring). "stub" and "anthropic" ignore it; neither has
+    anything to report.
 
     - "stub"      -> StubModelProvider() - no credentials, no network, dev/test default.
     - "anthropic" -> AnthropicModelProvider() - reads ANTHROPIC_API_KEY, per-token billing.
@@ -58,7 +66,9 @@ def create_provider_from_env(env: Mapping[str, str] | None = None) -> ModelProvi
             model=model_override or _ANTHROPIC_DEFAULT_MODEL,
         )
     if selected == "agent_sdk":
-        return AgentSDKModelProvider(model=model_override or _AGENT_SDK_DEFAULT_MODEL)
+        return AgentSDKModelProvider(
+            model=model_override or _AGENT_SDK_DEFAULT_MODEL, telemetry=telemetry
+        )
 
     raise ValueError(
         f"Unknown MODEL_PROVIDER={selected!r}; expected one of {_PROVIDERS}."

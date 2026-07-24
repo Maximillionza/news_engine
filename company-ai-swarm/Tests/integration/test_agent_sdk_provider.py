@@ -24,7 +24,9 @@ from shared.providers.agent_sdk_provider import (
 def _runner_returning(text: str):
     calls: list[dict[str, object]] = []
 
-    async def runner(prompt: str, allowed_tools: Sequence[str], model: str | None) -> str:
+    async def runner(
+        prompt: str, allowed_tools: Sequence[str], model: str | None, *, on_tool_use=None
+    ) -> str:
         calls.append({"prompt": prompt, "allowed_tools": tuple(allowed_tools), "model": model})
         return text
 
@@ -33,7 +35,9 @@ def _runner_returning(text: str):
 
 
 def _runner_raising(exc: Exception):
-    async def runner(prompt: str, allowed_tools: Sequence[str], model: str | None) -> str:
+    async def runner(
+        prompt: str, allowed_tools: Sequence[str], model: str | None, *, on_tool_use=None
+    ) -> str:
         raise exc
 
     return runner
@@ -80,6 +84,132 @@ def test_model_defaults_to_none_not_forced() -> None:
     assert runner.calls[0]["model"] is None
 
 
+def test_generate_per_call_allowed_tools_overrides_constructor_default() -> None:
+    """Phase 12 (IMPLEMENTATION_PLAN.md, 2026-07-23): one shared provider instance serves
+    every agent - the calling agent's own tool list (passed per generate() call, from its
+    AgentDefinition.tools["available"]) has to win over whatever the provider was
+    constructed with, not the other way around."""
+
+    runner = _runner_returning("ok")
+    provider = AgentSDKModelProvider(allowed_tools=["Bash"], runner=runner)
+
+    provider.generate("prompt", allowed_tools=["WebSearch"])
+
+    assert runner.calls[0]["allowed_tools"] == ("WebSearch",)
+
+
+def test_generate_falls_back_to_constructor_default_when_no_per_call_tools_given() -> None:
+    runner = _runner_returning("ok")
+    provider = AgentSDKModelProvider(allowed_tools=["Bash"], runner=runner)
+
+    provider.generate("prompt")
+
+    assert runner.calls[0]["allowed_tools"] == ("Bash",)
+
+
+def test_generate_records_tool_use_to_telemetry_when_configured() -> None:
+    """The actual exit criterion: a tool call has to be visible in
+    observability_service/telemetry.py, not just inferable from the final text output."""
+
+    from observability_service.telemetry import TelemetrySink
+
+    class _ToolUseBlock:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class _AssistantMessage:
+        def __init__(self, content) -> None:
+            self.content = content
+
+    class _ResultMessage:
+        def __init__(self, result: str) -> None:
+            self.result = result
+            self.is_error = False
+
+    async def runner(prompt, allowed_tools, model, *, on_tool_use=None):
+        if on_tool_use is not None:
+            on_tool_use("WebSearch")
+        return "found it via search"
+
+    telemetry = TelemetrySink()
+    provider = AgentSDKModelProvider(runner=runner, telemetry=telemetry)
+
+    output = provider.generate("look this up", allowed_tools=["WebSearch"])
+
+    assert output == "found it via search"
+    records = telemetry.query()
+    tool_records = [r for r in records if r.action == "tool_use:WebSearch"]
+    assert len(tool_records) == 1
+    assert tool_records[0].component == "agent_sdk_provider"
+
+
+def test_generate_does_not_record_telemetry_when_no_sink_configured() -> None:
+    """No telemetry sink means no attempt to use one - the callback must be None, not a
+    silent no-op wrapper, so a runner that doesn't care never has to handle it specially."""
+
+    calls: list[object] = []
+
+    async def runner(prompt, allowed_tools, model, *, on_tool_use=None):
+        calls.append(on_tool_use)
+        return "ok"
+
+    provider = AgentSDKModelProvider(runner=runner)
+    provider.generate("prompt")
+
+    assert calls == [None]
+
+
+def test_default_runner_calls_on_tool_use_for_each_tool_block(monkeypatch) -> None:
+    """Exercises the real _default_runner's message-stream inspection, not just the fake
+    runner tests above - proves ToolUseBlock/ServerToolUseBlock entries in AssistantMessage.
+    content actually get detected as the SDK really shapes them."""
+
+    import sys
+    import types
+    import asyncio
+
+    class _ToolUseBlock:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class _ServerToolUseBlock:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class _AssistantMessage:
+        def __init__(self, content) -> None:
+            self.content = content
+
+    class _ResultMessage:
+        result = "done"
+        is_error = False
+
+    class _FakeOptions:
+        def __init__(self, **kwargs):
+            pass
+
+    async def _fake_query(*, prompt, options):
+        yield _AssistantMessage([_ToolUseBlock("WebSearch"), _ServerToolUseBlock("web_fetch")])
+        yield _ResultMessage()
+
+    fake_module = types.ModuleType("claude_agent_sdk")
+    fake_module.ClaudeAgentOptions = _FakeOptions
+    fake_module.ResultMessage = _ResultMessage
+    fake_module.AssistantMessage = _AssistantMessage
+    fake_module.ToolUseBlock = _ToolUseBlock
+    fake_module.ServerToolUseBlock = _ServerToolUseBlock
+    fake_module.query = _fake_query
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", fake_module)
+
+    from shared.providers.agent_sdk_provider import _default_runner
+
+    seen: list[str] = []
+    output = asyncio.run(_default_runner("prompt", [], None, on_tool_use=seen.append))
+
+    assert output == "done"
+    assert seen == ["WebSearch", "web_fetch"]
+
+
 def test_generate_wraps_runner_exceptions() -> None:
     provider = AgentSDKModelProvider(runner=_runner_raising(RuntimeError("session died")))
 
@@ -124,6 +254,12 @@ def test_default_runner_builds_options_with_model_and_isolated_settings(monkeypa
     fake_module.ClaudeAgentOptions = _FakeOptions
     fake_module.ResultMessage = _FakeResult
     fake_module.query = _fake_query
+    # Phase 12 (IMPLEMENTATION_PLAN.md, 2026-07-23): _default_runner now also imports these
+    # to detect tool-use mid-stream - not exercised by this test's single-ResultMessage fake
+    # stream, but the import itself must succeed.
+    fake_module.AssistantMessage = type("AssistantMessage", (), {})
+    fake_module.ToolUseBlock = type("ToolUseBlock", (), {})
+    fake_module.ServerToolUseBlock = type("ServerToolUseBlock", (), {})
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", fake_module)
 
     from shared.providers.agent_sdk_provider import _default_runner
@@ -161,6 +297,9 @@ def _install_fake_claude_agent_sdk(monkeypatch, *, is_error: bool, result: str, 
     fake_module.ClaudeAgentOptions = _FakeOptions
     fake_module.ResultMessage = _FakeResult
     fake_module.query = _fake_query
+    fake_module.AssistantMessage = type("AssistantMessage", (), {})
+    fake_module.ToolUseBlock = type("ToolUseBlock", (), {})
+    fake_module.ServerToolUseBlock = type("ServerToolUseBlock", (), {})
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", fake_module)
 
 

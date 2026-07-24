@@ -1,8 +1,8 @@
 # The Company — Milestone-Based Implementation Plan
 
-Version 1.0, synthesizing the build sequences already defined across `Specifications/2 - construction-framework/Enterprise Implementation Blueprint (EIB).md`, `Specifications/3 - execution-framework/AI Builder Master Execution Package (ABMEP).md`, and `Specifications/3 - execution-framework/MVP Validation Specification (MVS).md` into one concrete, testable sequence.
+Version 1.0, synthesizing the build sequences already defined across `Specifications/2 - construction-framework/Enterprise Implementation Blueprint (EIB).md`, `Specifications/3 - execution-framework/AI Builder Master Execution Package (ABMEP).md`, and `Specifications/3 - execution-framework/MVP Validation Specification (MVS).md` into one concrete, testable sequence.
 
-**Status note (reconciled 2026-07-23, PRD `Documentation/plans/2026-07-23-closing-the- crewai-capability-gap-prd.md` initiative 5.1):** this document previously stated "No code has been written against this plan — it is a planning artifact only." That was false and had drifted badly out of date. As of this reconciliation, all twelve phases have real, substantially-implemented code and passing tests - see the status table below. This reconciliation is a repo-state check (do the files and tests described by each phase's deliverables exist and pass), not a line-by-line re-audit of every exit-criteria bullet - treat "Implemented" below as strong evidence, not a formal phase sign-off.
+**Status note (reconciled 2026-07-23, PRD `Documentation/plans/2026-07-23-closing-the- crewai-capability-gap-prd.md` initiative 5.1):** this document previously stated "No code has been written against this plan — it is a planning artifact only." That was false and had drifted badly out of date. As of this reconciliation, all twelve phases have real, substantially-implemented code and passing tests - see the status table below. This reconciliation is a repo-state check (do the files and tests described by each phase's deliverables exist and pass), not a line-by-line re-audit of every exit-criteria bullet - treat "Implemented" below as strong evidence, not a formal phase sign-off.
 
 ## How to read this document
 
@@ -16,7 +16,7 @@ Twelve phases. Each phase has:
 
 - **Exit criteria** — the observable state that means "this phase is done."
 
-Phases 0–9 constitute the MVS-canonical MVP (Director + COO + Research/Engineering/ Compliance/Operations departments + one agent each + full governance layer). Phases 10–11 are explicitly post-MVP, per EIB Phase 3/4 and CCBP §10 ("First Expansion After MVP"). Phases 12 onward (added 2026-07-23, see "Phase 12 and beyond" below) are this document's single source of truth for what's built vs. what's next, superseding the standalone `Documentation/plans/2026-07-23-closing-the-crewai-capability-gap-prd.md` for status tracking — that document's reasoning/evidence stays valid, its initiatives now live here as numbered phases instead, so status isn't tracked in two places.
+Phases 0–9 constitute the MVS-canonical MVP (Director + COO + Research/Engineering/ Compliance/Operations departments + one agent each + full governance layer). Phases 10–11 are explicitly post-MVP, per EIB Phase 3/4 and CCBP §10 ("First Expansion After MVP"). Phases 12 onward (added 2026-07-23, see "Phase 12 and beyond" below) are this document's single source of truth for what's built vs. what's next, superseding the standalone `Documentation/plans/2026-07-23-closing-the-crewai-capability-gap-prd.md` for status tracking — that document's reasoning/evidence stays valid, its initiatives now live here as numbered phases instead, so status isn't tracked in two places.
 
 ## Phase dependency graph
 
@@ -58,11 +58,11 @@ Phase 9  MVP validation (MVS 001–010)                 ── MVP v1.0
           Phase 12 ──→ Phase 14  Operational dogfooding ──→ Phase 18  Department creation (deferred)
 ```
 
-No phase may begin before its predecessor's exit criteria are met. This mirrors the Build Dependencies chain in EIB §12 (Identity → Security → Runtime → Agents → Workflows → Departments → Expansion Systems).
+No phase may begin before its predecessor's exit criteria are met. This mirrors the Build Dependencies chain in EIB §12 (Identity → Security → Runtime → Agents → Workflows → Departments → Expansion Systems).
 
 ## Actual status (reconciled 2026-07-23)
 
-Full test suite: **266 passed, 4 skipped** (`python -m pytest`). The 4 skipped are all gated live-credential smoke tests (real Claude API/Agent SDK calls, opt-in via env var), not failures or missing coverage. The MVS acceptance suite (`Tests/acceptance/ test\_mvs\_acceptance.py`) covers all 10 of Phase 9's categories in one file (13 test methods) and passes in full - this is Phase 9's own exit criteria, met.
+Full test suite: **266 passed, 4 skipped** (`python -m pytest`). The 4 skipped are all gated live-credential smoke tests (real Claude API/Agent SDK calls, opt-in via env var), not failures or missing coverage. The MVS acceptance suite (`Tests/acceptance/ test\_mvs\_acceptance.py`) covers all 10 of Phase 9's categories in one file (13 test methods) and passes in full - this is Phase 9's own exit criteria, met.
 
 | Phase | Name | Status | Evidence |
 | - | - | - | - |
@@ -78,8 +78,8 @@ Full test suite: **266 passed, 4 skipped** (`python -m pytest`). The 4 skipped a
 | 9 | MVP Validation (v1.0) | Implemented | `services/memory\_service/promotion.py` (minor/critical tiered promotion); full MVS 001-010 acceptance suite passing (see above). |
 | 10 | Expansion Layer (post-MVP) | Implemented | `sdk/\{agent,workflow,capability,plugin\}\_builder/`; `services/plugin\_service/`, `services/marketplace\_service/`; tested in `Tests/integration/test\_plugin\_service.py`, `test\_marketplace\_service.py`. |
 | 11 | Intelligence Systems (post-MVP) | Implemented | `services/evolution\_service/pipeline.py`, `services/digital\_twin\_service/`, `services/simulation\_service/workflow\_simulation.py`; `Tests/integration/test\_evolution\_engine.py::TestEvolutionValidationMVS011` (named directly after MVS Test Category 011), `test\_digital\_twin\_and\_simulation.py`. |
-| 12 | Agent Tool-Calling | Not started | Priority: **High**. See "Phase 12 and beyond" below. |
-| 13 | Failure & Load Resilience Testing | Not started | Priority: **High**. |
+| 12 | Agent Tool-Calling | Implemented (2026-07-23) | Per-agent `allowed_tools` threaded from `agent.yaml`'s `tools.available` through `AgentRuntime` -> `ModelGateway` -> `AgentSDKModelProvider`, with tool-use events now visible in telemetry. Research's `WebSearch` shipped; Engineering's code-execution tool deliberately deferred (no bash sandboxing on Windows - see Engineering note below). 296 tests passing, 4 skipped, unchanged. |
+| 13 | Failure & Load Resilience Testing | Not started | Priority: **High**. Now also the natural place to answer the shared-connection question flagged under Phase 12 below - concurrent-load testing is exactly what would show whether the single shared `ModelProvider` is a real bottleneck. |
 | 14 | Operational Dogfooding | Not started | Priority: **Medium**, ongoing once started (no end date). Depends on Phase 12. |
 | 15 | Intake Sufficiency-Check Coverage Extension | Implemented (2026-07-23) | `apps/api_gateway/dashboard_api.py::chat_send_sync` now runs the same sufficiency gate as `chat_send`; `apps/api_gateway/main.py::submit_objective` runs a single-shot (no round-loop) version, since `/objectives` has no conversation state to count rounds against. 272 tests passing, 4 skipped (same gated live-credential tests as before), including 5 new tests covering the insufficient/third-round/rejection paths on both endpoints. |
 | 16 | Department Head Direct Execution + Specialist Spawning | Implemented (2026-07-23) | `orchestrator/head.py::resolve_verdict_execution()` (shared mechanism), wired into both `controller.py` (single-department) and `workflow_engine.py` (multi-department); `LLMDepartmentHead` now attempts objectives directly. All four head agent.yaml files updated. 282 tests passing, 4 skipped, zero changes to any pre-existing test (full backward compatibility confirmed). |
@@ -91,12 +91,12 @@ Full test suite: **266 passed, 4 skipped** (`python -m pytest`). The 4 skipped a
 | — | EHCAS §13 "Decision Authority Class" | Resolved | Superseded by Phase 8's escalation policy (`orchestrator/escalation.py::EscalationCondition`) — no separate work needed. |
 
 
-Full detail for Phases 12-19 (deliverables, test approach, open questions) is in "Phase 12 and beyond" below, in the same format as Phases 0-11 above.
+Full detail for Phases 12-19 (deliverables, test approach, open questions) is in "Phase 12 and beyond" below, in the same format as Phases 0-11 above.
 
 
 ## Phase 0 — Foundation & Contracts
 
-**Depends on**: nothing (repository structure and configuration templates already exist — see `CRBS`, `agents/templates/agent\_template.yaml`, `Configuration/company.yaml`).
+**Depends on**: nothing (repository structure and configuration templates already exist — see `CRBS`, `agents/templates/agent\_template.yaml`, `Configuration/company.yaml`).
 
 **Actual status: Implemented** — see the status table above.
 
@@ -302,7 +302,7 @@ Full detail for Phases 12-19 (deliverables, test approach, open questions) is in
 
   3. A quality/integrity gate (Review Agent's pass/fail, Phase 7's risk-proportional review loop, `TDL` §17) flags a result as superficial or incomplete despite nominally passing.
 
-  4. A downstream department/agent in a multi-department workflow (Phase 6/7 Workflow Engine) hits a dependency or traceability gap it cannot resolve within its own capability/context. A technical failure (agent runtime exception, Model Gateway failure, output that fails RCS contract validation) always escalates too, but is logged as a technical failure, distinct from the four framework verdicts above — never conflate the two in the Decision Record.
+  4. A downstream department/agent in a multi-department workflow (Phase 6/7 Workflow Engine) hits a dependency or traceability gap it cannot resolve within its own capability/context. A technical failure (agent runtime exception, Model Gateway failure, output that fails RCS contract validation) always escalates too, but is logged as a technical failure, distinct from the four framework verdicts above — never conflate the two in the Decision Record.
 
 **Test**: MVS Test Categories 008 (Compliance) and 009 (Observability), run as formal (not smoke) tests:
 
@@ -371,7 +371,7 @@ Full detail for Phases 12-19 (deliverables, test approach, open questions) is in
 
 Unlike Phases 0-11, these phases weren't synthesized from the Tier 1-3 specification corpus
 
-- they came out of a direct architecture review against CrewAI and a codebase-grounded discussion of self-organization concepts, both on 2026-07-23. Same format as above (Depends on / Deliverables / Test / Exit criteria) where the work is scoped enough to support it; phases still needing scoping say so plainly instead of inventing false precision.
+- they came out of a direct architecture review against CrewAI and a codebase-grounded discussion of self-organization concepts, both on 2026-07-23. Same format as above (Depends on / Deliverables / Test / Exit criteria) where the work is scoped enough to support it; phases still needing scoping say so plainly instead of inventing false precision.
 
 ### Phase 12 — Agent Tool-Calling
 
@@ -379,11 +379,64 @@ Unlike Phases 0-11, these phases weren't synthesized from the Tier 1-3 specifica
 
 **Priority: High.**
 
-**Deliverables**: `AgentSDKModelProvider`'s `allowed\_tools` mechanism already exists and is wired into the Claude Agent SDK's own tool loop - it has simply never been populated. Wire one real tool per department, matched to its actual mission: Research gets a web-search tool, Engineering gets a sandboxed code-execution/lint/test-runner tool, Compliance gets a policy/document-lookup tool. Do not build a general-purpose tool library up front - that's explicitly out of scope (see the CrewAI-gap PRD's non-goals).
+**Actual status: Implemented (2026-07-23), Research only.** Engineering's code-execution
+tool was scoped out after checking the Claude Agent SDK directly: `SandboxSettings.enabled`
+is explicitly macOS/Linux only, so on this Windows machine there is no sandboxing available
+at all - giving Engineering raw shell access would mean genuinely unrestricted command
+execution during autonomous reasoning, not the "sandboxed" tool this phase's deliverables
+originally assumed. Deferred rather than shipped unsafely; revisit with a real constrained
+design (a narrow `can_use_tool` command allowlist, or a real sandbox if this ever runs on
+Linux/macOS) before wiring it. Compliance's tool is similarly not yet scoped.
 
-**Test**: At least one department agent completes a real objective requiring an external tool call mid-reasoning, with that call visible in `observability\_service/telemetry.py` - not just inferable from the final text output.
+The real architectural finding: before this phase, there was exactly one shared
+`ModelProvider` instance for the entire swarm, constructed once with a fixed `allowed_tools`
+- nothing about a call identified which agent/department was asking, so per-department tools
+literally could not be expressed. Fixed by threading tool selection through the existing
+per-call path instead of introducing multiple provider instances: `AgentDefinition.tools`
+(present in the schema since Phase 4, previously read by nothing - `agent_runtime/
+registry.py`'s own docstring called it out as having zero runtime effect) now actually
+matters - `AgentRuntime`'s Execute step reads `self.agent.tools.get("available", [])` and
+passes it through `ModelGateway.generate(..., allowed_tools=...)` to
+`AgentSDKModelProvider.generate()`, which lets the per-call value override its own
+constructor-level default. `StubModelProvider` and `AnthropicModelProvider` accept and ignore
+it (Protocol compatibility; the raw Messages API path has no tool-use concept to wire this
+into). `research_agent/agent.yaml`'s `tools.available` was populated with the real SDK tool
+name (`WebSearch`) - it previously held `[search, document_processing]`, placeholder values
+that were never real tool names and would have been silently unrecognized.
 
-**Exit criteria**: One department agent demonstrably uses its tool in a real (non-test) objective, logged in telemetry.
+Tool-use visibility (the actual exit criterion) required `AgentSDKModelProvider` to gain an
+optional `telemetry` sink, threaded from `main.py` through `create_provider_from_env()` -
+`_default_runner` now inspects `AssistantMessage.content` for `ToolUseBlock`/
+`ServerToolUseBlock` entries mid-stream (the only place a tool invocation is ever observable;
+the terminal `ResultMessage` only carries final text) and records a `tool_use:{name}` event
+per call.
+
+**Engineering department, flagged not resolved:** deferred per above - no department agent
+uses it yet.
+
+**Shared-connection bottleneck - raised by the user, not yet answered:** while investigating
+per-agent tool scoping, it became clear there is no queueing or locking at the model-provider
+layer for concurrent synchronous calls (`/chat/sync`, `/objectives` - the async `/chat` queue
+processes strictly sequentially, one worker, confirmed by `queue_worker.py`'s own docstring).
+Whether the single shared `ModelProvider` instance is an actual bottleneck under real
+concurrent load - and whether the swarm's own stated goal of "multiple departments reasoning
+in parallel" is even achievable with this architecture - is genuinely untested. Tracked as
+part of Phase 13's scope below rather than answered here: Phase 13's concurrent-objective
+test is exactly the evidence needed before this becomes an update plan worth raising.
+
+12 new/modified tests across `test_agent_sdk_provider.py` (per-call override, telemetry
+recording, real message-stream tool-block detection) and a new end-to-end test in
+`test_agent_runtime.py` proving `research_agent/agent.yaml`'s real on-disk `tools.available`
+value reaches the provider, not just plumbing that compiles. Every pre-existing fake
+`ModelProvider` test double across the suite needed a mechanical `allowed_tools=None`
+parameter addition (`ModelGateway.generate()` now always passes it) - a wide but shallow
+blast radius, confirmed by all pre-existing tests passing unmodified in behavior.
+
+**Deliverables**: `AgentSDKModelProvider`'s `allowed\_tools` mechanism already exists and is wired into the Claude Agent SDK's own tool loop - it has simply never been populated. Wire one real tool per department, matched to its actual mission: Research gets a web-search tool, Engineering gets a sandboxed code-execution/lint/test-runner tool, Compliance gets a policy/document-lookup tool. Do not build a general-purpose tool library up front - that's explicitly out of scope (see the CrewAI-gap PRD's non-goals).
+
+**Test**: At least one department agent completes a real objective requiring an external tool call mid-reasoning, with that call visible in `observability\_service/telemetry.py` - not just inferable from the final text output.
+
+**Exit criteria**: One department agent demonstrably uses its tool in a real (non-test) objective, logged in telemetry.
 
 ### Phase 13 — Failure & Load Resilience Testing
 
@@ -391,9 +444,25 @@ Unlike Phases 0-11, these phases weren't synthesized from the Tier 1-3 specifica
 
 **Priority: High.**
 
-**Deliverables**: `Documentation/plans/SDK\_MIGRATION\_PLAN.md` Section 1 already flags shared subscription-usage-window contention as a real risk; nothing tests it. Three targeted tests, not full Phase 11 simulation scope: (1) N concurrent objectives through `queue\_worker.py` - no queue corruption, no lost/duplicated jobs; (2) a forced provider failure mid-workflow - confirms the technical-failure escalation path Phase 8 already defines fires correctly and is distinct from the four framework-verdict conditions; (3) one soak test over an extended run, confirming no resource leak or worker deadlock.
+**Deliverables**: `Documentation/plans/SDK\_MIGRATION\_PLAN.md` Section 1 already flags shared subscription-usage-window contention as a real risk; nothing tests it. Three targeted tests, not full Phase 11 simulation scope: (1) N concurrent objectives through `queue\_worker.py` - no queue corruption, no lost/duplicated jobs; (2) a forced provider failure mid-workflow - confirms the technical-failure escalation path Phase 8 already defines fires correctly and is distinct from the four framework-verdict conditions; (3) one soak test over an extended run, confirming no resource leak or worker deadlock.
 
-**Test**: Automated, committed tests for (1) and (2) at minimum; (3) documented even if run manually.
+
+
+**Addition raised by the user (2026-07-23), during Phase 12:** (4) the shared-connection
+bottleneck question - is the single `ModelProvider` instance (see Phase 12's own note above)
+a real constraint under concurrent load? Test (1) above, as originally scoped, would NOT
+actually answer this - `queue_worker.py` processes objectives strictly sequentially by
+design (one worker, confirmed by its own docstring), so nothing reaches the provider
+concurrently through that path at all. The real test is concurrent calls through the
+*synchronous* paths (`/chat/sync`, `/objectives`), which skip the queue entirely and call the
+orchestrator directly - that's where two requests could genuinely overlap at the provider
+today. Deliverable: fire N simultaneous `/chat/sync` (or `/objectives`) requests, observe
+whether they complete correctly and how long they take relative to running the same N
+sequentially, and produce a concrete recommendation (bottleneck confirmed / not a real
+constraint / needs architecture change) to raise with the user as an update plan - not just a
+pass/fail test.
+
+**Test**: Automated, committed tests for (1) and (2) at minimum; (3) documented even if run manually.
 
 **Exit criteria**: Both (1) and (2) pass as committed tests.
 
@@ -403,17 +472,17 @@ Unlike Phases 0-11, these phases weren't synthesized from the Tier 1-3 specifica
 
 **Priority: Medium — ongoing once started, no end date, runs in parallel with later phases.**
 
-**Deliverables**: A passing test suite proves the system handles scenarios its author anticipated; it doesn't prove what CrewAI's independent user base proves for free. Route a defined set of real (non-test) objectives through the swarm over time. Review every Decision Record produced - not just success/failure, but whether department routing, escalation, and memory promotion were actually correct. Convert every mistake found into a new regression test.
+**Deliverables**: A passing test suite proves the system handles scenarios its author anticipated; it doesn't prove what CrewAI's independent user base proves for free. Route a defined set of real (non-test) objectives through the swarm over time. Review every Decision Record produced - not just success/failure, but whether department routing, escalation, and memory promotion were actually correct. Convert every mistake found into a new regression test.
 
 **Test**: N/A - this phase generates test cases, it doesn't consume a pre-written one.
 
-**Exit criteria**: A running log of real objectives processed, each with its Decision Record reviewed, and at least one regression test added per incorrect behavior found. Also the data source for Phase 18's deferred department-creation work and for scoping real infrastructure needs (EDIS, currently correctly unscheduled - see the status table above).
+**Exit criteria**: A running log of real objectives processed, each with its Decision Record reviewed, and at least one regression test added per incorrect behavior found. Also the data source for Phase 18's deferred department-creation work and for scoping real infrastructure needs (EDIS, currently correctly unscheduled - see the status table above).
 
 ### Phase 15 — Intake Sufficiency-Check Coverage Extension
 
 **Depends on**: Phase 5 (COO). Builds on the existing `orchestrator/intake.py`.
 
-**Priority: High — foundational. Phase 16's Head-spawning conditions depend on this holding** **across every entry point, not just one.**
+**Priority: High — foundational. Phase 16's Head-spawning conditions depend on this holding** **across every entry point, not just one.**
 
 **Actual status: Implemented (2026-07-23).** `POST /chat/sync` now runs the identical
 sufficiency gate `POST /chat` already had, sharing the same `DashboardChatMessage` round-
@@ -428,15 +497,15 @@ sufficiency) now bypass the check via `monkeypatch`, matching the pattern
 `test_chat_returns_502_when_sufficiency_check_raises` already established; a new dedicated
 test covers the real (unbypassed) insufficient-request path for each endpoint.
 
-**Deliverables**: `intake.py::assess\_sufficiency()` already does exactly this - checks whether an objective has enough detail before dispatch, and asks a bounded clarifying question if not (capped at 3 rounds). Its own docstring is explicit that it's wired to only one of three entry points: `POST /chat` (the dashboard). `POST /chat/sync` (what Samaritan's `dispatch\_to\_company()` actually calls) and `POST /objectives` (the formal API) skip it entirely. Extend the same sufficiency gate to both. Samaritan itself should not need to reason about objective completeness - per its own design, it's meant to leverage the swarm, not duplicate its judgment - so this belongs entirely on the swarm side.
+**Deliverables**: `intake.py::assess\_sufficiency()` already does exactly this - checks whether an objective has enough detail before dispatch, and asks a bounded clarifying question if not (capped at 3 rounds). Its own docstring is explicit that it's wired to only one of three entry points: `POST /chat` (the dashboard). `POST /chat/sync` (what Samaritan's `dispatch\_to\_company()` actually calls) and `POST /objectives` (the formal API) skip it entirely. Extend the same sufficiency gate to both. Samaritan itself should not need to reason about objective completeness - per its own design, it's meant to leverage the swarm, not duplicate its judgment - so this belongs entirely on the swarm side.
 
-**Test**: Submit a deliberately under-specified objective via `/chat/sync` and via `/objectives`; confirm each surfaces a clarifying-question path equivalent to what `/chat` already does today, rather than dispatching on incomplete information.
+**Test**: Submit a deliberately under-specified objective via `/chat/sync` and via `/objectives`; confirm each surfaces a clarifying-question path equivalent to what `/chat` already does today, rather than dispatching on incomplete information.
 
-**Exit criteria**: All three entry points enforce the same completeness gate before an objective ever reaches a department.
+**Exit criteria**: All three entry points enforce the same completeness gate before an objective ever reaches a department.
 
 ### Phase 16 — Department Head Direct Execution + Specialist Spawning
 
-**Depends on**: Phase 15 (the completeness gate must hold everywhere first - see below for why).
+**Depends on**: Phase 15 (the completeness gate must hold everywhere first - see below for why).
 
 **Priority: Medium-High.**
 
@@ -469,17 +538,17 @@ separate, unstarted work.
 any pre-existing test - the AutoAcceptDepartmentHead default and every existing
 LLMDepartmentHead JSON response shape produce identical behavior to before this phase.
 
-**Deliverables**: Today, `orchestrator/head.py`'s `DepartmentHead.evaluate()` is a pure accept/reject gate - it never executes work itself. Reframe it: a Head attempts execution directly, and spawns an additional (specialist) agent only when one of two explicit conditions holds:
+**Deliverables**: Today, `orchestrator/head.py`'s `DepartmentHead.evaluate()` is a pure accept/reject gate - it never executes work itself. Reframe it: a Head attempts execution directly, and spawns an additional (specialist) agent only when one of two explicit conditions holds:
 
-1. The information/context provided does not give the Head enough to confidently judge whether more headcount is required.
+1. The information/context provided does not give the Head enough to confidently judge whether more headcount is required.
 
-2. The Head's own analysis of the work - however complete that analysis is - still falls short of what one agent can deliver.
+2. The Head's own analysis of the work - however complete that analysis is - still falls short of what one agent can deliver.
 
-Condition 1 is deliberately narrow, not a routine escape valve: insufficient information is an *intake defect* to fix upstream (Phase 15), not something a Head should be expected to absorb by guessing. This is a design principle, not just an implementation detail - it needs to be written down somewhere departments/agents can be held to it (a DOMS-adjacent documentation update, not only code), so "the Head didn't have enough to go on" stops being an acceptable justification for spawning once Phase 15 is in place.
+Condition 1 is deliberately narrow, not a routine escape valve: insufficient information is an *intake defect* to fix upstream (Phase 15), not something a Head should be expected to absorb by guessing. This is a design principle, not just an implementation detail - it needs to be written down somewhere departments/agents can be held to it (a DOMS-adjacent documentation update, not only code), so "the Head didn't have enough to go on" stops being an acceptable justification for spawning once Phase 15 is in place.
 
-This changes the `HeadVerdict` contract - today `\{accepted, reasoning, suggested\_department\_id\}` - to something that can carry either a direct result or a delegation, e.g. `\{resolved\_by: "head"|"specialist", output, escalation\_reason\}`. That ripples into the Decision Record schema and Phase 8's escalation classification: a Head that genuinely can't finish isn't the same event as the four existing conditions - it's arguably a fifth, not a variant of an existing one.
+This changes the `HeadVerdict` contract - today `\{accepted, reasoning, suggested\_department\_id\}` - to something that can carry either a direct result or a delegation, e.g. `\{resolved\_by: "head"|"specialist", output, escalation\_reason\}`. That ripples into the Decision Record schema and Phase 8's escalation classification: a Head that genuinely can't finish isn't the same event as the four existing conditions - it's arguably a fifth, not a variant of an existing one.
 
-**Test**: Not yet fully specified - needs definition once the contract change above is implemented. At minimum: an objective sized for one agent completes via the Head alone with no spawn; an objective genuinely exceeding one agent's capacity triggers a spawn with a recorded reason matching condition 1 or 2 above, never neither.
+**Test**: Not yet fully specified - needs definition once the contract change above is implemented. At minimum: an objective sized for one agent completes via the Head alone with no spawn; an objective genuinely exceeding one agent's capacity triggers a spawn with a recorded reason matching condition 1 or 2 above, never neither.
 
 **Exit criteria**: TBD at implementation time.
 
@@ -534,7 +603,7 @@ idempotency, and the full propose-approve-implement loop actually registering a 
 agent (verified via a real `AgentRuntime` smoke test and an `agent.yaml` written to disk, not
 mocked). 290 tests passing, 4 skipped (unchanged gated live-credential tests).
 
-**Deliverables**: A historical record of every specialist spawned by a Department Head (Phase 16), tagged by specialization. A new Evolution Engine detection heuristic reading that ledger for a repeated need for the same specialization - note this is a genuinely different shape from `evolution\_service/detection.py`'s existing `detect\_inefficiencies()`, which is scoped to one decision at a time; this needs a periodic or cross-decision pass, not an inline per-decision check like today's only heuristic. Two new `ChangeProposal` types: create a dedicated agent (wired to `sdk/agent\_builder`'s already-working `build\_agent()` - schema-validates, creates identity, grants permissions, runs a real smoke-test execution, registers into the live `AgentRegistry`, no restart needed) and create a new department (needs Phase 18, since no equivalent builder exists yet). Also worth knowing going in: `evolution\_service/pipeline.py::implement\_change()` currently only ever writes a memory record saying a change was "approved and implemented" - it does not mutate any runtime behavior for any existing proposal type. Wiring "create agent" to actually call `build\_agent()` on approval is the first case of this pipeline doing real work, not an incremental addition to a pattern that already does.
+**Deliverables**: A historical record of every specialist spawned by a Department Head (Phase 16), tagged by specialization. A new Evolution Engine detection heuristic reading that ledger for a repeated need for the same specialization - note this is a genuinely different shape from `evolution\_service/detection.py`'s existing `detect\_inefficiencies()`, which is scoped to one decision at a time; this needs a periodic or cross-decision pass, not an inline per-decision check like today's only heuristic. Two new `ChangeProposal` types: create a dedicated agent (wired to `sdk/agent\_builder`'s already-working `build\_agent()` - schema-validates, creates identity, grants permissions, runs a real smoke-test execution, registers into the live `AgentRegistry`, no restart needed) and create a new department (needs Phase 18, since no equivalent builder exists yet). Also worth knowing going in: `evolution\_service/pipeline.py::implement\_change()` currently only ever writes a memory record saying a change was "approved and implemented" - it does not mutate any runtime behavior for any existing proposal type. Wiring "create agent" to actually call `build\_agent()` on approval is the first case of this pipeline doing real work, not an incremental addition to a pattern that already does.
 
 **Test**: TBD at implementation time.
 
@@ -548,26 +617,26 @@ mocked). 290 tests passing, 4 skipped (unchanged gated live-credential tests).
 
 **Deliverables**: An `sdk/department\_builder`, parallel to `agent\_builder`'s `build\_agent()`
 
-- activating `orchestrator/department\_registry.py`'s `DepartmentDefinition.lifecycle\_state` field, which already defaults to `"proposed"` but is never read or enforced anywhere today.
+- activating `orchestrator/department\_registry.py`'s `DepartmentDefinition.lifecycle\_state` field, which already defaults to `"proposed"` but is never read or enforced anywhere today.
 
-**Why deferred**: not a technical blocker - a deliberate choice. The Company needs to process real cases first (Phase 14) before there's tangible information about which new department(s), if any, are actually necessary. Building this speculatively risks the same "a lot of surface area for one operator" problem already flagged in the CrewAI comparison. Revisit once Phase 14 has produced real signal, not before.
+**Why deferred**: not a technical blocker - a deliberate choice. The Company needs to process real cases first (Phase 14) before there's tangible information about which new department(s), if any, are actually necessary. Building this speculatively risks the same "a lot of surface area for one operator" problem already flagged in the CrewAI comparison. Revisit once Phase 14 has produced real signal, not before.
 
 ### Phase 19 — Enterprise Compiler / CEDL (long-horizon)
 
-**Depends on**: Phase 17 (the small-scale version of this same pattern needs a track record first).
+**Depends on**: Phase 17 (the small-scale version of this same pattern needs a track record first).
 
 **Status: Not scoped. Long-horizon.**
 
-Source: `Specifications/4 - future-expansion/`'s Volumes XXXII (MCDP), XXXIII (EMMS), XXXIV (CEDLS), XXXVII (EBAS), and XXXVIII (ERAS) - no code exists against any of them today. These describe something categorically bigger than everything else in this document: a declarative language (CEDL) for defining an AI-native enterprise as data, compiled and provisioned by a generic Enterprise Compiler/Builder/Runtime - not a feature of this Company, but a platform for generating companies like it.
+Source: `Specifications/4 - future-expansion/`'s Volumes XXXII (MCDP), XXXIII (EMMS), XXXIV (CEDLS), XXXVII (EBAS), and XXXVIII (ERAS) - no code exists against any of them today. These describe something categorically bigger than everything else in this document: a declarative language (CEDL) for defining an AI-native enterprise as data, compiled and provisioned by a generic Enterprise Compiler/Builder/Runtime - not a feature of this Company, but a platform for generating companies like it.
 
-Confirmed intent (not superseded, not abandoned): The Company *is* the swarm. The original idea was for it to spin up additional companies to fill gaps in its own architecture - requiring the self-learning loop already partially built in Phase 11/17 (detect an inefficiency, recommend an enhancement, close the gap) to mature to the point where a detected gap can be "closed" by compiling and standing up an entirely new company, not just promoting one agent or department. Phase 17 is that same pattern at small scale (one specialist, one department); Phase 19 is its large-scale maturation. Don't schedule concrete work here until Phase 17's proposal/approval loop has enough of a real track record to trust extending it to something this consequential.
+Confirmed intent (not superseded, not abandoned): The Company *is* the swarm. The original idea was for it to spin up additional companies to fill gaps in its own architecture - requiring the self-learning loop already partially built in Phase 11/17 (detect an inefficiency, recommend an enhancement, close the gap) to mature to the point where a detected gap can be "closed" by compiling and standing up an entirely new company, not just promoting one agent or department. Phase 17 is that same pattern at small scale (one specialist, one department); Phase 19 is its large-scale maturation. Don't schedule concrete work here until Phase 17's proposal/approval loop has enough of a real track record to trust extending it to something this consequential.
 
 
 ## Notes on scope discipline
 
-- Phases 0–4 intentionally contain **no orchestration and no multi-agent behaviour** — they validate the substrate (identity, memory, communication, single-agent execution) in isolation, so failures in later phases can be localized instead of requiring a full-stack debug.
+- Phases 0–4 intentionally contain **no orchestration and no multi-agent behaviour** — they validate the substrate (identity, memory, communication, single-agent execution) in isolation, so failures in later phases can be localized instead of requiring a full-stack debug.
 
-- The department/agent activation order (Research → Engineering+Compliance → Review) follows `FATS` §10's reasoning under MVS-canonical department naming, not `EIB`'s alternative reasoning-first ordering — both are valid; this plan picked the one that lets Phase 6 test cross-department coordination before Phase 7 adds the review gate, which is a cleaner testing progression.
+- The department/agent activation order (Research → Engineering+Compliance → Review) follows `FATS` §10's reasoning under MVS-canonical department naming, not `EIB`'s alternative reasoning-first ordering — both are valid; this plan picked the one that lets Phase 6 test cross-department coordination before Phase 7 adds the review gate, which is a cleaner testing progression.
 
-- Nothing in Phases 0–9 should require touching Tier 4 (`Specifications/4 - future-expansion/`) — if an implementer finds themselves needing SDK, Plugin, Marketplace, or compiler-track content before Phase 10, that's a signal the phase boundary has been violated.
+- Nothing in Phases 0–9 should require touching Tier 4 (`Specifications/4 - future-expansion/`) — if an implementer finds themselves needing SDK, Plugin, Marketplace, or compiler-track content before Phase 10, that's a signal the phase boundary has been violated.
 

@@ -63,7 +63,7 @@ _telemetry = TelemetrySink()
 # MODEL_PROVIDER env var selects stub (default, no credentials) / anthropic (API-key
 # billing) / agent_sdk (subscription-capable) - see shared/providers/__init__.py and
 # Documentation/plans/SDK_MIGRATION_PLAN.md Section 4.1.
-_model_gateway = ModelGateway(create_provider_from_env(), telemetry=_telemetry)
+_model_gateway = ModelGateway(create_provider_from_env(telemetry=_telemetry), telemetry=_telemetry)
 _department_registry = DepartmentRegistry(_REPO_ROOT / "departments")
 _department_registry.load_all()
 _agent_registry = AgentRegistry(_REPO_ROOT / "agents" / "active")

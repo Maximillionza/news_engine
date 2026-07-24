@@ -147,7 +147,15 @@ class AgentRuntime:
             f"Task: {message.task}\n"
             f"Required output: {message.required_output}\n"
         )
-        output = self._model_gateway.generate(requester=self.agent.identity.id, prompt=prompt)
+        # Phase 12 (IMPLEMENTATION_PLAN.md, 2026-07-23): this agent's own fixed tool
+        # allowlist, from its agent.yaml's tools.available - previously present in the
+        # schema (ADLS sec.4-17) but never read by anything; this is the first runtime
+        # effect it has. Empty for any agent that doesn't set one, reproducing today's
+        # exact no-tools behavior.
+        allowed_tools = self.agent.tools.get("available", [])
+        output = self._model_gateway.generate(
+            requester=self.agent.identity.id, prompt=prompt, allowed_tools=allowed_tools
+        )
         self._record("execute", result=TelemetryResult.SUCCESS, duration_ms=(time.perf_counter() - start) * 1000)
         steps_completed.append("execute")
 

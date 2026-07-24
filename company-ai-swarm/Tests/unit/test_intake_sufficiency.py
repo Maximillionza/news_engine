@@ -18,7 +18,7 @@ class _FakeProvider:
         self.response_text = response_text
         self.prompts: list[str] = []
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, *, allowed_tools=None) -> str:
         self.prompts.append(prompt)
         return self.response_text
 
@@ -115,7 +115,7 @@ def test_generate_failure_propagates_not_swallowed() -> None:
     Section 4's error table)."""
 
     class _FailingProvider:
-        def generate(self, prompt: str) -> str:
+        def generate(self, prompt: str, *, allowed_tools=None) -> str:
             raise RuntimeError("connection reset")
 
     gateway = ModelGateway(_FailingProvider())

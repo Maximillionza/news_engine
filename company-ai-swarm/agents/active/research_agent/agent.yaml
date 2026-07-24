@@ -1,6 +1,6 @@
 # Agent definition. Schema: agents/templates/agent_template.yaml (ADLS).
 # Content sourced from First Agent Template Specification (FATS) — closest match to MVS's canonical
-# 4-agent MVP roster. This is a TEMPLATE. No runtime executes this agent yet.
+# 4-agent MVP roster.
 
 agent:
   identity:
@@ -46,7 +46,11 @@ agent:
     retention_policy: ""
 
   tools:
-    available: [search, document_processing]
+    # Phase 12 (IMPLEMENTATION_PLAN.md, 2026-07-23): the real Claude Agent SDK tool name,
+    # not the placeholder "search"/"document_processing" values this held before - those
+    # were never real SDK tool names and would have been silently unrecognized if passed
+    # through. agent_runtime/runtime.py's Execute step now actually reads this list.
+    available: [WebSearch]
     permissions: []
     execution_limits: []
     approval_required: []

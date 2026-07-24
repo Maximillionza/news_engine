@@ -29,15 +29,22 @@ from observability_service.telemetry import TelemetryResult, TelemetrySink, defa
 class ModelProvider(Protocol):
     """Anything a ModelGateway can route to. Real providers (Claude, GPT, ...) implement
     this same shape; nothing else in the codebase is allowed to call `generate` on a
-    provider directly."""
+    provider directly.
 
-    def generate(self, prompt: str) -> str: ...
+    `allowed_tools` (Phase 12, IMPLEMENTATION_PLAN.md, 2026-07-23): the calling agent's own
+    per-call tool allowlist (from its AgentDefinition.tools["available"] - see
+    agent_runtime/runtime.py's Execute step), not a provider-level setting. Empty by default
+    - most providers/agents don't need it, and a provider that has no concept of tool use
+    (AnthropicModelProvider's raw Messages API call) accepts and ignores it rather than
+    erroring, so this stays a single shared Protocol every provider implements identically."""
+
+    def generate(self, prompt: str, *, allowed_tools: list[str] | None = None) -> str: ...
 
 
 class StubModelProvider:
     """Deterministic dev/test provider. Not connected to any real model."""
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, *, allowed_tools: list[str] | None = None) -> str:
         return f"[stub model output for prompt of length {len(prompt)}]"
 
 
@@ -66,10 +73,10 @@ class ModelGateway:
 
         self._provider = provider
 
-    def generate(self, *, requester: str, prompt: str) -> str:
+    def generate(self, *, requester: str, prompt: str, allowed_tools: list[str] | None = None) -> str:
         start = time.perf_counter()
         try:
-            output = self._provider.generate(prompt)
+            output = self._provider.generate(prompt, allowed_tools=allowed_tools)
         except Exception as exc:  # noqa: BLE001 - recorded, then re-raised
             self._telemetry.record(
                 component="model_gateway",

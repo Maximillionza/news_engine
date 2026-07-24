@@ -27,6 +27,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Awaitable, Callable, Sequence
 
+from observability_service.telemetry import TelemetryResult, TelemetrySink
+
 # Same reasoning as AnthropicModelProvider's DEFAULT_MODEL (services/shared/providers/
 # anthropic_provider.py): one bounded, single-shot prompt per generate() call is Sonnet 5's
 # sweet spot, not Opus's - doubly so here, since this provider's calls draw down a personal
@@ -61,9 +63,22 @@ def _describe_result_error(message: Any) -> str:
     return f"Agent SDK query returned an error result: {message.result}"
 
 
-async def _default_runner(prompt: str, allowed_tools: Sequence[str], model: str | None) -> str:
+async def _default_runner(
+    prompt: str,
+    allowed_tools: Sequence[str],
+    model: str | None,
+    *,
+    on_tool_use: Callable[[str], None] | None = None,
+) -> str:
     try:
-        from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
+        from claude_agent_sdk import (
+            AssistantMessage,
+            ClaudeAgentOptions,
+            ResultMessage,
+            ServerToolUseBlock,
+            ToolUseBlock,
+            query,
+        )
     except ImportError as exc:  # pragma: no cover - exercised only when the extra isn't installed
         raise AgentSDKProviderError(
             "The 'claude-agent-sdk' package is required for AgentSDKModelProvider. "
@@ -88,6 +103,17 @@ async def _default_runner(prompt: str, allowed_tools: Sequence[str], model: str 
 
     result_text: str | None = None
     async for message in query(prompt=prompt, options=options):
+        # Phase 12 (IMPLEMENTATION_PLAN.md, 2026-07-23): AssistantMessage.content carries
+        # ToolUseBlock (a CLI-side tool like WebSearch/Bash/Read) or ServerToolUseBlock (an
+        # Anthropic-hosted server tool) entries when the model actually invokes a tool mid-
+        # reasoning - this is the only place that's ever observable, since the terminal
+        # ResultMessage below only carries the final text. on_tool_use is None unless the
+        # caller (AgentSDKModelProvider.generate()) was constructed with a telemetry sink.
+        if on_tool_use is not None and isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, (ToolUseBlock, ServerToolUseBlock)):
+                    on_tool_use(block.name)
+
         # SystemMessage/AssistantMessage/etc. stream first; the terminal ResultMessage
         # carries `.result` and `.is_error` (see agent-sdk quickstart's
         # `if hasattr(message, "result")`). is_error must be checked explicitly - a prior
@@ -111,18 +137,30 @@ class AgentSDKModelProvider:
     to act on the local machine. `model=None` defers to whatever Claude Code itself
     defaults to (its own `/model` setting) rather than forcing DEFAULT_MODEL - pass
     `model=DEFAULT_MODEL` explicitly (or another model string) when this provider is
-    selected specifically because it should behave like AnthropicModelProvider's choice."""
+    selected specifically because it should behave like AnthropicModelProvider's choice.
+
+    `allowed_tools` set here is the constructor-level default; Phase 12 (IMPLEMENTATION_PLAN.md,
+    2026-07-23) lets `generate()`'s own `allowed_tools` (the calling agent's own
+    `AgentDefinition.tools["available"]`, per `shared.model_gateway.ModelProvider`'s
+    docstring) override it per call, since one shared provider instance serves every agent -
+    see `shared/model_gateway.py`'s docstring on why there's only one.
+
+    `telemetry`, if given, makes a real tool invocation observable: `generate()` records a
+    `tool_use:{tool_name}` event as it happens, not just inferable from the final text
+    output - the exit criterion this phase actually needs."""
 
     def __init__(
         self,
         *,
         model: str | None = None,
         allowed_tools: Sequence[str] = (),
-        runner: Callable[[str, Sequence[str], str | None], Awaitable[str]] = _default_runner,
+        runner: Callable[..., Awaitable[str]] = _default_runner,
+        telemetry: TelemetrySink | None = None,
     ) -> None:
         self._model = model
         self._allowed_tools = tuple(allowed_tools)
         self._runner = runner
+        self._telemetry = telemetry
 
     @property
     def model(self) -> str | None:
@@ -130,10 +168,21 @@ class AgentSDKModelProvider:
         DEFAULT_MODEL; see the class docstring."""
         return self._model
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, *, allowed_tools: list[str] | None = None) -> str:
+        tools = tuple(allowed_tools) if allowed_tools else self._allowed_tools
+        on_tool_use = self._record_tool_use if self._telemetry is not None else None
         try:
-            return asyncio.run(self._runner(prompt, self._allowed_tools, self._model))
+            return asyncio.run(self._runner(prompt, tools, self._model, on_tool_use=on_tool_use))
         except AgentSDKProviderError:
             raise
         except Exception as exc:  # noqa: BLE001 - ModelGateway.generate() records + re-raises
             raise AgentSDKProviderError(f"Agent SDK query failed: {exc}") from exc
+
+    def _record_tool_use(self, tool_name: str) -> None:
+        assert self._telemetry is not None  # only ever bound as a callback when this is set
+        self._telemetry.record(
+            component="agent_sdk_provider",
+            action=f"tool_use:{tool_name}",
+            duration_ms=0.0,
+            result=TelemetryResult.SUCCESS,
+        )
