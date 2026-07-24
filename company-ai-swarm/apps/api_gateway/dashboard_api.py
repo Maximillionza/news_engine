@@ -174,11 +174,13 @@ def build_router(
     coo,
     department_registry,
     agent_registry,
+    model_gateway,
     telemetry,
     serialize_outcome: Callable[[Any], dict[str, Any]],
     get_session,
     require_api_key,
     uploads_dir: Path,
+    agents_root: Path,
 ) -> APIRouter:
     router = APIRouter()
     evolution_engine = EvolutionEngine()
@@ -561,8 +563,17 @@ def build_router(
                     session, proposal_id, approver_identity_id="dashboard_director"
                 )
             else:
+                # Phase 17 (IMPLEMENTATION_PLAN.md, 2026-07-23): only action_type=create_agent
+                # proposals actually use these - every other proposal type ignores them, same
+                # as implement_change()'s own docstring says.
                 evolution_engine.implement_change(
-                    session, proposal_id, implementer_identity_id="dashboard_director"
+                    session,
+                    proposal_id,
+                    implementer_identity_id="dashboard_director",
+                    department_registry=department_registry,
+                    agent_registry=agent_registry,
+                    model_gateway=model_gateway,
+                    agents_root=agents_root,
                 )
                 prop = session.get(ChangeProposal, proposal_id)
         except EvolutionApprovalError as exc:

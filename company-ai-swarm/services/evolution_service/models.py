@@ -47,6 +47,16 @@ class ImprovementOpportunity(Base):
 
 
 class ChangeProposal(Base):
+    """action_type/action_payload (Phase 17, IMPLEMENTATION_PLAN.md, 2026-07-23): EESIS sec.8's
+    Change Proposal Model, as modeled by every field above this docstring, has no notion of
+    proposal "type" at all - an honest extension beyond the literal spec, needed because
+    pipeline.py's implement_change() previously only ever did one thing (write a memory
+    record) for every proposal. action_type defaults to "record_only", reproducing that exact
+    behavior for every proposal that exists before this phase (the review-skip proposal
+    included) - only "create_agent" (this phase's new type) does anything different.
+    action_payload carries whatever the implementation step needs that doesn't fit the
+    existing free-text fields - for create_agent, an sdk.agent_builder.AgentDraft's fields."""
+
     __tablename__ = "change_proposals"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -65,6 +75,8 @@ class ChangeProposal(Base):
     approval_status: Mapped[ProposalStatus] = mapped_column(
         Enum(ProposalStatus), nullable=False, default=ProposalStatus.PENDING
     )
+    action_type: Mapped[str] = mapped_column(String, nullable=False, default="record_only")
+    action_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

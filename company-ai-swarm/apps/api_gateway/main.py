@@ -277,11 +277,13 @@ app.include_router(
         coo=_coo,
         department_registry=_department_registry,
         agent_registry=_agent_registry,
+        model_gateway=_model_gateway,
         telemetry=_telemetry,
         serialize_outcome=_serialize_outcome,
         get_session=get_session,
         require_api_key=require_api_key,
         uploads_dir=_REPO_ROOT / "uploads" / "inbox",
+        agents_root=_REPO_ROOT / "agents" / "active",
     )
 )
 

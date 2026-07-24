@@ -83,7 +83,7 @@ Full test suite: **266 passed, 4 skipped** (`python -m pytest`). The 4 skipped a
 | 14 | Operational Dogfooding | Not started | Priority: **Medium**, ongoing once started (no end date). Depends on Phase 12. |
 | 15 | Intake Sufficiency-Check Coverage Extension | Implemented (2026-07-23) | `apps/api_gateway/dashboard_api.py::chat_send_sync` now runs the same sufficiency gate as `chat_send`; `apps/api_gateway/main.py::submit_objective` runs a single-shot (no round-loop) version, since `/objectives` has no conversation state to count rounds against. 272 tests passing, 4 skipped (same gated live-credential tests as before), including 5 new tests covering the insufficient/third-round/rejection paths on both endpoints. |
 | 16 | Department Head Direct Execution + Specialist Spawning | Implemented (2026-07-23) | `orchestrator/head.py::resolve_verdict_execution()` (shared mechanism), wired into both `controller.py` (single-department) and `workflow_engine.py` (multi-department); `LLMDepartmentHead` now attempts objectives directly. All four head agent.yaml files updated. 282 tests passing, 4 skipped, zero changes to any pre-existing test (full backward compatibility confirmed). |
-| 17 | Specialist Spawn Ledger + Evolution Promotion Heuristic | Not started | Priority: **Medium**. Depends on Phase 16. |
+| 17 | Specialist Spawn Ledger + Evolution Promotion Heuristic | Implemented (2026-07-23) | `orchestrator/spawns.py` (ledger), `evolution_service/detection.py::detect_specialist_pattern()`, `evolution_service/pipeline.py::EvolutionEngine.propose_specialist_agent()` + `create_agent` actuation in `implement_change()`. "Create department" proposal type deliberately excluded - depends on undelivered Phase 18. 290 tests passing, 4 skipped, unchanged. |
 | — | Department Creation Capability | Deferred | No phase/priority assigned yet —Priority: **Low, deliberately deferred** until Phase 14 produces real case data. |
 | — | Enterprise Compiler / CEDL (multi-company generation) | Long-horizon | No phase/priority assigned yet —Not scoped. Depends on Phase 17's small-scale self-improvement loop earning a track record first. |
 | — | EEOS (Economics & Optimization) | Needs exploration | No phase/priority assigned yet — scope this before scheduling it. |
@@ -488,6 +488,51 @@ This changes the `HeadVerdict` contract - today `\{accepted, reasoning, suggeste
 **Depends on**: Phase 16 (spawning has to exist before its pattern can be tracked).
 
 **Priority: Medium.**
+
+**Actual status: Implemented (2026-07-23).** Scoped down from the original two proposal
+types to one: "create department" needs Phase 18's builder, which doesn't exist and is
+deliberately deferred (see Phase 18 below) - only "create dedicated agent" shipped.
+
+Two increments. (1) `orchestrator/spawns.py`'s `SpecialistSpawnRecord` ledger, written from
+inside `resolve_verdict_execution()` right after a specialist dispatch succeeds - required
+threading a new `decision_id` parameter through `resolve_verdict_execution()`,
+`execute_workflow()` (which never had one before), and `simulation_service/
+workflow_simulation.py`'s sandboxed dry runs (a synthetic id, since a simulation has no real
+Decision Record). (2) `detect_specialist_pattern()` reads that ledger for one department at a
+time (the caller decides which, and when - nothing calls this automatically, matching
+`detect_and_propose()`'s own precedent of never being invoked in production either, only in
+tests) and, at or above a threshold (default 3), produces an `ImprovementOpportunity`.
+`propose_specialist_agent()` turns that into a `ChangeProposal` with the new `action_type`/
+`action_payload` fields (EESIS's literal Change Proposal Model has no notion of proposal
+"type" at all - an honest extension) carrying an `sdk.agent_builder.AgentDraft`'s fields,
+idempotent against an already-pending-or-implemented proposal for the same department. No
+simulation step - unlike the review-skip proposal, there's no meaningful "run it both ways"
+dry run for "would a dedicated agent do better than repeated spawning" with the simulation
+infrastructure this corpus has; `simulation_run_id` is left `None`, which the schema already
+allowed.
+
+`implement_change()` now branches on `action_type`: `"create_agent"` calls the unmodified
+`build_agent()` (schema validation, identity creation, permission grants, a real smoke-test
+execution, live `AgentRegistry` registration) via four new optional keyword parameters that
+every pre-Phase-17 proposal (`action_type` defaults to `"record_only"`) ignores entirely -
+confirmed by all 5 pre-existing evolution engine tests passing with zero modification. Wired
+through to the live dashboard API (`main.py` / `dashboard_api.py`'s `/proposals/{id}/implement`
+endpoint) so this is reachable, not just unit-tested in isolation - matching the same
+reachability the review-skip proposal type already has (which is to say, not automatically
+triggered either; a human or future scheduler still has to call `propose_specialist_agent()`
+itself, same as `detect_and_propose()`).
+
+One unrelated fragility found and fixed along the way: `apps/api_gateway/api_gateway_dev.sqlite3`
+is a gitignored, persistent local dev database with no migration path - `Base.metadata.create_all()`
+only creates missing tables, it doesn't alter existing ones, so the `ChangeProposal` schema
+change broke 4 tests against the stale on-disk file until it was deleted and let regenerate.
+Not fixed architecturally (no migration system added - out of scope here), just flagging it:
+any future SQLAlchemy model change will hit this same wall again.
+
+7 new tests in `test_evolution_engine.py` cover the detection threshold, proposal creation and
+idempotency, and the full propose-approve-implement loop actually registering a working new
+agent (verified via a real `AgentRuntime` smoke test and an `agent.yaml` written to disk, not
+mocked). 290 tests passing, 4 skipped (unchanged gated live-credential tests).
 
 **Deliverables**: A historical record of every specialist spawned by a Department Head (Phase 16), tagged by specialization. A new Evolution Engine detection heuristic reading that ledger for a repeated need for the same specialization - note this is a genuinely different shape from `evolution\_service/detection.py`'s existing `detect\_inefficiencies()`, which is scoped to one decision at a time; this needs a periodic or cross-decision pass, not an inline per-decision check like today's only heuristic. Two new `ChangeProposal` types: create a dedicated agent (wired to `sdk/agent\_builder`'s already-working `build\_agent()` - schema-validates, creates identity, grants permissions, runs a real smoke-test execution, registers into the live `AgentRegistry`, no restart needed) and create a new department (needs Phase 18, since no equivalent builder exists yet). Also worth knowing going in: `evolution\_service/pipeline.py::implement\_change()` currently only ever writes a memory record saying a change was "approved and implemented" - it does not mutate any runtime behavior for any existing proposal type. Wiring "create agent" to actually call `build\_agent()` on approval is the first case of this pipeline doing real work, not an incremental addition to a pattern that already does.
 
