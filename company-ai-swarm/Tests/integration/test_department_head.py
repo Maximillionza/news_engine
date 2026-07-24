@@ -181,6 +181,148 @@ class TestLLMDepartmentHead:
         assert verdict.accepted is False
         assert verdict.suggested_department_id is None
 
+    def test_resolved_true_sets_resolved_output(self, session: Session) -> None:
+        """Phase 16 (IMPLEMENTATION_PLAN.md, 2026-07-23): the Head can complete the objective
+        itself in the same call that accepts it."""
+        _grant(session, "research_head_001")
+        provider = _FakeProvider(
+            json.dumps(
+                {
+                    "accepted": True,
+                    "reasoning": "Simple enough to answer directly.",
+                    "resolved": True,
+                    "output": "EUR/USD is trading sideways today.",
+                    "needs_specialist": False,
+                    "insufficient_information": False,
+                }
+            )
+        )
+
+        verdict = LLMDepartmentHead().evaluate(
+            _research_department(),
+            "What's EUR/USD doing?",
+            agent_registry=_head_agent_registry(),
+            model_gateway=ModelGateway(provider),
+            session=session,
+            coo_id="coo",
+            telemetry=None,
+        )
+
+        assert verdict.accepted is True
+        assert verdict.resolved_output == "EUR/USD is trading sideways today."
+        assert verdict.needs_specialist is False
+
+    def test_resolved_true_with_non_string_output_becomes_empty_string_not_none(
+        self, session: Session
+    ) -> None:
+        """A malformed/missing output on a claimed resolution must not silently fall through
+        to the normal dispatch path (resolved_output=None means exactly that to
+        resolve_verdict_execution()) - it has to surface as a real, failed execution instead,
+        so validate_outcome()'s existing empty-output handling catches it."""
+        _grant(session, "research_head_001")
+        provider = _FakeProvider(
+            json.dumps({"accepted": True, "reasoning": "ok", "resolved": True, "output": None})
+        )
+
+        verdict = LLMDepartmentHead().evaluate(
+            _research_department(),
+            "obj",
+            agent_registry=_head_agent_registry(),
+            model_gateway=ModelGateway(provider),
+            session=session,
+            coo_id="coo",
+            telemetry=None,
+        )
+
+        assert verdict.resolved_output == ""
+
+    def test_needs_specialist_true_when_not_resolved(self, session: Session) -> None:
+        _grant(session, "research_head_001")
+        provider = _FakeProvider(
+            json.dumps(
+                {
+                    "accepted": True,
+                    "reasoning": "Requires deep statistical modeling beyond my own depth.",
+                    "resolved": False,
+                    "needs_specialist": True,
+                }
+            )
+        )
+
+        verdict = LLMDepartmentHead().evaluate(
+            _research_department(),
+            "Build a full econometric forecast model",
+            agent_registry=_head_agent_registry(),
+            model_gateway=ModelGateway(provider),
+            session=session,
+            coo_id="coo",
+            telemetry=None,
+        )
+
+        assert verdict.accepted is True
+        assert verdict.needs_specialist is True
+        assert verdict.resolved_output is None
+
+    def test_insufficient_information_is_a_rejection_not_a_spawn(self, session: Session) -> None:
+        """Deliberately NOT a spawn trigger (see LLMDepartmentHead's own docstring): a second
+        agent has no information the first lacked, so this folds into a rejection instead,
+        with reasoning distinguishing it from a wrong-department reject."""
+        _grant(session, "research_head_001")
+        provider = _FakeProvider(
+            json.dumps(
+                {
+                    "accepted": True,
+                    "reasoning": "Can't tell what's actually being asked for.",
+                    "resolved": False,
+                    "needs_specialist": False,
+                    "insufficient_information": True,
+                }
+            )
+        )
+
+        verdict = LLMDepartmentHead().evaluate(
+            _research_department(),
+            "do the thing",
+            agent_registry=_head_agent_registry(),
+            model_gateway=ModelGateway(provider),
+            session=session,
+            coo_id="coo",
+            telemetry=None,
+        )
+
+        assert verdict.accepted is False
+        assert verdict.needs_specialist is False
+        assert verdict.suggested_department_id is None
+        assert "Insufficient information" in verdict.reasoning
+        assert "Can't tell what's actually being asked for." in verdict.reasoning
+
+    def test_accepted_with_neither_resolved_nor_needs_specialist_reproduces_normal_path(
+        self, session: Session
+    ) -> None:
+        """Backward compatibility: a response using only the pre-Phase-16 shape (accepted/
+        reasoning/suggested_department_id, no new keys at all) must still produce a verdict
+        resolve_verdict_execution() treats as "fall through to normal select_agent()+
+        dispatch()" - this is exactly what every pre-Phase-16 test in this class already
+        sends and asserts on above."""
+        _grant(session, "research_head_001")
+        provider = _FakeProvider(
+            json.dumps({"accepted": True, "reasoning": "Genuinely research work.", "suggested_department_id": None})
+        )
+
+        verdict = LLMDepartmentHead().evaluate(
+            _research_department(),
+            "obj",
+            agent_registry=_head_agent_registry(),
+            model_gateway=ModelGateway(provider),
+            session=session,
+            coo_id="coo",
+            telemetry=None,
+        )
+
+        assert verdict.accepted is True
+        assert verdict.resolved_output is None
+        assert verdict.needs_specialist is False
+
     def test_strips_markdown_code_fence(self, session: Session) -> None:
         _grant(session, "research_head_001")
         payload = json.dumps({"accepted": True, "reasoning": "ok", "suggested_department_id": None})

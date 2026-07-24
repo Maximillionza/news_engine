@@ -166,7 +166,20 @@ def resolve_verdict_execution(
 class LLMDepartmentHead:
     """Production: dispatches to department.leader's registered head agent via the existing
     dispatch() cycle. Stateless - model_gateway is supplied per call like every other
-    DepartmentHead.evaluate() implementation, so this needs no constructor."""
+    DepartmentHead.evaluate() implementation, so this needs no constructor.
+
+    Phase 16 (IMPLEMENTATION_PLAN.md, 2026-07-23): the Head is now asked to attempt the
+    objective in the same call that judges whether it belongs to this department, not just
+    verdict on it - one dispatch() either produces a real result or a structured reason it
+    couldn't. The two conditions under which spawning a specialist (needs_specialist) is
+    legitimate: the objective genuinely exceeds one agent's capacity regardless of how much
+    detail was given. A third possible outcome - the information given is too incomplete to
+    judge scope or headcount at all - is deliberately NOT a spawn trigger: another agent
+    doesn't have any context the Head lacks, so spawning wouldn't fix an information deficit.
+    That case is folded into a rejection (accepted=False) instead, distinguishable in its
+    reasoning text, since Phase 15's intake sufficiency check should make it rare - if it
+    starts firing often, that's a signal Phase 15's gate has a gap, not that this Head needs
+    more agents."""
 
     def evaluate(
         self,
@@ -191,12 +204,30 @@ class LLMDepartmentHead:
             coo_id=coo_id,
             agent=head_agent,
             objective=(
-                f"Evaluate whether this objective belongs to the {department.name} "
-                f"({department.mission}): {objective}"
+                f"You are the Head of the {department.name} ({department.mission}). "
+                f"An objective has been routed to your department: {objective}"
             ),
             required_output=(
-                'Respond with ONLY a JSON object: {"accepted": true|false, "reasoning": '
-                '"...", "suggested_department_id": "<id>|null"}'
+                "Decide, and act, in one pass. First: does this objective genuinely belong "
+                "to your department, or should it be rejected (wrong department, or not "
+                "worth dispatching the swarm for)? If it belongs here: can you complete it "
+                "yourself with the information given, does it genuinely exceed what one "
+                "agent can deliver regardless of how much detail you have, or is the "
+                "information given too incomplete for you to judge either question?\n\n"
+                "Respond with ONLY a JSON object in exactly this shape:\n"
+                '{"accepted": true|false, "reasoning": "...", '
+                '"suggested_department_id": "<id>|null", "resolved": true|false, '
+                '"output": "<your actual answer, only if resolved=true>|null", '
+                '"needs_specialist": true|false, "insufficient_information": true|false}\n\n'
+                "If accepted=false: resolved/output/needs_specialist/"
+                "insufficient_information are ignored.\n"
+                "If accepted=true and you can complete this yourself: resolved=true, "
+                "output=<your actual, complete answer>, needs_specialist=false, "
+                "insufficient_information=false.\n"
+                "If accepted=true but this genuinely needs more than one agent regardless of "
+                "detail given: resolved=false, needs_specialist=true, output=null.\n"
+                "If accepted=true but the information given is too incomplete to judge scope "
+                "or headcount: resolved=false, insufficient_information=true, output=null."
             ),
             model_gateway=model_gateway,
             telemetry=telemetry,
@@ -216,11 +247,42 @@ class LLMDepartmentHead:
                 suggested_department_id=None,
             )
 
-        suggested = data.get("suggested_department_id")
+        if not accepted:
+            suggested = data.get("suggested_department_id")
+            return HeadVerdict(
+                accepted=False,
+                reasoning=reasoning,
+                suggested_department_id=suggested if isinstance(suggested, str) else None,
+            )
+
+        if bool(data.get("insufficient_information", False)):
+            # Deliberately a rejection, not a spawn trigger - see this class's docstring.
+            # No suggested_department_id: this isn't "wrong department," it's "can't judge
+            # from what was given," which another department wouldn't resolve either.
+            return HeadVerdict(
+                accepted=False,
+                reasoning=f"Insufficient information to determine scope or headcount: {reasoning}",
+                suggested_department_id=None,
+            )
+
+        if bool(data.get("resolved", False)):
+            output = data.get("output")
+            # Coerced to "" rather than left None on a malformed/missing output: resolve_
+            # verdict_execution() treats resolved_output=None as "fall through to normal
+            # dispatch," which would silently mask the Head claiming resolution without
+            # actually producing anything. "" flows through as a real (failed) execution
+            # instead - validate_outcome() correctly marks empty output as not achieved,
+            # surfacing via the existing OUTCOME_NOT_ACHIEVED escalation path.
+            return HeadVerdict(
+                accepted=True,
+                reasoning=reasoning,
+                resolved_output=output if isinstance(output, str) else "",
+            )
+
         return HeadVerdict(
-            accepted=accepted,
+            accepted=True,
             reasoning=reasoning,
-            suggested_department_id=suggested if isinstance(suggested, str) else None,
+            needs_specialist=bool(data.get("needs_specialist", False)),
         )
 
 
