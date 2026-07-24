@@ -36,9 +36,11 @@ from typing import Mapping, Protocol
 
 from sqlalchemy.orm import Session
 
-from agent_runtime.registry import AgentRegistry
+from agent_runtime.registry import AgentDefinition, AgentMission, AgentRegistry
+from agent_runtime.runtime import ExecutionResult
 from observability_service.telemetry import TelemetrySink
 from orchestrator.department_registry import DepartmentDefinition
+from orchestrator.evaluator import EXPECTED_EXECUTION_STEPS
 from orchestrator.router import dispatch
 from shared.llm_json import strip_code_fence
 from shared.model_gateway import ModelGateway
@@ -49,6 +51,15 @@ class HeadVerdict:
     accepted: bool
     reasoning: str
     suggested_department_id: str | None = None  # only meaningful when accepted=False
+    # Phase 16 (IMPLEMENTATION_PLAN.md, 2026-07-23): only meaningful when accepted=True.
+    # resolved_output set means the Head executed the objective itself - no further dispatch
+    # needed. needs_specialist=True (resolved_output left None) means the Head determined the
+    # work genuinely exceeds what it alone can deliver - see resolve_verdict_execution()
+    # below for how that spawns a specialist. Neither set (both default) reproduces today's
+    # exact behavior: the caller proceeds with its own select_agent()+dispatch() path -
+    # AutoAcceptDepartmentHead never sets either, so every existing call site is unaffected.
+    resolved_output: str | None = None
+    needs_specialist: bool = False
 
 
 class DepartmentHead(Protocol):
@@ -74,6 +85,82 @@ class AutoAcceptDepartmentHead:
             reasoning="Auto-accept (dev/test default).",
             suggested_department_id=None,
         )
+
+
+def resolve_verdict_execution(
+    verdict: HeadVerdict,
+    department: DepartmentDefinition,
+    *,
+    objective: str,
+    required_output: str,
+    agent_registry: AgentRegistry,
+    model_gateway: ModelGateway,
+    session: Session,
+    coo_id: str,
+    telemetry: TelemetrySink | None,
+) -> ExecutionResult | None:
+    """Phase 16 (IMPLEMENTATION_PLAN.md, 2026-07-23): given an accepted HeadVerdict, produces
+    the ExecutionResult for this department's work when the Head resolved it directly or
+    determined a specialist is needed. Returns None when neither applies - every verdict
+    AutoAcceptDepartmentHead produces, and any accepted verdict that leaves both fields at
+    their default - in which case the caller proceeds with its own unchanged
+    select_agent()+dispatch() path exactly as before this phase.
+
+    A spawned specialist reuses the Head's own already-authorized identity rather than a new
+    one: AgentRuntime's Check Policies step (agent_runtime/runtime.py) authorizes against
+    `agent_execution:{agent_id}`, which a genuinely new identity would have no grant for, and
+    security_service.permissions.authorize() denies before that grant is even checked if the
+    identity itself was never created. Spawning is realized as the Head adopting a
+    specialized mission/capability set for one task, not a separately registered entity -
+    matches the deliberately lightweight scope decided for this phase (no new
+    AgentRegistry entry, no permanent identity)."""
+
+    if verdict.resolved_output is None and not verdict.needs_specialist:
+        return None
+
+    head_agent = agent_registry.get(department.leader)
+    if head_agent is None:
+        raise ValueError(
+            f"Department '{department.id}' has no registered head agent for "
+            f"leader '{department.leader}'."
+        )
+
+    if verdict.resolved_output is not None:
+        # steps_completed must match orchestrator/evaluator.py's EXPECTED_EXECUTION_STEPS
+        # exactly for validate_outcome() to treat this as achieved - the Head's own dispatch()
+        # call already ran the real Agent Execution Cycle to produce resolved_output (Phase 16
+        # Increment 3, LLMDepartmentHead), this is a synthesized ExecutionResult reporting
+        # that outcome in the shape the rest of the pipeline expects, not a second cycle.
+        return ExecutionResult(
+            task=objective,
+            output=verdict.resolved_output,
+            artifact={"agent_id": head_agent.identity.id, "resolved_by": "head"},
+            steps_completed=list(EXPECTED_EXECUTION_STEPS),
+        )
+
+    specialist = AgentDefinition(
+        identity=head_agent.identity,
+        mission=AgentMission(
+            objective=(
+                f"Specialist role adopted by {head_agent.identity.id} for one task, "
+                f"because: {verdict.reasoning}"
+            )
+        ),
+        department=head_agent.department,
+        capabilities=head_agent.capabilities,
+    )
+    result = dispatch(
+        session,
+        coo_id=coo_id,
+        agent=specialist,
+        objective=objective,
+        required_output=required_output,
+        model_gateway=model_gateway,
+        telemetry=telemetry,
+    )
+    result.artifact["resolved_by"] = "specialist"
+    result.artifact["specialist_reasoning"] = verdict.reasoning
+    return result
 
 
 class LLMDepartmentHead:

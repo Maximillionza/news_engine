@@ -51,7 +51,7 @@ from orchestrator.classification import DepartmentClassifier, KeywordDepartmentC
 from orchestrator.department_registry import DepartmentDefinition, DepartmentRegistry
 from orchestrator.escalation import EscalationCondition
 from orchestrator.evaluator import OutcomeValidation, validate_outcome
-from orchestrator.head import AutoAcceptDepartmentHead, DepartmentHead
+from orchestrator.head import AutoAcceptDepartmentHead, DepartmentHead, resolve_verdict_execution
 from orchestrator.router import dispatch
 from security_service.audit import write_audit_record
 from shared.model_gateway import ModelGateway
@@ -213,8 +213,12 @@ class COOOrchestrator:
                 matched_departments=matched_departments,
             )
 
-        department = self._triage_single_department(
-            session, objective, decision_id=decision_id, initial_department=matched_departments[0]
+        department, head_execution = self._triage_single_department(
+            session,
+            objective,
+            decision_id=decision_id,
+            initial_department=matched_departments[0],
+            required_output=required_output,
         )
 
         task_profile = TaskProfile(
@@ -227,8 +231,26 @@ class COOOrchestrator:
             reasoning=classification.reasoning,
         )
 
-        # Select Agents
-        allocation = select_agent(task_profile.matched_department, self._agents)
+        # Select Agents: Phase 16 (IMPLEMENTATION_PLAN.md, 2026-07-23) - if the Department
+        # Head already resolved this itself or spawned a specialist (head_execution set by
+        # _triage_single_department below, via orchestrator/head.py's
+        # resolve_verdict_execution()), that result stands and no further selection happens.
+        # Otherwise this reproduces Phase 5's exact original path unchanged.
+        if head_execution is not None:
+            execution_result = head_execution
+            agent_id = execution_result.artifact.get("agent_id", department.leader)
+            resolved_by = execution_result.artifact.get("resolved_by")
+            if resolved_by == "specialist":
+                reasoning = (
+                    f"{task_profile.reasoning} (department head spawned a specialist: "
+                    f"{execution_result.artifact.get('specialist_reasoning', '')})"
+                )
+            else:
+                reasoning = f"{task_profile.reasoning} (resolved directly by department head)"
+        else:
+            allocation = select_agent(task_profile.matched_department, self._agents)
+            agent_id = allocation.agent.identity.id
+            reasoning = f"{task_profile.reasoning} {allocation.reasoning}"
 
         # Select Models: delegated entirely to the already-constructed ModelGateway
         # (RDL sec.14 - "Agents SHALL not directly depend on individual models"; the COO
@@ -238,34 +260,38 @@ class COOOrchestrator:
             session,
             id=decision_id,
             objective=objective,
-            reasoning=f"{task_profile.reasoning} {allocation.reasoning}",
-            chosen_action=f"execute via {allocation.agent.identity.id}",
+            reasoning=reasoning,
+            chosen_action=f"execute via {agent_id}",
             options_considered=[d.id for d in self._departments.all()],
-            agents_selected=[allocation.agent.identity.id],
+            agents_selected=[agent_id],
             models_used=["stub"],  # Phase 5 has exactly one provider; see model_gateway.py
         )
 
         # Create Workflow + Execute: Phase 5 has no multi-step workflow to build - dispatch
-        # directly to the one selected agent.
-        try:
-            execution_result = dispatch(
-                session,
-                coo_id=self.coo_id,
-                agent=allocation.agent,
-                objective=objective,
-                required_output=required_output,
-                model_gateway=self._model_gateway,
-                telemetry=self._telemetry,
-            )
-        except Exception as exc:
-            escalations.write_escalation(
-                session,
-                condition=EscalationCondition.TECHNICAL_FAILURE,
-                reasoning=f"{type(exc).__name__}: {exc}",
-                decision_id=decision_id,
-                is_technical_failure=True,
-            )
-            raise
+        # directly to the one selected agent. Skipped entirely when the Head already produced
+        # a result above - dispatch() (and its error handling) already ran inside
+        # resolve_verdict_execution() for the specialist case, or never needed to run at all
+        # for the Head's own direct resolution.
+        if head_execution is None:
+            try:
+                execution_result = dispatch(
+                    session,
+                    coo_id=self.coo_id,
+                    agent=allocation.agent,
+                    objective=objective,
+                    required_output=required_output,
+                    model_gateway=self._model_gateway,
+                    telemetry=self._telemetry,
+                )
+            except Exception as exc:
+                escalations.write_escalation(
+                    session,
+                    condition=EscalationCondition.TECHNICAL_FAILURE,
+                    reasoning=f"{type(exc).__name__}: {exc}",
+                    decision_id=decision_id,
+                    is_technical_failure=True,
+                )
+                raise
 
         # Validate
         validation = validate_outcome(execution_result)
@@ -298,8 +324,7 @@ class COOOrchestrator:
             session,
             decision_id=decision_id,
             lesson_content=(
-                f"Objective '{objective}' executed via {allocation.agent.identity.id}: "
-                f"{validation.reasoning}"
+                f"Objective '{objective}' executed via {agent_id}: {validation.reasoning}"
             ),
         )
 
@@ -317,7 +342,8 @@ class COOOrchestrator:
         *,
         decision_id: str,
         initial_department: DepartmentDefinition,
-    ) -> DepartmentDefinition:
+        required_output: str,
+    ) -> tuple[DepartmentDefinition, ExecutionResult | None]:
         """Documentation/plans/2026-07-19-department-head-triage-design.md Section 3.1's
         single-department path: up to 2 attempts total - the classifier's original match,
         then (if rejected with a valid suggested department) one retry at that department. A
@@ -329,7 +355,14 @@ class COOOrchestrator:
         receive_objective()), not the single-department dispatch path, per the Phase 8 fix
         that keeps the Review Agent from being dispatched raw objectives as primary work.
         Mirrors NoMatchingDepartmentError's pattern on terminal reject: a Decision Record and a
-        DEPARTMENT_REJECTED Escalation Record before raising."""
+        DEPARTMENT_REJECTED Escalation Record before raising.
+
+        Phase 16 (IMPLEMENTATION_PLAN.md, 2026-07-23) addition: the second element of the
+        returned tuple is non-None when orchestrator/head.py's resolve_verdict_execution()
+        determined the Head already resolved the objective itself or spawned a specialist -
+        the caller (receive_objective()) then skips its own select_agent()+dispatch() call
+        entirely. None reproduces today's exact behavior (AutoAcceptDepartmentHead's verdict
+        never sets resolved_output/needs_specialist)."""
 
         attempted_ids: set[str] = set()
         department = initial_department
@@ -366,7 +399,37 @@ class COOOrchestrator:
                 raise
 
             if verdict.accepted:
-                return department
+                try:
+                    head_execution = resolve_verdict_execution(
+                        verdict,
+                        department,
+                        objective=objective,
+                        required_output=required_output,
+                        agent_registry=self._agents,
+                        model_gateway=self._model_gateway,
+                        session=session,
+                        coo_id=self.coo_id,
+                        telemetry=self._telemetry,
+                    )
+                except Exception as exc:
+                    # Same audit trail any other technical failure gets - mirrors the
+                    # triage-failure handling just above.
+                    decisions.write_decision(
+                        session,
+                        id=decision_id,
+                        objective=objective,
+                        reasoning=f"Department Head execution failed: {type(exc).__name__}: {exc}",
+                        chosen_action="reject: head execution failed",
+                    )
+                    escalations.write_escalation(
+                        session,
+                        condition=EscalationCondition.TECHNICAL_FAILURE,
+                        reasoning=f"{type(exc).__name__}: {exc}",
+                        decision_id=decision_id,
+                        is_technical_failure=True,
+                    )
+                    raise
+                return department, head_execution
 
             suggested = (
                 self._departments.get(verdict.suggested_department_id)
