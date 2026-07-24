@@ -82,7 +82,7 @@ Full test suite: **266 passed, 4 skipped** (`python -m pytest`). The 4 skipped a
 | 13 | Failure & Load Resilience Testing | Not started | Priority: **High**. |
 | 14 | Operational Dogfooding | Not started | Priority: **Medium**, ongoing once started (no end date). Depends on Phase 12. |
 | 15 | Intake Sufficiency-Check Coverage Extension | Implemented (2026-07-23) | `apps/api_gateway/dashboard_api.py::chat_send_sync` now runs the same sufficiency gate as `chat_send`; `apps/api_gateway/main.py::submit_objective` runs a single-shot (no round-loop) version, since `/objectives` has no conversation state to count rounds against. 272 tests passing, 4 skipped (same gated live-credential tests as before), including 5 new tests covering the insufficient/third-round/rejection paths on both endpoints. |
-| 16 | Department Head Direct Execution + Specialist Spawning | Not started | Priority: **Medium-High**. Depends on Phase 15. |
+| 16 | Department Head Direct Execution + Specialist Spawning | Implemented (2026-07-23) | `orchestrator/head.py::resolve_verdict_execution()` (shared mechanism), wired into both `controller.py` (single-department) and `workflow_engine.py` (multi-department); `LLMDepartmentHead` now attempts objectives directly. All four head agent.yaml files updated. 282 tests passing, 4 skipped, zero changes to any pre-existing test (full backward compatibility confirmed). |
 | 17 | Specialist Spawn Ledger + Evolution Promotion Heuristic | Not started | Priority: **Medium**. Depends on Phase 16. |
 | — | Department Creation Capability | Deferred | No phase/priority assigned yet —Priority: **Low, deliberately deferred** until Phase 14 produces real case data. |
 | — | Enterprise Compiler / CEDL (multi-company generation) | Long-horizon | No phase/priority assigned yet —Not scoped. Depends on Phase 17's small-scale self-improvement loop earning a track record first. |
@@ -439,6 +439,35 @@ test covers the real (unbypassed) insufficient-request path for each endpoint.
 **Depends on**: Phase 15 (the completeness gate must hold everywhere first - see below for why).
 
 **Priority: Medium-High.**
+
+**Actual status: Implemented (2026-07-23).** Resolved the two open forks from the design
+checkpoint: a spawned specialist is realized as the Head's own already-authorized identity
+adopting a specialized mission/capability set for one task (not a new registered identity -
+AgentRuntime's Check Policies step denies unknown identities outright, and a genuinely new
+per-spawn identity would reintroduce the persistent-registration cost this phase deliberately
+avoided); spawning for genuine capacity reasons is recorded in the Decision Record's
+reasoning/chosen_action, not a new Escalation Condition. Condition 1 (insufficient
+information) does not spawn - a second agent has no context the first lacked, so it can't fix
+an information deficit - it's folded into a rejection instead, distinguishable in its
+reasoning text from a wrong-department reject, on the reasoning that Phase 15 should make it
+rare and it firing often is a signal that gate has a gap, not that more headcount is needed.
+
+Shipped as four increments, each independently tested and committed: (1) the `HeadVerdict`
+contract gains `resolved_output`/`needs_specialist`, plus `orchestrator/head.py`'s shared
+`resolve_verdict_execution()` and `controller.py`'s single-department wiring; (2) the same
+helper reused in `workflow_engine.py`'s multi-department loop, per-department independence
+confirmed; (3) `LLMDepartmentHead` rewritten to attempt the objective in the same dispatch()
+call that judges department fit, fully backward compatible with the pre-Phase-16 JSON
+response shape; (4) all four head `agent.yaml` files updated with the new mandate and the
+explicit "not an information-deficit escape valve" boundary, capabilities expanded from
+`[triage]` to each department's real capability set. `operations_head` documented with an
+honest caveat: it isn't actually reachable through the current triage wiring at all -
+`workflow_engine.py`'s review step never calls `head.evaluate()` for it - closing that gap is
+separate, unstarted work.
+
+282 tests passing, 4 skipped (unchanged gated live-credential tests), zero modifications to
+any pre-existing test - the AutoAcceptDepartmentHead default and every existing
+LLMDepartmentHead JSON response shape produce identical behavior to before this phase.
 
 **Deliverables**: Today, `orchestrator/head.py`'s `DepartmentHead.evaluate()` is a pure accept/reject gate - it never executes work itself. Reframe it: a Head attempts execution directly, and spawns an additional (specialist) agent only when one of two explicit conditions holds:
 
