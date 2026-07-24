@@ -54,22 +54,104 @@ def test_activity_aggregates_departments_agents_and_metrics() -> None:
     assert data["metrics"]["objectives_in_flight"] == len(data["in_flight_objectives"])
 
 
+def _send_sync_until_processed(client: TestClient, message: str) -> dict:
+    """Resends `message` to /chat/sync until it actually runs through the COO (decision_id is
+    not None), instead of assuming a fixed round count - mirrors
+    test_api_gateway_async.py's _send_until_queued() for the same reason: /chat/sync shares
+    the same DashboardChatMessage table (and therefore the same round-counting) as /chat, so
+    leftover clarification-round state from another test in this shared persistent dev
+    database can vary. Bounded at 3 attempts by the sufficiency check's own hard cap
+    (orchestrator/intake.py)."""
+
+    body: dict = {}
+    for _ in range(3):
+        body = client.post("/chat/sync", headers=HEADERS, json={"message": message}).json()
+        if body.get("decision_id") is not None:
+            return body
+    return body
+
+
 def test_chat_sync_message_routes_through_coo_and_returns_last_ten() -> None:
     """POST /chat/sync preserves the pre-Phase-B blocking behavior these dashboard tests
-    originally exercised - see this module's docstring."""
+    originally exercised - see this module's docstring. Phase 15 (2026-07-23) added the same
+    sufficiency pre-flight check /chat already had, so a single call is no longer guaranteed
+    to route through immediately - see _send_sync_until_processed()."""
 
     client = _client()
-    response = client.post(
-        "/chat/sync", headers=HEADERS, json={"message": "Research current market trends."}
-    )
-    assert response.status_code == 200
-    assert response.json()["decision_id"] is not None
+    response = _send_sync_until_processed(client, "Research current market trends.")
+    assert response["decision_id"] is not None
 
     history = client.get("/chat", headers=HEADERS)
     assert history.status_code == 200
     body = history.json()
     assert len(body["messages"]) <= 10
     assert body["messages"][-1]["role"] == "coo"
+
+
+def test_chat_sync_insufficient_request_asks_a_clarifying_question_without_processing() -> None:
+    """StubModelProvider's fixed text isn't parseable JSON, so the default dev/test gateway
+    always fails toward 'insufficient' with the fallback question - same real code path as
+    test_api_gateway_async.py's equivalent /chat test, exercised here for /chat/sync.
+
+    Deliberately uses "Research current market trends." - a message the pre-existing test in
+    this file already proves matches a real department under keyword classification - so a
+    None decision_id here can only mean the sufficiency gate blocked it, not an unrelated
+    NoMatchingDepartmentError coincidence (an earlier, vaguer message caused exactly that
+    false-positive during development of this test)."""
+
+    client = _client()
+
+    response = client.post(
+        "/chat/sync", headers=HEADERS, json={"message": "Research current market trends."}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["decision_id"] is None
+    assert "reply" in body
+
+    history = client.get("/chat", headers=HEADERS).json()
+    assert history["messages"][-1]["role"] == "coo"
+    assert history["messages"][-1]["content"] == body["reply"]
+
+
+def test_chat_sync_third_round_forces_proceed() -> None:
+    """Two clarifying rounds, then a third message must process regardless of what the
+    (stub-backed, always-insufficient) sufficiency check would otherwise say - mirrors
+    test_api_gateway_async.py's test_chat_third_round_forces_proceed_and_enqueues().
+
+    All three rounds use "Research current market trends." (proven to match a real
+    department, see the insufficient-request test above) plus a distinguishing suffix, so a
+    non-None decision_id on round three can only mean the round cap forced it through, not
+    that department matching coincidentally succeeded or failed."""
+
+    client = _client()
+
+    # Clear any leftover clarifying round from a previous test sharing this persistent dev
+    # database, same discipline as the async test's warm-up call.
+    _send_sync_until_processed(client, "Research current market trends. (warm-up)")
+
+    first = client.post(
+        "/chat/sync", headers=HEADERS, json={"message": "Research current market trends. (round one)"}
+    )
+    assert first.json()["decision_id"] is None
+
+    second = client.post(
+        "/chat/sync", headers=HEADERS, json={"message": "Research current market trends. (round two)"}
+    )
+    assert second.json()["decision_id"] is None
+
+    third = client.post(
+        "/chat/sync", headers=HEADERS, json={"message": "Research current market trends. (round three)"}
+    )
+    third_body = third.json()
+    assert third_body["decision_id"] is not None
+
+    # The processed objective consolidates the whole exchange, not just round three.
+    result = client.get(f"/objectives/{third_body['decision_id']}", headers=HEADERS).json()
+    assert "(round one)" in result["objective"]
+    assert "(round two)" in result["objective"]
+    assert "(round three)" in result["objective"]
 
 
 def test_file_upload_saves_to_inbox() -> None:
@@ -90,17 +172,28 @@ def test_proposal_actions_404_on_unknown_id() -> None:
 
 
 def test_chat_sync_department_rejection_is_a_normal_reply_not_an_error() -> None:
+    """The sufficiency gate runs before department dispatch, so _AlwaysRejectHead below is
+    never exercised unless the round cap has already been reached first (Phase 15, 2026-07-23)
+    - warm up with the real (non-swapped) head to legitimately reach a processed state, which
+    resets the round counter, then swap in the always-reject head and push through exactly 3
+    more rounds to deterministically land on the forced-sufficient round."""
+
     from orchestrator.head import HeadVerdict
 
     class _AlwaysRejectHead:
         def evaluate(self, department, objective, **_):
             return HeadVerdict(accepted=False, reasoning="Rejected for test.", suggested_department_id=None)
 
+    client = _client()
+    _send_sync_until_processed(client, "Research current market trends. (warm-up, real head)")
+
     original_head = gateway_main._coo._head
     gateway_main._coo._head = _AlwaysRejectHead()
     try:
-        response = _client().post(
-            "/chat/sync", headers=HEADERS, json={"message": "Research current market trends."}
+        client.post("/chat/sync", headers=HEADERS, json={"message": "Research current market trends. (r1)"})
+        client.post("/chat/sync", headers=HEADERS, json={"message": "Research current market trends. (r2)"})
+        response = client.post(
+            "/chat/sync", headers=HEADERS, json={"message": "Research current market trends. (r3)"}
         )
         assert response.status_code == 200
         body = response.json()

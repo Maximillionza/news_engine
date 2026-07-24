@@ -184,12 +184,29 @@ def submit_objective(
     session: Session = Depends(get_session),
     _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
-    """EAAS sec.18: Objective submission."""
+    """EAAS sec.18: Objective submission.
+
+    Phase 15 (IMPLEMENTATION_PLAN.md, 2026-07-23) adds the same sufficiency check
+    /chat(/sync) already had - but single-shot, not round-based. /objectives is a structured,
+    one-shot API contract (required_output is already mandatory here, unlike the free-text
+    chat endpoints' default), not a conversation - there's no persistent history to count
+    rounds against, so there's no round-3 forcing escape hatch either. An insufficient
+    objective gets a 422 explaining what's missing, same status code (and same underlying
+    reason - an incomplete request) as the required-field check just above; it's on the
+    caller to resubmit a more complete request, not on this endpoint to guess."""
 
     objective = body.get("objective")
     required_output = body.get("required_output")
     if not objective or not required_output:
         raise HTTPException(status_code=422, detail="Both 'objective' and 'required_output' are required.")
+
+    try:
+        assessment = _coo.assess_sufficiency(objective, [], round_number=1)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not assess the request: {exc}") from exc
+
+    if not assessment.sufficient:
+        raise HTTPException(status_code=422, detail=assessment.clarifying_question)
 
     try:
         outcome = _coo.receive_objective(session, objective, required_output=required_output)

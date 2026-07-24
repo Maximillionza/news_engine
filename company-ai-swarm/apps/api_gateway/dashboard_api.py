@@ -461,7 +461,15 @@ def build_router(
         """Preserves the pre-Phase-B blocking behavior exactly (SDK_MIGRATION_PLAN.md
         Section 6: "keep /chat/sync for testing... /chat for production"). Not used by the
         dashboard UI; kept for callers that need a synchronous, deterministic reply without
-        a queue worker process running."""
+        a queue worker process running - including Samaritan's dispatch_to_company(), which
+        is why this needs the same sufficiency pre-flight check /chat already had (Phase 15,
+        IMPLEMENTATION_PLAN.md, 2026-07-23): Samaritan isn't meant to reason about objective
+        completeness itself, it leverages the swarm - so that judgment has to live here, not
+        be assumed away because this endpoint is also used for synchronous testing.
+
+        Shares dashboard_chat_messages with /chat (same round-counting, same consolidation),
+        so a caller alternating between /chat and /chat/sync mid-conversation still gets one
+        coherent clarification sequence, not two independent ones."""
 
         objective, required_output = _build_objective_from_chat_body(body)
 
@@ -469,10 +477,41 @@ def build_router(
         session.add(user_msg)
         session.commit()
 
+        round_number = _count_trailing_clarifying_rounds(session) + 1
+        recent_for_model = [
+            (m.role, m.content)
+            for m in (
+                session.query(DashboardChatMessage)
+                .order_by(DashboardChatMessage.id.desc())
+                .limit(10)
+                .all()
+            )
+        ][::-1]
+
+        try:
+            assessment: SufficiencyAssessment = coo.assess_sufficiency(
+                objective, recent_for_model, round_number=round_number
+            )
+        except Exception as exc:
+            # Same distinction chat_send() makes: an infrastructure failure, not a "the model
+            # said no" verdict.
+            raise HTTPException(
+                status_code=502, detail=f"Could not assess the request: {exc}"
+            ) from exc
+
+        if not assessment.sufficient:
+            coo_msg = DashboardChatMessage(
+                role="coo", content=assessment.clarifying_question, is_clarifying_question=True
+            )
+            session.add(coo_msg)
+            session.commit()
+            return {"reply": assessment.clarifying_question, "decision_id": None}
+
+        consolidated_objective = _consolidate_intake_conversation(session)
         result = _run_objective_and_format_reply(
             session,
             coo=coo,
-            objective=objective,
+            objective=consolidated_objective,
             required_output=required_output,
             serialize_outcome=serialize_outcome,
         )

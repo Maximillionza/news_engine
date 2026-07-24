@@ -15,10 +15,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "apps" / "api_gatew
 
 from fastapi.testclient import TestClient
 
-from main import _API_KEY, app  # noqa: E402 - must follow the sys.path insert above
+from main import _API_KEY, _coo, app  # noqa: E402 - must follow the sys.path insert above
+from orchestrator.intake import SufficiencyAssessment  # noqa: E402
 
 client = TestClient(app)
 HEADERS = {"X-API-Key": _API_KEY}
+
+
+def _assume_sufficient(monkeypatch) -> None:
+    """StubModelProvider's fixed placeholder text is never parseable sufficiency JSON, so the
+    real check (Phase 15, IMPLEMENTATION_PLAN.md, 2026-07-23) always says insufficient under
+    the default dev/test gateway - and /objectives, unlike /chat(/sync), has no round-3
+    forcing escape hatch (it's a stateless, single-shot endpoint, not a conversation). Tests
+    below that are actually about routing/no-match/rejection behavior, not sufficiency, bypass
+    the check the same way test_chat_returns_502_when_sufficiency_check_raises (Tests/
+    integration/test_api_gateway_async.py) monkeypatches assess_sufficiency directly - the
+    real insufficient-request path has its own dedicated test further down."""
+
+    monkeypatch.setattr(
+        _coo,
+        "assess_sufficiency",
+        lambda *a, **k: SufficiencyAssessment(sufficient=True, clarifying_question=None, reasoning="test bypass"),
+    )
 
 
 def test_health_endpoint_still_responds() -> None:
@@ -43,7 +61,8 @@ def test_list_agents_returns_the_mvp_roster() -> None:
     assert {"research_agent_001", "engineering_agent_001", "compliance_agent_001", "review_agent_001"} <= ids
 
 
-def test_submit_objective_routes_to_research_and_result_is_retrievable() -> None:
+def test_submit_objective_routes_to_research_and_result_is_retrievable(monkeypatch) -> None:
+    _assume_sufficient(monkeypatch)
     response = client.post(
         "/objectives",
         headers=HEADERS,
@@ -63,7 +82,8 @@ def test_submit_objective_routes_to_research_and_result_is_retrievable() -> None
     assert "research_agent_001" in status_body["agents_selected"]
 
 
-def test_submit_objective_with_no_matching_department_returns_400() -> None:
+def test_submit_objective_with_no_matching_department_returns_400(monkeypatch) -> None:
+    _assume_sufficient(monkeypatch)
     response = client.post(
         "/objectives", headers=HEADERS, json={"objective": "xyz qqq zzz", "required_output": "anything"}
     )
@@ -80,14 +100,29 @@ def test_missing_required_fields_returns_422() -> None:
     assert response.status_code == 422
 
 
-def test_submit_objective_with_department_rejection_returns_400() -> None:
+def test_submit_objective_insufficient_request_returns_422_with_clarifying_question() -> None:
+    """Real stub-backed sufficiency check, no bypass - StubModelProvider's fixed text is never
+    parseable JSON, so the default dev/test gateway always says insufficient. Unlike
+    /chat(/sync), there's no round-3 forcing here (see this file's module-level docstring on
+    _assume_sufficient) - a 422 with the clarifying question is the terminal response, not one
+    step in a loop."""
+
+    response = client.post(
+        "/objectives",
+        headers=HEADERS,
+        json={"objective": "Create a market intelligence report", "required_output": "A structured summary"},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]
+
+
+def test_submit_objective_with_department_rejection_returns_400(monkeypatch) -> None:
+    _assume_sufficient(monkeypatch)
     from orchestrator.head import HeadVerdict
 
     class _AlwaysRejectHead:
         def evaluate(self, department, objective, **_):
             return HeadVerdict(accepted=False, reasoning="Rejected for test.", suggested_department_id=None)
-
-    from main import _coo
 
     original_head = _coo._head
     _coo._head = _AlwaysRejectHead()
