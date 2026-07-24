@@ -65,7 +65,7 @@ from observability_service.telemetry import TelemetrySink
 from orchestrator.allocator import select_agent
 from orchestrator.department_registry import DepartmentDefinition
 from orchestrator.evaluator import validate_outcome
-from orchestrator.head import AutoAcceptDepartmentHead, DepartmentHead
+from orchestrator.head import AutoAcceptDepartmentHead, DepartmentHead, resolve_verdict_execution
 from orchestrator.router import dispatch
 from shared.model_gateway import ModelGateway
 from workflow_engine.gate_integrity import check_gate_integrity
@@ -109,29 +109,63 @@ def execute_workflow(
             run.blocked_reason = f"department_rejected: {verdict.reasoning}"
             return run
 
+        department_objective = f"{objective} (department: {department.id})"
+
+        # Phase 16 (IMPLEMENTATION_PLAN.md, 2026-07-23): mirrors orchestrator/controller.py's
+        # single-department path - if the Head already resolved this department's work itself
+        # or spawned a specialist (resolve_verdict_execution()), that result stands and
+        # select_agent()+dispatch() is skipped. None reproduces this loop's exact original
+        # behavior. A ValueError here means the department has no registered head agent for
+        # its `leader` field - the same "can't proceed" shape select_agent()'s ValueError
+        # already gets below, not a technical failure.
         try:
-            allocation = select_agent(department, agent_registry)
+            head_execution = resolve_verdict_execution(
+                verdict,
+                department,
+                objective=department_objective,
+                required_output=required_output,
+                agent_registry=agent_registry,
+                model_gateway=model_gateway,
+                session=session,
+                coo_id=coo_id,
+                telemetry=telemetry,
+            )
         except ValueError as exc:
             run.succeeded = False
             run.blocked_reason = f"unresolvable_dependency_gap: {exc}"
             return run
 
-        execution_result = dispatch(
-            session,
-            coo_id=coo_id,
-            agent=allocation.agent,
-            objective=f"{objective} (department: {department.id})",
-            required_output=required_output,
-            model_gateway=model_gateway,
-            telemetry=telemetry,
-        )
+        if head_execution is not None:
+            execution_result = head_execution
+            agent_id = execution_result.artifact.get("agent_id", department.leader)
+            knowledge_agent = agent_registry.get(department.leader)
+        else:
+            try:
+                allocation = select_agent(department, agent_registry)
+            except ValueError as exc:
+                run.succeeded = False
+                run.blocked_reason = f"unresolvable_dependency_gap: {exc}"
+                return run
+
+            execution_result = dispatch(
+                session,
+                coo_id=coo_id,
+                agent=allocation.agent,
+                objective=department_objective,
+                required_output=required_output,
+                model_gateway=model_gateway,
+                telemetry=telemetry,
+            )
+            agent_id = allocation.agent.identity.id
+            knowledge_agent = allocation.agent
+
         validation = validate_outcome(execution_result)
 
         run.tasks.append(
             TaskRun(
                 task_id=f"TSK-{uuid4().hex[:8]}",
                 department=department,
-                agent_id=allocation.agent.identity.id,
+                agent_id=agent_id,
                 execution_result=execution_result,
                 validation=validation,
             )
@@ -141,7 +175,7 @@ def execute_workflow(
             workflow_id=run.workflow_id,
             objective=objective,
             department=department,
-            agent=allocation.agent,
+            agent=knowledge_agent,
         )
 
         if not validation.objective_achieved:

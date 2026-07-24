@@ -120,3 +120,76 @@ def test_receive_objective_maps_the_reject_to_department_rejected_not_dependency
     conditions = [p.condition for p in pending]
     assert EscalationCondition.DEPARTMENT_REJECTED.value in conditions
     assert EscalationCondition.UNRESOLVABLE_DEPENDENCY_GAP.value not in conditions
+
+
+class _ResolvesFirstDepartmentDirectlyHead:
+    """Phase 16 (IMPLEMENTATION_PLAN.md, 2026-07-23): resolves the first department itself,
+    accepts the rest normally - proves resolve_verdict_execution() is applied per-department
+    in the multi-department loop, not all-or-nothing across the whole workflow."""
+
+    def evaluate(self, department, objective, **_):
+        if department.id == "research":
+            return HeadVerdict(
+                accepted=True,
+                reasoning="Simple enough to answer directly.",
+                resolved_output="Market analysis: sideways, low volatility.",
+            )
+        return HeadVerdict(accepted=True, reasoning="Genuinely engineering work.")
+
+
+class _NeedsSpecialistFirstDepartmentHead:
+    def evaluate(self, department, objective, **_):
+        if department.id == "research":
+            return HeadVerdict(
+                accepted=True,
+                reasoning="Requires deep statistical modeling beyond my own depth.",
+                needs_specialist=True,
+            )
+        return HeadVerdict(accepted=True, reasoning="Genuinely engineering work.")
+
+
+def test_execute_workflow_uses_head_direct_resolution_for_one_department(session: Session) -> None:
+    department_registry, agent_registry = _registries()
+    _grant(session, "research_head_001", "research")
+    _grant(session, "engineering_agent_001", "engineering")
+
+    run = execute_workflow(
+        session,
+        coo_id="coo",
+        objective=TWO_DEPARTMENT_OBJECTIVE,
+        required_output="working code with a supporting summary",
+        departments=[department_registry.get("research"), department_registry.get("engineering")],
+        agent_registry=agent_registry,
+        model_gateway=ModelGateway(StubModelProvider()),
+        head=_ResolvesFirstDepartmentDirectlyHead(),
+    )
+
+    assert run.succeeded is True
+    research_task = next(t for t in run.tasks if t.department.id == "research")
+    assert research_task.agent_id == "research_head_001"
+    assert research_task.execution_result.output == "Market analysis: sideways, low volatility."
+    # The second department is completely unaffected - normal select_agent()+dispatch().
+    engineering_task = next(t for t in run.tasks if t.department.id == "engineering")
+    assert engineering_task.agent_id == "engineering_agent_001"
+
+
+def test_execute_workflow_spawns_specialist_for_one_department(session: Session) -> None:
+    department_registry, agent_registry = _registries()
+    _grant(session, "research_head_001", "research")
+    _grant(session, "engineering_agent_001", "engineering")
+
+    run = execute_workflow(
+        session,
+        coo_id="coo",
+        objective=TWO_DEPARTMENT_OBJECTIVE,
+        required_output="working code with a supporting summary",
+        departments=[department_registry.get("research"), department_registry.get("engineering")],
+        agent_registry=agent_registry,
+        model_gateway=ModelGateway(StubModelProvider()),
+        head=_NeedsSpecialistFirstDepartmentHead(),
+    )
+
+    assert run.succeeded is True
+    research_task = next(t for t in run.tasks if t.department.id == "research")
+    assert research_task.agent_id == "research_head_001"
+    assert research_task.execution_result.artifact["resolved_by"] == "specialist"
