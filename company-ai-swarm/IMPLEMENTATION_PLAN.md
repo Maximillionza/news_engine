@@ -56,6 +56,11 @@ Phase 9  MVP validation (MVS 001–010)                 ── MVP v1.0
           │                    └── Phase 19  Enterprise Compiler / CEDL (long-horizon)  
           │  
           Phase 12 ──→ Phase 14  Operational dogfooding ──→ Phase 18  Department creation (deferred)
+          │
+          ├── Phase 20  Cost/complexity-aware execution mode (Lean/Fast)
+          ├── Phase 21  Inter-department task delegation ──→ recommended before/alongside Phase 18
+          ├── Phase 22  Artifact pre-assessment + direction confirmation
+          └── Phase 23  Skill/tool effectiveness memory (needs Phase 14 signal)
 ```
 
 No phase may begin before its predecessor's exit criteria are met. This mirrors the Build Dependencies chain in EIB §12 (Identity → Security → Runtime → Agents → Workflows → Departments → Expansion Systems).
@@ -89,9 +94,13 @@ Full test suite: **266 passed, 4 skipped** (`python -m pytest`). The 4 skipped a
 | — | EEOS (Economics & Optimization) | Needs exploration | No phase/priority assigned yet — scope this before scheduling it. |
 | — | EDIS (Deployment & Infrastructure) | Not a gap | `Infrastructure/`'s empty scaffolding is correct as-is — purpose-built to stay empty until the Company has real operational/project history (Phase 14). Revisit then, not before. |
 | — | EHCAS §13 "Decision Authority Class" | Resolved | Superseded by Phase 8's escalation policy (`orchestrator/escalation.py::EscalationCondition`) — no separate work needed. |
+| — | Cost/Complexity-Aware Execution Mode (Lean/Fast) | Not started (2026-07-25) | Found via direct vision comparison, not CrewAI. Priority: Medium. See Phase 20 below. |
+| — | Inter-Department Task Delegation | Not started (2026-07-25) | Highest priority of the vision-comparison findings — recommended before/alongside Phase 18. See Phase 21 below. |
+| — | Artifact Pre-Assessment & Direction Confirmation | Not started (2026-07-25) | Priority: Medium. See Phase 22 below. |
+| — | Skill/Tool Effectiveness Memory | Not started (2026-07-25) | Priority: Medium-low, needs Phase 14 signal first. See Phase 23 below. |
 
 
-Full detail for Phases 12-19 (deliverables, test approach, open questions) is in "Phase 12 and beyond" below, in the same format as Phases 0-11 above.
+Full detail for Phases 12-19 (deliverables, test approach, open questions) is in "Phase 12 and beyond" below, in the same format as Phases 0-11 above. Phases 20-23 (vision-comparison findings, 2026-07-25) follow immediately after Phase 19.
 
 
 ## Phase 0 — Foundation & Contracts
@@ -679,6 +688,8 @@ mocked). 290 tests passing, 4 skipped (unchanged gated live-credential tests).
 
 **Why deferred**: not a technical blocker - a deliberate choice. The Company needs to process real cases first (Phase 14) before there's tangible information about which new department(s), if any, are actually necessary. Building this speculatively risks the same "a lot of surface area for one operator" problem already flagged in the CrewAI comparison. Revisit once Phase 14 has produced real signal, not before.
 
+**Sequencing note (added 2026-07-25, vision-comparison session)**: Phase 21 (Inter-Department Task Delegation) touches the same "elastic company" surface as this phase - how departments relate to each other, not just how many exist. Building Phase 18 without Phase 21 already in place risks baking in an assumption (department boundaries are fixed once created, coordination only happens via the classifier's up-front fan-out) that Phase 21 then has to unwind. Recommend Phase 21 lands before or alongside Phase 18, regardless of which one is scheduled first chronologically.
+
 ### Phase 19 — Enterprise Compiler / CEDL (long-horizon)
 
 **Depends on**: Phase 17 (the small-scale version of this same pattern needs a track record first).
@@ -688,6 +699,74 @@ mocked). 290 tests passing, 4 skipped (unchanged gated live-credential tests).
 Source: `Specifications/4 - future-expansion/`'s Volumes XXXII (MCDP), XXXIII (EMMS), XXXIV (CEDLS), XXXVII (EBAS), and XXXVIII (ERAS) - no code exists against any of them today. These describe something categorically bigger than everything else in this document: a declarative language (CEDL) for defining an AI-native enterprise as data, compiled and provisioned by a generic Enterprise Compiler/Builder/Runtime - not a feature of this Company, but a platform for generating companies like it.
 
 Confirmed intent (not superseded, not abandoned): The Company *is* the swarm. The original idea was for it to spin up additional companies to fill gaps in its own architecture - requiring the self-learning loop already partially built in Phase 11/17 (detect an inefficiency, recommend an enhancement, close the gap) to mature to the point where a detected gap can be "closed" by compiling and standing up an entirely new company, not just promoting one agent or department. Phase 17 is that same pattern at small scale (one specialist, one department); Phase 19 is its large-scale maturation. Don't schedule concrete work here until Phase 17's proposal/approval loop has enough of a real track record to trust extending it to something this consequential.
+
+## Phase 20 and beyond — findings from the original vision comparison (2026-07-25)
+
+Source: a direct comparison of the founder's original architecture vision against this codebase, done in this session, not derived from CrewAI or any other external framework. Method: every claim below was verified by reading the actual implementation (`workflow_engine/engine.py`, `orchestrator/head.py`, every department's `agent.yaml`, `memory_service/models.py`, `orchestrator/intake.py`, `orchestrator/classification.py`) rather than inferred from documentation or memory. None of these four phases exist anywhere in this document before this addition - they are genuinely new backlog, not a rewording of Phases 12-19.
+
+### Phase 20 — Cost/Complexity-Aware Execution Mode
+
+**Status: Not started. Not previously tracked.**
+
+**Priority: Medium.**
+
+**Deliverables**:
+
+1. A real producer for `workflow_engine/models.py`'s `Complexity`, `Risk`, and `Required Model Tier` fields, which today "have no producer in this codebase yet" (that module's own docstring). Without this, there is no signal in the system to make a lean-vs-fast decision against.
+
+2. A "Lean" (default) vs "Faster" execution mode, user-selectable, that uses (1)'s estimate to decide model tier per task and whether independent departments may run in parallel rather than the current always-sequential order. Lean should not mean lower-quality output - it means using the model/method appropriate to the task rather than defaulting to the highest tier for everything, per the founder's original framing ("always appropriate rather than cheap").
+
+**Sequencing**: (1) must ship before (2) is meaningful - a mode toggle with nothing real to key off is cosmetic.
+
+**Why not previously tracked**: `orchestrator/classification.py` already notes "model tier selection is deferred, separate future work" - this formalizes that deferral into an actual phase instead of leaving it as an unscheduled comment.
+
+**Test**: TBD at implementation time.
+
+**Exit criteria**: TBD at implementation time.
+
+### Phase 21 — Inter-Department Task Delegation
+
+**Status: Not started. Not previously tracked. Highest priority of the four found in this comparison.**
+
+**Priority: High.**
+
+**Deliverables**:
+
+1. A mechanism for a Department Head to request another department's help mid-task, rather than every multi-department objective being decided entirely up front by the classifier before any department starts working. Today, `workflow_engine/engine.py` runs matched departments in a fixed canonical order with no real dependency graph ("no dependency-declaration mechanism exists anywhere in this corpus yet," per that module's own docstring) - this closes that gap.
+
+2. An implicit boundary so a department can do light, in-domain research itself without dispatching to Research for everything - checked every active department's `agent.yaml`; no such boundary exists today, only "don't spawn a specialist over an information deficit."
+
+3. A defined response when zero departments match at all, distinct from today's `NoMatchingDepartmentError` hard-reject. This is the "temporary skillset when none exists" half of the founder's original vision - narrower than Phase 18 (a full new department) and not served by Phase 17's specialist spawn either (that only fires *within* an already-matched department).
+
+**Why this precedes Phase 18 in practice, if not in number**: see the sequencing note at the end of Phase 18 above.
+
+**Test**: TBD at implementation time.
+
+**Exit criteria**: TBD at implementation time.
+
+### Phase 22 — Artifact Pre-Assessment & Direction Confirmation
+
+**Status: Not started. Not previously tracked.**
+
+**Priority: Medium.**
+
+**Deliverables**: Before routing a multi-artifact or ambiguous-scope objective, an assessment step that determines whether it should go narrow (e.g. "build this" → Engineering only) or broad (e.g. also validate Compliance requirements against supplied documents), and puts that choice back to the user explicitly rather than inferring it silently. Distinct from Phase 15's sufficiency check, which only judges "is there enough detail to act at all," not "how many departments should this touch."
+
+**Test**: TBD at implementation time.
+
+**Exit criteria**: TBD at implementation time.
+
+### Phase 23 — Skill/Tool Effectiveness Memory
+
+**Status: Not started. Not previously tracked.**
+
+**Priority: Medium-low - no other phase depends on this; needs enough real objectives (Phase 14) to produce a meaningful effectiveness signal before it's worth building.**
+
+**Deliverables**: Extends `memory_service`'s existing five-tier model (`MemoryTier`, already department-scoped) with a skill/agent-scoped dimension that records which tool or approach was used for a task and a measured outcome, plus a feedback path that lets future task execution prefer approaches with a better track record. Confirmed gap: today's schema has no field beyond a free-text `creator` column, and no scoring mechanism exists anywhere.
+
+**Test**: TBD at implementation time.
+
+**Exit criteria**: TBD at implementation time.
 
 
 ## Notes on scope discipline
