@@ -288,3 +288,163 @@ class TestPhase16DepartmentHeadDirectExecution:
 
         record = get_decision(session, outcome.decision_id)
         assert record.agents_selected == ["research_agent_001"]
+
+
+def _grant_engineering_head(session: Session) -> None:
+    """Mirrors _coo_with_head()'s research_head_001 grant - needed for delegation tests since
+    a delegated department's own Head is evaluated too (orchestrator/head.py's
+    _resolve_department_delegation())."""
+
+    create_identity(
+        session, id="engineering_head_001", entity_type=EntityType.AGENT, name="Engineering Head", department="engineering"
+    )
+    grant_permission(session, subject="engineering_head_001", resource="agent_execution:engineering_head_001", action="execute")
+    grant_permission(session, subject="engineering_head_001", resource="memory:department", action="read")
+
+
+class TestPhase21InterDepartmentDelegation:
+    """IMPLEMENTATION_PLAN.md Phase 21: a Department Head can ask one other department for a
+    specific piece of help mid-task (needs_department_help), distinct from needs_specialist
+    (more of its own kind) and suggested_department_id-on-reject (full handoff, no work
+    retained by the original department)."""
+
+    def test_successful_delegation_writes_ledger_and_finalizes_via_original_head(
+        self, session: Session
+    ) -> None:
+        from orchestrator.delegations import list_delegations_for_department
+        from orchestrator.head import HeadVerdict
+
+        class _DelegatesToEngineeringHead:
+            def evaluate(self, department, objective, **_):
+                if department.id == "research":
+                    return HeadVerdict(
+                        accepted=True,
+                        reasoning="Need one build-timeline fact from Engineering.",
+                        needs_department_help="engineering",
+                    )
+                if department.id == "engineering":
+                    return HeadVerdict(
+                        accepted=True,
+                        reasoning="Can answer directly.",
+                        resolved_output="The build takes 3 days.",
+                    )
+                raise AssertionError(f"unexpected department: {department.id}")
+
+        _grant_engineering_head(session)
+        coo = _coo_with_head(session, _DelegatesToEngineeringHead())
+
+        outcome = coo.receive_objective(
+            session, "Create a market intelligence report", required_output="A short answer"
+        )
+
+        assert outcome.validation.objective_achieved is True
+        assert outcome.execution_result.artifact["resolved_by"] == "head_after_delegation"
+        assert outcome.execution_result.artifact["delegated_to"] == "engineering"
+
+        delegations = list_delegations_for_department(session, "research")
+        assert len(delegations) == 1
+        assert delegations[0].decision_id == outcome.decision_id
+        assert delegations[0].target_department_id == "engineering"
+        assert delegations[0].chain_depth == 1
+        assert "build-timeline" in delegations[0].reasoning
+
+    def test_delegation_to_review_department_is_rejected_and_falls_back(self, session: Session) -> None:
+        """Operations (the Review department) can never be a delegation target - same reason
+        it can never be dispatched raw objectives as primary work (Phase 8)."""
+
+        from orchestrator.delegations import list_delegations_for_department
+        from orchestrator.head import HeadVerdict
+
+        class _DelegatesToReviewHead:
+            def evaluate(self, department, objective, **_):
+                return HeadVerdict(
+                    accepted=True,
+                    reasoning="Thought Operations could help.",
+                    needs_department_help="operations",
+                )
+
+        coo = _coo_with_head(session, _DelegatesToReviewHead())
+
+        outcome = coo.receive_objective(
+            session, "Create a market intelligence report", required_output="A short answer"
+        )
+
+        assert outcome.execution_result.artifact["resolved_by"] == "head_after_unhonored_delegation"
+        assert outcome.execution_result.artifact["requested_department"] == "operations"
+        assert list_delegations_for_department(session, "research") == []
+
+    def test_delegation_to_unknown_department_is_rejected_and_falls_back(self, session: Session) -> None:
+        from orchestrator.head import HeadVerdict
+
+        class _DelegatesToUnknownHead:
+            def evaluate(self, department, objective, **_):
+                return HeadVerdict(
+                    accepted=True,
+                    reasoning="Made up a department.",
+                    needs_department_help="marketing",
+                )
+
+        coo = _coo_with_head(session, _DelegatesToUnknownHead())
+
+        outcome = coo.receive_objective(
+            session, "Create a market intelligence report", required_output="A short answer"
+        )
+
+        assert outcome.execution_result.artifact["resolved_by"] == "head_after_unhonored_delegation"
+        assert outcome.execution_result.artifact["requested_department"] == "marketing"
+
+    def test_cyclical_delegation_is_avoided_not_looped(self, session: Session) -> None:
+        """Unit-level: exercises resolve_verdict_execution() directly with a delegation_chain
+        that already contains the requested target - the chain-membership check is what
+        keeps unbounded-depth delegation (this session's design choice) from ever looping,
+        without needing a fixed hop cap."""
+
+        from orchestrator.department_registry import DepartmentRegistry
+        from orchestrator.head import AutoAcceptDepartmentHead, HeadVerdict, resolve_verdict_execution
+
+        department_registry = DepartmentRegistry(REPO_ROOT / "departments")
+        department_registry.load_all()
+        agent_registry = AgentRegistry(REPO_ROOT / "agents" / "active")
+        agent_registry.load_all()
+
+        create_identity(session, id="research_head_001", entity_type=EntityType.AGENT, name="Research Head")
+        grant_permission(session, subject="research_head_001", resource="agent_execution:research_head_001", action="execute")
+        grant_permission(session, subject="research_head_001", resource="memory:department", action="read")
+
+        verdict = HeadVerdict(
+            accepted=True,
+            reasoning="Need engineering's help again.",
+            needs_department_help="engineering",
+        )
+
+        result = resolve_verdict_execution(
+            verdict,
+            department_registry.get("research"),
+            objective="Some objective",
+            required_output="A short answer",
+            agent_registry=agent_registry,
+            model_gateway=ModelGateway(StubModelProvider()),
+            session=session,
+            coo_id="coo",
+            decision_id="DEC-test",
+            telemetry=None,
+            department_registry=department_registry,
+            head=AutoAcceptDepartmentHead(),
+            delegation_chain=frozenset({"research", "engineering"}),
+        )
+
+        assert result.artifact["resolved_by"] == "head_after_unhonored_delegation"
+        assert result.artifact["requested_department"] == "engineering"
+
+    def test_direct_resolution_does_not_write_a_delegation_record(self, session: Session) -> None:
+        from orchestrator.delegations import list_delegations_for_department
+        from orchestrator.head import HeadVerdict
+
+        class _ResolvesDirectlyHead:
+            def evaluate(self, department, objective, **_):
+                return HeadVerdict(accepted=True, reasoning="Simple.", resolved_output="Done.")
+
+        coo = _coo_with_head(session, _ResolvesDirectlyHead())
+        coo.receive_objective(session, "Create a market intelligence report", required_output="A short answer")
+
+        assert list_delegations_for_department(session, "research") == []

@@ -378,6 +378,7 @@ class COOOrchestrator:
                     session=session,
                     coo_id=self.coo_id,
                     telemetry=self._telemetry,
+                    department_registry=self._departments,
                 )
             except Exception as exc:
                 # Same audit trail any other technical failure gets - mirrors the classifier
@@ -411,6 +412,8 @@ class COOOrchestrator:
                         coo_id=self.coo_id,
                         decision_id=decision_id,
                         telemetry=self._telemetry,
+                        department_registry=self._departments,
+                        head=self._head,
                     )
                 except Exception as exc:
                     # Same audit trail any other technical failure gets - mirrors the
@@ -502,6 +505,7 @@ class COOOrchestrator:
                 decision_id=decision_id,
                 telemetry=self._telemetry,
                 head=self._head,
+                department_registry=self._departments,
             )
         except Exception as exc:
             # Decision record still needs to exist for the escalation to reference - the

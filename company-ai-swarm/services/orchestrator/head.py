@@ -39,12 +39,19 @@ from sqlalchemy.orm import Session
 from agent_runtime.registry import AgentDefinition, AgentMission, AgentRegistry
 from agent_runtime.runtime import ExecutionResult
 from observability_service.telemetry import TelemetrySink
-from orchestrator.department_registry import DepartmentDefinition
+from orchestrator.allocator import select_agent
+from orchestrator.delegations import write_delegation
+from orchestrator.department_registry import DepartmentDefinition, DepartmentRegistry
 from orchestrator.evaluator import EXPECTED_EXECUTION_STEPS
 from orchestrator.router import dispatch
 from orchestrator.spawns import write_spawn
 from shared.llm_json import strip_code_fence
 from shared.model_gateway import ModelGateway
+
+# Kept in sync with workflow_engine/engine.py's REVIEW_DEPARTMENT_ID - Operations cannot be
+# a delegation target, same reason it cannot be dispatched raw objectives as primary work
+# (Phase 8): its own mission excludes performing work it reviews.
+_REVIEW_DEPARTMENT_ID = "operations"
 
 
 @dataclass
@@ -61,6 +68,14 @@ class HeadVerdict:
     # AutoAcceptDepartmentHead never sets either, so every existing call site is unaffected.
     resolved_output: str | None = None
     needs_specialist: bool = False
+    # Phase 21 (IMPLEMENTATION_PLAN.md, 2026-07-25): only meaningful when accepted=True,
+    # resolved_output is None, and needs_specialist is False - mutually exclusive with
+    # needs_specialist by construction (LLMDepartmentHead.evaluate() checks this field first).
+    # The department ID whose specific input this Head needs to finish the objective itself -
+    # not a full handoff (see suggested_department_id above, which IS a full handoff on
+    # reject). See resolve_verdict_execution()'s needs_department_help branch for how this
+    # gets resolved and fed back to this Head for a final answer.
+    needs_department_help: str | None = None
 
 
 class DepartmentHead(Protocol):
@@ -74,6 +89,7 @@ class DepartmentHead(Protocol):
         session: Session,
         coo_id: str,
         telemetry: TelemetrySink | None,
+        department_registry: DepartmentRegistry | None = None,
     ) -> HeadVerdict: ...
 
 
@@ -100,13 +116,17 @@ def resolve_verdict_execution(
     coo_id: str,
     decision_id: str,
     telemetry: TelemetrySink | None,
+    department_registry: DepartmentRegistry | None = None,
+    head: "DepartmentHead | None" = None,
+    delegation_chain: frozenset[str] = frozenset(),
 ) -> ExecutionResult | None:
     """Phase 16 (IMPLEMENTATION_PLAN.md, 2026-07-23): given an accepted HeadVerdict, produces
     the ExecutionResult for this department's work when the Head resolved it directly or
-    determined a specialist is needed. Returns None when neither applies - every verdict
-    AutoAcceptDepartmentHead produces, and any accepted verdict that leaves both fields at
-    their default - in which case the caller proceeds with its own unchanged
-    select_agent()+dispatch() path exactly as before this phase.
+    determined a specialist is needed. Returns None when none of resolved_output/
+    needs_specialist/needs_department_help apply - every verdict AutoAcceptDepartmentHead
+    produces, and any accepted verdict that leaves all three at their default - in which case
+    the caller proceeds with its own unchanged select_agent()+dispatch() path exactly as
+    before this phase.
 
     A spawned specialist reuses the Head's own already-authorized identity rather than a new
     one: AgentRuntime's Check Policies step (agent_runtime/runtime.py) authorizes against
@@ -119,9 +139,23 @@ def resolve_verdict_execution(
 
     Phase 17 addition: every successful specialist spawn writes a SpecialistSpawnRecord
     (orchestrator/spawns.py), keyed to decision_id, feeding the Evolution Engine's
-    promotion-detection heuristic."""
+    promotion-detection heuristic.
 
-    if verdict.resolved_output is None and not verdict.needs_specialist:
+    Phase 21 (IMPLEMENTATION_PLAN.md, 2026-07-25) addition: needs_department_help routes to
+    _resolve_department_delegation() below. `department_registry` and `head` are required for
+    that branch to do anything (needed to look up and evaluate the target department) - both
+    default to None so every pre-Phase-21 call site (which can never produce a
+    needs_department_help verdict) needs zero changes. `delegation_chain` is the set of
+    department IDs already involved in this objective, extended by one entry per hop -
+    unbounded in depth (no fixed cap), but self-limiting: a department already in the chain
+    can never be re-targeted, so the worst case touches every registered department exactly
+    once, never loops."""
+
+    if (
+        verdict.resolved_output is None
+        and not verdict.needs_specialist
+        and not verdict.needs_department_help
+    ):
         return None
 
     head_agent = agent_registry.get(department.leader)
@@ -142,6 +176,24 @@ def resolve_verdict_execution(
             output=verdict.resolved_output,
             artifact={"agent_id": head_agent.identity.id, "resolved_by": "head"},
             steps_completed=list(EXPECTED_EXECUTION_STEPS),
+        )
+
+    if verdict.needs_department_help:
+        return _resolve_department_delegation(
+            verdict,
+            department,
+            head_agent=head_agent,
+            objective=objective,
+            required_output=required_output,
+            agent_registry=agent_registry,
+            model_gateway=model_gateway,
+            session=session,
+            coo_id=coo_id,
+            decision_id=decision_id,
+            telemetry=telemetry,
+            department_registry=department_registry,
+            head=head,
+            delegation_chain=delegation_chain,
         )
 
     specialist = AgentDefinition(
@@ -183,6 +235,158 @@ def resolve_verdict_execution(
     return result
 
 
+def _resolve_department_delegation(
+    verdict: HeadVerdict,
+    department: DepartmentDefinition,
+    *,
+    head_agent: AgentDefinition,
+    objective: str,
+    required_output: str,
+    agent_registry: AgentRegistry,
+    model_gateway: ModelGateway,
+    session: Session,
+    coo_id: str,
+    decision_id: str,
+    telemetry: TelemetrySink | None,
+    department_registry: DepartmentRegistry | None,
+    head: "DepartmentHead | None",
+    delegation_chain: frozenset[str],
+) -> ExecutionResult:
+    """Phase 21 (IMPLEMENTATION_PLAN.md, 2026-07-25): resolves a needs_department_help
+    verdict - department.id asked target_id for specific help, not a full handoff. Three
+    outcomes:
+
+    1. The target is invalid (unknown, no agent, the Review department, or already in
+       delegation_chain - i.e. would create a cycle) or department_registry/head weren't
+       supplied (pre-Phase-21 call site): the requesting Head is re-dispatched with a note
+       explaining the request couldn't be honored, and finishes on its own. This never raises
+       - an unhonorable delegation request degrades to "do your best," the same way
+       insufficient_information degrades to a rejection rather than a crash.
+    2. The target is valid: its own Head is evaluated (recursively, via resolve_verdict_
+       execution() with delegation_chain extended by department.id) - the target may resolve
+       directly, spawn its own specialist, or itself delegate further (no depth cap, see
+       resolve_verdict_execution()'s docstring for why the chain-membership check alone
+       bounds this). Whatever it produces is fed back to the ORIGINAL requesting Head in a
+       second dispatch() call, asking it to produce a final answer using that input - this is
+       the "incorporate the answer" step, not just relaying the sub-department's raw output.
+    3. Every successful delegation (outcome 2) writes a DepartmentDelegationRecord
+       (orchestrator/delegations.py), decision_id-scoped, mirroring Phase 17's spawn ledger.
+    """
+
+    target_id = verdict.needs_department_help
+    chain = delegation_chain | {department.id}
+
+    target = department_registry.get(target_id) if department_registry else None
+    delegation_valid = (
+        department_registry is not None
+        and head is not None
+        and target is not None
+        and bool(target.agents)
+        and target.id != _REVIEW_DEPARTMENT_ID
+        and target.id not in chain
+    )
+
+    if not delegation_valid:
+        reason = (
+            f"could not be honored (unknown department, no agent assigned, is the Review "
+            f"department, or would create a delegation cycle: already-involved departments "
+            f"are {sorted(chain)})"
+        )
+        fallback_objective = (
+            f"{objective}\n\nNote: you indicated you needed help from department "
+            f"'{target_id}', but that request {reason}. Complete this yourself with what "
+            f"you have, and note the limitation in your answer."
+        )
+        result = dispatch(
+            session,
+            coo_id=coo_id,
+            agent=head_agent,
+            objective=fallback_objective,
+            required_output=required_output,
+            model_gateway=model_gateway,
+            telemetry=telemetry,
+        )
+        result.artifact["resolved_by"] = "head_after_unhonored_delegation"
+        result.artifact["requested_department"] = target_id
+        return result
+
+    assert target is not None and department_registry is not None and head is not None
+
+    sub_objective = f"Assist the {department.name} with the following: {objective}"
+    target_verdict = head.evaluate(
+        target,
+        sub_objective,
+        agent_registry=agent_registry,
+        model_gateway=model_gateway,
+        session=session,
+        coo_id=coo_id,
+        telemetry=telemetry,
+        department_registry=department_registry,
+    )
+
+    if not target_verdict.accepted:
+        sub_result_text = f"[{target.name} could not assist: {target_verdict.reasoning}]"
+    else:
+        sub_execution = resolve_verdict_execution(
+            target_verdict,
+            target,
+            objective=sub_objective,
+            required_output="Provide the specific information or artifact requested, concisely.",
+            agent_registry=agent_registry,
+            model_gateway=model_gateway,
+            session=session,
+            coo_id=coo_id,
+            decision_id=decision_id,
+            telemetry=telemetry,
+            department_registry=department_registry,
+            head=head,
+            delegation_chain=chain,
+        )
+        if sub_execution is None:
+            # target Head accepted but neither resolved/specialist/delegated further (e.g.
+            # AutoAcceptDepartmentHead in dev/test) - fall through to a normal dispatch, same
+            # as every pre-Phase-21 call site does when resolve_verdict_execution() returns
+            # None.
+            allocation = select_agent(target, agent_registry)
+            sub_execution = dispatch(
+                session,
+                coo_id=coo_id,
+                agent=allocation.agent,
+                objective=sub_objective,
+                required_output="Provide the specific information or artifact requested, concisely.",
+                model_gateway=model_gateway,
+                telemetry=telemetry,
+            )
+        sub_result_text = sub_execution.output
+
+    write_delegation(
+        session,
+        decision_id=decision_id,
+        requesting_department_id=department.id,
+        target_department_id=target.id,
+        reasoning=verdict.reasoning,
+        chain_depth=len(chain),
+    )
+
+    final_objective = (
+        f"{objective}\n\nYou requested help from {target.name}, which responded: "
+        f"{sub_result_text}\n\nUsing this, produce your final, complete answer to the "
+        f"original objective."
+    )
+    result = dispatch(
+        session,
+        coo_id=coo_id,
+        agent=head_agent,
+        objective=final_objective,
+        required_output=required_output,
+        model_gateway=model_gateway,
+        telemetry=telemetry,
+    )
+    result.artifact["resolved_by"] = "head_after_delegation"
+    result.artifact["delegated_to"] = target.id
+    return result
+
+
 class LLMDepartmentHead:
     """Production: dispatches to department.leader's registered head agent via the existing
     dispatch() cycle. Stateless - model_gateway is supplied per call like every other
@@ -199,7 +403,18 @@ class LLMDepartmentHead:
     That case is folded into a rejection (accepted=False) instead, distinguishable in its
     reasoning text, since Phase 15's intake sufficiency check should make it rare - if it
     starts firing often, that's a signal Phase 15's gate has a gap, not that this Head needs
-    more agents."""
+    more agents.
+
+    Phase 21 (IMPLEMENTATION_PLAN.md, 2026-07-25) addition: a fourth outcome,
+    needs_department_help - the objective belongs here and the Head can do most of it, but
+    one part genuinely requires another department's specialty (not full ownership - see
+    needs_specialist above for "I need more of my own kind of agent," and
+    suggested_department_id on reject for "this isn't my department at all"). The prompt
+    explicitly instructs the Head to prefer resolving light, in-domain lookups itself and
+    only name another department for work that is genuinely that department's specialty -
+    this is the founder's original "implicit boundary" (an Engineering agent may do light
+    research itself; deep research belongs to Research) made explicit in the instruction
+    rather than left for the model to infer unprompted."""
 
     def evaluate(
         self,
@@ -211,6 +426,7 @@ class LLMDepartmentHead:
         session: Session,
         coo_id: str,
         telemetry: TelemetrySink | None,
+        department_registry: DepartmentRegistry | None = None,
     ) -> HeadVerdict:
         head_agent = agent_registry.get(department.leader)
         if head_agent is None:
@@ -218,6 +434,21 @@ class LLMDepartmentHead:
                 f"Department '{department.id}' has no registered head agent for "
                 f"leader '{department.leader}'."
             )
+
+        other_departments = (
+            [
+                d
+                for d in department_registry.all()
+                if d.id != department.id and d.agents and d.id != _REVIEW_DEPARTMENT_ID
+            ]
+            if department_registry is not None
+            else []
+        )
+        other_departments_text = (
+            "\n".join(f"- {d.id}: {d.name}. {d.purpose}" for d in other_departments)
+            if other_departments
+            else "(none known - do not set needs_department_help)"
+        )
 
         result = dispatch(
             session,
@@ -232,20 +463,31 @@ class LLMDepartmentHead:
                 "to your department, or should it be rejected (wrong department, or not "
                 "worth dispatching the swarm for)? If it belongs here: can you complete it "
                 "yourself with the information given, does it genuinely exceed what one "
-                "agent can deliver regardless of how much detail you have, or is the "
-                "information given too incomplete for you to judge either question?\n\n"
+                "agent can deliver regardless of how much detail you have, does it need one "
+                "specific piece of help from another department's specialty, or is the "
+                "information given too incomplete for you to judge any of this?\n\n"
+                f"Other departments (for needs_department_help only - do not use for "
+                f"unrelated purposes):\n{other_departments_text}\n\n"
                 "Respond with ONLY a JSON object in exactly this shape:\n"
                 '{"accepted": true|false, "reasoning": "...", '
                 '"suggested_department_id": "<id>|null", "resolved": true|false, '
                 '"output": "<your actual answer, only if resolved=true>|null", '
-                '"needs_specialist": true|false, "insufficient_information": true|false}\n\n'
-                "If accepted=false: resolved/output/needs_specialist/"
+                '"needs_specialist": true|false, "needs_department_help": "<department_id>|null", '
+                '"insufficient_information": true|false}\n\n'
+                "If accepted=false: resolved/output/needs_specialist/needs_department_help/"
                 "insufficient_information are ignored.\n"
                 "If accepted=true and you can complete this yourself: resolved=true, "
                 "output=<your actual, complete answer>, needs_specialist=false, "
-                "insufficient_information=false.\n"
-                "If accepted=true but this genuinely needs more than one agent regardless of "
-                "detail given: resolved=false, needs_specialist=true, output=null.\n"
+                "needs_department_help=null, insufficient_information=false. Prefer this for "
+                "any work within your own domain, including light research or lookups - do "
+                "not delegate work you can reasonably do yourself.\n"
+                "If accepted=true but you need one specific piece of input that is genuinely "
+                "another department's specialty (not full ownership of this objective): "
+                "resolved=false, needs_department_help=\"<department_id from the list above>\", "
+                "needs_specialist=false, output=null.\n"
+                "If accepted=true but this genuinely needs more of your own kind of agent "
+                "regardless of detail given: resolved=false, needs_specialist=true, "
+                "needs_department_help=null, output=null.\n"
                 "If accepted=true but the information given is too incomplete to judge scope "
                 "or headcount: resolved=false, insufficient_information=true, output=null."
             ),
@@ -297,6 +539,23 @@ class LLMDepartmentHead:
                 accepted=True,
                 reasoning=reasoning,
                 resolved_output=output if isinstance(output, str) else "",
+            )
+
+        # Checked before needs_specialist: if a sloppy model response sets both, delegation
+        # to another department's specialty takes priority over spawning more of this
+        # department's own kind - see HeadVerdict.needs_department_help's docstring for why
+        # these are meant to be mutually exclusive. Self-reference (naming its own department)
+        # is treated as if unset, since that isn't delegation at all.
+        needs_department_help = data.get("needs_department_help")
+        if (
+            isinstance(needs_department_help, str)
+            and needs_department_help.strip()
+            and needs_department_help.strip() != department.id
+        ):
+            return HeadVerdict(
+                accepted=True,
+                reasoning=reasoning,
+                needs_department_help=needs_department_help.strip(),
             )
 
         return HeadVerdict(

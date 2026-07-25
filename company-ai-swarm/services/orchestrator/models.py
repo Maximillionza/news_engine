@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.db import Base
@@ -82,6 +82,30 @@ class SpecialistSpawnRecord(Base):
     department_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     head_agent_id: Mapped[str] = mapped_column(String, nullable=False)
     reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class DepartmentDelegationRecord(Base):
+    """Phase 21 (IMPLEMENTATION_PLAN.md, 2026-07-25): a historical record of every
+    inter-department delegation a Department Head made mid-task (orchestrator/head.py's
+    resolve_verdict_execution() -> _resolve_department_delegation()). Mirrors
+    SpecialistSpawnRecord's shape and purpose - not in EESIS/COOS's literal spec text, this
+    codebase's own extension for a capability those documents predate. `chain_depth` is
+    1-indexed (the first delegation in an objective is depth 1), letting later analysis
+    distinguish a single hop from a longer chain without re-deriving it from timestamps."""
+
+    __tablename__ = "department_delegation_records"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    decision_id: Mapped[str] = mapped_column(
+        String, ForeignKey("coo_decision_records.id"), nullable=False, index=True
+    )
+    requesting_department_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    target_department_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    chain_depth: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

@@ -263,6 +263,141 @@ class TestLLMDepartmentHead:
         assert verdict.needs_specialist is True
         assert verdict.resolved_output is None
 
+    def test_needs_department_help_when_not_resolved(self, session: Session) -> None:
+        """Phase 21 (IMPLEMENTATION_PLAN.md, 2026-07-25): distinct from needs_specialist
+        (more of the Head's own kind) - this is "I can do most of this, but one part is
+        genuinely another department's specialty."""
+        _grant(session, "research_head_001")
+        provider = _FakeProvider(
+            json.dumps(
+                {
+                    "accepted": True,
+                    "reasoning": "Need Engineering's build-timeline estimate for one part.",
+                    "resolved": False,
+                    "needs_specialist": False,
+                    "needs_department_help": "engineering",
+                }
+            )
+        )
+
+        verdict = LLMDepartmentHead().evaluate(
+            _research_department(),
+            "Assess this app idea, including how long it would take to build",
+            agent_registry=_head_agent_registry(),
+            model_gateway=ModelGateway(provider),
+            session=session,
+            coo_id="coo",
+            telemetry=None,
+        )
+
+        assert verdict.accepted is True
+        assert verdict.needs_department_help == "engineering"
+        assert verdict.needs_specialist is False
+        assert verdict.resolved_output is None
+
+    def test_needs_department_help_takes_priority_over_needs_specialist(self, session: Session) -> None:
+        """A sloppy model response setting both is resolved deterministically - delegation to
+        another department's specialty wins, per HeadVerdict.needs_department_help's
+        docstring."""
+        _grant(session, "research_head_001")
+        provider = _FakeProvider(
+            json.dumps(
+                {
+                    "accepted": True,
+                    "reasoning": "Ambiguous response.",
+                    "resolved": False,
+                    "needs_specialist": True,
+                    "needs_department_help": "engineering",
+                }
+            )
+        )
+
+        verdict = LLMDepartmentHead().evaluate(
+            _research_department(),
+            "obj",
+            agent_registry=_head_agent_registry(),
+            model_gateway=ModelGateway(provider),
+            session=session,
+            coo_id="coo",
+            telemetry=None,
+        )
+
+        assert verdict.needs_department_help == "engineering"
+        assert verdict.needs_specialist is False
+
+    def test_needs_department_help_naming_own_department_is_treated_as_unset(self, session: Session) -> None:
+        """Naming its own department isn't delegation - falls through to the needs_specialist
+        branch instead, same as if needs_department_help had never been set."""
+        _grant(session, "research_head_001")
+        provider = _FakeProvider(
+            json.dumps(
+                {
+                    "accepted": True,
+                    "reasoning": "Confused response naming itself.",
+                    "resolved": False,
+                    "needs_specialist": True,
+                    "needs_department_help": "research",
+                }
+            )
+        )
+
+        verdict = LLMDepartmentHead().evaluate(
+            _research_department(),
+            "obj",
+            agent_registry=_head_agent_registry(),
+            model_gateway=ModelGateway(provider),
+            session=session,
+            coo_id="coo",
+            telemetry=None,
+        )
+
+        assert verdict.needs_department_help is None
+        assert verdict.needs_specialist is True
+
+    def test_other_departments_listed_in_prompt_when_registry_supplied(self, session: Session) -> None:
+        _grant(session, "research_head_001")
+        provider = _FakeProvider(
+            json.dumps({"accepted": True, "reasoning": "ok", "suggested_department_id": None})
+        )
+        registry = DepartmentRegistry(REPO_ROOT / "departments")
+        registry.load_all()
+
+        LLMDepartmentHead().evaluate(
+            _research_department(),
+            "obj",
+            agent_registry=_head_agent_registry(),
+            model_gateway=ModelGateway(provider),
+            session=session,
+            coo_id="coo",
+            telemetry=None,
+            department_registry=registry,
+        )
+
+        assert "engineering" in provider.prompts[0]
+        # Operations (Review) is excluded - never a valid delegation target.
+        assert "- operations:" not in provider.prompts[0]
+
+    def test_no_department_registry_supplied_disables_delegation_in_prompt(self, session: Session) -> None:
+        """Backward compatibility: a caller that doesn't pass department_registry (no
+        pre-Phase-21 call site does) gets a prompt telling the model not to delegate at all,
+        rather than an empty/broken department list."""
+        _grant(session, "research_head_001")
+        provider = _FakeProvider(
+            json.dumps({"accepted": True, "reasoning": "ok", "suggested_department_id": None})
+        )
+
+        LLMDepartmentHead().evaluate(
+            _research_department(),
+            "obj",
+            agent_registry=_head_agent_registry(),
+            model_gateway=ModelGateway(provider),
+            session=session,
+            coo_id="coo",
+            telemetry=None,
+        )
+
+        assert "do not set needs_department_help" in provider.prompts[0]
+
     def test_insufficient_information_is_a_rejection_not_a_spawn(self, session: Session) -> None:
         """Deliberately NOT a spawn trigger (see LLMDepartmentHead's own docstring): a second
         agent has no information the first lacked, so this folds into a rejection instead,

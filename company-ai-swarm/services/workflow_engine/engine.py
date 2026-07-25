@@ -63,7 +63,7 @@ from sqlalchemy.orm import Session
 from agent_runtime.registry import AgentRegistry
 from observability_service.telemetry import TelemetrySink
 from orchestrator.allocator import select_agent
-from orchestrator.department_registry import DepartmentDefinition
+from orchestrator.department_registry import DepartmentDefinition, DepartmentRegistry
 from orchestrator.evaluator import validate_outcome
 from orchestrator.head import AutoAcceptDepartmentHead, DepartmentHead, resolve_verdict_execution
 from orchestrator.router import dispatch
@@ -89,7 +89,15 @@ def execute_workflow(
     telemetry: TelemetrySink | None = None,
     complexity_level: str = "Level 2 Standard",
     head: DepartmentHead = AutoAcceptDepartmentHead(),
+    department_registry: DepartmentRegistry | None = None,
 ) -> WorkflowRun:
+    """`department_registry` (Phase 21, IMPLEMENTATION_PLAN.md, 2026-07-25) defaults to None -
+    every pre-Phase-21 call site (simulations, existing tests) needs zero changes; without it,
+    a Head's needs_department_help verdict simply can't be honored (resolve_verdict_execution()
+    degrades to "do your best," same as an unknown/cyclical target - see that function's
+    docstring) rather than raising. Production callers (orchestrator/controller.py) pass the
+    real registry so delegation actually works."""
+
     run = WorkflowRun(workflow_id=f"WF-{uuid4().hex[:8]}", objective=objective)
 
     substantive_departments = [d for d in departments if d.id != REVIEW_DEPARTMENT_ID]
@@ -104,6 +112,7 @@ def execute_workflow(
             session=session,
             coo_id=coo_id,
             telemetry=telemetry,
+            department_registry=department_registry,
         )
         if not verdict.accepted:
             run.succeeded = False
@@ -131,6 +140,8 @@ def execute_workflow(
                 coo_id=coo_id,
                 decision_id=decision_id,
                 telemetry=telemetry,
+                department_registry=department_registry,
+                head=head,
             )
         except ValueError as exc:
             run.succeeded = False

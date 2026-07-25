@@ -95,7 +95,7 @@ Full test suite: **266 passed, 4 skipped** (`python -m pytest`). The 4 skipped a
 | — | EDIS (Deployment & Infrastructure) | Not a gap | `Infrastructure/`'s empty scaffolding is correct as-is — purpose-built to stay empty until the Company has real operational/project history (Phase 14). Revisit then, not before. |
 | — | EHCAS §13 "Decision Authority Class" | Resolved | Superseded by Phase 8's escalation policy (`orchestrator/escalation.py::EscalationCondition`) — no separate work needed. |
 | — | Cost/Complexity-Aware Execution Mode (Lean/Fast) | Not started (2026-07-25) | Found via direct vision comparison, not CrewAI. Priority: Medium. See Phase 20 below. |
-| — | Inter-Department Task Delegation | Not started (2026-07-25) | Highest priority of the vision-comparison findings — recommended before/alongside Phase 18. See Phase 21 below. |
+| 21 | Inter-Department Task Delegation | Implemented (2026-07-25) | `orchestrator/head.py`'s `HeadVerdict.needs_department_help` + `_resolve_department_delegation()`; `orchestrator/delegations.py` (ledger, mirrors Phase 17's spawns.py); `LLMDepartmentHead` prompt now offers a fourth outcome with explicit "prefer resolving in-domain work yourself" guidance. Unbounded delegation depth (per the founder's choice over a one-hop cap), made safe by a chain-membership cycle check rather than a fixed limit. 309 tests passing (10 new), 4 skipped. |
 | — | Artifact Pre-Assessment & Direction Confirmation | Not started (2026-07-25) | Priority: Medium. See Phase 22 below. |
 | — | Skill/Tool Effectiveness Memory | Not started (2026-07-25) | Priority: Medium-low, needs Phase 14 signal first. See Phase 23 below. |
 
@@ -726,23 +726,23 @@ Source: a direct comparison of the founder's original architecture vision agains
 
 ### Phase 21 — Inter-Department Task Delegation
 
-**Status: Not started. Not previously tracked. Highest priority of the four found in this comparison.**
+**Actual status: Implemented (2026-07-25).**
 
 **Priority: High.**
 
 **Deliverables**:
 
-1. A mechanism for a Department Head to request another department's help mid-task, rather than every multi-department objective being decided entirely up front by the classifier before any department starts working. Today, `workflow_engine/engine.py` runs matched departments in a fixed canonical order with no real dependency graph ("no dependency-declaration mechanism exists anywhere in this corpus yet," per that module's own docstring) - this closes that gap.
+1. **Implemented.** A mechanism for a Department Head to request another department's help mid-task, rather than every multi-department objective being decided entirely up front by the classifier before any department starts working. `orchestrator/head.py`'s `HeadVerdict` gained `needs_department_help: str | None` (mutually exclusive with `needs_specialist` and `resolved_output` - checked in that priority order if a model response sets more than one). `resolve_verdict_execution()` routes it to a new `_resolve_department_delegation()`: the target department's own Head is evaluated (not a bare `dispatch()` - Heads are not figureheads for delegated hops either), its result is fed back to the *original* requesting Head in a second `dispatch()` call to produce a final answer incorporating it - not just relaying the sub-department's raw output. Design choice made during this phase: delegation depth is **unbounded** (the founder's explicit choice over a one-hop cap), made safe by a chain-membership check instead of a fixed limit - a department already in the current objective's delegation chain can never be re-targeted, so the worst case touches every registered department exactly once and never loops. Every successful delegation writes a `DepartmentDelegationRecord` (`orchestrator/delegations.py`), mirroring Phase 17's spawn ledger.
 
-2. An implicit boundary so a department can do light, in-domain research itself without dispatching to Research for everything - checked every active department's `agent.yaml`; no such boundary exists today, only "don't spawn a specialist over an information deficit."
+2. **Implemented, at the prompt level.** `LLMDepartmentHead`'s prompt now lists other departments and instructs the Head to "prefer resolving light, in-domain work... yourself - do not delegate work you can reasonably do yourself," offering `needs_department_help` only for work that is "genuinely another department's specialty." This is shared across every department via the one prompt template, not four separate `agent.yaml` edits - Phase 16's per-department boundary customization wasn't needed here since the instruction is identical regardless of department.
 
-3. A defined response when zero departments match at all, distinct from today's `NoMatchingDepartmentError` hard-reject. This is the "temporary skillset when none exists" half of the founder's original vision - narrower than Phase 18 (a full new department) and not served by Phase 17's specialist spawn either (that only fires *within* an already-matched department).
+3. **Found to already exist - no new work needed.** Checked before building anything: `orchestrator/escalation.py`'s `EscalationCondition.NO_MATCHING_DEPARTMENT` has been one of the four canonical conditions since Phase 8, predating this session. The zero-match case was never a generic hard-reject lumped in with other failures - it's already a distinct, queryable condition on both the Decision Record and the Escalation Record. This deliverable, as scoped in the original design conversation, turned out to be a correction to this document's own vision-comparison write-up rather than real work - recorded here so the discrepancy isn't silently lost.
 
-**Why this precedes Phase 18 in practice, if not in number**: see the sequencing note at the end of Phase 18 above.
+**Why this precedes Phase 18 in practice, if not in number**: see the sequencing note at the end of Phase 18 above - still applies; Phase 18 remains on hold pending Phase 14 signal.
 
-**Test**: TBD at implementation time.
+**Test**: `Tests/integration/test_department_head.py`'s `TestLLMDepartmentHead` class (prompt/parsing-level: `needs_department_help` set, priority over `needs_specialist`, self-reference treated as unset, other-departments text present/absent based on whether `department_registry` was supplied). `Tests/integration/test_coo_orchestration.py`'s new `TestPhase21InterDepartmentDelegation` class (end-to-end via `receive_objective()`: successful delegation writes the ledger and finalizes through the original Head, delegation to the Review department or an unknown department falls back safely, a would-be cyclical delegation is avoided via the chain check rather than looping, direct resolution writes no delegation record).
 
-**Exit criteria**: TBD at implementation time.
+**Exit criteria**: Met. 309 tests passing (10 new), 4 skipped (unchanged gated live-credential tests), zero changes to any pre-existing test - `department_registry`/`head`/`delegation_chain` are all optional/defaulted on every changed signature (`resolve_verdict_execution()`, `execute_workflow()`, `DepartmentHead.evaluate()`), so every pre-Phase-21 call site needed zero changes.
 
 ### Phase 22 — Artifact Pre-Assessment & Direction Confirmation
 
