@@ -38,7 +38,12 @@ def dispatch(
     required_output: str,
     model_gateway: ModelGateway,
     telemetry: TelemetrySink | None = None,
+    model: str | None = None,
 ) -> ExecutionResult:
+    """`model` (Phase 20, IMPLEMENTATION_PLAN.md, 2026-07-25): threaded straight through to
+    AgentRuntime.execute_task() - see that method's docstring. None reproduces every
+    pre-Phase-20 call exactly."""
+
     message = AgentMessageContract(
         sender_agent=coo_id,
         receiver_agent=agent.identity.id,
@@ -46,7 +51,7 @@ def dispatch(
         required_output=required_output,
     )
     runtime = AgentRuntime(agent, model_gateway=model_gateway, telemetry=telemetry)
-    result = runtime.execute_task(session, message)
+    result = runtime.execute_task(session, message, model=model)
 
     _record_department_observation(session, agent=agent, result=result)
 

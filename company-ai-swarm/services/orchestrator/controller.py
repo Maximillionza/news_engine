@@ -51,10 +51,12 @@ from orchestrator.classification import DepartmentClassifier, KeywordDepartmentC
 from orchestrator.department_registry import DepartmentDefinition, DepartmentRegistry
 from orchestrator.escalation import EscalationCondition
 from orchestrator.evaluator import OutcomeValidation, validate_outcome
+from orchestrator.execution_mode import EXECUTION_MODE_LEAN, resolve_model_tier
 from orchestrator.head import AutoAcceptDepartmentHead, DepartmentHead, resolve_verdict_execution
 from orchestrator.router import dispatch
 from security_service.audit import write_audit_record
 from shared.model_gateway import ModelGateway
+from workflow_engine.complexity import MODEL_BY_TIER, assess_complexity
 from workflow_engine.engine import REVIEW_DEPARTMENT_ID, execute_workflow
 from workflow_engine.gate_integrity import check_gate_integrity
 from workflow_engine.models import WorkflowRun
@@ -117,6 +119,7 @@ class COOOrchestrator:
         telemetry: TelemetrySink | None = None,
         classifier: DepartmentClassifier = KeywordDepartmentClassifier(),
         head: DepartmentHead = AutoAcceptDepartmentHead(),
+        execution_mode: str = EXECUTION_MODE_LEAN,
     ) -> None:
         self.coo_id = coo_id
         self._departments = department_registry
@@ -125,6 +128,7 @@ class COOOrchestrator:
         self._telemetry = telemetry
         self._classifier = classifier
         self._head = head
+        self._execution_mode = execution_mode
 
     def assess_sufficiency(
         self, objective: str, recent_messages: list[tuple[str, str]], *, round_number: int
@@ -213,20 +217,27 @@ class COOOrchestrator:
                 matched_departments=matched_departments,
             )
 
+        # Assess Complexity + Select Models (Phase 20, IMPLEMENTATION_PLAN.md, 2026-07-25):
+        # the COOS sec.6 Operating Cycle steps this class's own docstring has named since
+        # before either existed - workflow_engine/complexity.py's assess_complexity() is the
+        # first real producer. Computed once, before triage, so the Head's own dispatch
+        # during triage uses the same tier as everything else for this objective.
+        assessment = assess_complexity(matched_departments[:1])
+        model = MODEL_BY_TIER[resolve_model_tier(assessment.required_model_tier, mode=self._execution_mode)]
+
         department, head_execution = self._triage_single_department(
             session,
             objective,
             decision_id=decision_id,
             initial_department=matched_departments[0],
             required_output=required_output,
+            model=model,
         )
 
         task_profile = TaskProfile(
             task_id=f"TSK-{uuid4().hex[:8]}",
             objective=objective,
-            # Fixed default - real complexity scoring is deferred (design doc Section 2);
-            # unchanged from orchestrator/planner.py's original placeholder.
-            complexity_level="Level 2 Standard",
+            complexity_level=assessment.complexity_level,
             matched_department=department,
             reasoning=classification.reasoning,
         )
@@ -264,7 +275,10 @@ class COOOrchestrator:
             chosen_action=f"execute via {agent_id}",
             options_considered=[d.id for d in self._departments.all()],
             agents_selected=[agent_id],
-            models_used=["stub"],  # Phase 5 has exactly one provider; see model_gateway.py
+            # Phase 20 (IMPLEMENTATION_PLAN.md, 2026-07-25): the real per-call model tier,
+            # replacing the old fixed "stub" placeholder - reflects the actual provider model
+            # string regardless of which ModelProvider is configured.
+            models_used=[model],
         )
 
         # Create Workflow + Execute: Phase 5 has no multi-step workflow to build - dispatch
@@ -282,6 +296,7 @@ class COOOrchestrator:
                     required_output=required_output,
                     model_gateway=self._model_gateway,
                     telemetry=self._telemetry,
+                    model=model,
                 )
             except Exception as exc:
                 escalations.write_escalation(
@@ -343,6 +358,7 @@ class COOOrchestrator:
         decision_id: str,
         initial_department: DepartmentDefinition,
         required_output: str,
+        model: str | None = None,
     ) -> tuple[DepartmentDefinition, ExecutionResult | None]:
         """Documentation/plans/2026-07-19-department-head-triage-design.md Section 3.1's
         single-department path: up to 2 attempts total - the classifier's original match,
@@ -379,6 +395,7 @@ class COOOrchestrator:
                     coo_id=self.coo_id,
                     telemetry=self._telemetry,
                     department_registry=self._departments,
+                    model=model,
                 )
             except Exception as exc:
                 # Same audit trail any other technical failure gets - mirrors the classifier
@@ -414,6 +431,7 @@ class COOOrchestrator:
                         telemetry=self._telemetry,
                         department_registry=self._departments,
                         head=self._head,
+                        model=model,
                     )
                 except Exception as exc:
                     # Same audit trail any other technical failure gets - mirrors the
@@ -506,6 +524,7 @@ class COOOrchestrator:
                 telemetry=self._telemetry,
                 head=self._head,
                 department_registry=self._departments,
+                execution_mode=self._execution_mode,
             )
         except Exception as exc:
             # Decision record still needs to exist for the escalation to reference - the
@@ -535,7 +554,17 @@ class COOOrchestrator:
             chosen_action=chosen_action,
             options_considered=[d.id for d in self._departments.all()],
             agents_selected=[t.agent_id for t in workflow.tasks],
-            models_used=["stub"],  # Phase 6 still has exactly one provider; see model_gateway.py
+            # Phase 20 (IMPLEMENTATION_PLAN.md, 2026-07-25): mirrors execute_workflow()'s own
+            # internal computation - recomputed here (cheap, pure) rather than adding a field
+            # to WorkflowRun just to carry one string back out.
+            models_used=[
+                MODEL_BY_TIER[
+                    resolve_model_tier(
+                        assess_complexity(matched_departments).required_model_tier,
+                        mode=self._execution_mode,
+                    )
+                ]
+            ],
         )
 
         decisions.update_outcome(

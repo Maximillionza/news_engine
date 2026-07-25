@@ -43,13 +43,13 @@ class _FakeProvider:
         self.response_text = response_text
         self.prompts: list[str] = []
 
-    def generate(self, prompt: str, *, allowed_tools=None) -> str:
+    def generate(self, prompt: str, *, allowed_tools=None, model=None) -> str:
         self.prompts.append(prompt)
         return self.response_text
 
 
 class _FailingProvider:
-    def generate(self, prompt: str, *, allowed_tools=None) -> str:
+    def generate(self, prompt: str, *, allowed_tools=None, model=None) -> str:
         raise RuntimeError("rate limited")
 
 

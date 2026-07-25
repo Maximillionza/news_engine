@@ -138,9 +138,13 @@ class TestReviewAgentProducesPassFailWithReasoningMVS003:
             session, FOUR_DEPARTMENT_OBJECTIVE, required_output="A validated implementation"
         )
 
-        # Fixed default complexity ("Level 2 Standard") maps to "peer_review" - see
-        # workflow_engine/review.py for why this is the only tier Phase 7 can produce.
-        assert outcome.workflow.review_tier == "peer_review"
+        # Phase 20 (IMPLEMENTATION_PLAN.md, 2026-07-25): workflow_engine/complexity.py now
+        # really computes this - FOUR_DEPARTMENT_OBJECTIVE matches 3 substantive departments
+        # (research/engineering/compliance) plus the review step, which assess_complexity()
+        # classifies as "Level 3 Advanced" -> "department_review" per review.py's table.
+        # Previously asserted "peer_review", back when complexity_level was a fixed
+        # "Level 2 Standard" with no real producer (see that module's docstring, pre-Phase-20).
+        assert outcome.workflow.review_tier == "department_review"
 
     def test_decision_record_captures_review_tier_and_outcome(
         self, session: Session, coo: COOOrchestrator
@@ -158,7 +162,9 @@ class TestReviewAgentProducesPassFailWithReasoningMVS003:
             "compliance_agent_001",
             "review_agent_001",
         ]
-        assert "review_tier=peer_review" in record.outcome
+        # Phase 20: see test_review_tier_is_risk_proportional_per_tdl_17 above for why this
+        # is "department_review", not the old fixed "peer_review".
+        assert "review_tier=department_review" in record.outcome
         assert "objective_achieved=True" in record.outcome
 
 

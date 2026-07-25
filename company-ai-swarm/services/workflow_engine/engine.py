@@ -65,9 +65,11 @@ from observability_service.telemetry import TelemetrySink
 from orchestrator.allocator import select_agent
 from orchestrator.department_registry import DepartmentDefinition, DepartmentRegistry
 from orchestrator.evaluator import validate_outcome
+from orchestrator.execution_mode import EXECUTION_MODE_LEAN, resolve_model_tier
 from orchestrator.head import AutoAcceptDepartmentHead, DepartmentHead, resolve_verdict_execution
 from orchestrator.router import dispatch
 from shared.model_gateway import ModelGateway
+from workflow_engine.complexity import MODEL_BY_TIER, assess_complexity
 from workflow_engine.gate_integrity import check_gate_integrity
 from workflow_engine.knowledge import record_task_knowledge
 from workflow_engine.models import TaskRun, WorkflowRun
@@ -87,21 +89,35 @@ def execute_workflow(
     model_gateway: ModelGateway,
     decision_id: str,
     telemetry: TelemetrySink | None = None,
-    complexity_level: str = "Level 2 Standard",
+    complexity_level: str | None = None,
     head: DepartmentHead = AutoAcceptDepartmentHead(),
     department_registry: DepartmentRegistry | None = None,
+    execution_mode: str = EXECUTION_MODE_LEAN,
 ) -> WorkflowRun:
     """`department_registry` (Phase 21, IMPLEMENTATION_PLAN.md, 2026-07-25) defaults to None -
     every pre-Phase-21 call site (simulations, existing tests) needs zero changes; without it,
     a Head's needs_department_help verdict simply can't be honored (resolve_verdict_execution()
     degrades to "do your best," same as an unknown/cyclical target - see that function's
     docstring) rather than raising. Production callers (orchestrator/controller.py) pass the
-    real registry so delegation actually works."""
+    real registry so delegation actually works.
+
+    `complexity_level` (Phase 20, IMPLEMENTATION_PLAN.md, 2026-07-25) now defaults to None,
+    not a fixed "Level 2 Standard" - when None, it's computed for real via
+    workflow_engine/complexity.py's assess_complexity() from `departments`, which also
+    determines `required_model_tier` for every dispatch in this workflow (subject to
+    `execution_mode` - see orchestrator/execution_mode.py). Passing an explicit string still
+    works exactly as before (some tests/simulations may want a fixed value), it just no
+    longer implies "no real computation exists" the way the old hardcoded default did."""
 
     run = WorkflowRun(workflow_id=f"WF-{uuid4().hex[:8]}", objective=objective)
 
     substantive_departments = [d for d in departments if d.id != REVIEW_DEPARTMENT_ID]
     review_department = next((d for d in departments if d.id == REVIEW_DEPARTMENT_ID), None)
+
+    assessment = assess_complexity(departments)
+    if complexity_level is None:
+        complexity_level = assessment.complexity_level
+    model = MODEL_BY_TIER[resolve_model_tier(assessment.required_model_tier, mode=execution_mode)]
 
     for department in substantive_departments:
         verdict = head.evaluate(
@@ -113,6 +129,7 @@ def execute_workflow(
             coo_id=coo_id,
             telemetry=telemetry,
             department_registry=department_registry,
+            model=model,
         )
         if not verdict.accepted:
             run.succeeded = False
@@ -142,6 +159,7 @@ def execute_workflow(
                 telemetry=telemetry,
                 department_registry=department_registry,
                 head=head,
+                model=model,
             )
         except ValueError as exc:
             run.succeeded = False
@@ -168,6 +186,7 @@ def execute_workflow(
                 required_output=required_output,
                 model_gateway=model_gateway,
                 telemetry=telemetry,
+                model=model,
             )
             agent_id = allocation.agent.identity.id
             knowledge_agent = allocation.agent
@@ -220,6 +239,11 @@ def execute_workflow(
             required_output="A pass/fail validation with documented reasoning",
             model_gateway=model_gateway,
             telemetry=telemetry,
+            # Deliberately always "standard," never downgraded to "lean" even in Lean mode -
+            # the Review Agent's job is judging other agents' work, and the founder's own
+            # vision is explicit that Lean "should not be less effective" - a review gate is
+            # exactly the wrong place to spend that trade-off.
+            model=MODEL_BY_TIER["standard"],
         )
         validation = validate_outcome(execution_result)
         review_task_id = f"TSK-{uuid4().hex[:8]}"

@@ -448,3 +448,93 @@ class TestPhase21InterDepartmentDelegation:
         coo.receive_objective(session, "Create a market intelligence report", required_output="A short answer")
 
         assert list_delegations_for_department(session, "research") == []
+
+
+class _RecordingProvider:
+    """Records the `model=` kwarg each generate() call received - Phase 20's actual exit
+    criterion: does the real model string reach the provider, not just get computed and
+    ignored."""
+
+    def __init__(self) -> None:
+        self.models_seen: list[str | None] = []
+
+    def generate(self, prompt: str, *, allowed_tools=None, model=None) -> str:
+        self.models_seen.append(model)
+        return "[recorded output]"
+
+
+def _coo_with_recording_provider(session: Session, provider: _RecordingProvider, *, execution_mode: str) -> COOOrchestrator:
+    department_registry = DepartmentRegistry(REPO_ROOT / "departments")
+    department_registry.load_all()
+    agent_registry = AgentRegistry(REPO_ROOT / "agents" / "active")
+    agent_registry.load_all()
+
+    for agent_id, department in [("research_agent_001", "research"), ("engineering_agent_001", "engineering")]:
+        create_identity(session, id=agent_id, entity_type=EntityType.AGENT, name=agent_id, department=department)
+        grant_permission(session, subject=agent_id, resource=f"agent_execution:{agent_id}", action="execute")
+        grant_permission(session, subject=agent_id, resource="memory:department", action="read")
+
+    return COOOrchestrator(
+        coo_id="coo",
+        department_registry=department_registry,
+        agent_registry=agent_registry,
+        model_gateway=ModelGateway(provider),
+        execution_mode=execution_mode,
+    )
+
+
+class TestPhase20ComplexityAwareModelSelection:
+    """IMPLEMENTATION_PLAN.md Phase 20: workflow_engine/complexity.py's tier assessment
+    actually reaches the provider - not just computed and discarded."""
+
+    def test_single_department_objective_uses_lean_tier_by_default(self, session: Session) -> None:
+        from workflow_engine.complexity import MODEL_BY_TIER, MODEL_TIER_LEAN
+
+        provider = _RecordingProvider()
+        coo = _coo_with_recording_provider(session, provider, execution_mode="lean")
+
+        coo.receive_objective(
+            session, "Create a market intelligence report", required_output="A short answer"
+        )
+
+        assert provider.models_seen == [MODEL_BY_TIER[MODEL_TIER_LEAN]]
+
+    def test_two_department_objective_uses_standard_tier(self, session: Session) -> None:
+        from workflow_engine.complexity import MODEL_BY_TIER, MODEL_TIER_STANDARD
+
+        provider = _RecordingProvider()
+        coo = _coo_with_recording_provider(session, provider, execution_mode="lean")
+
+        coo.receive_objective(
+            session,
+            "Research current trends and build a working prototype based on the findings.",
+            required_output="A validated implementation",
+        )
+
+        assert len(provider.models_seen) == 2
+        assert all(m == MODEL_BY_TIER[MODEL_TIER_STANDARD] for m in provider.models_seen)
+
+    def test_fast_mode_never_downgrades_a_single_department_objective_to_lean(self, session: Session) -> None:
+        from workflow_engine.complexity import MODEL_BY_TIER, MODEL_TIER_STANDARD
+
+        provider = _RecordingProvider()
+        coo = _coo_with_recording_provider(session, provider, execution_mode="fast")
+
+        coo.receive_objective(
+            session, "Create a market intelligence report", required_output="A short answer"
+        )
+
+        assert provider.models_seen == [MODEL_BY_TIER[MODEL_TIER_STANDARD]]
+
+    def test_decision_record_models_used_reflects_the_real_model_not_stub(self, session: Session) -> None:
+        from workflow_engine.complexity import MODEL_BY_TIER, MODEL_TIER_LEAN
+
+        provider = _RecordingProvider()
+        coo = _coo_with_recording_provider(session, provider, execution_mode="lean")
+
+        outcome = coo.receive_objective(
+            session, "Create a market intelligence report", required_output="A short answer"
+        )
+
+        record = get_decision(session, outcome.decision_id)
+        assert record.models_used == [MODEL_BY_TIER[MODEL_TIER_LEAN]]

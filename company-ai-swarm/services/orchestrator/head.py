@@ -90,6 +90,7 @@ class DepartmentHead(Protocol):
         coo_id: str,
         telemetry: TelemetrySink | None,
         department_registry: DepartmentRegistry | None = None,
+        model: str | None = None,
     ) -> HeadVerdict: ...
 
 
@@ -119,6 +120,7 @@ def resolve_verdict_execution(
     department_registry: DepartmentRegistry | None = None,
     head: "DepartmentHead | None" = None,
     delegation_chain: frozenset[str] = frozenset(),
+    model: str | None = None,
 ) -> ExecutionResult | None:
     """Phase 16 (IMPLEMENTATION_PLAN.md, 2026-07-23): given an accepted HeadVerdict, produces
     the ExecutionResult for this department's work when the Head resolved it directly or
@@ -194,6 +196,7 @@ def resolve_verdict_execution(
             department_registry=department_registry,
             head=head,
             delegation_chain=delegation_chain,
+            model=model,
         )
 
     specialist = AgentDefinition(
@@ -215,6 +218,7 @@ def resolve_verdict_execution(
         required_output=required_output,
         model_gateway=model_gateway,
         telemetry=telemetry,
+        model=model,
     )
     result.artifact["resolved_by"] = "specialist"
     result.artifact["specialist_reasoning"] = verdict.reasoning
@@ -251,6 +255,7 @@ def _resolve_department_delegation(
     department_registry: DepartmentRegistry | None,
     head: "DepartmentHead | None",
     delegation_chain: frozenset[str],
+    model: str | None = None,
 ) -> ExecutionResult:
     """Phase 21 (IMPLEMENTATION_PLAN.md, 2026-07-25): resolves a needs_department_help
     verdict - department.id asked target_id for specific help, not a full handoff. Three
@@ -305,6 +310,7 @@ def _resolve_department_delegation(
             required_output=required_output,
             model_gateway=model_gateway,
             telemetry=telemetry,
+            model=model,
         )
         result.artifact["resolved_by"] = "head_after_unhonored_delegation"
         result.artifact["requested_department"] = target_id
@@ -322,6 +328,7 @@ def _resolve_department_delegation(
         coo_id=coo_id,
         telemetry=telemetry,
         department_registry=department_registry,
+        model=model,
     )
 
     if not target_verdict.accepted:
@@ -341,6 +348,7 @@ def _resolve_department_delegation(
             department_registry=department_registry,
             head=head,
             delegation_chain=chain,
+            model=model,
         )
         if sub_execution is None:
             # target Head accepted but neither resolved/specialist/delegated further (e.g.
@@ -356,6 +364,7 @@ def _resolve_department_delegation(
                 required_output="Provide the specific information or artifact requested, concisely.",
                 model_gateway=model_gateway,
                 telemetry=telemetry,
+                model=model,
             )
         sub_result_text = sub_execution.output
 
@@ -381,6 +390,7 @@ def _resolve_department_delegation(
         required_output=required_output,
         model_gateway=model_gateway,
         telemetry=telemetry,
+        model=model,
     )
     result.artifact["resolved_by"] = "head_after_delegation"
     result.artifact["delegated_to"] = target.id
@@ -427,6 +437,7 @@ class LLMDepartmentHead:
         coo_id: str,
         telemetry: TelemetrySink | None,
         department_registry: DepartmentRegistry | None = None,
+        model: str | None = None,
     ) -> HeadVerdict:
         head_agent = agent_registry.get(department.leader)
         if head_agent is None:
@@ -493,6 +504,7 @@ class LLMDepartmentHead:
             ),
             model_gateway=model_gateway,
             telemetry=telemetry,
+            model=model,
         )
 
         try:

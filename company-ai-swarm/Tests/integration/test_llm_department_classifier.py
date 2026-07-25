@@ -25,7 +25,7 @@ class _FakeProvider:
         self.response_text = response_text
         self.prompts: list[str] = []
 
-    def generate(self, prompt: str, *, allowed_tools=None) -> str:
+    def generate(self, prompt: str, *, allowed_tools=None, model=None) -> str:
         self.prompts.append(prompt)
         return self.response_text
 
@@ -104,7 +104,7 @@ def test_classify_raises_on_unparseable_response() -> None:
 
 def test_classify_raises_on_generate_failure() -> None:
     class _FailingProvider:
-        def generate(self, prompt: str, *, allowed_tools=None) -> str:
+        def generate(self, prompt: str, *, allowed_tools=None, model=None) -> str:
             raise RuntimeError("rate limited")
 
     classifier = LLMDepartmentClassifier(ModelGateway(_FailingProvider()))

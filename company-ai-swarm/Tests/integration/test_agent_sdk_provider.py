@@ -84,6 +84,28 @@ def test_model_defaults_to_none_not_forced() -> None:
     assert runner.calls[0]["model"] is None
 
 
+def test_generate_per_call_model_overrides_constructor_default() -> None:
+    """Phase 20 (IMPLEMENTATION_PLAN.md, 2026-07-25): mirrors allowed_tools' own per-call
+    override precedent (Phase 12) - workflow_engine/complexity.py's tier assessment has to
+    win over whatever the provider was constructed with, not the other way around."""
+
+    runner = _runner_returning("ok")
+    provider = AgentSDKModelProvider(model=DEFAULT_MODEL, runner=runner)
+
+    provider.generate("prompt", model="claude-haiku-4-5-20251001")
+
+    assert runner.calls[0]["model"] == "claude-haiku-4-5-20251001"
+
+
+def test_generate_falls_back_to_constructor_default_model_when_no_per_call_model_given() -> None:
+    runner = _runner_returning("ok")
+    provider = AgentSDKModelProvider(model=DEFAULT_MODEL, runner=runner)
+
+    provider.generate("prompt")
+
+    assert runner.calls[0]["model"] == DEFAULT_MODEL
+
+
 def test_generate_per_call_allowed_tools_overrides_constructor_default() -> None:
     """Phase 12 (IMPLEMENTATION_PLAN.md, 2026-07-23): one shared provider instance serves
     every agent - the calling agent's own tool list (passed per generate() call, from its

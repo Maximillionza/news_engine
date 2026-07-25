@@ -45,7 +45,7 @@ class FailingModelProvider:
     """Deterministic failure, for exercising the TECHNICAL_FAILURE path - not connected to
     any real model, same dev/test-only status as StubModelProvider."""
 
-    def generate(self, prompt: str, *, allowed_tools=None) -> str:
+    def generate(self, prompt: str, *, allowed_tools=None, model=None) -> str:
         raise RuntimeError("simulated model provider failure")
 
 
@@ -243,7 +243,7 @@ class TestTechnicalFailureIsDistinctFromTheFourConditions:
                 self._remaining = succeed_count
                 self.calls = 0
 
-            def generate(self, prompt: str, *, allowed_tools=None) -> str:
+            def generate(self, prompt: str, *, allowed_tools=None, model=None) -> str:
                 self.calls += 1
                 if self._remaining > 0:
                     self._remaining -= 1

@@ -106,15 +106,22 @@ class AnthropicModelProvider:
         and future status surfaces; changing it means constructing a new provider."""
         return self._model
 
-    def generate(self, prompt: str, *, allowed_tools: list[str] | None = None) -> str:
+    def generate(
+        self, prompt: str, *, allowed_tools: list[str] | None = None, model: str | None = None
+    ) -> str:
         # allowed_tools (Phase 12, IMPLEMENTATION_PLAN.md, 2026-07-23) is accepted for
         # Protocol compatibility with shared.model_gateway.ModelProvider and silently
         # ignored - this class's own docstring already states "no tool use": a raw
         # messages.create() call with no `tools` parameter has no tool-use concept to wire
         # this into. AgentSDKModelProvider is where allowed_tools actually does something.
+        #
+        # model (Phase 20, IMPLEMENTATION_PLAN.md, 2026-07-25): a per-call override of which
+        # model this specific call uses - falls back to this instance's own constructor-level
+        # default (DEFAULT_MODEL unless overridden) when not given, reproducing every
+        # pre-Phase-20 call exactly.
         try:
             response = self._client.messages.create(
-                model=self._model,
+                model=model or self._model,
                 max_tokens=self._max_tokens,
                 messages=[{"role": "user", "content": prompt}],
             )

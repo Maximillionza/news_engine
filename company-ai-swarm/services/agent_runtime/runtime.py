@@ -63,7 +63,16 @@ class AgentRuntime:
             error=error,
         )
 
-    def execute_task(self, session: Session, message: AgentMessageContract) -> ExecutionResult:
+    def execute_task(
+        self, session: Session, message: AgentMessageContract, *, model: str | None = None
+    ) -> ExecutionResult:
+        """`model` (Phase 20, IMPLEMENTATION_PLAN.md, 2026-07-25): an optional per-call model
+        override, from workflow_engine/complexity.py's tier assessment via orchestrator/
+        router.py's dispatch() - passed straight through to the Execute step's
+        model_gateway.generate() call. None (the default) reproduces every pre-Phase-20
+        call exactly."""
+
+
         steps_completed: list[str] = []
 
         # Step 1: Receive Task
@@ -154,7 +163,7 @@ class AgentRuntime:
         # exact no-tools behavior.
         allowed_tools = self.agent.tools.get("available", [])
         output = self._model_gateway.generate(
-            requester=self.agent.identity.id, prompt=prompt, allowed_tools=allowed_tools
+            requester=self.agent.identity.id, prompt=prompt, allowed_tools=allowed_tools, model=model
         )
         self._record("execute", result=TelemetryResult.SUCCESS, duration_ms=(time.perf_counter() - start) * 1000)
         steps_completed.append("execute")

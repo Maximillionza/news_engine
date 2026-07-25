@@ -168,11 +168,18 @@ class AgentSDKModelProvider:
         DEFAULT_MODEL; see the class docstring."""
         return self._model
 
-    def generate(self, prompt: str, *, allowed_tools: list[str] | None = None) -> str:
+    def generate(
+        self, prompt: str, *, allowed_tools: list[str] | None = None, model: str | None = None
+    ) -> str:
+        # model (Phase 20, IMPLEMENTATION_PLAN.md, 2026-07-25): per-call override, same
+        # precedence as allowed_tools above - falls back to this instance's own constructor-
+        # level default (None, meaning "whatever Claude Code itself defaults to") when not
+        # given, reproducing every pre-Phase-20 call exactly.
         tools = tuple(allowed_tools) if allowed_tools else self._allowed_tools
+        effective_model = model if model is not None else self._model
         on_tool_use = self._record_tool_use if self._telemetry is not None else None
         try:
-            return asyncio.run(self._runner(prompt, tools, self._model, on_tool_use=on_tool_use))
+            return asyncio.run(self._runner(prompt, tools, effective_model, on_tool_use=on_tool_use))
         except AgentSDKProviderError:
             raise
         except Exception as exc:  # noqa: BLE001 - ModelGateway.generate() records + re-raises

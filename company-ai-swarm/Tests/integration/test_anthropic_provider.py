@@ -130,6 +130,27 @@ def test_custom_timeout_is_passed_to_client_factory() -> None:
     assert factory.calls[0]["timeout_seconds"] == 30.0
 
 
+def test_generate_uses_constructor_default_model_when_no_override_given() -> None:
+    factory = _factory_for()
+    provider = AnthropicModelProvider(api_key="sk-ant-fake", model="claude-sonnet-5", client_factory=factory)
+
+    provider.generate("prompt")
+
+    assert factory.resource.calls[0]["model"] == "claude-sonnet-5"
+
+
+def test_generate_model_override_wins_over_constructor_default() -> None:
+    """Phase 20 (IMPLEMENTATION_PLAN.md, 2026-07-25): a per-call model override, from
+    workflow_engine/complexity.py's tier assessment - None (the default) reproduces every
+    pre-Phase-20 call exactly, but an explicit value takes precedence."""
+    factory = _factory_for()
+    provider = AnthropicModelProvider(api_key="sk-ant-fake", model="claude-sonnet-5", client_factory=factory)
+
+    provider.generate("prompt", model="claude-haiku-4-5-20251001")
+
+    assert factory.resource.calls[0]["model"] == "claude-haiku-4-5-20251001"
+
+
 @pytest.mark.skipif(
     not (os.environ.get("ANTHROPIC_API_KEY") and os.environ.get("RUN_REAL_ANTHROPIC_SMOKE_TEST") == "1"),
     reason="Real Claude API smoke test - set ANTHROPIC_API_KEY and RUN_REAL_ANTHROPIC_SMOKE_TEST=1 to run",

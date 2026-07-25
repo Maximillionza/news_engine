@@ -35,6 +35,7 @@ from identity_service.models import EntityType
 from identity_service.repository import create_identity, get_identity
 from observability_service.telemetry import TelemetrySink
 from orchestrator.classification import create_classifier_from_env
+from orchestrator.execution_mode import create_execution_mode_from_env
 from orchestrator.controller import (
     COOOrchestrator,
     DepartmentRejectedError,
@@ -82,6 +83,10 @@ _coo = COOOrchestrator(
     # (real Claude-backed triage) - see orchestrator/head.py and Documentation/plans/
     # 2026-07-19-department-head-triage-design.md Section 3.2.
     head=create_head_from_env(),
+    # EXECUTION_MODE env var selects lean (default - the appropriate model per task, per
+    # workflow_engine/complexity.py's assessment) / fast (never downgrades below "standard" -
+    # see orchestrator/execution_mode.py).
+    execution_mode=create_execution_mode_from_env(),
 )
 
 

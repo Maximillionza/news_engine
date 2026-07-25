@@ -123,7 +123,7 @@ class TestAgentExecutesTaskWithoutCOO:
             def __init__(self) -> None:
                 self.received_allowed_tools: list[object] = []
 
-            def generate(self, prompt: str, *, allowed_tools=None) -> str:
+            def generate(self, prompt: str, *, allowed_tools=None, model=None) -> str:
                 self.received_allowed_tools.append(allowed_tools)
                 return "researched it"
 

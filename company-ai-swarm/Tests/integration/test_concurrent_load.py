@@ -42,7 +42,7 @@ class _SlowProvider:
     def __init__(self, delay_seconds: float) -> None:
         self._delay = delay_seconds
 
-    def generate(self, prompt: str, *, allowed_tools=None) -> str:
+    def generate(self, prompt: str, *, allowed_tools=None, model=None) -> str:
         time.sleep(self._delay)
         return "[slow stub output]"
 
