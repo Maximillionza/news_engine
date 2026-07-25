@@ -45,9 +45,13 @@ from memory_service.models import MemoryTier, MemoryType
 from memory_service.promotion import request_promotion
 from memory_service.repository import write_memory
 from observability_service.telemetry import TelemetrySink
-from orchestrator import decisions, escalations, intake
+from orchestrator import decisions, escalations, intake, scope_confirmation
 from orchestrator.allocator import select_agent
-from orchestrator.classification import DepartmentClassifier, KeywordDepartmentClassifier
+from orchestrator.classification import (
+    DepartmentClassifier,
+    KeywordDepartmentClassifier,
+    ObjectiveClassification,
+)
 from orchestrator.department_registry import DepartmentDefinition, DepartmentRegistry
 from orchestrator.escalation import EscalationCondition
 from orchestrator.evaluator import OutcomeValidation, validate_outcome
@@ -140,6 +144,30 @@ class COOOrchestrator:
 
         return intake.assess_sufficiency(
             self._model_gateway, objective, recent_messages, self._departments, round_number
+        )
+
+    def classify(self, objective: str) -> ObjectiveClassification:
+        """Phase 22 (IMPLEMENTATION_PLAN.md, 2026-07-26): exposes classification as a
+        standalone step, mirroring assess_sufficiency()'s pattern - lets the API layer
+        (apps/api_gateway/dashboard_api.py) know which departments an objective would match
+        *before* committing to receive_objective(), so scope_confirmation can ask about
+        narrow-vs-broad first. Not previously exposed since nothing needed classification
+        results without also executing until this phase."""
+
+        return self._classifier.classify(objective, self._departments)
+
+    def assess_scope_confirmation(
+        self,
+        objective: str,
+        matched_departments: list[DepartmentDefinition],
+        *,
+        already_asked: bool,
+    ) -> scope_confirmation.ScopeConfirmationAssessment:
+        """Thin delegation to orchestrator/scope_confirmation.py, same encapsulation
+        discipline as assess_sufficiency() above."""
+
+        return scope_confirmation.assess_scope_confirmation(
+            self._model_gateway, objective, matched_departments, already_asked=already_asked
         )
 
     def receive_objective(

@@ -201,3 +201,67 @@ def test_chat_sync_department_rejection_is_a_normal_reply_not_an_error() -> None
         assert "rejected" in body["reply"].lower()
     finally:
         gateway_main._coo._head = original_head
+
+
+class _SequencedJSONThenGenericProvider:
+    """Returns each queued JSON response in order for the gate calls (sufficiency, scope
+    confirmation) this test controls precisely, then falls back to plain non-JSON text for
+    every call after that - the real department agents' own dispatch() calls, whose exact
+    count isn't this test's concern and don't need parseable JSON, just non-empty output."""
+
+    def __init__(self, json_responses: list[str]) -> None:
+        self._responses = list(json_responses)
+        self.prompts: list[str] = []
+
+    def generate(self, prompt: str, *, allowed_tools=None, model=None) -> str:
+        self.prompts.append(prompt)
+        if self._responses:
+            return self._responses.pop(0)
+        return "[generic agent output]"
+
+
+def test_chat_sync_multi_department_objective_asks_scope_confirmation_then_proceeds() -> None:
+    """Phase 22 (IMPLEMENTATION_PLAN.md, 2026-07-26): end-to-end through the real gateway -
+    a multi-department objective gets a scope-confirmation question after sufficiency passes,
+    and the reply to that question is not asked again (is_scope_confirmation gate), letting
+    the objective actually process."""
+
+    import json
+
+    client = _client()
+    _send_sync_until_processed(client, "Research current market trends. (warm-up, real gateway)")
+
+    provider = _SequencedJSONThenGenericProvider(
+        [
+            json.dumps({"sufficient": True, "clarifying_question": None, "reasoning": "Clear enough."}),
+            json.dumps(
+                {
+                    "needs_confirmation": True,
+                    "clarifying_question": "Just the build, or the full review too?",
+                    "reasoning": "Genuinely ambiguous.",
+                }
+            ),
+            json.dumps({"sufficient": True, "clarifying_question": None, "reasoning": "Still clear."}),
+        ]
+    )
+    original_provider = gateway_main._coo._model_gateway._provider
+    gateway_main._coo._model_gateway.replace_provider(provider)
+    try:
+        first = client.post(
+            "/chat/sync",
+            headers=HEADERS,
+            json={"message": "Research current trends and build a working prototype based on the findings."},
+        )
+        assert first.status_code == 200
+        first_body = first.json()
+        assert first_body["decision_id"] is None
+        assert first_body["reply"] == "Just the build, or the full review too?"
+
+        second = client.post(
+            "/chat/sync", headers=HEADERS, json={"message": "Just the build, thanks."}
+        )
+        assert second.status_code == 200
+        second_body = second.json()
+        assert second_body["decision_id"] is not None
+    finally:
+        gateway_main._coo._model_gateway.replace_provider(original_provider)

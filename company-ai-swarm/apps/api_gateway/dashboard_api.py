@@ -84,6 +84,13 @@ class DashboardChatMessage(Base):
     # trailing consecutive clarifying rounds (the 3-round cap) and distinguish a clarifying
     # question from a normal completed-objective reply.
     is_clarifying_question: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Phase 22 (IMPLEMENTATION_PLAN.md, 2026-07-26): distinguishes a scope-confirmation
+    # question (orchestrator/scope_confirmation.py - "narrow or broad?") from a Phase 15
+    # sufficiency clarifying question ("not enough detail") - both set
+    # is_clarifying_question=True and share the same round-cap counting
+    # (_count_trailing_clarifying_rounds below), but only this flag tells the handler which
+    # gate the user's next reply is actually answering.
+    is_scope_confirmation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -351,6 +358,27 @@ def build_router(
                 break
         return count
 
+    def _last_clarifying_question_was_scope_confirmation(session: Session, *, limit: int = 20) -> bool:
+        """Phase 22 (IMPLEMENTATION_PLAN.md, 2026-07-26): True if the most recent "coo"
+        message (skipping the "user" row this same request already wrote) was itself a
+        scope-confirmation question - meaning the current user message is answering it, not
+        asking a new request. Only looks at the single most recent "coo" row, not a full
+        trailing run like _count_trailing_clarifying_rounds() above, since scope confirmation
+        only ever fires once per objective (orchestrator/scope_confirmation.py's
+        already_asked gate)."""
+
+        recent = (
+            session.query(DashboardChatMessage)
+            .order_by(DashboardChatMessage.id.desc())
+            .limit(limit)
+            .all()
+        )
+        for message in recent:
+            if message.role != "coo":
+                continue
+            return bool(message.is_clarifying_question and message.is_scope_confirmation)
+        return False
+
     def _consolidate_intake_conversation(session: Session, *, limit: int = 20) -> str:
         """Builds the full objective text to hand to receive_objective() once the COO decides
         (or is forced) to proceed: the original request plus all clarifying Q&A since the last
@@ -373,6 +401,34 @@ def build_router(
         trailing.reverse()  # oldest first
 
         return "\n".join(f"{m.role}: {m.content}" for m in trailing)
+
+    def _run_scope_confirmation_gate(session: Session, consolidated_objective: str) -> str | None:
+        """Phase 22 (IMPLEMENTATION_PLAN.md, 2026-07-26): shared by chat_send and
+        chat_send_sync, run only after sufficiency has already passed - this judges *how many
+        departments* an objective should touch, not whether there's enough detail to act at
+        all (orchestrator/intake.py's job). Returns the clarifying question to show the user
+        if scope needs confirming (and writes it as a coo reply, is_scope_confirmation=True,
+        same as a sufficiency clarifying question), or None if nothing needs asking - either
+        because only one department matched, the request's own wording already made scope
+        clear, or this is the reply to a scope question already asked."""
+
+        already_asked = _last_clarifying_question_was_scope_confirmation(session)
+        classification = coo.classify(consolidated_objective)
+        assessment = coo.assess_scope_confirmation(
+            consolidated_objective, classification.matched_departments, already_asked=already_asked
+        )
+        if not assessment.needs_confirmation:
+            return None
+
+        coo_msg = DashboardChatMessage(
+            role="coo",
+            content=assessment.clarifying_question,
+            is_clarifying_question=True,
+            is_scope_confirmation=True,
+        )
+        session.add(coo_msg)
+        session.commit()
+        return assessment.clarifying_question
 
     def _build_objective_from_chat_body(body: dict[str, Any]) -> tuple[str, str]:
         """Shared by chat_send and chat_send_sync: validates the request body and returns
@@ -403,8 +459,15 @@ def build_router(
         Round 1/2: one Claude call via coo.assess_sufficiency(). Round 3+: no call, forced
         sufficient (see orchestrator/intake.py). Insufficient -> writes the COO's clarifying
         question as a coo reply (is_clarifying_question=True) and returns without
-        enqueueing. Sufficient -> enqueues the full consolidated exchange, same
-        {objective_id, status} contract POST /chat has had since Phase B."""
+        enqueueing.
+
+        Phase 22 (IMPLEMENTATION_PLAN.md, 2026-07-26): once sufficient, a second gate -
+        _run_scope_confirmation_gate() - checks whether the (now consolidated) objective
+        matches more than one department and, if genuinely ambiguous, asks the user to
+        confirm narrow-vs-broad scope before enqueueing, same clarifying-reply shape as the
+        sufficiency gate above. Sufficient AND scope-confirmed (or nothing to confirm) ->
+        enqueues the full consolidated exchange, same {objective_id, status} contract
+        POST /chat has had since Phase B."""
 
         objective, required_output = _build_objective_from_chat_body(body)
 
@@ -445,6 +508,16 @@ def build_router(
             return {"status": "needs_clarification", "reply": assessment.clarifying_question}
 
         consolidated_objective = _consolidate_intake_conversation(session)
+
+        try:
+            scope_question = _run_scope_confirmation_gate(session, consolidated_objective)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502, detail=f"Could not assess request scope: {exc}"
+            ) from exc
+        if scope_question is not None:
+            return {"status": "needs_clarification", "reply": scope_question}
+
         record = enqueue_objective(
             session,
             objective=consolidated_objective,
@@ -510,6 +583,16 @@ def build_router(
             return {"reply": assessment.clarifying_question, "decision_id": None}
 
         consolidated_objective = _consolidate_intake_conversation(session)
+
+        try:
+            scope_question = _run_scope_confirmation_gate(session, consolidated_objective)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502, detail=f"Could not assess request scope: {exc}"
+            ) from exc
+        if scope_question is not None:
+            return {"reply": scope_question, "decision_id": None}
+
         result = _run_objective_and_format_reply(
             session,
             coo=coo,

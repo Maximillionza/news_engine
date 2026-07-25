@@ -96,7 +96,7 @@ Full test suite: **266 passed, 4 skipped** (`python -m pytest`). The 4 skipped a
 | — | EHCAS §13 "Decision Authority Class" | Resolved | Superseded by Phase 8's escalation policy (`orchestrator/escalation.py::EscalationCondition`) — no separate work needed. |
 | 20 | Cost/Complexity-Aware Execution Mode (Lean/Fast) | Implemented (2026-07-26), parallel execution deliberately deferred | `workflow_engine/complexity.py` (real producer, replaces the old fixed "Level 2 Standard"), `orchestrator/execution_mode.py` (Lean/Fast), per-call `model` override threaded through `ModelGateway` -> both real providers -> `AgentRuntime.execute_task()` -> `dispatch()` -> `orchestrator/head.py`. Parallel department dispatch NOT built - `execute_workflow()`'s single shared SQLAlchemy `Session` isn't thread-safe, and building real concurrency needs a session-per-department redesign first (see Phase 20 detail section). 333 tests passing (24 new), 4 skipped. |
 | 21 | Inter-Department Task Delegation | Implemented (2026-07-25) | `orchestrator/head.py`'s `HeadVerdict.needs_department_help` + `_resolve_department_delegation()`; `orchestrator/delegations.py` (ledger, mirrors Phase 17's spawns.py); `LLMDepartmentHead` prompt now offers a fourth outcome with explicit "prefer resolving in-domain work yourself" guidance. Unbounded delegation depth (per the founder's choice over a one-hop cap), made safe by a chain-membership cycle check rather than a fixed limit. 309 tests passing (10 new), 4 skipped. |
-| — | Artifact Pre-Assessment & Direction Confirmation | Not started (2026-07-25) | Priority: Medium. See Phase 22 below. |
+| 22 | Scope Confirmation (rescoped from "Artifact Pre-Assessment") | Implemented (2026-07-26) | `orchestrator/scope_confirmation.py` (real producer, mirrors `intake.py`'s shape), `COOOrchestrator.classify()`/`assess_scope_confirmation()`, wired into `dashboard_api.py`'s `chat_send`/`chat_send_sync`. Real artifact-content analysis descoped - no document-parsing tool exists anywhere in this codebase; see Phase 22 detail section. 343 tests passing (10 new), 4 skipped. |
 | — | Skill/Tool Effectiveness Memory | Not started (2026-07-25) | Priority: Medium-low, needs Phase 14 signal first. See Phase 23 below. |
 
 
@@ -748,15 +748,27 @@ Source: a direct comparison of the founder's original architecture vision agains
 
 **Exit criteria**: Met. 309 tests passing (10 new), 4 skipped (unchanged gated live-credential tests), zero changes to any pre-existing test - `department_registry`/`head`/`delegation_chain` are all optional/defaulted on every changed signature (`resolve_verdict_execution()`, `execute_workflow()`, `DepartmentHead.evaluate()`), so every pre-Phase-21 call site needed zero changes.
 
-### Phase 22 — Artifact Pre-Assessment & Direction Confirmation
+### Phase 22 — Scope Confirmation (rescoped from "Artifact Pre-Assessment & Direction Confirmation")
 
-**Status: Not started. Not previously tracked.**
+**Actual status: Implemented (2026-07-26), rescoped at design time - see below.**
 
 **Priority: Medium.**
 
-**Deliverables**: Before routing a multi-artifact or ambiguous-scope objective, an assessment step that determines whether it should go narrow (e.g. "build this" → Engineering only) or broad (e.g. also validate Compliance requirements against supplied documents), and puts that choice back to the user explicitly rather than inferring it silently. Distinct from Phase 15's sufficiency check, which only judges "is there enough detail to act at all," not "how many departments should this touch."
+**Scoping correction, found before any code was written**: the original framing assumed real artifact-*content* analysis was feasible to build alongside the confirmation gate. Checked first: `POST /files` (`apps/api_gateway/dashboard_api.py`) only writes an uploaded file to `uploads/inbox/` on disk - nothing reads it back, nothing links it to the next objective, and no agent has any document-parsing tool anywhere in this codebase (Phase 12 only gave Research a web-search tool). Real "assess the artifacts provided" isn't buildable without inventing a new capability this session didn't build. Rescoped, with the founder's agreement, to the part that *is* real and buildable: a scope-confirmation gate that fires whenever an objective matches more than one department, independent of whether artifacts are involved - this is the actual mechanism behind the founder's original example ("Engineering only, to start the build" vs "the full review including Compliance requirements").
 
-**Test**: TBD at implementation time.
+**Deliverables**:
+
+1. `orchestrator/scope_confirmation.py::assess_scope_confirmation()` - mirrors `intake.py`'s `assess_sufficiency()` shape exactly (one model call, JSON-parsed verdict, fails safely on a bad response). Distinct question from Phase 15's sufficiency check: sufficiency asks "is there enough detail to act at all"; this asks "how many departments should this touch, given there already is enough detail." Fails toward NOT asking (proceed broad, i.e. every matched department) on a parse failure - the opposite fail-direction from sufficiency, and deliberately so: an unparseable response here just reproduces the pre-Phase-22 default (nothing was ever asked), not a missing-detail block.
+
+2. `COOOrchestrator.classify()` (new, thin wrapper around the existing classifier) and `COOOrchestrator.assess_scope_confirmation()` (new, thin wrapper mirroring `assess_sufficiency()`'s own encapsulation) - exposes classification as a standalone pre-execution step for the first time, needed so the API layer can know which departments an objective would touch *before* committing to `receive_objective()`.
+
+3. Wired into `apps/api_gateway/dashboard_api.py`'s `chat_send`/`chat_send_sync`, run only after sufficiency already passed. Reuses the existing `is_clarifying_question` round-cap mechanism (a scope question also sets it, so the 3-round cap that already guarantees the sufficiency loop terminates covers this gate too, for free) - a new `DashboardChatMessage.is_scope_confirmation` column distinguishes *which* gate a user's reply is answering, so the gate can never fire twice for the same objective. Deliberately not extended to `POST /objectives` - that endpoint has no conversation/message state to write a pending question into, the same structural reason Phase 15 gave it single-shot (not round-based) sufficiency checking rather than a full clarification loop.
+
+**No routing-override mechanism was built.** The user's free-text reply to the scope question (e.g. "just the build, skip compliance") simply becomes part of the consolidated objective text that already flows into the existing classifier - which is already capable of reading that nuance semantically (especially with `DEPARTMENT_CLASSIFIER=llm`, wired earlier this session). This is simpler than it sounds and was a deliberate choice over adding a department-list override parameter to `receive_objective()`.
+
+**Test**: `Tests/unit/test_scope_confirmation.py` (single-department skip, already-asked skip, ambiguous multi-department asks, explicit wording in the request skips asking, missing-question fallback, unparseable-response-fails-safe, generate-failure propagates). `Tests/integration/test_api_gateway_dashboard.py`'s new end-to-end test through the real gateway: a multi-department objective gets asked to confirm scope, and the reply is not asked again.
+
+**Exit criteria**: Met. 343 tests passing (10 new), 4 skipped (unchanged gated live-credential tests), zero regressions to any pre-existing test.
 
 **Exit criteria**: TBD at implementation time.
 
