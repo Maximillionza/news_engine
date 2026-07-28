@@ -59,12 +59,17 @@ match CrewAI feature-for-feature as a general-purpose product.
 
 ## 4. Non-Goals
 
-- **Provider breadth (LiteLLM-style multi-vendor support).** CrewAI supports dozens of model
+- **Provider breadth (LiteLLM-style multi-vendor support).** ~~CrewAI supports dozens of model
   vendors "for free" via LiteLLM; The Company's two-provider `ModelGateway` (Anthropic API
   key + Claude Agent SDK/subscription) is a deliberate choice per `SDK_MIGRATION_PLAN.md`
   Section 1's personal/single-Director billing model, not an oversight. Only revisit this if
   there's a concrete reason (cost, redundancy) to want a second model vendor - don't chase it
-  as a default.
+  as a default.~~ **Reversed 2026-07-28**: the concrete reason this non-goal asked for
+  arrived - Anthropic's 2026-02 Consumer Terms change eliminated the subscription/OAuth half
+  of that "two-provider" billing model entirely (see `SDK_MIGRATION_PLAN.md` Section 1's
+  2026-07-28 correction), and this session hit a real single-vendor billing dependency
+  directly. Now scoped in as `IMPLEMENTATION_PLAN.md` Phase 24, kept deliberately narrow (one
+  new provider class, not a rewrite) per this document's own scope discipline.
 - **Community/ecosystem parity.** Not achievable or wanted for a single-operator system.
   Excluded entirely.
 
@@ -164,9 +169,10 @@ engineering time, so it should run in parallel with 5.2/5.3, not block on them.
 
 ## 7. Open Questions
 
-- Is provider breadth (non-goal 4) actually a non-goal, or is there a concrete reason (cost,
+- ~~Is provider breadth (non-goal 4) actually a non-goal, or is there a concrete reason (cost,
   redundancy, a specific task better suited to a different model) to want a second vendor?
-  Confirm before treating it as permanently excluded.
+  Confirm before treating it as permanently excluded.~~ **Answered 2026-07-28**: yes, a
+  concrete reason arrived (see Section 4's reversal note above) - no longer open.
 - What's the actual target cadence/volume for 5.4's dogfooding - a handful of objectives a
   week, or something heavier? This affects how much tool coverage 5.2 needs before dogfooding
   is worth starting.

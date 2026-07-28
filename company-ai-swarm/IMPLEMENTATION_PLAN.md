@@ -60,7 +60,8 @@ Phase 9  MVP validation (MVS 001–010)                 ── MVP v1.0
           ├── Phase 20  Cost/complexity-aware execution mode (Lean/Fast)
           ├── Phase 21  Inter-department task delegation ──→ recommended before/alongside Phase 18
           ├── Phase 22  Artifact pre-assessment + direction confirmation
-          └── Phase 23  Skill/tool effectiveness memory (needs Phase 14 signal)
+          ├── Phase 23  Skill/tool effectiveness memory (needs Phase 14 signal)
+          └── Phase 24  LiteLLM multi-provider support (reverses a prior non-goal)
 ```
 
 No phase may begin before its predecessor's exit criteria are met. This mirrors the Build Dependencies chain in EIB §12 (Identity → Security → Runtime → Agents → Workflows → Departments → Expansion Systems).
@@ -98,6 +99,7 @@ Full test suite: **266 passed, 4 skipped** (`python -m pytest`). The 4 skipped a
 | 21 | Inter-Department Task Delegation | Implemented (2026-07-25) | `orchestrator/head.py`'s `HeadVerdict.needs_department_help` + `_resolve_department_delegation()`; `orchestrator/delegations.py` (ledger, mirrors Phase 17's spawns.py); `LLMDepartmentHead` prompt now offers a fourth outcome with explicit "prefer resolving in-domain work yourself" guidance. Unbounded delegation depth (per the founder's choice over a one-hop cap), made safe by a chain-membership cycle check rather than a fixed limit. 309 tests passing (10 new), 4 skipped. |
 | 22 | Scope Confirmation (rescoped from "Artifact Pre-Assessment") | Implemented (2026-07-26) | `orchestrator/scope_confirmation.py` (real producer, mirrors `intake.py`'s shape), `COOOrchestrator.classify()`/`assess_scope_confirmation()`, wired into `dashboard_api.py`'s `chat_send`/`chat_send_sync`. Real artifact-content analysis descoped - no document-parsing tool exists anywhere in this codebase; see Phase 22 detail section. 343 tests passing (10 new), 4 skipped. |
 | — | Skill/Tool Effectiveness Memory | Not started (2026-07-25) | Priority: Medium-low, needs Phase 14 signal first. See Phase 23 below. |
+| — | LiteLLM Multi-Provider Support | Not started (2026-07-28) | Reverses the CrewAI-gap PRD's provider-breadth non-goal, now with the concrete reason that non-goal asked for (Anthropic's 2026-02 ToS change + a real billing incident this session). Priority: Low-medium. See Phase 24 below. |
 
 
 Full detail for Phases 12-19 (deliverables, test approach, open questions) is in "Phase 12 and beyond" below, in the same format as Phases 0-11 above. Phases 20-23 (vision-comparison findings, 2026-07-25) follow immediately after Phase 19.
@@ -781,6 +783,22 @@ Source: a direct comparison of the founder's original architecture vision agains
 **Deliverables**: Extends `memory_service`'s existing five-tier model (`MemoryTier`, already department-scoped) with a skill/agent-scoped dimension that records which tool or approach was used for a task and a measured outcome, plus a feedback path that lets future task execution prefer approaches with a better track record. Confirmed gap: today's schema has no field beyond a free-text `creator` column, and no scoring mechanism exists anywhere.
 
 **Test**: TBD at implementation time.
+
+**Exit criteria**: TBD at implementation time.
+
+### Phase 24 — LiteLLM Multi-Provider Support
+
+**Status: Not started. Scoped in 2026-07-28.**
+
+**Priority: Low-medium.**
+
+**Reverses a prior non-goal, with the concrete reason that non-goal asked for**: `Documentation/plans/2026-07-23-closing-the-crewai-capability-gap-prd.md` Section 4 listed "Provider breadth (LiteLLM-style multi-vendor support)" as an explicit non-goal - "only revisit this if there's a concrete reason (cost, redundancy) to want a second model vendor - don't chase it as a default" - and Section 7's Open Questions left the door open pending exactly that. 2026-07-28 supplied one: Anthropic's 2026-02 Consumer Terms change eliminated subscription/OAuth billing as an option for this project (see Phase 20's provider work and `SDK_MIGRATION_PLAN.md` Section 1's 2026-07-28 correction), leaving `AnthropicModelProvider`'s per-token API billing as the only currently-viable path - a single point of vendor/billing dependency this session ran into directly (blocked for real by an account credit/billing issue, independent of the OAuth policy question). LiteLLM is the same provider-abstraction layer CrewAI itself uses by default for exactly this reason.
+
+**Deliverables**: A `LiteLLMModelProvider` implementing the existing `shared.model_gateway.ModelProvider` protocol (`generate(prompt, *, allowed_tools=None, model=None) -> str`) exactly like `AnthropicModelProvider`/`AgentSDKModelProvider` do today - wraps `litellm.completion()`, added as a fourth `MODEL_PROVIDER=litellm` option in `shared/providers/create_provider_from_env()`, model selection via LiteLLM's own provider-prefixed naming (e.g. `gpt-5`, `gemini/gemini-2.5-pro`) through the existing `MODEL_NAME` env var. Deliberately narrow, matching this project's own stated scope discipline: one new provider class using the abstraction that already exists, not a rewrite of `ModelGateway`, not per-department vendor routing, not a LiteLLM proxy server. Expand only if a real need appears (e.g. Phase 14 dogfooding reveals a concrete cost or redundancy case for routing specific work to a non-Claude model) - the same "narrow first, prove it, expand" discipline Phase 12's single-tool-per-department rollout followed.
+
+**Why not urgent**: `MODEL_PROVIDER=anthropic` already unblocks real usage today (Phase 20's work). This is about not being single-vendor-dependent going forward, not an active blocker.
+
+**Test**: TBD at implementation time - likely mirrors `Tests/unit/test_provider_factory.py`'s pattern (fake/mocked LiteLLM client, no real API calls) plus a gated live smoke test matching `test_real_claude_api_call_smoke_test`'s precedent.
 
 **Exit criteria**: TBD at implementation time.
 

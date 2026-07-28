@@ -1,5 +1,17 @@
 """AgentSDKModelProvider: real Claude reasoning via the Claude Agent SDK, not the raw API.
 
+**Subscription/OAuth billing is no longer viable here (2026-07-28) - see
+SDK_MIGRATION_PLAN.md Section 1's 2026-07-28 correction before relying on
+CLAUDE_CODE_OAUTH_TOKEN with this provider.** Anthropic's Consumer Terms of Service
+prohibit using OAuth tokens from Free/Pro/Max/Team/Enterprise plans with the Agent SDK
+(this class's `claude_agent_sdk.query()` call is exactly that pattern) - OAuth from those
+plans is restricted to Claude Code and Claude.ai themselves. Everything below describing
+CLAUDE_CODE_OAUTH_TOKEN as a workable subscription-billing path predates that policy.
+Prefer AnthropicModelProvider (ANTHROPIC_API_KEY, MODEL_PROVIDER=anthropic) going forward -
+ordinary per-token billing, unambiguously compliant. This class still works correctly when
+ANTHROPIC_API_KEY is what actually resolves through the precedence chain below; it's
+specifically the CLAUDE_CODE_OAUTH_TOKEN/subscription path that's no longer advisable.
+
 Source: Documentation/plans/SDK_MIGRATION_PLAN.md Section 1 (billing correction) and
 Section 4.1. Implements the same `shared.model_gateway.ModelProvider` protocol as
 StubModelProvider and AnthropicModelProvider - `ModelGateway` and everything upstream of it
@@ -8,11 +20,11 @@ is unchanged by this swap.
 Why this exists alongside AnthropicModelProvider: the Agent SDK (`claude_agent_sdk.query`)
 resolves credentials via Claude Code's own precedence chain - `ANTHROPIC_API_KEY` /
 `ANTHROPIC_AUTH_TOKEN` / `apiKeyHelper`, then `CLAUDE_CODE_OAUTH_TOKEN` (generated once via
-`claude setup-token`), then a plain `/login` subscription session. Only this provider can
-draw on a personal Claude Pro/Max/Team/Enterprise subscription instead of per-token API
-billing - the raw `anthropic` client `AnthropicModelProvider` uses only ever accepts an API
-key. See SDK_MIGRATION_PLAN.md Section 1 for the caveats that apply (single-Director/
-personal use only; any other user's traffic must move to API-key billing).
+`claude setup-token`), then a plain `/login` subscription session. Historically (pre-2026-02
+policy change) this provider could draw on a personal Claude Pro/Max/Team/Enterprise
+subscription instead of per-token API billing - the raw `anthropic` client
+AnthropicModelProvider uses only ever accepts an API key - but see the correction above for
+why that path is no longer advisable regardless of usage scale.
 
 `query()` is async; `ModelProvider.generate()` is synchronous (AgentRuntime and
 ModelGateway are both sync code), so `generate()` bridges with `asyncio.run()`.

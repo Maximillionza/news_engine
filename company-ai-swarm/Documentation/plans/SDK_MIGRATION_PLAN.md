@@ -6,6 +6,8 @@
 **Timeline:** 3–4 weeks at full-time focus  
 **Risk Level:** Medium (touches core execution paths; existing tests remain valid through interface contracts)
 
+> **⚠ Billing model outdated (2026-07-28):** every reference below to `CLAUDE_CODE_OAUTH_TOKEN`/subscription billing being viable for `AgentSDKModelProvider` predates a 2026-02 Anthropic Terms of Service change prohibiting Agent SDK use with consumer subscription OAuth. `AnthropicModelProvider` / `MODEL_PROVIDER=anthropic` (API-key billing) is the current recommendation - see the correction at the top of Section 1 for full detail before acting on anything in this document related to subscription billing.
+
 ---
 
 ## 1. Problem Statement
@@ -22,7 +24,14 @@
 - Async execution model matches the swarm's async nature (multiple departments reasoning in parallel)
 - Voice-first interface becomes the Director with continuous context, not a REST client polling stubs
 
-**Billing correction, revised (2026-07-19):** An earlier pass of this section claimed the Agent SDK always requires API-key billing and that subscription auth can't power a headless swarm. That was too broad — corrected here.
+**Billing correction, revised (2026-07-28) — supersedes the 2026-07-19 correction below.** Anthropic updated the Claude Consumer Terms of Service around 2026-02-17/18, adding an explicit "Usage policy" restriction: OAuth tokens obtained through Free/Pro/Max/Team/Enterprise plans may only be used with Claude Code and Claude.ai themselves — using them "in any other product, tool, or service" is a Terms violation, and the Agent SDK is named explicitly as one of the disallowed uses. This directly invalidates the 2026-07-19 reasoning immediately below, which argued `CLAUDE_CODE_OAUTH_TOKEN` was fine for a single-Director personal system because the only restriction was on multi-tenant resale - that reasoning predates this policy and no longer holds, regardless of how many users The Company serves. `AgentSDKModelProvider`'s `claude_agent_sdk.query()` call is exactly the pattern now prohibited: a third-party product embedding the Agent SDK library and authenticating it with subscription OAuth.
+
+What this means going forward:
+- **`ANTHROPIC_API_KEY` billing (`AnthropicModelProvider` / `MODEL_PROVIDER=anthropic`) is the recommended default now** - ordinary per-token billing through the Console, unambiguously compliant, and the same approach CrewAI itself uses by default (`crewai[anthropic]` + `ANTHROPIC_API_KEY`, or LiteLLM with an API key) - it was never built around consumer subscription OAuth in the first place.
+- A narrower alternative reportedly remains open: per secondhand reports of an Anthropic staff clarification in April 2026, spawning the actual `claude` CLI binary as a subprocess (`claude -p "..."`) is distinct from the banned pattern, since that's the real Claude Code binary managing its own OAuth session, not a library relaying the token on a third party's behalf. **This is not implemented anywhere in this codebase**, isn't confirmed by a primary Anthropic source this project has reviewed, and would be a real rewrite of `AgentSDKModelProvider` (not a config change) - a raw CLI subprocess likely doesn't expose the structured tool-use stream (`AssistantMessage`/`ToolUseBlock`) that Phase 12's tool-call telemetry (`services/shared/providers/agent_sdk_provider.py`'s `on_tool_use`) depends on, so that capability would need rework, not just a swapped credential path. Treat as a documented possibility to revisit, not a plan.
+- Subscription/OAuth billing (`CLAUDE_CODE_OAUTH_TOKEN` via the Agent SDK, as currently implemented) should not be relied on for this project - both for compliance and because enforcement has reportedly included server-side blocks and account actions, not just failed requests.
+
+**Billing correction, revised (2026-07-19) — superseded by the note above, kept for history:** An earlier pass of this section claimed the Agent SDK always requires API-key billing and that subscription auth can't power a headless swarm. That was too broad — corrected here.
 
 The Agent SDK is a harness, not a billing tier by itself, and it supports **two** distinct credential paths:
 - `ANTHROPIC_API_KEY` (or Bedrock / Claude Platform on AWS / Vertex / Foundry) — standard per-token usage billing.
@@ -297,18 +306,18 @@ Agent Execution (real Claude Code sessions)
 
 6. **Status: async execution works; voice interface can submit + poll** — the dashboard chat submits + polls; no voice interface exists yet (Phase D). Not implemented: the plan's three-state agent status (idle/working/**waiting**) - no real signal in this codebase's execution model to derive "waiting" from; documented as a conscious scope decision in `dashboard_api.py` rather than guessed at.
 
-### Phase C: Real Agents (Week 3) — ✅ code-complete; live verification is yours to run
+### Phase C: Real Agents (Week 3) — ✅ done, live-verified 2026-07-19
 7. **AnthropicModelProvider/AgentSDKModelProvider full implementation** (12h)
    - Error handling — done since Phase A
    - Timeouts — done (explicit `timeout_seconds`, default 600s, matching this section's original "10 minutes per agent" — was already the `anthropic` client's implicit default, now an intentional, documented, overridable choice)
    - Structured outputs — not added; nothing in `AgentRuntime`/`ExecutionResult` expects JSON/structured output today (plain `str`), so there was no real requirement to build one against
    - Model choice: both providers now default to **Sonnet 5** (`claude-sonnet-5`), not Opus — see `Documentation/operations/technology_decisions.md`'s "Model provider" section for the reasoning; overridable per-deployment via `MODEL_NAME` env var
-   - Integration tests with real API (gated test suite) — exist since Phase A (`RUN_REAL_ANTHROPIC_SMOKE_TEST=1` / `RUN_REAL_AGENT_SDK_SMOKE_TEST=1`); **not run for real** — the environment doing this work had no `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` available. Run these yourself once with real credentials before relying on `MODEL_PROVIDER=anthropic`/`agent_sdk` in production.
+   - Integration tests with real API (gated test suite) — exist since Phase A (`RUN_REAL_ANTHROPIC_SMOKE_TEST=1` / `RUN_REAL_AGENT_SDK_SMOKE_TEST=1`). **`RUN_REAL_AGENT_SDK_SMOKE_TEST=1` run for real 2026-07-19** against a live Claude Code session via `CLAUDE_CODE_OAUTH_TOKEN` - PASSED. First attempt failed with a Windows-only `claude-agent-sdk` quirk (the CLI subprocess reported `is_error: true` with `subtype: "success"`, which the SDK surfaces as `AgentSDKProviderError: Agent SDK query failed: Claude Code returned an error result: success`); root cause turned out to be an account-level Anthropic credit/billing state, not the code or the SDK - once resolved on the Anthropic account, the identical command passed cleanly. `RUN_REAL_ANTHROPIC_SMOKE_TEST=1` (the `anthropic`-client path) remains unrun but carries less integration risk than the CLI-subprocess path just proven.
 
 8. **Agent execution via provider** (4h)
    - `MODEL_PROVIDER` env var flip exists since Phase A (`stub`/`anthropic`/`agent_sdk`) — the code-level "flip" this item calls for. The *default* deliberately stays `stub`: it's an operator env-var choice at deploy time, not a code default, since every test run (and `apps/api_gateway/main.py`'s repeated import across `Tests/integration/*.py`) would otherwise make real, billed calls.
 
-9. **Status: Company swarm can reason with real Claude once `MODEL_PROVIDER` + credentials are set — not yet proven end-to-end with a live call in this pass.**
+9. **Status: Company swarm reasons with real Claude once `MODEL_PROVIDER=agent_sdk` + `CLAUDE_CODE_OAUTH_TOKEN` are set - proven end-to-end with a live call 2026-07-19.**
 
 ### Phase D: Voice Interface (Week 4)
 10. **Voice Director scaffold** (24h)
@@ -321,8 +330,14 @@ Agent Execution (real Claude Code sessions)
 11. **Integration testing** (8h)
     - End-to-end: voice query → swarm reasoning → voice response
     - Escalations, approvals, memory all flow through the Director
+    - Confirm the dashboard's Read-only functionality keeps working with the Voice interface stopped (Section 8 decision 3's hard requirement)
 
-12. **Status: voice-first Director interface is live; Company is its backend**
+12. **Dashboard Read-only/Live toggle** (6h, Section 8 decision 4)
+    - Server-side state (settings row or env-overridable default) + toggle control in `apps/web_interface`
+    - `dashboard_api.py` gate: 403 on `POST /chat`, `POST /chat/sync`, `POST /files`, `/proposals/*` actions while Read-only; `GET /activity`/`GET /chat` unaffected
+    - Tests: toggle both states, confirm the right endpoints 403/succeed in each
+
+13. **Status: voice-first Director interface is live; Company is its backend; dashboard serves as a Live-mode fallback when Voice is down**
 
 ---
 
@@ -349,7 +364,7 @@ Agent Execution (real Claude Code sessions)
 
 | Risk | Impact | Mitigation |
 |------|--------|-----------|
-| Claude API calls fail (rate limit, outage) | Objective stuck in `executing` | Queue worker retries up to 3x with exponential backoff; user can see error in `/objectives/{id}/result` |
+| Claude API calls fail (rate limit, outage) | Objective stuck in `executing` | Queue worker retries once (Section 8 decision 2); if the retry also fails, marks `failed` and the error is visible in `/objectives/{id}/result` for the user to resubmit |
 | Voice interface out of sync with swarm state | User thinks work is done, it isn't | Voice polls `/activity` live; surfaces `in_flight_objectives` and agent status explicitly |
 | Multiple voice clients (you + someone else) compete for Director | Conflicting objectives | Director identity is single-user (you); other users get separate identities. Governance (escalations, approvals) handles conflicts |
 | Database grows unbounded (old objective rows) | Query slowdown | Archive completed objectives older than 30 days to a history table; `/activity` only touches recent rows |
@@ -359,17 +374,13 @@ Agent Execution (real Claude Code sessions)
 
 ## 8. Known Unknowns (Decisions Still Needed)
 
-1. **Objective timeout:** Should an objective timeout at 10 minutes, or per-agent (10m per agent, so multi-agent workflows can take longer)?
-   - **Recommendation:** per-agent, but cap total workflow at 30 minutes. Surface estimated time in `/activity`.
+1. **Objective timeout (resolved 2026-07-19):** per-agent timeout, 30-minute cap on the total workflow, estimated time surfaced in `/activity` - the original recommendation, accepted as-is.
 
-2. **Failure retry:** Should a failed objective auto-retry, or require user re-submission?
-   - **Recommendation:** no auto-retry in v1; user sees error and can re-submit. Add retry in v2 if needed.
+2. **Failure retry (resolved 2026-07-19, revised):** one automatic retry, then surface the error and require user re-submission - not the original "no auto-retry" recommendation. The queue worker retries a failed objective exactly once (transitioning `executing` → `queued` → `executing` again) before marking it `failed`; only a second failure returns control to the user.
 
-3. **Voice interface location:** Should it run in the same container as The Company gateway, or separate?
-   - **Recommendation:** separate (your `C:\My AI` repo). Voice is your primary UI; Company is a backend service. Easier to iterate on voice independently.
+3. **Voice interface location (resolved 2026-07-19):** separate (the `C:\My AI` repo), per the original recommendation - **with a hard requirement**: the Company web dashboard (`apps/web_interface`) must remain fully independently usable if the Voice interface is down or being actively modified. Nothing in the target architecture (Section 3) may introduce a dependency from the dashboard's core functionality onto the voice container being live - the dashboard and the voice interface are separate consumers of the same gateway, and that separation must hold in practice (Phase D must not couple them), not just in the deployment diagram. This is what makes decision 4's toggle meaningful: a dashboard that already depends on voice being up couldn't serve as its fallback.
 
-4. **Dashboard deprecation:** After voice interface is live, deprecate the web dashboard?
-   - **Recommendation:** make dashboard read-only observation (nice-to-have, not critical). Voice is the operational interface; dashboard is for monitoring/understanding.
+4. **Dashboard deprecation (resolved 2026-07-19, revised):** downgrade to read-only, per the original recommendation - **with one amendment**: add a Read-only/Live toggle to the dashboard UI. Read-only is the default state after Phase D ships; toggling to Live re-enables the dashboard's interactive features (chat, file upload, `POST /proposals/{id}/approve|reject|implement`) exactly as they exist today - no new functionality, just gating the existing ones behind the toggle's state. This directly serves decision 3's requirement: if the Voice interface needs to come down for changes, the dashboard switches to Live and stands in as the full operational interface until Voice is back, rather than only offering a monitoring view. Scope for Phase D: a toggle control in `apps/web_interface`, plus a gate in `apps/api_gateway/dashboard_api.py` on `POST /chat`, `POST /chat/sync`, `POST /files`, and the `/proposals/*` action endpoints that rejects (403) when the dashboard is in Read-only state - `GET` endpoints (`/activity`, `GET /chat`) stay open in both states, since monitoring is what "read-only" means. Toggle state itself is a natural fit for a small server-side flag (e.g. a single-row settings table or an env-overridable default), not a per-client UI-only setting, since the 403 gate has to be enforced server-side regardless of what the UI shows.
 
 5. **Billing (resolved 2026-07-19, revised):** Both voice and swarm agents *can* run on your Pro/Max/Team/Enterprise subscription via `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN`, as long as (a) they're invoked through the Agent SDK or `claude` CLI rather than the raw `anthropic` API client, (b) they don't run in `--bare` mode, and (c) The Company stays single-Director/personal-use — the moment it serves other users, their traffic needs to move to `ANTHROPIC_API_KEY`. Because subscription usage windows are shared and finite (sized for one interactive user, not N parallel background agents), **decide up front whether the swarm draws from the same subscription budget as your interactive Claude Code use, or gets its own subscription/token.** If subscription usage gets tight under swarm load, the fallback levers are the same as any API-billed system: cheaper models per agent tier (Haiku for low-stakes department agents), prompt caching, and tighter objective/agent timeouts — plus the option to route specific agents to `AnthropicModelProvider` (API key) instead of drawing on the subscription at all.
 
@@ -381,10 +392,12 @@ Agent Execution (real Claude Code sessions)
 - [x] `/chat` returns immediately; background worker executes objective
 - [x] `/objectives/{id}/result` polls for completion and returns result when ready
 - [ ] Voice interface submits an objective and polls until complete (Phase D — no voice interface exists yet)
-- [ ] A research objective produces real Claude reasoning (not stub), takes 5–15 seconds — code-complete (Sonnet 5 default, configurable timeout, `MODEL_PROVIDER=anthropic`/`agent_sdk`), **not yet verified against a live call** — this environment had no credentials; run `RUN_REAL_ANTHROPIC_SMOKE_TEST=1` or `RUN_REAL_AGENT_SDK_SMOKE_TEST=1` with your own `ANTHROPIC_API_KEY`/`CLAUDE_CODE_OAUTH_TOKEN` to close this out
+- [x] A research objective produces real Claude reasoning (not stub) — **verified live 2026-07-19** via `RUN_REAL_AGENT_SDK_SMOKE_TEST=1` (`Tests/integration/test_agent_sdk_provider.py::test_real_agent_sdk_call_smoke_test`), `CLAUDE_CODE_OAUTH_TOKEN` against a real Claude Code session, PASSED. `AnthropicModelProvider`'s equivalent gated test (`RUN_REAL_ANTHROPIC_SMOKE_TEST=1`) remains unverified but exercises the same underlying `anthropic` API path with less integration risk than the CLI-subprocess-based Agent SDK path just proven - not blocking.
 - [x] Dashboard shows in-flight objectives and their progress (verified end-to-end in-browser, not just unit tests — gateway + queue worker run as separate processes, submitted an objective via the dashboard chat, confirmed the reply and in-flight-then-empty transition)
 - [x] All existing tests pass (with endpoint behavior updates) — 210 passed, 2 skipped by design (gated real-API smoke tests)
 - [ ] Voice Director can approve/reject Evolution proposals (Phase D)
+- [ ] Dashboard defaults to Read-only and can be toggled to Live; while in Read-only, interactive endpoints (`POST /chat`, `POST /chat/sync`, `POST /files`, `/proposals/*` actions) reject with 403 while `GET /activity`/`GET /chat` keep working (Phase D, Section 8 decision 4)
+- [ ] Dashboard's core (read-only) functionality verified working with the Voice interface stopped/absent, confirming no hidden dependency between them (Phase D, Section 8 decision 3)
 
 ---
 
@@ -407,7 +420,7 @@ localhost:8000 = FastAPI gateway + web UI (React dist/)
 
 **Post-SDK (v2):**
 ```
-container:8000 = FastAPI gateway + web UI (read-only, optional)
+container:8000 = FastAPI gateway + web UI (Read-only/Live toggle - Section 8 decision 4; Read-only by default, switchable to Live as a fallback operational interface when Voice is down)
 container:AGENT_SDK_PORT = Claude Code sessions (real agent execution)
 your_machine:VOICE_PORT = Voice-first interface (Agent SDK container, Director identity)
                           ↓ HTTP to container:8000
@@ -436,7 +449,8 @@ The Company itself doesn't move or scale differently. It stays a single FastAPI 
 | C | Agent execution via provider | 4 | Phase C |
 | D | Voice Director scaffold (separate repo) | 24 | Phase C |
 | D | Integration testing (voice ↔ swarm) | 8 | Phase D |
-| **Total** | | **98** | |
+| D | Dashboard Read-only/Live toggle (Section 8 decision 4) | 6 | Phase B |
+| **Total** | | **104** | |
 
 **Concurrent phases:** A and B can overlap (8h); C can start once B is done. Total calendar time: ~3 weeks at 40h/week.
 
