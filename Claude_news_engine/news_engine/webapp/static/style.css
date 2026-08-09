@@ -1,0 +1,58 @@
+:root {
+  --bullish: #2e7d32;
+  --bullish-light: #a5d6a7;
+  --bearish: #c62828;
+  --neutral: #888;
+  --border: #ddd;
+}
+
+* { box-sizing: border-box; }
+body { font-family: system-ui, sans-serif; margin: 0; padding: 0 16px 40px; background: #fafafa; color: #222; }
+
+header { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; }
+header h1 { font-size: 18px; margin: 0; }
+nav .tab-btn { background: none; border: 1px solid var(--border); padding: 6px 14px; margin-left: 8px; border-radius: 6px; cursor: pointer; }
+nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
+
+#add-symbol-form { display: flex; gap: 8px; margin-bottom: 16px; }
+#add-symbol-input { padding: 8px; border: 1px solid var(--border); border-radius: 6px; text-transform: uppercase; }
+#add-symbol-form button { padding: 8px 16px; border: none; border-radius: 6px; background: #222; color: #fff; cursor: pointer; }
+
+.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+
+.card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.card-header h3 { margin: 0; font-size: 15px; }
+.remove-btn { background: none; border: none; color: #999; cursor: pointer; font-size: 14px; }
+
+.diff-strip { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 8px; background: #f5f5f5; border-radius: 8px; font-size: 12px; }
+.diff-strip .delta-up { color: var(--bullish); font-weight: bold; }
+.diff-strip .delta-down { color: var(--bearish); font-weight: bold; }
+
+.just-released { margin-bottom: 10px; padding: 8px 10px; border-radius: 8px; font-size: 13px; font-weight: bold; text-align: center; }
+.just-released.bullish { background: rgba(46, 125, 50, 0.12); color: var(--bullish); border: 1px solid rgba(46, 125, 50, 0.35); }
+.just-released.bearish { background: rgba(198, 40, 40, 0.12); color: var(--bearish); border: 1px solid rgba(198, 40, 40, 0.35); }
+.just-released.neutral { background: rgba(136, 136, 136, 0.12); color: var(--neutral); border: 1px solid rgba(136, 136, 136, 0.35); }
+
+.gauge-row { display: flex; align-items: center; gap: 14px; }
+.gauge-label { font-weight: bold; font-size: 16px; }
+.gauge-label.bullish { color: var(--bullish); }
+.gauge-label.bearish { color: var(--bearish); }
+.gauge-label.neutral { color: var(--neutral); }
+
+.not-applicable, .pending { color: #999; font-size: 13px; padding: 20px 0; text-align: center; }
+
+.day-strip { display: flex; gap: 4px; margin-top: 14px; overflow-x: auto; }
+.day-cell { flex: 0 0 auto; padding: 6px 8px; font-size: 11px; text-align: center; border-radius: 6px; border: 1px solid transparent; background: #f0f0f0; }
+.day-cell.today { outline: 2px solid var(--bullish); outline-offset: -2px; background: #e8f5e9; font-weight: bold; }
+.day-cell.event { border: 2px solid #ef6c00; background: #fff3e0; font-weight: bold; }
+
+#calendar-stale-notice { background: #fff3e0; color: #ef6c00; border: 1px solid #ffcc80; border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 12px; }
+
+#calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 16px; }
+.cal-cell { min-height: 60px; padding: 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; background: #fff; }
+.cal-cell.today { border: 2px solid var(--bullish); }
+.cal-cell .cal-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef6c00; margin-right: 3px; }
+
+#calendar-list { list-style: none; padding: 0; }
+#calendar-list li { padding: 8px; border-bottom: 1px solid var(--border); font-size: 13px; }

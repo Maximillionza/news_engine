@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>News Engine — Symbol Dashboard</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Symbol Impact Dashboard</h1>
+  <nav>
+    <button id="tab-dashboard" class="tab-btn active">Dashboard</button>
+    <button id="tab-calendar" class="tab-btn">Calendar</button>
+  </nav>
+</header>
+
+<section id="view-dashboard">
+  <form id="add-symbol-form">
+    <input id="add-symbol-input" placeholder="Add symbol e.g. EURUSD" maxlength="6" />
+    <button type="submit">Add</button>
+  </form>
+  <div id="cards" class="cards-grid"></div>
+</section>
+
+<section id="view-calendar" style="display:none">
+  <div id="calendar-stale-notice" style="display:none"></div>
+  <div id="calendar-grid"></div>
+  <ul id="calendar-list"></ul>
+</section>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
