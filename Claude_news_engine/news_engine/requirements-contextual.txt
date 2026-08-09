@@ -1,0 +1,16 @@
+# Optional upgrade over the naive keyword lexicon in scoring/sentiment.py.
+# Nothing in requirements.txt depends on these — the base install stays
+# free of ~1GB+ of ML dependencies, and the pipeline gracefully falls back
+# to the lexicon if these aren't installed. Install this file only if you
+# want the contextual sentiment tiers (see config/settings.py's block
+# comment above CONTEXTUAL_CONFIDENCE_THRESHOLD for how the fallback works).
+#
+#   pip install -r requirements-contextual.txt
+#
+# torch is pinned to the CPU-only wheel index — install it separately if
+# you want GPU acceleration:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install transformers anthropic
+torch
+transformers
+anthropic
