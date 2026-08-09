@@ -11,6 +11,7 @@ const calendarGridEl = document.getElementById("calendar-grid");
 const calendarListEl = document.getElementById("calendar-list");
 const addForm = document.getElementById("add-symbol-form");
 const addInput = document.getElementById("add-symbol-input");
+const calendarStaleNoticeEl = document.getElementById("calendar-stale-notice");
 
 document.getElementById("tab-dashboard").addEventListener("click", () => showView("dashboard"));
 document.getElementById("tab-calendar").addEventListener("click", () => showView("calendar"));
@@ -127,10 +128,21 @@ function renderCard(symbolEntry) {
   }
 
   const next = events[0];
+
+  if (next.direction === "pending") {
+    body += `<div class="pending">Awaiting next tracked event</div>`;
+    el.innerHTML = body;
+    el.querySelector(".remove-btn").addEventListener("click", () => removeSymbol(symbol));
+    return el;
+  }
+
   const pct = Math.round(next.probability * 100);
   const dirClass = directionClass(next.direction);
 
+  // A pending -> real transition is a first real score, not a diff — only
+  // show the two-tone diff strip for real -> real changes.
   const hasPreviousChange = next.previous_probability !== null && next.previous_probability !== undefined
+    && next.previous_direction !== "pending"
     && Math.abs(next.previous_probability - next.probability) > 1e-6;
 
   if (hasPreviousChange) {
@@ -165,6 +177,14 @@ async function refreshCalendar() {
   const resp = await fetch("/api/calendar");
   const data = await resp.json();
   const events = data.events || [];
+
+  if (data.error) {
+    calendarStaleNoticeEl.textContent = `Calendar data may be stale — last refresh failed (${data.error})`;
+    calendarStaleNoticeEl.style.display = "";
+  } else {
+    calendarStaleNoticeEl.textContent = "";
+    calendarStaleNoticeEl.style.display = "none";
+  }
 
   const today = new Date();
   const year = today.getFullYear();
