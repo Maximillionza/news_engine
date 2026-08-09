@@ -191,7 +191,7 @@ async function refreshCalendar() {
   calendarGridEl.innerHTML = cells;
 
   calendarListEl.innerHTML = events
-    .map((e) => `<li>${new Date(e.event_time_utc).toLocaleString()} — ${escapeHtml(e.title)} (${e.impact})</li>`)
+    .map((e) => `<li>${new Date(e.event_time_utc).toLocaleString()} — ${escapeHtml(e.title)} (${escapeHtml(e.impact)})</li>`)
     .join("");
 }
 
