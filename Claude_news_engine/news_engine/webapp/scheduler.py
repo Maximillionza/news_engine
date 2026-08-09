@@ -31,29 +31,30 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
 
     events = filter_relevant_events(all_events)
 
-    for ticker in tracked_symbols:
-        try:
-            symbol_class = classify_symbol(ticker)
-        except UnrecognizedSymbolError as exc:
-            print(f"[scheduler] WARNING: skipping unrecognized symbol {ticker!r}: {exc}")
-            continue
-
-        for event in events:
-            result = score_event_for_symbol(event, symbol_class)
-            if not result.applicable or result.pending:
+    try:
+        for ticker in tracked_symbols:
+            try:
+                symbol_class = classify_symbol(ticker)
+            except UnrecognizedSymbolError as exc:
+                print(f"[scheduler] WARNING: skipping unrecognized symbol {ticker!r}: {exc}")
                 continue
 
-            existing = get_latest_two(conn, ticker, event.title)
-            if existing and abs(existing[0].probability - result.probability) < 1e-6:
-                continue  # unchanged since last cycle, don't write a duplicate row
+            for event in events:
+                result = score_event_for_symbol(event, symbol_class)
+                if not result.applicable or result.pending:
+                    continue
 
-            record_run(
-                conn, ticker, event.title, event.event_time_utc,
-                result.probability, result.direction.value, result.raw_score,
-            )
-            print(f"[scheduler] recorded {ticker} / {event.title}: {result.probability:.0%} {result.direction.value}")
+                existing = get_latest_two(conn, ticker, event.title)
+                if existing and abs(existing[0].probability - result.probability) < 1e-6:
+                    continue  # unchanged since last cycle, don't write a duplicate row
 
-    conn.close()
+                record_run(
+                    conn, ticker, event.title, event.event_time_utc,
+                    result.probability, result.direction.value, result.raw_score,
+                )
+                print(f"[scheduler] recorded {ticker} / {event.title}: {result.probability:.0%} {result.direction.value}")
+    finally:
+        conn.close()
 
 
 def start_scheduler(tracked_symbols_provider: Callable[[], list[str]]) -> None:

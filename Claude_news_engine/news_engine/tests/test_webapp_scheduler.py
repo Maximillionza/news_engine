@@ -55,7 +55,32 @@ def test_unrecognized_symbol_skipped_not_crashed():
     print("PASS\n")
 
 
+def test_failed_calendar_fetch_does_not_crash_or_wipe_data():
+    print("=== scheduler: a failed calendar fetch does not crash the loop or wipe existing data ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+
+        # pre-populate the DB with one existing row so there's something to wipe
+        conn = store.get_connection(db_path)
+        store.record_run(
+            conn, "XAUUSD", "Non-Farm Employment Change",
+            dt.datetime(2026, 8, 7, 12, 30, tzinfo=UTC_TZ),
+            0.62, "up", 1.5,
+        )
+        conn.close()
+
+        with patch.object(scheduler, "fetch_calendar", side_effect=Exception("network down")):
+            scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)  # must not raise
+
+        conn = store.get_connection(db_path)
+        runs = store.get_latest_two(conn, "XAUUSD", "Non-Farm Employment Change")
+        assert len(runs) == 1, "existing row must survive a failed calendar fetch"
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_scoring_cycle_writes_new_rows_and_skips_duplicates()
     test_unrecognized_symbol_skipped_not_crashed()
+    test_failed_calendar_fetch_does_not_crash_or_wipe_data()
     print("All scheduler tests passed.")
