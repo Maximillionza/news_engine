@@ -6,6 +6,10 @@ job, running in a background thread started at app startup.
 """
 from __future__ import annotations
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Flask, jsonify, request, send_from_directory
 
 from data_layer.calendar_feed import fetch_calendar, filter_relevant_events
