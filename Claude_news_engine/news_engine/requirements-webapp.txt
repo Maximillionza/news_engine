@@ -1,0 +1,3 @@
+# Only needed to run the dashboard (webapp/). Core scoring/backtest
+# pipeline has no dependency on this — install only if you want the UI.
+flask
