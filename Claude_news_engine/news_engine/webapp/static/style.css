@@ -39,7 +39,7 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 
 .day-strip { display: flex; gap: 4px; margin-top: 14px; overflow-x: auto; }
 .day-cell { flex: 0 0 auto; padding: 6px 8px; font-size: 11px; text-align: center; border-radius: 6px; border: 1px solid transparent; background: #f0f0f0; }
-.day-cell.today { border: 2px solid var(--bullish); background: #e8f5e9; font-weight: bold; }
+.day-cell.today { outline: 2px solid var(--bullish); outline-offset: -2px; background: #e8f5e9; font-weight: bold; }
 .day-cell.event { border: 2px solid #ef6c00; background: #fff3e0; font-weight: bold; }
 
 #calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 16px; }

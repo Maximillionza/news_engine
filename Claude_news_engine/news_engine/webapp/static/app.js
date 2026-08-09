@@ -1,5 +1,11 @@
 const POLL_INTERVAL_MS = 60_000;
 
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str ?? "";
+  return div.innerHTML;
+}
+
 const cardsEl = document.getElementById("cards");
 const calendarGridEl = document.getElementById("calendar-grid");
 const calendarListEl = document.getElementById("calendar-list");
@@ -74,10 +80,10 @@ function diffPieSvg(previousPct, delta) {
   const deltaAbs = Math.abs(delta);
   return `
     <svg width="44" height="44" viewBox="0 0 32 32">
-      <circle r="14" cx="16" cy="16" fill="#eee"/>
-      <circle r="14" cx="16" cy="16" fill="transparent" stroke="${baseColor}" stroke-width="14"
+      <circle r="14" cx="16" cy="16" fill="#eee" pathLength="100"/>
+      <circle r="14" cx="16" cy="16" fill="transparent" stroke="${baseColor}" stroke-width="14" pathLength="100"
         stroke-dasharray="${basePct} 100" transform="rotate(-90 16 16)"/>
-      <circle r="14" cx="16" cy="16" fill="transparent" stroke="${deltaColor}" stroke-width="14" opacity="0.9"
+      <circle r="14" cx="16" cy="16" fill="transparent" stroke="${deltaColor}" stroke-width="14" opacity="0.9" pathLength="100"
         stroke-dasharray="${deltaAbs} 100" stroke-dashoffset="${-basePct}" transform="rotate(-90 16 16)"/>
     </svg>`;
 }
@@ -130,15 +136,17 @@ function renderCard(symbolEntry) {
   if (hasPreviousChange) {
     const prevPct = Math.round(next.previous_probability * 100);
     const delta = pct - prevPct;
-    body += `<div class="diff-strip">${diffPieSvg(prevPct, delta)}
-      <div>Previous: <b>${directionLabel(next.previous_direction)} ${prevPct}%</b><br>
-      <span class="${delta >= 0 ? 'delta-up' : 'delta-down'}">${delta >= 0 ? '▲' : '▼'} ${delta >= 0 ? '+' : ''}${delta}pp → now ${pct}%</span></div>
-    </div>`;
+    if (delta !== 0) {
+      body += `<div class="diff-strip">${diffPieSvg(prevPct, delta)}
+        <div>Previous: <b>${directionLabel(next.previous_direction)} ${prevPct}%</b><br>
+        <span class="${delta >= 0 ? 'delta-up' : 'delta-down'}">${delta >= 0 ? '▲' : '▼'} ${delta >= 0 ? '+' : ''}${delta}pp → now ${pct}%</span></div>
+      </div>`;
+    }
   }
 
   body += `<div class="gauge-row">${gaugeSvg(next.probability, next.direction)}
     <div><div class="gauge-label ${dirClass}">${directionLabel(next.direction)} ${pct}%</div>
-    <div style="font-size:12px;color:#888">${next.event_title}</div></div></div>`;
+    <div style="font-size:12px;color:#888">${escapeHtml(next.event_title)}</div></div></div>`;
   body += dayStripHtml(next.event_time_utc);
 
   el.innerHTML = body;
@@ -183,7 +191,7 @@ async function refreshCalendar() {
   calendarGridEl.innerHTML = cells;
 
   calendarListEl.innerHTML = events
-    .map((e) => `<li>${new Date(e.event_time_utc).toLocaleString()} — ${e.title} (${e.impact})</li>`)
+    .map((e) => `<li>${new Date(e.event_time_utc).toLocaleString()} — ${escapeHtml(e.title)} (${e.impact})</li>`)
     .join("");
 }
 
