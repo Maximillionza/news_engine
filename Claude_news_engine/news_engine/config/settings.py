@@ -150,6 +150,22 @@ EVENT_SURPRISE_DIRECTION = {
     "Import Prices m/m": "higher_bullish",
     "ISM Manufacturing PMI": "higher_bullish",
     "Retail Sales m/m": "higher_bullish",
+    # Added for dashboard coverage (final-review fix, Step 6). Titles are
+    # best-effort standard Forex Factory naming — not independently
+    # verified against a live feed capture in this environment, since the
+    # feed isn't reachable from this sandbox (see data_layer/calendar_feed.py's
+    # module docstring). Re-verify title strings exact-match once this runs
+    # against the live feed.
+    "Core PCE Price Index m/m": "higher_bullish",
+    "Advance GDP q/q": "higher_bullish",
+    "ISM Services PMI": "higher_bullish",
+    "Prelim UoM Consumer Sentiment": "higher_bullish",
+    # "Federal Funds Rate" and "FOMC Statement" deliberately NOT added:
+    # both are policy-decision/text events with no forecast-vs-actual
+    # numeric pair for usd_surprise_score() to compare (FF publishes them
+    # without a meaningful "forecast" field to beat/miss) — forcing a
+    # mapping here would produce scores that are always None anyway, or
+    # worse, a fabricated one from unrelated fields.
 }
 
 # Trust weight for a precursor's structured surprise contribution — high,
