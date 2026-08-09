@@ -103,6 +103,27 @@ tests/
   run_historical_backtest.py  — the 10-event reconstructed backtest (reference only)
 ```
 
+## Symbol impact dashboard (optional)
+
+A local web dashboard showing a BUY/HOLD/SELL-style call per tracked
+symbol, driven entirely by structured calendar data (forecast vs.
+actual) — no article fetching, separate from the pipeline above. See
+`docs/superpowers/specs/2026-08-09-symbol-impact-dashboard-design.md`
+for the full design.
+
+```bash
+pip install -r requirements-webapp.txt
+python webapp/app.py
+```
+
+Then open `http://localhost:5001`. Defaults to tracking XAUUSD and US30;
+add more symbols from the dashboard itself — tickers are auto-classified
+(metal / USD-base FX / USD-quote FX / risk index / non-USD cross pair)
+from the symbol shape, no manual config needed. A background thread
+re-scores every 15 minutes; `webapp/dashboard.db` (gitignored) persists
+history across restarts so the before/after diff still works after you
+close and reopen the app.
+
 ## Known gaps / things to watch
 
 - **Sentiment scoring now has 3 tiers**, cheapest/most-deterministic
