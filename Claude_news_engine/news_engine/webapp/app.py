@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from flask import Flask, jsonify, request, send_from_directory
 
 from data_layer.calendar_feed import fetch_calendar, filter_relevant_events
-from webapp.scheduler import start_scheduler
+from webapp.scheduler import NORMAL_INTERVAL_SECONDS, compute_adaptive_interval_seconds, start_scheduler
 from webapp.store import (
     get_connection, get_latest_two, get_history,
     add_tracked_symbol, remove_tracked_symbol, list_tracked_symbols,
@@ -30,11 +30,14 @@ DEFAULT_SYMBOLS = ["XAUUSD", "US30"]
 # list, and the frontend polls both every 60s (refreshAll() in app.js).
 # Without a cache that's 2 live requests/min to Forex Factory's free feed
 # forever — no auth, no rate-limit tolerance — which gets the dashboard
-# 429'd in practice (observed live). A short TTL cache shared by both
-# routes cuts that to one fetch per TTL window regardless of poll
-# frequency or how many browser tabs are open.
-_CALENDAR_CACHE_TTL_SECONDS = 300  # 5 min — well under the 15-min scheduler cadence, still a large cut from 60s polling
-_calendar_cache = {"events": None, "fetched_at": 0.0}
+# 429'd in practice (observed live). A cache shared by both routes cuts
+# that to one fetch per TTL window regardless of poll frequency or how
+# many browser tabs are open. TTL is adaptive (webapp.scheduler.compute_adaptive_interval_seconds)
+# — the same "how urgent is this right now" question the background
+# scheduler answers for its own poll cadence, reused here rather than a
+# second hardcoded constant. Starts at NORMAL_INTERVAL_SECONDS before the
+# first successful fetch, since there's no event data yet to reason from.
+_calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": NORMAL_INTERVAL_SECONDS}
 
 
 def _get_cached_events():
@@ -46,12 +49,13 @@ def _get_cached_events():
     just isn't attempted on every single request.
     """
     now = time.monotonic()
-    if _calendar_cache["events"] is not None and (now - _calendar_cache["fetched_at"]) < _CALENDAR_CACHE_TTL_SECONDS:
+    if _calendar_cache["events"] is not None and (now - _calendar_cache["fetched_at"]) < _calendar_cache["ttl_seconds"]:
         return _calendar_cache["events"]
 
     events = filter_relevant_events(fetch_calendar("thisweek"), min_impact="Medium")
     _calendar_cache["events"] = events
     _calendar_cache["fetched_at"] = now
+    _calendar_cache["ttl_seconds"] = compute_adaptive_interval_seconds(events)
     return events
 
 

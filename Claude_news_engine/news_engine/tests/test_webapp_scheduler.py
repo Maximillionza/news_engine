@@ -144,10 +144,70 @@ def test_untracked_pending_event_does_not_persist_a_stuck_row():
     print("PASS\n")
 
 
+def _event_at(hours_from_now, actual=None, now=None):
+    now = now or dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    return EconomicEvent(
+        title="Test Event", country="USD", impact="High",
+        event_time_utc=now + dt.timedelta(hours=hours_from_now),
+        forecast="1.0%", actual=actual,
+    )
+
+
+def test_adaptive_interval_far_when_no_events_or_nothing_close():
+    print("=== adaptive interval: FAR when no events, or nearest is beyond FAR_THRESHOLD_HOURS ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    assert scheduler.compute_adaptive_interval_seconds(None, now=now) == scheduler.FAR_INTERVAL_SECONDS
+    assert scheduler.compute_adaptive_interval_seconds([], now=now) == scheduler.FAR_INTERVAL_SECONDS
+    far_event = _event_at(72, now=now)  # 72h out, beyond the 48h FAR threshold
+    assert scheduler.compute_adaptive_interval_seconds([far_event], now=now) == scheduler.FAR_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_adaptive_interval_normal_between_48h_and_4h_out():
+    print("=== adaptive interval: NORMAL when nearest unresolved event is 48h-4h out ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    mid_event = _event_at(20, now=now)  # comfortably inside 48h, outside the 4h NEAR window
+    assert scheduler.compute_adaptive_interval_seconds([mid_event], now=now) == scheduler.NORMAL_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_adaptive_interval_near_within_4h_or_post_release_grace():
+    print("=== adaptive interval: NEAR within the final 4h, and briefly after a scheduled release ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    soon_event = _event_at(2, now=now)  # 2h out, inside NEAR_WINDOW_HOURS
+    assert scheduler.compute_adaptive_interval_seconds([soon_event], now=now) == scheduler.NEAR_INTERVAL_SECONDS
+
+    just_passed_event = _event_at(-0.25, now=now)  # 15 min ago, inside the post-release grace window, no actual yet (delayed release)
+    assert scheduler.compute_adaptive_interval_seconds([just_passed_event], now=now) == scheduler.NEAR_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_adaptive_interval_ignores_resolved_events():
+    print("=== adaptive interval: a resolved event (actual already printed) no longer forces urgency ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    resolved_but_close = _event_at(1, actual="1.2%", now=now)  # 1h out but ALREADY has an actual — done, not urgent
+    assert scheduler.compute_adaptive_interval_seconds([resolved_but_close], now=now) == scheduler.FAR_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_adaptive_interval_tightest_wins_across_multiple_events():
+    print("=== adaptive interval: the tightest-demanding event across the whole list wins ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    far_event = _event_at(72, now=now)
+    near_event = _event_at(2, now=now)
+    assert scheduler.compute_adaptive_interval_seconds([far_event, near_event], now=now) == scheduler.NEAR_INTERVAL_SECONDS
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_scoring_cycle_writes_new_rows_and_skips_duplicates()
     test_unrecognized_symbol_skipped_not_crashed()
     test_failed_calendar_fetch_does_not_crash_or_wipe_data()
     test_pending_then_released_event_produces_two_row_lifecycle()
     test_untracked_pending_event_does_not_persist_a_stuck_row()
+    test_adaptive_interval_far_when_no_events_or_nothing_close()
+    test_adaptive_interval_normal_between_48h_and_4h_out()
+    test_adaptive_interval_near_within_4h_or_post_release_grace()
+    test_adaptive_interval_ignores_resolved_events()
+    test_adaptive_interval_tightest_wins_across_multiple_events()
     print("All scheduler tests passed.")
