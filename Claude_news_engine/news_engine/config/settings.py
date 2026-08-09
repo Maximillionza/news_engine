@@ -17,6 +17,15 @@ APITUBE_API_KEY = os.environ.get("APITUBE_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 # --- Contextual sentiment scoring (optional upgrade over the naive lexicon) ---
+# Explicit opt-in — NOT just "is the package importable." Installing
+# torch/transformers for an unrelated check (e.g. verifying FinBERT works
+# at all) must not silently change production scoring behavior, and it
+# must not silently break every existing test that was written assuming
+# deterministic lexicon-only scores. Set these to "1" in the environment
+# to actually turn the contextual tiers on.
+ENABLE_FINBERT_SENTIMENT = os.environ.get("ENABLE_FINBERT_SENTIMENT", "") == "1"
+ENABLE_LLM_SENTIMENT = os.environ.get("ENABLE_LLM_SENTIMENT", "") == "1"
+
 # Tiered fallback, cheapest/most-deterministic first:
 #   1. native_sentiment on the article, if a vendor already supplied one
 #      (Alpha Vantage / APITube) — unchanged, always wins if present.

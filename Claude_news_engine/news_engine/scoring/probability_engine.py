@@ -31,6 +31,8 @@ from enum import Enum
 from config.settings import (
     CONTEXTUAL_CONFIDENCE_THRESHOLD,
     CONTRADICTION_MIN_MAGNITUDE,
+    ENABLE_FINBERT_SENTIMENT,
+    ENABLE_LLM_SENTIMENT,
     INSTRUMENTS,
     PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES,
     PRECURSOR_TRUST_WEIGHT,
@@ -120,25 +122,29 @@ def _get_article_sentiment(article: NewsArticle) -> tuple[float, list[str]]:
 
       1. native_sentiment on the article, if a vendor already supplied one
          (Alpha Vantage / APITube) — unchanged, always wins if present.
-      2. FinBERT (local, free) — used if its own top-class confidence is
-         at or above CONTEXTUAL_CONFIDENCE_THRESHOLD.
-      3. Claude API — only when FinBERT is unavailable or was itself
-         unsure (confidence below threshold); this is the tier that
-         actually understands hedged/conditional language ("rate hike
-         risk IF data surprises") instead of matching it as declarative.
+      2. FinBERT (local, free) — only if ENABLE_FINBERT_SENTIMENT=1, and
+         used only when its own top-class confidence is at or above
+         CONTEXTUAL_CONFIDENCE_THRESHOLD.
+      3. Claude API — only if ENABLE_LLM_SENTIMENT=1, and only when
+         FinBERT was unavailable/disabled or itself unsure (confidence
+         below threshold); this is the tier that actually understands
+         hedged/conditional language ("rate hike risk IF data surprises")
+         instead of matching it as declarative.
       4. The keyword lexicon (sentiment.py) — final fallback, zero
          dependencies, zero cost, unchanged behavior from before this
-         tiering existed.
+         tiering existed. This is what runs with both flags at their
+         default (off) — installing torch/transformers/anthropic alone
+         does NOT change scoring behavior, only the env vars do.
     """
     if article.native_sentiment is not None:
         clamped = max(-1.0, min(1.0, article.native_sentiment))
         return clamped, ["<native_sentiment>"]
 
-    finbert_result = score_article_finbert(article.title, article.summary)
+    finbert_result = score_article_finbert(article.title, article.summary) if ENABLE_FINBERT_SENTIMENT else None
     if finbert_result is not None and finbert_result.confidence >= CONTEXTUAL_CONFIDENCE_THRESHOLD:
         return finbert_result.usd_score, [f"<finbert:{finbert_result.label}:{finbert_result.confidence:.2f}>"]
 
-    llm_result = score_article_llm(article.title, article.summary)
+    llm_result = score_article_llm(article.title, article.summary) if ENABLE_LLM_SENTIMENT else None
     if llm_result is not None:
         return llm_result.usd_score, [f"<llm:{llm_result.usd_score:+.2f}:{llm_result.reasoning}>"]
 

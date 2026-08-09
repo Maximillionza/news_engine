@@ -108,14 +108,18 @@ tests/
 - **Sentiment scoring now has 3 tiers**, cheapest/most-deterministic
   first: vendor-native sentiment (Alpha Vantage/APITube) if present, then
   local FinBERT (`scoring/finbert_sentiment.py`, needs
-  `requirements-contextual.txt`), then the Claude API for genuinely
-  ambiguous cases FinBERT itself flags as low-confidence
-  (`scoring/llm_sentiment.py`, needs `ANTHROPIC_API_KEY`), and only then
-  the original **naive keyword lexicon** (`scoring/sentiment.py`) as the
-  final fallback. Everything degrades gracefully — with none of the
-  optional deps/keys installed, behavior is identical to before this
-  tiering existed. See the block comment above `CONTEXTUAL_CONFIDENCE_THRESHOLD`
-  in `config/settings.py` for the full rationale.
+  `requirements-contextual.txt` AND `ENABLE_FINBERT_SENTIMENT=1`), then
+  the Claude API for genuinely ambiguous cases FinBERT itself flags as
+  low-confidence (`scoring/llm_sentiment.py`, needs `ANTHROPIC_API_KEY`
+  AND `ENABLE_LLM_SENTIMENT=1`), and only then the original **naive
+  keyword lexicon** (`scoring/sentiment.py`) as the final fallback. Both
+  contextual tiers are **explicit opt-in via environment variable**, not
+  just "installed = active" — having `torch`/`transformers` importable
+  for an unrelated reason must never silently change scoring output.
+  With both flags unset (the default), behavior is identical to before
+  this tiering existed, deps installed or not. See the block comment
+  above `CONTEXTUAL_CONFIDENCE_THRESHOLD` in `config/settings.py` for the
+  full rationale.
 - The June-NFP case in the reconstructed backtest was wrong because the
   lexicon scored hedged/conditional language ("could trigger a hawkish
   adjustment if...") as directional — this is specifically the failure
