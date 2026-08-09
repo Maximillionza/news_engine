@@ -23,9 +23,9 @@ CREATE TABLE IF NOT EXISTS prediction_runs (
     event_title TEXT NOT NULL,
     event_time_utc TEXT NOT NULL,
     scored_at_utc TEXT NOT NULL,
-    probability REAL NOT NULL,
+    probability REAL,
     direction TEXT NOT NULL,
-    raw_score REAL NOT NULL
+    raw_score REAL
 );
 CREATE TABLE IF NOT EXISTS tracked_symbols (
     symbol TEXT PRIMARY KEY
@@ -40,9 +40,9 @@ class PredictionRun:
     event_title: str
     event_time_utc: str
     scored_at_utc: str
-    probability: float
+    probability: Optional[float]
     direction: str
-    raw_score: float
+    raw_score: Optional[float]
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
@@ -60,9 +60,9 @@ def record_run(
     symbol: str,
     event_title: str,
     event_time_utc: dt.datetime,
-    probability: float,
+    probability: Optional[float],
     direction: str,
-    raw_score: float,
+    raw_score: Optional[float],
     scored_at_utc: Optional[dt.datetime] = None,
 ) -> int:
     scored_at = scored_at_utc or dt.datetime.now(dt.timezone.utc)

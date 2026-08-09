@@ -57,6 +57,24 @@ def test_fewer_than_two_runs():
     print("PASS\n")
 
 
+def test_pending_run_round_trips_with_null_probability():
+    print("=== store: a pending run (probability=None, direction='pending', raw_score=None) round-trips ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 7, 12, 30, tzinfo=dt.timezone.utc)
+
+        record_run(conn, "XAUUSD", "Core PCE Price Index m/m", event_time, probability=None, direction="pending", raw_score=None)
+
+        runs = get_latest_two(conn, "XAUUSD", "Core PCE Price Index m/m")
+        assert len(runs) == 1
+        assert runs[0].probability is None
+        assert runs[0].direction == "pending"
+        assert runs[0].raw_score is None
+        conn.close()
+    print("PASS\n")
+
+
 def test_tracked_symbols_add_remove_list():
     print("=== store: tracked symbols add/remove/list round-trip, duplicates ignored ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -77,5 +95,6 @@ def test_tracked_symbols_add_remove_list():
 if __name__ == "__main__":
     test_round_trip_and_diff()
     test_fewer_than_two_runs()
+    test_pending_run_round_trips_with_null_probability()
     test_tracked_symbols_add_remove_list()
     print("All store tests passed.")
