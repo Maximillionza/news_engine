@@ -88,8 +88,47 @@ def test_predictions_endpoint_reflects_stored_runs():
     print("PASS\n")
 
 
+def test_calendar_fetch_failure_does_not_500():
+    print("=== app: /api/calendar survives a fetch_calendar exception ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(webapp_app, "fetch_calendar", side_effect=Exception("network down")):
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/calendar")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["events"] == []
+            assert "error" in data
+    print("PASS\n")
+
+
+def test_predictions_fetch_failure_does_not_500():
+    print("=== app: /api/predictions survives a fetch_calendar exception ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(webapp_app, "fetch_calendar", side_effect=Exception("network down")):
+
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert len(data) == 1
+            assert data[0]["symbol"] == "XAUUSD"
+            assert data[0]["events"] == []
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
     test_predictions_endpoint_reflects_stored_runs()
+    test_calendar_fetch_failure_does_not_500()
+    test_predictions_fetch_failure_does_not_500()
     print("All webapp.app tests passed.")
