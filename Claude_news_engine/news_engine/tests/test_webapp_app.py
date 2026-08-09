@@ -68,7 +68,7 @@ def test_predictions_endpoint_reflects_stored_runs():
         db_path = Path(tmp) / "test.db"
         with patch.object(store, "DB_PATH", db_path), \
              patch.object(webapp_app, "fetch_calendar", return_value=_fake_events()), \
-             patch.object(webapp_app, "filter_relevant_events", side_effect=lambda events: events):
+             patch.object(webapp_app, "filter_relevant_events", side_effect=lambda events, **kwargs: events):
 
             conn = store.get_connection(db_path)
             store.add_tracked_symbol(conn, "XAUUSD")
@@ -85,6 +85,42 @@ def test_predictions_endpoint_reflects_stored_runs():
             assert len(events) == 1
             assert events[0]["probability"] == 0.66
             assert events[0]["previous_probability"] == 0.54
+    print("PASS\n")
+
+
+def test_predictions_events_sorted_by_proximity_to_now():
+    print("=== app: /api/predictions sorts a symbol's events by closeness to now, not feed order ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime.now(dt.timezone.utc)
+        # Feed order deliberately puts the FAR event first and the NEAR
+        # event second — a naive events[0] would pick the wrong one.
+        far_event = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High",
+            event_time_utc=now - dt.timedelta(days=10), forecast="0.2%", actual="0.3%",
+        )
+        near_event = EconomicEvent(
+            title="Non-Farm Employment Change", country="USD", impact="High",
+            event_time_utc=now + dt.timedelta(hours=2), forecast="75K", actual=None,
+        )
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(webapp_app, "fetch_calendar", return_value=[far_event, near_event]), \
+             patch.object(webapp_app, "filter_relevant_events", side_effect=lambda events, **kwargs: events):
+
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            store.record_run(conn, "XAUUSD", "CPI m/m", far_event.event_time_utc, 0.6, "bullish", 0.3)
+            store.record_run(conn, "XAUUSD", "Non-Farm Employment Change", near_event.event_time_utc, None, "pending", None)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            data = resp.get_json()
+            events = data[0]["events"]
+            assert len(events) == 2
+            assert events[0]["event_title"] == "Non-Farm Employment Change", \
+                f"expected the near event first, got {events[0]['event_title']!r}"
+            assert events[1]["event_title"] == "CPI m/m"
     print("PASS\n")
 
 
@@ -129,6 +165,7 @@ if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
     test_predictions_endpoint_reflects_stored_runs()
+    test_predictions_events_sorted_by_proximity_to_now()
     test_calendar_fetch_failure_does_not_500()
     test_predictions_fetch_failure_does_not_500()
     print("All webapp.app tests passed.")

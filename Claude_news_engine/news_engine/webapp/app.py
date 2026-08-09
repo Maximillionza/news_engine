@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 import os
+import datetime as dt
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -81,7 +82,7 @@ def remove_symbol(ticker: str):
 @app.route("/api/calendar", methods=["GET"])
 def get_calendar():
     try:
-        events = filter_relevant_events(fetch_calendar("thisweek"))
+        events = filter_relevant_events(fetch_calendar("thisweek"), min_impact="Medium")
     except Exception as exc:  # noqa: BLE001 — a failed live fetch must not 500 the whole dashboard
         return jsonify({"error": f"calendar fetch failed: {exc}", "events": []}), 200
     return jsonify({
@@ -101,7 +102,7 @@ def get_predictions():
     conn = get_connection()
     symbols = list_tracked_symbols(conn)
     try:
-        events = filter_relevant_events(fetch_calendar("thisweek"))
+        events = filter_relevant_events(fetch_calendar("thisweek"), min_impact="Medium")
     except Exception:
         events = []
 
@@ -123,6 +124,14 @@ def get_predictions():
                 "previous_probability": previous.probability if previous else None,
                 "previous_direction": previous.direction if previous else None,
             })
+
+        # Sort so the event closest to "now" (imminent upcoming, or
+        # just-released) is events[0] — what the frontend renders — instead
+        # of whatever order the calendar feed happened to return.
+        now = dt.datetime.now(dt.timezone.utc)
+        entry["events"].sort(
+            key=lambda ev: abs((dt.datetime.fromisoformat(ev["event_time_utc"]) - now).total_seconds())
+        )
         predictions.append(entry)
 
     conn.close()
@@ -141,7 +150,15 @@ def get_prediction_history(symbol: str):
     ])
 
 
+def _get_tracked_symbols() -> list[str]:
+    conn = get_connection()
+    try:
+        return list_tracked_symbols(conn)
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     _ensure_defaults()
-    start_scheduler(lambda: list_tracked_symbols(get_connection()))
+    start_scheduler(_get_tracked_symbols)
     app.run(port=5001, debug=False)
