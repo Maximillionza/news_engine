@@ -89,8 +89,8 @@ def test_predictions_endpoint_reflects_stored_runs():
     print("PASS\n")
 
 
-def test_predictions_events_sorted_by_proximity_to_now():
-    print("=== app: /api/predictions sorts a symbol's events by closeness to now, not feed order ===")
+def test_predictions_sorts_resolved_events_by_proximity_to_now():
+    print("=== app: among resolved events, /api/predictions picks the one closest to now ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         now = dt.datetime.now(dt.timezone.utc)
@@ -102,7 +102,7 @@ def test_predictions_events_sorted_by_proximity_to_now():
         )
         near_event = EconomicEvent(
             title="Non-Farm Employment Change", country="USD", impact="High",
-            event_time_utc=now + dt.timedelta(hours=2), forecast="75K", actual=None,
+            event_time_utc=now + dt.timedelta(hours=2), forecast="75K", actual="80K",
         )
         webapp_app._calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": 900}  # avoid cross-test cache pollution
         with patch.object(store, "DB_PATH", db_path), \
@@ -112,7 +112,7 @@ def test_predictions_events_sorted_by_proximity_to_now():
             conn = store.get_connection(db_path)
             store.add_tracked_symbol(conn, "XAUUSD")
             store.record_run(conn, "XAUUSD", "CPI m/m", far_event.event_time_utc, 0.6, "bullish", 0.3)
-            store.record_run(conn, "XAUUSD", "Non-Farm Employment Change", near_event.event_time_utc, None, "pending", None)
+            store.record_run(conn, "XAUUSD", "Non-Farm Employment Change", near_event.event_time_utc, 0.7, "bullish", 0.4)
             conn.close()
 
             client = webapp_app.app.test_client()
@@ -123,6 +123,84 @@ def test_predictions_events_sorted_by_proximity_to_now():
             assert events[0]["event_title"] == "Non-Farm Employment Change", \
                 f"expected the near event first, got {events[0]['event_title']!r}"
             assert events[1]["event_title"] == "CPI m/m"
+    print("PASS\n")
+
+
+def test_predictions_prefers_resolved_over_pending_regardless_of_distance():
+    print("=== app: a resolved score always outranks a nearer-but-pending event — confirmed product choice ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime.now(dt.timezone.utc)
+        # The event that scored is CHRONOLOGICALLY FARTHER than the one
+        # that's still pending — a pure-proximity sort would pick the
+        # pending one, which is exactly the bug this test locks in the fix
+        # for (confirmed live: a resolved call is more useful to show than
+        # an "awaiting" placeholder for a nearer event).
+        far_resolved = EconomicEvent(
+            title="PPI m/m", country="USD", impact="High",
+            event_time_utc=now + dt.timedelta(days=3), forecast="0.2%", actual="0.5%",
+        )
+        near_pending = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High",
+            event_time_utc=now + dt.timedelta(hours=1), forecast="0.1%", actual=None,
+        )
+        webapp_app._calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": 900}  # avoid cross-test cache pollution
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(webapp_app, "fetch_calendar", return_value=[near_pending, far_resolved]), \
+             patch.object(webapp_app, "filter_relevant_events", side_effect=lambda events, **kwargs: events):
+
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "US30")
+            store.record_run(conn, "US30", "CPI m/m", near_pending.event_time_utc, None, "pending", None)
+            store.record_run(conn, "US30", "PPI m/m", far_resolved.event_time_utc, 0.66, "bullish", 0.35)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()[0]["events"]
+            assert events[0]["event_title"] == "PPI m/m", (
+                f"expected the resolved-but-farther event first, got {events[0]['event_title']!r}"
+            )
+            assert events[0]["direction"] == "bullish"
+    print("PASS\n")
+
+
+def test_predictions_prefers_resolved_event_over_pending_sibling_at_same_timestamp():
+    print("=== app: among events tied on timestamp, a resolved one beats a still-pending sibling ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        webapp_app._calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": 900}  # avoid cross-test cache pollution
+        # Real-world shape: a release day publishes several sub-metrics at the
+        # IDENTICAL timestamp. Feed order deliberately puts the still-pending
+        # sibling first, so a naive time-only sort would keep it at events[0]
+        # even though the other one has an actual real score.
+        shared_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=dt.timezone.utc)
+        pending_sibling = EconomicEvent(
+            title="Core CPI m/m", country="USD", impact="High",
+            event_time_utc=shared_time, forecast="0.2%", actual=None,
+        )
+        resolved_sibling = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High",
+            event_time_utc=shared_time, forecast="0.1%", actual="0.3%",
+        )
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(webapp_app, "fetch_calendar", return_value=[pending_sibling, resolved_sibling]), \
+             patch.object(webapp_app, "filter_relevant_events", side_effect=lambda events, **kwargs: events):
+
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            store.record_run(conn, "XAUUSD", "Core CPI m/m", shared_time, None, "pending", None)
+            store.record_run(conn, "XAUUSD", "CPI m/m", shared_time, 0.71, "bullish", 0.55)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()[0]["events"]
+            assert events[0]["event_title"] == "CPI m/m", (
+                f"expected the resolved sibling first despite feed order and identical timestamp, "
+                f"got {events[0]['event_title']!r}"
+            )
+            assert events[0]["direction"] == "bullish"
     print("PASS\n")
 
 
@@ -190,7 +268,9 @@ if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
     test_predictions_endpoint_reflects_stored_runs()
-    test_predictions_events_sorted_by_proximity_to_now()
+    test_predictions_sorts_resolved_events_by_proximity_to_now()
+    test_predictions_prefers_resolved_over_pending_regardless_of_distance()
+    test_predictions_prefers_resolved_event_over_pending_sibling_at_same_timestamp()
     test_calendar_fetch_failure_does_not_500()
     test_predictions_fetch_failure_does_not_500()
     test_calendar_fetch_is_cached_across_requests()

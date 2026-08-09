@@ -158,12 +158,22 @@ def get_predictions():
                 "previous_direction": previous.direction if previous else None,
             })
 
-        # Sort so the event closest to "now" (imminent upcoming, or
-        # just-released) is events[0] — what the frontend renders — instead
-        # of whatever order the calendar feed happened to return.
+        # A resolved score always outranks a still-pending one, regardless
+        # of which is chronologically closer — a real BUY/SELL/HOLD call is
+        # more useful to show than an "awaiting" placeholder for a nearer
+        # event (confirmed: this is a deliberate product choice, not just a
+        # same-timestamp tie-break — release days routinely publish several
+        # sub-metrics at the IDENTICAL time, e.g. Core CPI m/m, Core CPI y/y,
+        # CPI m/m, CPI y/y all at 12:30 UTC, and a naive proximity-only sort
+        # would let a still-pending sibling, or even a pending event on an
+        # entirely different day, mask one that has actually scored).
+        # Within each group (resolved / pending), proximity to now breaks ties.
         now = dt.datetime.now(dt.timezone.utc)
         entry["events"].sort(
-            key=lambda ev: abs((dt.datetime.fromisoformat(ev["event_time_utc"]) - now).total_seconds())
+            key=lambda ev: (
+                ev["direction"] == "pending",
+                abs((dt.datetime.fromisoformat(ev["event_time_utc"]) - now).total_seconds()),
+            )
         )
         predictions.append(entry)
 
