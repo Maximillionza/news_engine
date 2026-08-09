@@ -9,6 +9,7 @@ from __future__ import annotations
 import sys
 import os
 import datetime as dt
+import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -24,6 +25,34 @@ from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 app = Flask(__name__, static_folder="static")
 
 DEFAULT_SYMBOLS = ["XAUUSD", "US30"]
+
+# /api/calendar and /api/predictions both need the same filtered event
+# list, and the frontend polls both every 60s (refreshAll() in app.js).
+# Without a cache that's 2 live requests/min to Forex Factory's free feed
+# forever — no auth, no rate-limit tolerance — which gets the dashboard
+# 429'd in practice (observed live). A short TTL cache shared by both
+# routes cuts that to one fetch per TTL window regardless of poll
+# frequency or how many browser tabs are open.
+_CALENDAR_CACHE_TTL_SECONDS = 300  # 5 min — well under the 15-min scheduler cadence, still a large cut from 60s polling
+_calendar_cache = {"events": None, "fetched_at": 0.0}
+
+
+def _get_cached_events():
+    """
+    Shared cache for the two routes below. Raises whatever
+    fetch_calendar()/filter_relevant_events() raises on a cache miss —
+    callers already handle that by degrading to an empty list plus an
+    error field, so a real fetch failure still surfaces as "stale," it
+    just isn't attempted on every single request.
+    """
+    now = time.monotonic()
+    if _calendar_cache["events"] is not None and (now - _calendar_cache["fetched_at"]) < _CALENDAR_CACHE_TTL_SECONDS:
+        return _calendar_cache["events"]
+
+    events = filter_relevant_events(fetch_calendar("thisweek"), min_impact="Medium")
+    _calendar_cache["events"] = events
+    _calendar_cache["fetched_at"] = now
+    return events
 
 
 def _ensure_defaults() -> None:
@@ -82,7 +111,7 @@ def remove_symbol(ticker: str):
 @app.route("/api/calendar", methods=["GET"])
 def get_calendar():
     try:
-        events = filter_relevant_events(fetch_calendar("thisweek"), min_impact="Medium")
+        events = _get_cached_events()
     except Exception as exc:  # noqa: BLE001 — a failed live fetch must not 500 the whole dashboard
         return jsonify({"error": f"calendar fetch failed: {exc}", "events": []}), 200
     return jsonify({
@@ -102,7 +131,7 @@ def get_predictions():
     conn = get_connection()
     symbols = list_tracked_symbols(conn)
     try:
-        events = filter_relevant_events(fetch_calendar("thisweek"), min_impact="Medium")
+        events = _get_cached_events()
     except Exception:
         events = []
 
