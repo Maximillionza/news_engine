@@ -36,6 +36,16 @@ def _fake_pending_event():
     ]
 
 
+def _fake_untracked_pending_event():
+    return [
+        EconomicEvent(
+            title="Some Untracked Indicator No One Mapped", country="USD", impact="Medium",
+            event_time_utc=dt.datetime(2026, 8, 7, 12, 30, tzinfo=UTC_TZ),
+            forecast="1.0%", actual=None,
+        )
+    ]
+
+
 def test_scoring_cycle_writes_new_rows_and_skips_duplicates():
     print("=== scheduler: writes a row on first cycle, skips an identical second cycle ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -119,9 +129,25 @@ def test_pending_then_released_event_produces_two_row_lifecycle():
     print("PASS\n")
 
 
+def test_untracked_pending_event_does_not_persist_a_stuck_row():
+    print("=== scheduler: a pending event whose title isn't in EVENT_SURPRISE_DIRECTION is skipped, not persisted ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(scheduler, "fetch_calendar", return_value=_fake_untracked_pending_event()), \
+             patch.object(scheduler, "filter_relevant_events", side_effect=lambda events, **kwargs: events):
+            scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
+
+        conn = store.get_connection(db_path)
+        runs = store.get_latest_two(conn, "XAUUSD", "Some Untracked Indicator No One Mapped")
+        conn.close()
+        assert len(runs) == 0, f"an untracked-title pending event must NOT be persisted, got {len(runs)} row(s)"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_scoring_cycle_writes_new_rows_and_skips_duplicates()
     test_unrecognized_symbol_skipped_not_crashed()
     test_failed_calendar_fetch_does_not_crash_or_wipe_data()
     test_pending_then_released_event_produces_two_row_lifecycle()
+    test_untracked_pending_event_does_not_persist_a_stuck_row()
     print("All scheduler tests passed.")

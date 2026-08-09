@@ -29,6 +29,11 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .diff-strip .delta-up { color: var(--bullish); font-weight: bold; }
 .diff-strip .delta-down { color: var(--bearish); font-weight: bold; }
 
+.just-released { margin-bottom: 10px; padding: 8px 10px; border-radius: 8px; font-size: 13px; font-weight: bold; text-align: center; }
+.just-released.bullish { background: rgba(46, 125, 50, 0.12); color: var(--bullish); border: 1px solid rgba(46, 125, 50, 0.35); }
+.just-released.bearish { background: rgba(198, 40, 40, 0.12); color: var(--bearish); border: 1px solid rgba(198, 40, 40, 0.35); }
+.just-released.neutral { background: rgba(136, 136, 136, 0.12); color: var(--neutral); border: 1px solid rgba(136, 136, 136, 0.35); }
+
 .gauge-row { display: flex; align-items: center; gap: 14px; }
 .gauge-label { font-weight: bold; font-size: 16px; }
 .gauge-label.bullish { color: var(--bullish); }

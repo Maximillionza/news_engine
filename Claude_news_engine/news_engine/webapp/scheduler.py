@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
+from config.settings import EVENT_SURPRISE_DIRECTION
 from data_layer.calendar_feed import fetch_calendar, filter_relevant_events
 from webapp.scoring_service import score_event_for_symbol
 from webapp.store import get_connection, record_run, get_latest_two
@@ -63,6 +64,15 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
                     continue  # fx_cross — no USD exposure, never scored at all
 
                 if result.pending:
+                    # pending=True fires for two different reasons: (a) the event
+                    # genuinely hasn't printed an actual yet (will resolve later), or
+                    # (b) the event's title isn't in EVENT_SURPRISE_DIRECTION at all
+                    # (will NEVER resolve). Only persist+track (a) — persisting (b)
+                    # would create a dashboard card stuck on "Awaiting next tracked
+                    # event" forever, since events[0] in /api/predictions picks
+                    # whichever event is soonest and this one can never score.
+                    if event.title not in EVENT_SURPRISE_DIRECTION:
+                        continue
                     new_probability: Optional[float] = None
                     new_direction = "pending"
                     new_raw_score: Optional[float] = None
@@ -95,7 +105,10 @@ def start_scheduler(tracked_symbols_provider: Callable[[], list[str]]) -> None:
     """
     def _loop():
         while True:
-            run_scoring_cycle(tracked_symbols_provider())
+            try:
+                run_scoring_cycle(tracked_symbols_provider())
+            except Exception as exc:  # noqa: BLE001 — the loop must survive any unhandled error
+                print(f"[scheduler] ERROR: scoring cycle failed, will retry next interval: {exc}")
             time.sleep(SCHEDULER_INTERVAL_SECONDS)
 
     thread = threading.Thread(target=_loop, daemon=True)

@@ -145,6 +145,16 @@ function renderCard(symbolEntry) {
     && next.previous_direction !== "pending"
     && Math.abs(next.previous_probability - next.probability) > 1e-6;
 
+  // The event just released this cycle (previous row was pending, this one
+  // is a real score) — no percentage to diff against, but this is the
+  // single most informative moment for a user, so call it out distinctly
+  // instead of silently falling through to the plain gauge.
+  const justReleased = next.previous_direction === "pending" && next.direction !== "pending";
+
+  if (justReleased) {
+    body += `<div class="just-released ${dirClass}">🎯 Just released — ${directionLabel(next.direction)} ${pct}%</div>`;
+  }
+
   if (hasPreviousChange) {
     const prevPct = Math.round(next.previous_probability * 100);
     const delta = pct - prevPct;
