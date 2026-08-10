@@ -18,7 +18,7 @@ instrument) pair — one when the event enters its pre-event window, one
 more only once inside the final FINAL_SNAPSHOT_WINDOW_HOURS stretch.
 
 FINAL_SNAPSHOT_WINDOW_HOURS is deliberately its OWN, much tighter constant,
-not webapp.scheduler.NEAR_WINDOW_HOURS (4h) — that constant answers "how
+not webapp.scheduler.FINAL_WINDOW_HOURS (1h) — that constant answers "how
 urgent is polling right now" for the dashboard's adaptive interval, a
 different question from "how close to the actual release should this
 pipeline's LAST snapshot land". Reusing it here meant the second snapshot
@@ -44,9 +44,9 @@ from webapp.scheduler import compute_adaptive_interval_seconds
 
 SNAPSHOT_BUDGET_PER_PAIR = 2
 # How close to the actual event time the FINAL snapshot must be taken —
-# deliberately much tighter than webapp.scheduler.NEAR_WINDOW_HOURS (4h),
+# deliberately much tighter than webapp.scheduler.FINAL_WINDOW_HOURS (1h),
 # see module docstring. 30 minutes: comfortably inside the adaptive
-# scheduler's 5-minute NEAR-tier polling cadence, so it reliably lands
+# scheduler's 5-minute final-hour polling cadence, so it reliably lands
 # close to the release rather than hours ahead of it.
 FINAL_SNAPSHOT_WINDOW_HOURS = 0.5
 # Used when a calendar fetch fails and there's no fresh event list to

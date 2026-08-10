@@ -399,10 +399,13 @@ def test_calendar_fetch_backs_off_after_failure_instead_of_retrying_every_call()
             assert str(e) == "network down"
         assert mock_fetch.call_count == 1, "must not retry the live feed again while backing off from a recent failure"
 
-        # Call 3 (t=2000): well past FAILED_FETCH_BACKOFF_SECONDS (900) since
-        # the last attempt at t=100 — backoff expired, retries for real.
+        # Call 3: well past FAILED_FETCH_BACKOFF_SECONDS since the last
+        # attempt at t=100 — backoff expired, retries for real. Computed
+        # from the real constant, not a hardcoded guess, so this doesn't
+        # silently stop testing anything if the constant's value changes.
+        far_future = 100.0 + webapp_app.FAILED_FETCH_BACKOFF_SECONDS + 100
         try:
-            webapp_app._get_cached_events(now_fn=lambda: 2000.0)
+            webapp_app._get_cached_events(now_fn=lambda: far_future)
             raise AssertionError("expected the exception to propagate")
         except Exception as e:
             assert str(e) == "network down"
@@ -425,7 +428,8 @@ def test_calendar_fetch_succeeds_after_backoff_clears_the_cached_error():
             pass
 
         # Well past the backoff window — retries, this time succeeding.
-        events = webapp_app._get_cached_events(now_fn=lambda: 2000.0)
+        far_future = 100.0 + webapp_app.FAILED_FETCH_BACKOFF_SECONDS + 100
+        events = webapp_app._get_cached_events(now_fn=lambda: far_future)
         assert len(events) == 1
         assert mock_fetch.call_count == 2
         assert webapp_app._calendar_cache["last_error"] is None, "a successful fetch must clear the previously-cached error"

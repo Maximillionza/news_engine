@@ -153,32 +153,32 @@ def _event_at(hours_from_now, actual=None, now=None):
     )
 
 
-def test_adaptive_interval_far_when_no_events_or_nothing_close():
-    print("=== adaptive interval: FAR when no events, or nearest is beyond FAR_THRESHOLD_HOURS ===")
+def test_adaptive_interval_far_when_no_events_or_event_not_today():
+    print("=== adaptive interval: FAR (12h baseline) when no events, or nearest is beyond RAMP_WINDOW_HOURS ===")
     now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
     assert scheduler.compute_adaptive_interval_seconds(None, now=now) == scheduler.FAR_INTERVAL_SECONDS
     assert scheduler.compute_adaptive_interval_seconds([], now=now) == scheduler.FAR_INTERVAL_SECONDS
-    far_event = _event_at(72, now=now)  # 72h out, beyond the 48h FAR threshold
+    far_event = _event_at(72, now=now)  # 72h out, beyond the 24h ramp-up threshold
     assert scheduler.compute_adaptive_interval_seconds([far_event], now=now) == scheduler.FAR_INTERVAL_SECONDS
     print("PASS\n")
 
 
-def test_adaptive_interval_normal_between_48h_and_4h_out():
-    print("=== adaptive interval: NORMAL when nearest unresolved event is 48h-4h out ===")
+def test_adaptive_interval_ramps_to_hourly_on_the_day_of_the_event():
+    print("=== adaptive interval: RAMP (hourly) once the event is within 24h, still more than 1h out ===")
     now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
-    mid_event = _event_at(20, now=now)  # comfortably inside 48h, outside the 4h NEAR window
-    assert scheduler.compute_adaptive_interval_seconds([mid_event], now=now) == scheduler.NORMAL_INTERVAL_SECONDS
+    same_day_event = _event_at(20, now=now)  # inside 24h, outside the 1h final window
+    assert scheduler.compute_adaptive_interval_seconds([same_day_event], now=now) == scheduler.RAMP_INTERVAL_SECONDS
     print("PASS\n")
 
 
-def test_adaptive_interval_near_within_4h_or_post_release_grace():
-    print("=== adaptive interval: NEAR within the final 4h, and briefly after a scheduled release ===")
+def test_adaptive_interval_final_within_1h_or_post_release_grace():
+    print("=== adaptive interval: FINAL (5min) within the final 1h, and briefly after a scheduled release ===")
     now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
-    soon_event = _event_at(2, now=now)  # 2h out, inside NEAR_WINDOW_HOURS
-    assert scheduler.compute_adaptive_interval_seconds([soon_event], now=now) == scheduler.NEAR_INTERVAL_SECONDS
+    soon_event = _event_at(0.5, now=now)  # 30 min out, inside FINAL_WINDOW_HOURS
+    assert scheduler.compute_adaptive_interval_seconds([soon_event], now=now) == scheduler.FINAL_INTERVAL_SECONDS
 
     just_passed_event = _event_at(-0.25, now=now)  # 15 min ago, inside the post-release grace window, no actual yet (delayed release)
-    assert scheduler.compute_adaptive_interval_seconds([just_passed_event], now=now) == scheduler.NEAR_INTERVAL_SECONDS
+    assert scheduler.compute_adaptive_interval_seconds([just_passed_event], now=now) == scheduler.FINAL_INTERVAL_SECONDS
     print("PASS\n")
 
 
@@ -194,8 +194,53 @@ def test_adaptive_interval_tightest_wins_across_multiple_events():
     print("=== adaptive interval: the tightest-demanding event across the whole list wins ===")
     now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
     far_event = _event_at(72, now=now)
-    near_event = _event_at(2, now=now)
-    assert scheduler.compute_adaptive_interval_seconds([far_event, near_event], now=now) == scheduler.NEAR_INTERVAL_SECONDS
+    near_event = _event_at(0.5, now=now)
+    assert scheduler.compute_adaptive_interval_seconds([far_event, near_event], now=now) == scheduler.FINAL_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_adaptive_interval_sense_check_for_a_just_rescheduled_event():
+    print("=== adaptive interval: a just-rescheduled event gets an extra-tight sense check in its final 15 minutes ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    previous_time = now + dt.timedelta(hours=1)  # last seen 1h out...
+    rescheduled_event = EconomicEvent(
+        title="Core CPI m/m", country="USD", impact="High",
+        event_time_utc=now + dt.timedelta(minutes=10),  # ...now only 10 min out — a real reschedule
+        forecast="0.2%", actual=None,
+    )
+    previous_events = [EconomicEvent(
+        title="Core CPI m/m", country="USD", impact="High",
+        event_time_utc=previous_time, forecast="0.2%", actual=None,
+    )]
+    interval = scheduler.compute_adaptive_interval_seconds([rescheduled_event], now=now, previous_events=previous_events)
+    assert interval == scheduler.SENSE_CHECK_INTERVAL_SECONDS, (
+        f"a just-rescheduled event inside its final 15 minutes should get the tightest possible check, got {interval}"
+    )
+    print("PASS\n")
+
+
+def test_adaptive_interval_no_sense_check_without_a_reschedule():
+    print("=== adaptive interval: no sense check for an event that's simply close — only for a DETECTED reschedule ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    stable_event = _event_at(10 / 60, now=now)  # 10 min out, same as the rescheduled case above, but never moved
+    previous_events = [EconomicEvent(
+        title="Test Event", country="USD", impact="High",
+        event_time_utc=stable_event.event_time_utc,  # identical to the current fetch — no reschedule
+        forecast="1.0%", actual=None,
+    )]
+    interval = scheduler.compute_adaptive_interval_seconds([stable_event], now=now, previous_events=previous_events)
+    assert interval == scheduler.FINAL_INTERVAL_SECONDS, (
+        f"an event that's merely close (not rescheduled) should get the standard final-hour cadence, not the sense check, got {interval}"
+    )
+    print("PASS\n")
+
+
+def test_adaptive_interval_reschedule_detection_is_optional():
+    print("=== adaptive interval: omitting previous_events entirely just skips reschedule detection, no crash ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    soon_event = _event_at(10 / 60, now=now)
+    interval = scheduler.compute_adaptive_interval_seconds([soon_event], now=now)  # no previous_events arg at all
+    assert interval == scheduler.FINAL_INTERVAL_SECONDS
     print("PASS\n")
 
 
@@ -205,9 +250,12 @@ if __name__ == "__main__":
     test_failed_calendar_fetch_does_not_crash_or_wipe_data()
     test_pending_then_released_event_produces_two_row_lifecycle()
     test_untracked_pending_event_does_not_persist_a_stuck_row()
-    test_adaptive_interval_far_when_no_events_or_nothing_close()
-    test_adaptive_interval_normal_between_48h_and_4h_out()
-    test_adaptive_interval_near_within_4h_or_post_release_grace()
+    test_adaptive_interval_far_when_no_events_or_event_not_today()
+    test_adaptive_interval_ramps_to_hourly_on_the_day_of_the_event()
+    test_adaptive_interval_final_within_1h_or_post_release_grace()
     test_adaptive_interval_ignores_resolved_events()
     test_adaptive_interval_tightest_wins_across_multiple_events()
+    test_adaptive_interval_sense_check_for_a_just_rescheduled_event()
+    test_adaptive_interval_no_sense_check_without_a_reschedule()
+    test_adaptive_interval_reschedule_detection_is_optional()
     print("All scheduler tests passed.")

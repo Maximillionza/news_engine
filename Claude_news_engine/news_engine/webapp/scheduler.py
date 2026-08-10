@@ -22,46 +22,69 @@ from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 # Event dates/forecasts are published well ahead of time — nothing
 # meaningful changes until close to release (or briefly after, in case
 # a release is delayed). Polling flat-interval all week wastes cycles
-# for no benefit, so the interval tightens only when a relevant event is
-# actually close. Shared by the scheduler loop below AND webapp/app.py's
-# calendar cache TTL — same "how urgent is this right now" question,
-# answered once.
-FAR_INTERVAL_SECONDS = 60 * 60      # >48h from the nearest unresolved event (or no events at all)
-NORMAL_INTERVAL_SECONDS = 15 * 60   # 48h -> 4h out — the old flat default, now just the middle tier
-NEAR_INTERVAL_SECONDS = 5 * 60      # final 4h, or within the post-release grace window
+# for no benefit — and Forex Factory's free feed has a real rate limit
+# (observed live: repeated 429s from polling too often) — so the interval
+# tightens only as a relevant event actually approaches. Shared by the
+# scheduler loop below AND webapp/app.py's calendar cache TTL — same "how
+# urgent is this right now" question, answered once.
+FAR_INTERVAL_SECONDS = 12 * 60 * 60     # baseline: event isn't "today" yet (or no events at all)
+RAMP_INTERVAL_SECONDS = 60 * 60         # event IS today, but still more than 1h out
+FINAL_INTERVAL_SECONDS = 5 * 60         # final hour before the event, through the post-release grace window
+SENSE_CHECK_INTERVAL_SECONDS = 60       # extra-tight check for a just-rescheduled event within its final 15 minutes
 
-NEAR_WINDOW_HOURS = 4
-FAR_THRESHOLD_HOURS = 48
+RAMP_WINDOW_HOURS = 24              # "ramp up on the day of the event" — approximated as the last 24h
+FINAL_WINDOW_HOURS = 1              # "final check 1 hour before the event"
+SENSE_CHECK_WINDOW_MINUTES = 15     # "a final sense check 15 min before" — only for a JUST-rescheduled event
 POST_RELEASE_GRACE_MINUTES = 30     # keep polling tightly briefly after the scheduled time, in case the release is delayed
 
-SCHEDULER_INTERVAL_SECONDS = NORMAL_INTERVAL_SECONDS  # fallback used when a cycle's fetch fails and there's no fresh event list to reason from
+SCHEDULER_INTERVAL_SECONDS = RAMP_INTERVAL_SECONDS  # fallback used when a cycle's fetch fails and there's no fresh event list to reason from
 
 
 def compute_adaptive_interval_seconds(
     events: Optional[list[EconomicEvent]],
     now: Optional[dt.datetime] = None,
+    previous_events: Optional[list[EconomicEvent]] = None,
 ) -> int:
     """
     Tightest interval any still-unresolved event demands, or
     FAR_INTERVAL_SECONDS if nothing needs urgency (including when
-    `events` is None, e.g. after a failed fetch — NORMAL_INTERVAL_SECONDS
-    is used by callers directly in that case instead, see SCHEDULER_INTERVAL_SECONDS).
-    An event with `actual` already set is resolved and no longer forces
-    a tight interval, regardless of how recently it printed.
+    `events` is None, e.g. after a failed fetch — SCHEDULER_INTERVAL_SECONDS
+    is used by callers directly in that case instead). An event with
+    `actual` already set is resolved and no longer forces a tight
+    interval, regardless of how recently it printed.
+
+    `previous_events` (the prior successful fetch, matched by title) lets
+    a just-detected reschedule — this event's event_time_utc shifted
+    since it was last seen — trigger SENSE_CHECK_INTERVAL_SECONDS
+    specifically in the final SENSE_CHECK_WINDOW_MINUTES before the NEW
+    (adjusted) time: tighter than the standard final-hour cadence, since a
+    just-moved event deserves closer attention than a stable one. Without
+    `previous_events`, reschedule detection is simply skipped — no crash,
+    just no extra tightening.
     """
     if not events:
         return FAR_INTERVAL_SECONDS
 
     now = now or dt.datetime.now(dt.timezone.utc)
+    previous_time_by_title = {e.title: e.event_time_utc for e in (previous_events or [])}
+
     tightest = FAR_INTERVAL_SECONDS
     for event in events:
         if event.actual:
             continue  # already resolved — doesn't need tight polling anymore
         hours_until = (event.event_time_utc - now).total_seconds() / 3600.0
-        if -POST_RELEASE_GRACE_MINUTES / 60.0 <= hours_until <= NEAR_WINDOW_HOURS:
-            return NEAR_INTERVAL_SECONDS  # tightest possible — stop scanning, nothing beats it
-        if hours_until <= FAR_THRESHOLD_HOURS:
-            tightest = min(tightest, NORMAL_INTERVAL_SECONDS)
+
+        previous_time = previous_time_by_title.get(event.title)
+        was_just_rescheduled = previous_time is not None and previous_time != event.event_time_utc
+        if was_just_rescheduled and 0 <= hours_until <= SENSE_CHECK_WINDOW_MINUTES / 60.0:
+            return SENSE_CHECK_INTERVAL_SECONDS  # tightest possible — stop scanning, nothing beats it
+
+        if -POST_RELEASE_GRACE_MINUTES / 60.0 <= hours_until <= FINAL_WINDOW_HOURS:
+            tightest = min(tightest, FINAL_INTERVAL_SECONDS)
+            continue
+
+        if hours_until <= RAMP_WINDOW_HOURS:
+            tightest = min(tightest, RAMP_INTERVAL_SECONDS)
     return tightest
 
 
@@ -156,13 +179,20 @@ def start_scheduler(tracked_symbols_provider: Callable[[], list[str]]) -> None:
     removed via the API take effect without restarting the scheduler).
     """
     def _loop():
+        previous_events: Optional[list[EconomicEvent]] = None
         while True:
             try:
                 events = run_scoring_cycle(tracked_symbols_provider())
-                interval = (
-                    SCHEDULER_INTERVAL_SECONDS if events is None  # fetch failed — retry at the moderate default, not too aggressive against a possibly-down feed, not too sparse either
-                    else compute_adaptive_interval_seconds(events)
-                )
+                if events is None:
+                    # fetch failed — retry at the moderate default, not too
+                    # aggressive against a possibly-down feed, not too sparse
+                    # either. previous_events is deliberately left as-is (not
+                    # cleared) so a reschedule detected before this failure
+                    # is still comparable against once a fetch succeeds again.
+                    interval = SCHEDULER_INTERVAL_SECONDS
+                else:
+                    interval = compute_adaptive_interval_seconds(events, previous_events=previous_events)
+                    previous_events = events
             except Exception as exc:  # noqa: BLE001 — the loop must survive any unhandled error
                 print(f"[scheduler] ERROR: scoring cycle failed, will retry next interval: {exc}")
                 interval = SCHEDULER_INTERVAL_SECONDS

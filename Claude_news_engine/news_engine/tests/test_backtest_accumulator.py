@@ -58,14 +58,14 @@ def test_first_snapshot_taken_immediately_second_only_in_final_snapshot_window()
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
             assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1, "should not take a 2nd snapshot outside the near window"
 
-            # Cycle 3: 2h out — inside webapp.scheduler.NEAR_WINDOW_HOURS(4h), used only for
-            # polling cadence, but OUTSIDE the accumulator's own, much tighter
-            # FINAL_SNAPSHOT_WINDOW_HOURS — the final snapshot must NOT fire this early
-            # (this is the exact gap the old shared-4h-threshold behavior had).
+            # Cycle 3: 2h out — outside the accumulator's own, much tighter
+            # FINAL_SNAPSHOT_WINDOW_HOURS (30 min) — the final snapshot must
+            # NOT fire this early (this is the exact gap the old
+            # shared-with-webapp.scheduler-threshold behavior had).
             still_too_early = event.event_time_utc - dt.timedelta(hours=2)
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=still_too_early)
             assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1, \
-                "must not take the final snapshot merely for being inside the 4h scheduler window"
+                "must not take the final snapshot merely for being inside a wider scheduler-style window"
 
             # Cycle 4: now genuinely close to the event — second snapshot should be taken.
             near_now = event.event_time_utc - dt.timedelta(minutes=20)

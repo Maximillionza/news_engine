@@ -173,9 +173,14 @@ Then open `http://localhost:5001`. Defaults to tracking XAUUSD and US30;
 add more symbols from the dashboard itself — tickers are auto-classified
 (metal / USD-base FX / USD-quote FX / risk index / non-USD cross pair)
 from the symbol shape, no manual config needed. A background thread
-re-scores every 15 minutes; `webapp/dashboard.db` (gitignored) persists
-history across restarts so the before/after diff still works after you
-close and reopen the app.
+re-scores on an adaptive schedule (`webapp/scheduler.py`) — a sparse
+12-hourly baseline days out, ramping to hourly once an event is within
+24h, then every 5 minutes in the final hour (and briefly after, in case
+a release is delayed). A detected reschedule (an event's time shifting
+between fetches) triggers an extra-tight check in the final 15 minutes
+before the new time. `webapp/dashboard.db` (gitignored) persists history
+across restarts so the before/after diff still works after you close and
+reopen the app.
 
 If the article-based accumulator below has already scored an event for
 XAUUSD/US30, its card also shows "backed by N articles" — a read-only

@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from flask import Flask, jsonify, request, send_from_directory
 
 from data_layer.calendar_feed import fetch_calendar, filter_relevant_events
-from webapp.scheduler import NORMAL_INTERVAL_SECONDS, compute_adaptive_interval_seconds, start_scheduler
+from webapp.scheduler import RAMP_INTERVAL_SECONDS, compute_adaptive_interval_seconds, start_scheduler
 from webapp.store import (
     get_connection, get_latest_two, get_history,
     add_tracked_symbol, remove_tracked_symbol, list_tracked_symbols,
@@ -38,10 +38,10 @@ DEFAULT_SYMBOLS = ["XAUUSD", "US30"]
 # many browser tabs are open. TTL is adaptive (webapp.scheduler.compute_adaptive_interval_seconds)
 # — the same "how urgent is this right now" question the background
 # scheduler answers for its own poll cadence, reused here rather than a
-# second hardcoded constant. Starts at NORMAL_INTERVAL_SECONDS before the
+# second hardcoded constant. Starts at RAMP_INTERVAL_SECONDS before the
 # first successful fetch, since there's no event data yet to reason from.
 _calendar_cache = {
-    "events": None, "fetched_at": 0.0, "ttl_seconds": NORMAL_INTERVAL_SECONDS,
+    "events": None, "fetched_at": 0.0, "ttl_seconds": RAMP_INTERVAL_SECONDS,
     "last_attempt_at": 0.0, "last_error": None,
 }
 
@@ -51,7 +51,7 @@ _calendar_cache = {
 # fetch ever recorded, every single incoming request would immediately
 # retry the live feed with zero cooldown: observed live, a 429 that never
 # got a chance to clear because every dashboard poll kept re-triggering it.
-FAILED_FETCH_BACKOFF_SECONDS = NORMAL_INTERVAL_SECONDS
+FAILED_FETCH_BACKOFF_SECONDS = RAMP_INTERVAL_SECONDS
 
 
 def _get_cached_events(now_fn=time.monotonic):
