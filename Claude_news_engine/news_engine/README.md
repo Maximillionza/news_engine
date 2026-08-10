@@ -158,10 +158,13 @@ research, same rigor as `tests/run_historical_backtest.py`'s
 reconstructed cases — just applied to real predictions instead.
 
 ```bash
-python scoring/backtest_accumulator.py   # runs one cycle; import start_accumulator() for continuous operation
-python scripts/confirm_backtest_outcomes.py --list   # see what's awaiting confirmation
-python scripts/confirm_backtest_outcomes.py          # confirm outcomes interactively
+python scripts/run_accumulator.py                     # runs continuously — this is what actually keeps it accumulating; Ctrl-C to stop
+python scoring/backtest_accumulator.py                # or: runs ONE cycle then exits, useful for a manual one-off check
+python scripts/confirm_backtest_outcomes.py --list    # see what's awaiting confirmation
+python scripts/confirm_backtest_outcomes.py           # confirm outcomes interactively
 ```
+
+Runs as its own separate process from the dashboard (`webapp/app.py`) — starting one does NOT start the other, by design. Run both if you want both.
 
 Then view real accuracy at any time:
 
