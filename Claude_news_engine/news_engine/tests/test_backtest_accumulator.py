@@ -36,12 +36,12 @@ def _fake_result(probability=0.7, direction=Direction.BULLISH):
     )
 
 
-def test_first_snapshot_taken_immediately_second_only_in_near_window():
-    print("=== accumulator: first snapshot on window entry, second only within NEAR_WINDOW_HOURS, third never ===")
+def test_first_snapshot_taken_immediately_second_only_in_final_snapshot_window():
+    print("=== accumulator: first snapshot on window entry, second only within FINAL_SNAPSHOT_WINDOW_HOURS, third never ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
-        event = _fake_event(hours_from_now=20, now=now)  # inside 72h pre-window, outside NEAR_WINDOW_HOURS(4h)
+        event = _fake_event(hours_from_now=20, now=now)  # inside 72h pre-window, outside FINAL_SNAPSHOT_WINDOW_HOURS
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
              patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
@@ -58,12 +58,21 @@ def test_first_snapshot_taken_immediately_second_only_in_near_window():
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
             assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1, "should not take a 2nd snapshot outside the near window"
 
-            # Cycle 3: now inside the near window (2h out) — second snapshot should be taken.
-            near_now = event.event_time_utc - dt.timedelta(hours=2)
+            # Cycle 3: 2h out — inside webapp.scheduler.NEAR_WINDOW_HOURS(4h), used only for
+            # polling cadence, but OUTSIDE the accumulator's own, much tighter
+            # FINAL_SNAPSHOT_WINDOW_HOURS — the final snapshot must NOT fire this early
+            # (this is the exact gap the old shared-4h-threshold behavior had).
+            still_too_early = event.event_time_utc - dt.timedelta(hours=2)
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=still_too_early)
+            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1, \
+                "must not take the final snapshot merely for being inside the 4h scheduler window"
+
+            # Cycle 4: now genuinely close to the event — second snapshot should be taken.
+            near_now = event.event_time_utc - dt.timedelta(minutes=20)
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=near_now)
             assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 2
 
-            # Cycle 4: budget exhausted, must not take a 3rd snapshot even still in near window.
+            # Cycle 5: budget exhausted, must not take a 3rd snapshot even still in the final window.
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=near_now)
             assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 2, "budget cap must hold"
             conn.close()
@@ -150,7 +159,7 @@ def test_failed_calendar_fetch_returns_none_without_crashing():
 
 
 if __name__ == "__main__":
-    test_first_snapshot_taken_immediately_second_only_in_near_window()
+    test_first_snapshot_taken_immediately_second_only_in_final_snapshot_window()
     test_high_impact_only_no_medium_widening()
     test_failed_scoring_for_one_pair_does_not_stop_others()
     test_article_bundle_fetched_once_per_event_not_per_instrument()
