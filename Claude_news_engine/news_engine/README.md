@@ -275,13 +275,17 @@ those constants can be revisited against genuine data instead of guesses
 - US30's `usd_relationship: "risk_sentiment"` mapping is explicitly
   flagged in code as a simplification — worth revisiting if US30 backtest
   accuracy comes out weak relative to gold's.
-- **Dukascopy's Terms of Use were never actually read.** `--auto` outcome
-  confirmation reuses an unofficial/undocumented public data-feed URL
-  pattern (via the `dukascopy-python` library), not a published API with
-  an SLA — every fetch failure degrades safely to "leave in the manual
-  queue," so this isn't a correctness risk, but it is a real risk to the
-  feature's *availability* if that changes. Worth a manual read before
-  this gets habitual/heavy use.
+- **Dukascopy's Terms of Use conflict with `--auto` outcome confirmation,
+  read and confirmed 2026-08-10.** Their ToS explicitly bans "any
+  'scraper,' 'robot,' 'bot,' ... or any other automate[d] device, program,
+  tool, algorithm, process or methodology to access, acquire, copy, or
+  monitor any portion of the WEBSITE," and separately bans using their
+  data "to construct a database of any kind." `get_price_at()`'s
+  programmatic fetch and `outcomes` table storage both do exactly that —
+  this is a real ToS violation, not just an availability risk. Knowingly
+  left running as-is (personal, low-volume, non-commercial use) — an
+  informed decision, not an oversight. Revisit if usage grows, or if a
+  properly-licensed price source turns up.
 - `--auto`'s `MEASUREMENT_WINDOW_MINUTES` (30) and
   `CLEAR_MOVE_THRESHOLD_PCT` (0.15%) in `scoring/outcome_classifier.py`
   are unvalidated guesses, same "don't retune without real evidence"
