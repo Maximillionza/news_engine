@@ -1,13 +1,14 @@
 """
-End-to-end live check, RSS-only (no API keys required).
+End-to-end live check.
 
 Fetches this week's high-impact USD calendar events from Forex Factory,
 and for any event currently inside its pre-event window, pulls news from
-the free RSS sources (Reuters, CNBC, Investing.com) and scores XAUUSD.
+the free RSS sources (Reuters, CNBC, Investing.com) — plus Alpha Vantage
+too, automatically, if ALPHA_VANTAGE_API_KEY is set in .env — and scores
+XAUUSD.
 
-This is the script to run first in an environment with real network
-access (e.g. Claude Code) — it exercises the full live pipeline without
-needing any API keys. Run it with:
+No API keys are required to start; this still runs RSS-only without one.
+Run it with:
 
     python scripts/run_live_check.py
 
@@ -21,9 +22,10 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from config.settings import ALPHA_VANTAGE_API_KEY
 from data_layer.calendar_feed import fetch_calendar, filter_relevant_events, events_in_pre_window
 from data_layer.event_context import build_event_news_bundle
-from data_layer.rss_sources import build_preview_sources
+from data_layer.rss_sources import build_all_preview_sources
 from scoring.probability_engine import score_bundle
 
 
@@ -42,12 +44,14 @@ def main():
         return
 
     print(f"Events in active pre-event window: {len(active)}\n")
-    sources = build_preview_sources()
+    sources = build_all_preview_sources()
+    source_note = "RSS + Alpha Vantage" if ALPHA_VANTAGE_API_KEY else "RSS only (no ALPHA_VANTAGE_API_KEY set)"
+    print(f"Sources: {source_note}\n")
 
     for event in active:
         print(f"--- {event.title} ({event.event_time_local.strftime('%Y-%m-%d %H:%M %Z')}) ---")
         bundle = build_event_news_bundle(event, sources, query="", mode="live")
-        print(f"  {len(bundle.articles)} articles pulled from RSS sources")
+        print(f"  {len(bundle.articles)} articles pulled")
 
         result = score_bundle(bundle, "XAUUSD")
         print(f"  {result.summary()}")

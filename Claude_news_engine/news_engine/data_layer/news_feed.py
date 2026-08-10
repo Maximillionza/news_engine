@@ -62,10 +62,37 @@ class AlphaVantageNewsSource:
     Alpha Vantage NEWS_SENTIMENT endpoint.
     Docs: https://www.alphavantage.co/documentation/#news-sentiment
     Free tier: 25 requests/day as of last check — verify current limits
-    before relying on this for continuous polling.
+    before relying on this for continuous polling. Nothing in this
+    codebase currently polls it repeatedly — it's only ever called
+    on-demand from scripts/run_live_check.py or scoring/backtest.py, so a
+    single wired-in run is nowhere near the daily cap. If this ever gets
+    wired into something that re-polls on a schedule, budget the calls
+    (tighter near a tracked event, sparse otherwise) before doing so.
     """
     name = "alpha_vantage_news"
     BASE_URL = "https://www.alphavantage.co/query"
+
+    # Every other NewsSource in this codebase (RSSNewsSource in
+    # rss_sources.py) treats query="" as "no filter, return everything in
+    # the window" — but Alpha Vantage's `topics` param means something
+    # different (its own fixed taxonomy), and an empty string there isn't
+    # "no filter," it's just an empty topics value with undefined
+    # behavior.
+    #
+    # Two things verified live, both worth knowing before touching this:
+    #   1. Multiple comma-separated topics behave as an AND (intersection),
+    #      not OR — "economy_monetary,economy_macro" returned ZERO articles
+    #      repeatedly, while "economy_macro" alone reliably returned dozens.
+    #      Don't combine topics expecting broader coverage; it does the
+    #      opposite. A single topic is the only setting confirmed to return
+    #      non-trivial volume.
+    #   2. "economy_macro" alone is still broad, generic financial news
+    #      (earnings reports, ETF prices, stock-specific commentary) — NOT
+    #      reliably Fed/CPI/NFP-specific content, despite the topic's name.
+    #      Same "broad free feed = noisy relative to what we actually want"
+    #      lesson already learned with the RSS sources — Alpha Vantage's
+    #      free tier doesn't solve that, it has the same problem.
+    DEFAULT_TOPICS = "economy_macro"
 
     def __init__(self, api_key: str = ALPHA_VANTAGE_API_KEY):
         if not api_key:
@@ -75,7 +102,7 @@ class AlphaVantageNewsSource:
     def fetch(self, query: str, since_utc: dt.datetime, limit: int = 50) -> list[NewsArticle]:
         params = {
             "function": "NEWS_SENTIMENT",
-            "topics": query,          # e.g. "economy_macro,finance"
+            "topics": query if query else self.DEFAULT_TOPICS,
             "time_from": since_utc.strftime("%Y%m%dT%H%M"),
             "limit": min(limit, 200),
             "apikey": self.api_key,
