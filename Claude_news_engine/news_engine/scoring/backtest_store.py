@@ -170,6 +170,37 @@ def get_predictions_awaiting_outcome(
     return [Prediction(**dict(row)) for row in rows]
 
 
+def get_latest_prediction(
+    conn: sqlite3.Connection, event_title: str, instrument: str,
+) -> Optional[Prediction]:
+    """
+    Most recent prediction snapshot for this (event_title, instrument)
+    pair, regardless of confirmed/dismissed/pending status — unlike
+    get_predictions_awaiting_outcome() (past + unconfirmed only) and
+    get_all_confirmed_cases() (confirmed only), this is a general lookup.
+    Used by webapp/app.py to display "backed by N articles" alongside the
+    dashboard's own essence-only score — a read of already-independently-
+    fetched accumulator data, not a fetch/score of anything itself.
+    Returns None if no snapshot exists for this pair yet. `id` breaks
+    scored_at_utc ties, same reasoning as get_latest_two() in
+    webapp/store.py.
+    """
+    row = conn.execute(
+        "SELECT * FROM predictions WHERE event_title = ? AND instrument = ? "
+        "ORDER BY scored_at_utc DESC, id DESC LIMIT 1",
+        (event_title, instrument),
+    ).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    return Prediction(
+        id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
+        event_time_utc=d["event_time_utc"], scored_at_utc=d["scored_at_utc"],
+        probability=d["probability"], direction=d["direction"], confidence=d["confidence"],
+        article_count=d["article_count"], contradiction_flag=bool(d["contradiction_flag"]),
+    )
+
+
 def record_outcome(
     conn: sqlite3.Connection,
     event_title: str,

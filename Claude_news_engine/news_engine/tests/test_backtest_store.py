@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scoring.backtest_store import (
     get_connection, record_prediction, count_predictions,
     get_predictions_awaiting_outcome, record_outcome, get_all_confirmed_cases,
-    record_dismissal,
+    record_dismissal, get_latest_prediction,
 )
 
 
@@ -160,6 +160,50 @@ def test_dismissing_an_already_confirmed_pair_is_rejected():
     print("PASS\n")
 
 
+def test_get_latest_prediction_returns_most_recent_snapshot():
+    print("=== backtest_store: get_latest_prediction returns the most recent snapshot for a pair, confirmed or not ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=dt.timezone.utc)
+        t1 = dt.datetime(2026, 8, 10, tzinfo=dt.timezone.utc)
+        t2 = dt.datetime(2026, 8, 11, tzinfo=dt.timezone.utc)
+        record_prediction(conn, "CPI m/m", "XAUUSD", event_time, 0.5, "neutral", 0.1, 3, False, scored_at_utc=t1)
+        record_prediction(conn, "CPI m/m", "XAUUSD", event_time, 0.7, "bullish", 0.4, 9, False, scored_at_utc=t2)
+
+        latest = get_latest_prediction(conn, "CPI m/m", "XAUUSD")
+        assert latest is not None
+        assert latest.article_count == 9, "should return the LATEST snapshot (9 articles), not the first (3)"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_latest_prediction_breaks_scored_at_ties_by_id():
+    print("=== backtest_store: get_latest_prediction breaks identical scored_at_utc ties by id, not undefined SQLite order ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=dt.timezone.utc)
+        tied_time = dt.datetime(2026, 8, 10, tzinfo=dt.timezone.utc)
+        record_prediction(conn, "NFP", "US30", event_time, 0.5, "bullish", 0.1, 4, False, scored_at_utc=tied_time)
+        record_prediction(conn, "NFP", "US30", event_time, 0.6, "bullish", 0.2, 6, False, scored_at_utc=tied_time)
+
+        latest = get_latest_prediction(conn, "NFP", "US30")
+        assert latest.article_count == 6, "the LATER-inserted row must win the tie"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_latest_prediction_returns_none_when_nothing_recorded():
+    print("=== backtest_store: get_latest_prediction returns None when no prediction exists for the pair ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        assert get_latest_prediction(conn, "Nonexistent Event", "XAUUSD") is None
+        conn.close()
+    print("PASS\n")
+
+
 def test_confirmed_cases_joins_latest_prediction_with_outcome():
     print("=== backtest_store: get_all_confirmed_cases joins the latest snapshot with its outcome ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -190,5 +234,8 @@ if __name__ == "__main__":
     test_record_outcome_rejects_invalid_actual_direction()
     test_dismissed_prediction_stops_appearing_in_awaiting_outcome()
     test_dismissing_an_already_confirmed_pair_is_rejected()
+    test_get_latest_prediction_returns_most_recent_snapshot()
+    test_get_latest_prediction_breaks_scored_at_ties_by_id()
+    test_get_latest_prediction_returns_none_when_nothing_recorded()
     test_confirmed_cases_joins_latest_prediction_with_outcome()
     print("All backtest_store tests passed.")
