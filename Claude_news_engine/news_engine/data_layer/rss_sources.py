@@ -29,8 +29,8 @@ from email.utils import parsedate_to_datetime
 
 import requests
 
-from config.settings import UTC_TZ
-from data_layer.news_feed import NewsArticle
+from config.settings import ALPHA_VANTAGE_API_KEY, UTC_TZ
+from data_layer.news_feed import AlphaVantageNewsSource, NewsArticle, NewsSource
 
 
 # --- Tier 1: pre-event sentiment sources (previews, analyst commentary, positioning) ---
@@ -172,6 +172,32 @@ class RSSNewsSource:
 def build_preview_sources() -> list[RSSNewsSource]:
     """All Tier 1 (pre-event, scoring-eligible) RSS sources, ready to use."""
     return [RSSNewsSource(name, url) for name, url in FREE_PREVIEW_FEEDS.items()]
+
+
+def build_all_preview_sources() -> list[NewsSource]:
+    """
+    All Tier 1 sources this environment can actually use: the free RSS
+    feeds (always available, no config needed) plus Alpha Vantage's
+    NEWS_SENTIMENT source IF ALPHA_VANTAGE_API_KEY is set — opt-in by key
+    presence, same as this project's other optional tiers (FinBERT/LLM
+    contextual sentiment gate on an explicit ENABLE_* env var instead,
+    since those activate just from a dependency being importable; an API
+    key is already a deliberate user action, so its mere presence is a
+    legitimate opt-in signal here).
+
+    Alpha Vantage's native_sentiment (if present on a returned article)
+    bypasses the lexicon/FinBERT/LLM tiers entirely in
+    probability_engine._get_article_sentiment() — it's the vendor's own
+    computed score, already the most-trusted tier by design.
+
+    Use this instead of build_preview_sources() directly for anything
+    that should pick up Alpha Vantage automatically once configured,
+    without every caller re-writing the same "is the key set" check.
+    """
+    sources: list[NewsSource] = build_preview_sources()
+    if ALPHA_VANTAGE_API_KEY:
+        sources.append(AlphaVantageNewsSource())
+    return sources
 
 
 def build_outcome_sources() -> list[RSSNewsSource]:

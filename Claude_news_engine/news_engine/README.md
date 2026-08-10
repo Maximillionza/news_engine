@@ -26,16 +26,35 @@ for whichever environment (e.g. Claude Code) picks this up next.
 pip install -r requirements.txt
 ```
 
-No API keys are required to start. The system currently runs RSS-only
-(Reuters, CNBC, Investing.com — all free, no auth), which is the
-deliberate choice for this validation phase: fewer moving parts, easier
-to debug, and sufficient for testing whether the scoring logic itself
-holds up before paying for broader source coverage.
+No API keys are required to start — the system runs RSS-only (Reuters,
+CNBC, Investing.com — all free, no auth) by default.
 
-Alpha Vantage and APITube clients exist in `data_layer/news_feed.py` and
-can be added later (via `.env`, see `.env.example`) if RSS-only backtest
-results suggest more source breadth would help — no code changes needed,
-just add the sources to the list passed into scoring.
+**Alpha Vantage is wired in and opt-in by key presence.** Copy
+`.env.example` to `.env`, fill in `ALPHA_VANTAGE_API_KEY` (free signup
+at alphavantage.co), and `data_layer.rss_sources.build_all_preview_sources()`
+picks it up automatically alongside the RSS feeds — no other code
+changes needed. `.env` is loaded via `python-dotenv` at import time
+(`config/settings.py`); this didn't actually work before — `.env` was
+documented but nothing ever loaded it into `os.environ`.
+
+Verified live, worth knowing before touching `AlphaVantageNewsSource`:
+- Its `topics` param does NOT take a lexicon-style `query=""` "no
+  filter" — that convention is RSS-specific. Empty query maps to
+  `DEFAULT_TOPICS` (`"economy_macro"`) instead.
+- **Multiple comma-separated topics act as an AND, not an OR** —
+  `"economy_monetary,economy_macro"` returned zero articles, repeatedly,
+  while `"economy_macro"` alone reliably returns dozens. Don't combine
+  topics expecting broader coverage.
+- Even the single best topic (`economy_macro`) is still broad, generic
+  financial news (earnings reports, ETF prices) — not reliably
+  Fed/CPI/NFP-specific despite the name. Same "free feed is noisy
+  relative to what we actually want" finding as the RSS sources; Alpha
+  Vantage's free tier doesn't solve that, confirmed via a real live
+  pipeline run (77 combined RSS+AV articles, real scored output).
+
+APITube's client also exists in `data_layer/news_feed.py` but isn't
+wired into `build_all_preview_sources()` yet — same opt-in-by-key
+pattern would apply, just not connected.
 
 ## First things to run, in order
 
@@ -83,9 +102,10 @@ just add the sources to the list passed into scoring.
 config/settings.py       — timezones (SAST), instruments, trust weights, tuning knobs
 data_layer/
   calendar_feed.py        — Forex Factory calendar, SAST conversion
-  news_feed.py             — Alpha Vantage + APITube clients (optional, unused by default)
-  rss_sources.py           — free RSS sources, split into pre-event scoring
-                              vs. backtest-only ground-truth outcome feeds
+  news_feed.py             — Alpha Vantage (wired in, opt-in by key) + APITube (client exists, not wired) clients
+  rss_sources.py           — free RSS sources + build_all_preview_sources(),
+                              split into pre-event scoring vs. backtest-only
+                              ground-truth outcome feeds
   event_context.py         — bundles an event with its pre-event news window,
                               enforces no-lookahead cutoff for backtesting
 scoring/

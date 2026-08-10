@@ -5,6 +5,16 @@ API keys are read from environment variables — never hardcode them here.
 import os
 from zoneinfo import ZoneInfo
 
+from dotenv import load_dotenv
+
+# .env.example / README both document "copy to .env and fill in your
+# keys," but nothing actually loaded that file — os.environ.get() alone
+# only sees real process env vars, never a bare .env on disk. Found while
+# wiring in Alpha Vantage: a key written to .env was silently never
+# picked up. load_dotenv() here (no-ops harmlessly if .env doesn't exist)
+# makes the documented workflow actually work.
+load_dotenv()
+
 # --- Timezones ---
 # Masood is based in South Africa (SAST, UTC+2, no DST)
 LOCAL_TZ = ZoneInfo("Africa/Johannesburg")
