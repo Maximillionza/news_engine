@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
 
 from data_layer.calendar_feed import EconomicEvent
 from data_layer.event_context import EventNewsBundle, build_event_news_bundle
@@ -153,3 +155,41 @@ class BacktestReport:
         print(f"Accuracy on calls made: {acc:.0%}" if acc is not None else "Accuracy: n/a (no directional calls made)")
         print(f"Contradiction flagged:  {self.contradiction_rate():.0%} of events")
         print(f"{'-' * 70}")
+
+
+def build_real_backtest_report(db_path: Optional[Path] = None) -> BacktestReport:
+    """
+    Builds a BacktestReport from the article-based accumulator's real,
+    confirmed (prediction, outcome) pairs — scoring/backtest_store.py's
+    running log. Same report shape as the reconstructed backtest
+    (tests/run_historical_backtest.py), so real and reconstructed
+    results are directly comparable via the same print_report() output.
+    """
+    from scoring.backtest_store import get_all_confirmed_cases, get_connection
+
+    conn = get_connection(db_path)
+    confirmed = get_all_confirmed_cases(conn)
+    conn.close()
+
+    report = BacktestReport()
+    for prediction, outcome in confirmed:
+        event = EconomicEvent(
+            title=prediction.event_title, country="USD", impact="High",
+            event_time_utc=dt.datetime.fromisoformat(prediction.event_time_utc),
+        )
+        case = BacktestCase(
+            event=event, instrument=prediction.instrument,
+            actual_direction=Direction(outcome.actual_direction),
+            actual_move_note=outcome.actual_move_note,
+        )
+        case.result = ProbabilityResult(
+            instrument=prediction.instrument,
+            as_of_utc=dt.datetime.fromisoformat(prediction.scored_at_utc),
+            aggregate_usd_sentiment=0.0, instrument_score=0.0,
+            probability=prediction.probability, direction=Direction(prediction.direction),
+            confidence=prediction.confidence, article_count=prediction.article_count,
+            contradiction_flag=prediction.contradiction_flag, contradiction_note=None,
+        )
+        case.evaluate()
+        report.add(case)
+    return report
