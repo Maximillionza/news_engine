@@ -92,9 +92,12 @@ pattern would apply, just not connected.
    `scoring/backtest.py`'s `run_backtest_case()` (the fetch-based path,
    not `run_backtest_case_manual()` which was only used for the
    reconstructed historical test). This needs real `EconomicEvent`
-   objects for past dates — either build them by hand with known past
-   NFP/CPI event times, or extend `calendar_feed.py` to fetch
-   `"lastweek"` / historical periods if the feed supports it.
+   objects for past dates — build them by hand with known past NFP/CPI
+   event times. `calendar_feed.py` cannot fetch historical/future-week
+   periods — confirmed (live + research) that Forex Factory's feed only
+   ever serves `"thisweek"`, `"lastweek"`/`"nextweek"` don't exist on
+   the server at all. See `tests/run_historical_backtest.py` for the
+   established hand-reconstruction pattern this project already uses.
 
 ## Architecture
 
