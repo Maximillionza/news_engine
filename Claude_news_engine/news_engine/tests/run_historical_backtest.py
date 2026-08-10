@@ -1,15 +1,18 @@
 """
-Historical backtest using 13 real major (red-folder) USD economic events
+Historical backtest using 14 real major (red-folder) USD economic events
 from 2026 (Jan-Aug), reconstructed from web research since this sandbox
 can't reach live news/price APIs directly.
 
-Events #11-13 (Jan 2026 — Dec NFP, Dec CPI, Dec PPI) were added via live
-WebSearch, sourced from CNBC, Kitco, TradingKey, BLS, and others — see the
-actual_move_note on each for the specific facts and how they were framed.
-The January FOMC meeting (Jan 28, hold at 3.50-3.75%) was deliberately
-left out: the hold was fully priced in and no clean, confirmed immediate
-price reaction distinct from other market noise around that date could be
-sourced — forcing a case there would be guessing, not reconstructing.
+Events #11-14 (Jan 2026 — Dec NFP, Dec CPI, Dec PPI, the Jan 28 FOMC
+decision) were added via live WebSearch, sourced from CNBC, Kitco,
+TradingKey, BLS, INN, and others — see the actual_move_note on each for
+the specific facts and how they were framed. The FOMC case (#14) was
+initially skipped in an earlier pass — no clean confirmed reaction could
+be sourced then — and added later once a same-day headline directly
+confirming the reaction was found on a second, better-targeted search.
+That's worth remembering generally: "couldn't find it" is a statement
+about the search, not a proof the data doesn't exist — worth a second
+pass with different terms before concluding a case can't be reconstructed.
 
 IMPORTANT CAVEAT — read before trusting these numbers:
 The pre-event "articles" below are NOT pulled from a live news API with
@@ -189,6 +192,28 @@ report.add(run_backtest_case_manual(
     "both headline and core, m/m and y/y; gold fell sharply into month-end (down double-digit "
     "percent from its Jan 29 record), though the magnitude is compounded by a broader "
     "record-high correction already underway, not attributable to PPI alone"
+))
+
+# --- 14. FOMC Rate Decision, Jan 28, 2026 (previously deliberately skipped) ---
+# Re-researched later with better search terms and a clean source was
+# found this time: a same-day headline directly confirming the reaction
+# ("Gold Price Dips Back Below US$4,300 as New Fed Chair Holds Rates
+# Steady"). Direction is real and confirmed; the exact MAGNITUDE is
+# entangled with the broader Jan 28-30 correction already used for
+# event #13's PPI case (same window, compounding drivers), same
+# honesty caveat applied there.
+e14 = EconomicEvent("FOMC Rate Decision", "USD", "High", dt.datetime(2026, 1, 28, 19, 0, tzinfo=UTC_TZ))
+a14 = [
+    art("Fed widely expected to hold, dot plot in focus for 2026 path", "CME FedWatch prices ~95% odds of a hold at 3.50-3.75% — real market impact expected from forward guidance, not the rate decision itself", e14.event_time_utc, 28),
+    art("Cooling labor market complicates the Fed's forward guidance", "December payrolls added just 50K — if Chair Warsh signals concern over the labor market, markets would pull forward rate-cut bets, a tailwind for gold", e14.event_time_utc, 18),
+    art("Gold near record highs as markets brace for Fed guidance", "A hawkish tilt — Warsh framing 3.5% as a floor, not a peak, given resilient growth data — risks a profit-taking pullback in bullion", e14.event_time_utc, 5),
+]
+report.add(run_backtest_case_manual(
+    e14, a14, "XAUUSD", Direction.BEARISH,
+    "held as expected at 3.50-3.75% under Chair Warsh (no surprise on the decision itself), but "
+    "hawkish forward guidance — rate-hike odds for September priced up to 67%, three hikes "
+    "anticipated across 2026 — sent gold decisively below the $4,300 support level. Same "
+    "'hold but hawkish' pattern as the June FOMC case (#6)"
 ))
 
 report.print_report()
