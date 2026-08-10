@@ -201,6 +201,21 @@ def get_predictions():
             latest = runs[0]
             previous = runs[1] if len(runs) > 1 else None
             accumulator_prediction = get_latest_prediction(backtest_conn, event.title, ticker)
+            # The accumulator's own blind, article-based call — direction
+            # and probability, not just how many articles backed it. This
+            # is a REAL prediction the accumulator already made independently,
+            # not derived from the essence-only score above; it can exist
+            # (and disagree) even while the essence-only score is still
+            # "pending," since the accumulator predicts BEFORE the event
+            # resolves. Previously only article_count surfaced here, which
+            # left the actual call itself invisible on the dashboard.
+            article_prediction = None
+            if accumulator_prediction is not None:
+                article_prediction = {
+                    "direction": accumulator_prediction.direction,
+                    "probability": accumulator_prediction.probability,
+                    "article_count": accumulator_prediction.article_count,
+                }
             entry["events"].append({
                 "event_title": event.title,
                 "event_time_utc": event.event_time_utc.isoformat(),
@@ -209,6 +224,7 @@ def get_predictions():
                 "previous_probability": previous.probability if previous else None,
                 "previous_direction": previous.direction if previous else None,
                 "article_count": accumulator_prediction.article_count if accumulator_prediction else None,
+                "article_prediction": article_prediction,
             })
 
         # A resolved score always outranks a still-pending one, regardless

@@ -134,16 +134,26 @@ function renderCard(symbolEntry) {
 
   const next = events[0];
 
-  // article_count only exists for events the article-based backtest
-  // accumulator has independently processed (High-impact XAUUSD/US30
-  // only, budget-capped) - absent for everything else, which is expected.
-  // The accumulator's whole point is a BLIND prediction made BEFORE the
-  // event, so this needs to show in the pending state too, not just once
-  // resolved — that's exactly when "we already have an article-based
-  // read, even though the official number hasn't printed yet" matters.
-  const articleCountLine = next.article_count != null
-    ? `<div style="font-size:12px;color:#888">backed by ${next.article_count} article${next.article_count === 1 ? '' : 's'}</div>`
-    : '';
+  // article_prediction is the accumulator's own REAL prediction (direction
+  // + probability), made BLIND from real articles BEFORE the event
+  // resolves — it's independent of the essence-only score above and can
+  // exist (and disagree) even while that score is still "pending". This is
+  // the actual answer to "which way will this move" that the article-based
+  // pipeline exists to produce — showing only the article COUNT and hiding
+  // the call itself defeats the point, so this renders as a real headline,
+  // not a footnote. Only present for events the accumulator has
+  // independently processed (High-impact XAUUSD/US30 only, budget-capped) —
+  // absent for everything else, which is expected.
+  function articlePredictionHtml(pred) {
+    if (!pred) return '';
+    const pct = Math.round(pred.probability * 100);
+    const dClass = directionClass(pred.direction);
+    return `<div class="article-prediction ${dClass}">
+      📰 Article-based read: <b>${directionLabel(pred.direction)} ${pct}%</b>
+      <span style="font-size:12px;color:#888">(backed by ${pred.article_count} article${pred.article_count === 1 ? '' : 's'})</span>
+    </div>`;
+  }
+  const articlePredictionLine = articlePredictionHtml(next.article_prediction);
 
   if (next.direction === "pending") {
     // The event/when data is already in the response — showing it here
@@ -151,7 +161,7 @@ function renderCard(symbolEntry) {
     // actually waiting on, not just that something is pending.
     body += `<div class="pending">Awaiting: ${escapeHtml(next.event_title)}<br>
       <span style="font-size:12px;color:#888">${formatEventDateTime(next.event_time_utc)}</span></div>
-      ${articleCountLine}`;
+      ${articlePredictionLine}`;
     el.innerHTML = body;
     el.querySelector(".remove-btn").addEventListener("click", () => removeSymbol(symbol));
     return el;
@@ -190,7 +200,7 @@ function renderCard(symbolEntry) {
   body += `<div class="gauge-row">${gaugeSvg(next.probability, next.direction)}
     <div><div class="gauge-label ${dirClass}">${directionLabel(next.direction)} ${pct}%</div>
     <div style="font-size:12px;color:#888">${escapeHtml(next.event_title)}</div>
-    ${articleCountLine}</div></div>`;
+    ${articlePredictionLine}</div></div>`;
   body += dayStripHtml(next.event_time_utc);
 
   el.innerHTML = body;

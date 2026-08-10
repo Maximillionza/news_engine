@@ -249,6 +249,41 @@ def test_predictions_includes_article_count_from_accumulator_db():
             events = resp.get_json()["predictions"][0]["events"]
             assert len(events) == 1
             assert events[0]["article_count"] == 12
+            # The actual accumulator call — direction + probability — not
+            # just the article count. This is the real prediction the
+            # article-based pipeline exists to produce.
+            assert events[0]["article_prediction"] == {
+                "direction": "bullish", "probability": 0.66, "article_count": 12,
+            }
+    print("PASS\n")
+
+
+def test_predictions_article_prediction_is_none_when_accumulator_never_scored_it():
+    print("=== app: /api/predictions leaves article_prediction as None for a symbol/event the accumulator never touched ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        webapp_app._calendar_cache = {
+            "events": None, "fetched_at": 0.0, "ttl_seconds": 900,
+            "last_attempt_at": 0.0, "last_error": None,
+        }  # avoid cross-test cache pollution
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path), \
+             patch.object(webapp_app, "fetch_calendar", return_value=_fake_events()), \
+             patch.object(webapp_app, "filter_relevant_events", side_effect=lambda events, **kwargs: events):
+
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "EURUSD")
+            event_time = dt.datetime(2026, 8, 7, 12, 30, tzinfo=dt.timezone.utc)
+            store.record_run(conn, "EURUSD", "Non-Farm Employment Change", event_time, 0.55, "bearish", -0.2)
+            conn.close()
+            # backtest_log.db is never populated — get_connection() will just create it empty.
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            assert len(events) == 1
+            assert events[0]["article_prediction"] is None
     print("PASS\n")
 
 
@@ -484,6 +519,7 @@ if __name__ == "__main__":
     test_predictions_prefers_resolved_over_pending_regardless_of_distance()
     test_predictions_prefers_resolved_event_over_pending_sibling_at_same_timestamp()
     test_predictions_includes_article_count_from_accumulator_db()
+    test_predictions_article_prediction_is_none_when_accumulator_never_scored_it()
     test_predictions_article_count_is_none_when_accumulator_never_scored_it()
     test_prediction_history_endpoint_returns_full_run_history()
     test_prediction_history_endpoint_missing_event_title_returns_empty()
