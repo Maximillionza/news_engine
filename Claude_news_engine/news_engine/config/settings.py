@@ -66,6 +66,17 @@ INSTRUMENTS = {
     "US30":   {"label": "Dow Jones / US30", "usd_relationship": "risk_sentiment"},
 }
 
+# Dampening applied to "risk_sentiment" instruments (currently just US30) —
+# a hawkish/dovish USD read is treated as a weaker, indirect driver for an
+# equity index than it is for gold's cleaner inverse relationship. Shared
+# by scoring/probability_engine.py's article-based path and
+# webapp/scoring_service.py's essence-only path — was previously
+# hardcoded as a duplicated 0.7 literal in both, a real DRY violation
+# flagged in review and left unfixed until now. Still an unvalidated
+# simplification, same honesty as INSTRUMENTS' usd_relationship choices —
+# worth revisiting if US30 backtest accuracy comes out weak.
+RISK_SENTIMENT_DAMPENING = 0.7
+
 # --- Rolling window config ---
 PRE_EVENT_WINDOW_HOURS = 72   # start forming probability 3 days before a scheduled event
 POST_EVENT_REFRESH_MINUTES = 15  # how often to refresh sentiment after release, to catch indecision

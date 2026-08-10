@@ -37,6 +37,7 @@ from config.settings import (
     PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES,
     PRECURSOR_TRUST_WEIGHT,
     RECENT_WINDOW_HOURS,
+    RISK_SENTIMENT_DAMPENING,
     SOURCE_TRUST_WEIGHTS,
     TIME_DECAY_HALF_LIFE_MINUTES,
     UTC_TZ,
@@ -288,7 +289,7 @@ def _map_to_instrument_score(usd_sentiment: float, instrument: str) -> float:
         # simplification — hawkish-because-strong-economy can also be
         # equity-positive — flagged here so it's the first thing to
         # re-examine if US30 backtest accuracy comes out weak.
-        return -usd_sentiment * 0.7  # dampened relative to gold's cleaner inverse relationship
+        return -usd_sentiment * RISK_SENTIMENT_DAMPENING  # dampened relative to gold's cleaner inverse relationship
     raise ValueError(f"Unknown usd_relationship for instrument {instrument!r}: {relationship}")
 
 
