@@ -111,6 +111,8 @@ data_layer/
                               ground-truth outcome feeds
   event_context.py         — bundles an event with its pre-event news window,
                               enforces no-lookahead cutoff for backtesting
+  dukascopy_feed.py         — free historical price lookup (dukascopy-python,
+                               opt-in), backs --auto outcome confirmation below
 scoring/
   sentiment.py              — lexicon-based USD-directional sentiment fallback
   probability_engine.py     — time-decay + trust weighting, instrument mapping,
@@ -120,11 +122,39 @@ scoring/
                                runs through an event window
   backtest.py                — replays events through the pipeline, compares
                                 predicted vs. actual direction
-scripts/run_live_check.py   — end-to-end RSS-only live run, start here
+  backtest_store.py          — SQLite log for the article-based accumulator
+                                below (predictions/outcomes/dismissals)
+  backtest_accumulator.py    — the accumulator's own scoring/persistence cycle
+  outcome_classifier.py      — Dukascopy-price-based bullish/bearish/ambiguous
+                                classification, backs --auto below
+scripts/
+  run_live_check.py           — end-to-end RSS-only live run, start here
+  run_all.py                   — single launcher for dashboard + accumulator together
+  run_accumulator.py           — continuous accumulator process
+  confirm_backtest_outcomes.py — manual + --auto outcome confirmation CLI
 tests/
   test_scoring_smoke.py       — synthetic unit tests, no network needed
   run_historical_backtest.py  — the 10-event reconstructed backtest (reference only)
 ```
+
+## Run everything at once (optional)
+
+The dashboard and the accumulator (both described below) are separate
+processes by design — but if you want both running together without
+juggling two terminals, one launcher starts both:
+
+```bash
+python scripts/run_all.py
+```
+
+Combined, tagged output (`[dashboard]` / `[accumulator]`) in one
+terminal; Ctrl+C stops both cleanly, and either process crashing stops
+the other too — no daemonization, no auto-restart. This is purely an
+additive convenience: each script still works exactly the same run on
+its own, and `scripts/confirm_backtest_outcomes.py` (needs a real
+terminal for interactive prompts) and `scripts/run_live_check.py`
+(one-off diagnostic) are deliberately NOT part of it — neither fits
+"continuous service."
 
 ## Symbol impact dashboard (optional)
 
@@ -147,6 +177,14 @@ re-scores every 15 minutes; `webapp/dashboard.db` (gitignored) persists
 history across restarts so the before/after diff still works after you
 close and reopen the app.
 
+If the article-based accumulator below has already scored an event for
+XAUUSD/US30, its card also shows "backed by N articles" — a read-only
+display sourced from the accumulator's own database
+(`scoring/backtest_log.db`); the dashboard's own score computation stays
+essence-only (no article fetching), this is purely extra context shown
+alongside it. Won't appear for other tracked symbols or events the
+accumulator hasn't processed — that's expected, not a bug.
+
 ## Article-based backtest accumulator (optional)
 
 Separate from the dashboard above (which is essence-only, no articles at
@@ -162,9 +200,29 @@ python scripts/run_accumulator.py                     # runs continuously — th
 python scoring/backtest_accumulator.py                # or: runs ONE cycle then exits, useful for a manual one-off check
 python scripts/confirm_backtest_outcomes.py --list    # see what's awaiting confirmation
 python scripts/confirm_backtest_outcomes.py           # confirm outcomes interactively
+python scripts/confirm_backtest_outcomes.py --auto    # auto-confirm clear cases first (see below), then interactive for what's left
 ```
 
-Runs as its own separate process from the dashboard (`webapp/app.py`) — starting one does NOT start the other, by design. Run both if you want both.
+Runs as its own separate process from the dashboard (`webapp/app.py`) —
+starting one does NOT start the other, by design. Run both if you want
+both, or use `python scripts/run_all.py` (see "Run everything at once"
+above) to start both together.
+
+**`--auto` auto-confirms outcomes using free historical price data**
+(Dukascopy, no API key) instead of manual research: a real post-event
+price move ≥0.15% in the 30 minutes after the release gets confirmed
+automatically, anything smaller or a failed fetch is left in the same
+manual-review queue exactly as before — never auto-classified as
+neutral, since a small move means "needs a human to check," not
+"confidently no reaction." Needs the optional dependency:
+
+```bash
+pip install -r requirements-dukascopy.txt
+```
+
+Bare `confirm_backtest_outcomes.py` (no `--auto`) is completely
+unaffected — still fully manual, zero network calls to Dukascopy, no
+extra dependency required.
 
 Then view real accuracy at any time:
 
@@ -217,3 +275,15 @@ those constants can be revisited against genuine data instead of guesses
 - US30's `usd_relationship: "risk_sentiment"` mapping is explicitly
   flagged in code as a simplification — worth revisiting if US30 backtest
   accuracy comes out weak relative to gold's.
+- **Dukascopy's Terms of Use were never actually read.** `--auto` outcome
+  confirmation reuses an unofficial/undocumented public data-feed URL
+  pattern (via the `dukascopy-python` library), not a published API with
+  an SLA — every fetch failure degrades safely to "leave in the manual
+  queue," so this isn't a correctness risk, but it is a real risk to the
+  feature's *availability* if that changes. Worth a manual read before
+  this gets habitual/heavy use.
+- `--auto`'s `MEASUREMENT_WINDOW_MINUTES` (30) and
+  `CLEAR_MOVE_THRESHOLD_PCT` (0.15%) in `scoring/outcome_classifier.py`
+  are unvalidated guesses, same "don't retune without real evidence"
+  discipline as the constants above — revisit once real auto-confirmed
+  data accumulates, not before.
