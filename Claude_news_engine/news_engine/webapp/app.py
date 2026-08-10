@@ -40,25 +40,50 @@ DEFAULT_SYMBOLS = ["XAUUSD", "US30"]
 # scheduler answers for its own poll cadence, reused here rather than a
 # second hardcoded constant. Starts at NORMAL_INTERVAL_SECONDS before the
 # first successful fetch, since there's no event data yet to reason from.
-_calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": NORMAL_INTERVAL_SECONDS}
+_calendar_cache = {
+    "events": None, "fetched_at": 0.0, "ttl_seconds": NORMAL_INTERVAL_SECONDS,
+    "last_attempt_at": 0.0, "last_error": None,
+}
+
+# How long to back off after a FAILED fetch before attempting the live feed
+# again. Distinct from ttl_seconds above (which only advances on success) —
+# without this, a failure left fetched_at untouched, so with no successful
+# fetch ever recorded, every single incoming request would immediately
+# retry the live feed with zero cooldown: observed live, a 429 that never
+# got a chance to clear because every dashboard poll kept re-triggering it.
+FAILED_FETCH_BACKOFF_SECONDS = NORMAL_INTERVAL_SECONDS
 
 
-def _get_cached_events():
+def _get_cached_events(now_fn=time.monotonic):
     """
     Shared cache for the two routes below. Raises whatever
     fetch_calendar()/filter_relevant_events() raises on a cache miss —
     callers already handle that by degrading to an empty list plus an
-    error field, so a real fetch failure still surfaces as "stale," it
-    just isn't attempted on every single request.
+    error field, so a real fetch failure still surfaces as "stale." On a
+    fresh failure, re-raises the SAME cached error for
+    FAILED_FETCH_BACKOFF_SECONDS instead of re-attempting the live fetch
+    on every request during that window (see FAILED_FETCH_BACKOFF_SECONDS).
+    `now_fn` is injectable so tests can control elapsed time without
+    monkeypatching the global `time` module (which Flask/Werkzeug
+    internals may also call).
     """
-    now = time.monotonic()
+    now = now_fn()
     if _calendar_cache["events"] is not None and (now - _calendar_cache["fetched_at"]) < _calendar_cache["ttl_seconds"]:
         return _calendar_cache["events"]
 
-    events = filter_relevant_events(fetch_calendar("thisweek"), min_impact="Medium")
+    if _calendar_cache["last_error"] is not None and (now - _calendar_cache["last_attempt_at"]) < FAILED_FETCH_BACKOFF_SECONDS:
+        raise _calendar_cache["last_error"]
+
+    _calendar_cache["last_attempt_at"] = now
+    try:
+        events = filter_relevant_events(fetch_calendar("thisweek"), min_impact="Medium")
+    except Exception as exc:  # noqa: BLE001 — cached and re-raised, callers already degrade gracefully
+        _calendar_cache["last_error"] = exc
+        raise
     _calendar_cache["events"] = events
     _calendar_cache["fetched_at"] = now
     _calendar_cache["ttl_seconds"] = compute_adaptive_interval_seconds(events)
+    _calendar_cache["last_error"] = None
     return events
 
 

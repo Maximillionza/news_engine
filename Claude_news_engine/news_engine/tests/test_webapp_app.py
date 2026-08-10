@@ -67,7 +67,10 @@ def test_predictions_endpoint_reflects_stored_runs():
     print("=== app: /api/predictions surfaces latest + previous run with delta info ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
-        webapp_app._calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": 900}  # avoid cross-test cache pollution
+        webapp_app._calendar_cache = {
+            "events": None, "fetched_at": 0.0, "ttl_seconds": 900,
+            "last_attempt_at": 0.0, "last_error": None,
+        }  # avoid cross-test cache pollution
         with patch.object(store, "DB_PATH", db_path), \
              patch.object(webapp_app, "fetch_calendar", return_value=_fake_events()), \
              patch.object(webapp_app, "filter_relevant_events", side_effect=lambda events, **kwargs: events):
@@ -105,7 +108,10 @@ def test_predictions_sorts_resolved_events_by_proximity_to_now():
             title="Non-Farm Employment Change", country="USD", impact="High",
             event_time_utc=now + dt.timedelta(hours=2), forecast="75K", actual="80K",
         )
-        webapp_app._calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": 900}  # avoid cross-test cache pollution
+        webapp_app._calendar_cache = {
+            "events": None, "fetched_at": 0.0, "ttl_seconds": 900,
+            "last_attempt_at": 0.0, "last_error": None,
+        }  # avoid cross-test cache pollution
         with patch.object(store, "DB_PATH", db_path), \
              patch.object(webapp_app, "fetch_calendar", return_value=[far_event, near_event]), \
              patch.object(webapp_app, "filter_relevant_events", side_effect=lambda events, **kwargs: events):
@@ -145,7 +151,10 @@ def test_predictions_prefers_resolved_over_pending_regardless_of_distance():
             title="CPI m/m", country="USD", impact="High",
             event_time_utc=now + dt.timedelta(hours=1), forecast="0.1%", actual=None,
         )
-        webapp_app._calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": 900}  # avoid cross-test cache pollution
+        webapp_app._calendar_cache = {
+            "events": None, "fetched_at": 0.0, "ttl_seconds": 900,
+            "last_attempt_at": 0.0, "last_error": None,
+        }  # avoid cross-test cache pollution
         with patch.object(store, "DB_PATH", db_path), \
              patch.object(webapp_app, "fetch_calendar", return_value=[near_pending, far_resolved]), \
              patch.object(webapp_app, "filter_relevant_events", side_effect=lambda events, **kwargs: events):
@@ -170,7 +179,10 @@ def test_predictions_prefers_resolved_event_over_pending_sibling_at_same_timesta
     print("=== app: among events tied on timestamp, a resolved one beats a still-pending sibling ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
-        webapp_app._calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": 900}  # avoid cross-test cache pollution
+        webapp_app._calendar_cache = {
+            "events": None, "fetched_at": 0.0, "ttl_seconds": 900,
+            "last_attempt_at": 0.0, "last_error": None,
+        }  # avoid cross-test cache pollution
         # Real-world shape: a release day publishes several sub-metrics at the
         # IDENTICAL timestamp. Feed order deliberately puts the still-pending
         # sibling first, so a naive time-only sort would keep it at events[0]
@@ -210,7 +222,10 @@ def test_predictions_includes_article_count_from_accumulator_db():
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         backtest_db_path = Path(tmp) / "backtest_log.db"
-        webapp_app._calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": 900}  # avoid cross-test cache pollution
+        webapp_app._calendar_cache = {
+            "events": None, "fetched_at": 0.0, "ttl_seconds": 900,
+            "last_attempt_at": 0.0, "last_error": None,
+        }  # avoid cross-test cache pollution
         with patch.object(store, "DB_PATH", db_path), \
              patch.object(backtest_store, "DB_PATH", backtest_db_path), \
              patch.object(webapp_app, "fetch_calendar", return_value=_fake_events()), \
@@ -242,7 +257,10 @@ def test_predictions_article_count_is_none_when_accumulator_never_scored_it():
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         backtest_db_path = Path(tmp) / "backtest_log.db"
-        webapp_app._calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": 900}  # avoid cross-test cache pollution
+        webapp_app._calendar_cache = {
+            "events": None, "fetched_at": 0.0, "ttl_seconds": 900,
+            "last_attempt_at": 0.0, "last_error": None,
+        }  # avoid cross-test cache pollution
         with patch.object(store, "DB_PATH", db_path), \
              patch.object(backtest_store, "DB_PATH", backtest_db_path), \
              patch.object(webapp_app, "fetch_calendar", return_value=_fake_events()), \
@@ -304,7 +322,10 @@ def test_calendar_fetch_failure_does_not_500():
     print("=== app: /api/calendar survives a fetch_calendar exception ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
-        webapp_app._calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": 900}  # avoid cross-test cache pollution
+        webapp_app._calendar_cache = {
+            "events": None, "fetched_at": 0.0, "ttl_seconds": 900,
+            "last_attempt_at": 0.0, "last_error": None,
+        }  # avoid cross-test cache pollution
         with patch.object(store, "DB_PATH", db_path), \
              patch.object(webapp_app, "fetch_calendar", side_effect=Exception("network down")):
 
@@ -317,11 +338,73 @@ def test_calendar_fetch_failure_does_not_500():
     print("PASS\n")
 
 
+def test_calendar_fetch_backs_off_after_failure_instead_of_retrying_every_call():
+    print("=== app: _get_cached_events backs off after a failure instead of retrying the live feed on every call ===")
+    webapp_app._calendar_cache = {
+        "events": None, "fetched_at": 0.0, "ttl_seconds": 900,
+        "last_attempt_at": 0.0, "last_error": None,
+    }  # avoid cross-test cache pollution
+    with patch.object(webapp_app, "fetch_calendar", side_effect=Exception("network down")) as mock_fetch:
+        # Call 1 (t=100): first attempt ever — really hits fetch_calendar, fails.
+        try:
+            webapp_app._get_cached_events(now_fn=lambda: 100.0)
+            raise AssertionError("expected the exception to propagate")
+        except Exception as e:
+            assert str(e) == "network down"
+        assert mock_fetch.call_count == 1
+
+        # Call 2 (t=105): only 5s later, well inside the backoff window —
+        # must NOT hit fetch_calendar again, just re-raise the cached error.
+        # This is exactly the bug: without backoff, every single request
+        # during an active rate-limit would keep re-triggering it.
+        try:
+            webapp_app._get_cached_events(now_fn=lambda: 105.0)
+            raise AssertionError("expected the cached exception to propagate")
+        except Exception as e:
+            assert str(e) == "network down"
+        assert mock_fetch.call_count == 1, "must not retry the live feed again while backing off from a recent failure"
+
+        # Call 3 (t=2000): well past FAILED_FETCH_BACKOFF_SECONDS (900) since
+        # the last attempt at t=100 — backoff expired, retries for real.
+        try:
+            webapp_app._get_cached_events(now_fn=lambda: 2000.0)
+            raise AssertionError("expected the exception to propagate")
+        except Exception as e:
+            assert str(e) == "network down"
+        assert mock_fetch.call_count == 2, "should retry once the backoff window has passed"
+    print("PASS\n")
+
+
+def test_calendar_fetch_succeeds_after_backoff_clears_the_cached_error():
+    print("=== app: a successful fetch after backing off clears the cached error and resumes normal TTL caching ===")
+    webapp_app._calendar_cache = {
+        "events": None, "fetched_at": 0.0, "ttl_seconds": 900,
+        "last_attempt_at": 0.0, "last_error": None,
+    }  # avoid cross-test cache pollution
+    with patch.object(webapp_app, "fetch_calendar", side_effect=[Exception("network down"), _fake_events()]) as mock_fetch, \
+         patch.object(webapp_app, "filter_relevant_events", side_effect=lambda events, **kwargs: events):
+
+        try:
+            webapp_app._get_cached_events(now_fn=lambda: 100.0)
+        except Exception:
+            pass
+
+        # Well past the backoff window — retries, this time succeeding.
+        events = webapp_app._get_cached_events(now_fn=lambda: 2000.0)
+        assert len(events) == 1
+        assert mock_fetch.call_count == 2
+        assert webapp_app._calendar_cache["last_error"] is None, "a successful fetch must clear the previously-cached error"
+    print("PASS\n")
+
+
 def test_predictions_fetch_failure_does_not_500():
     print("=== app: /api/predictions survives a fetch_calendar exception, and surfaces it as a stale-data indicator ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
-        webapp_app._calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": 900}  # avoid cross-test cache pollution
+        webapp_app._calendar_cache = {
+            "events": None, "fetched_at": 0.0, "ttl_seconds": 900,
+            "last_attempt_at": 0.0, "last_error": None,
+        }  # avoid cross-test cache pollution
         with patch.object(store, "DB_PATH", db_path), \
              patch.object(webapp_app, "fetch_calendar", side_effect=Exception("network down")):
 
@@ -349,7 +432,10 @@ def test_predictions_no_error_field_on_success():
     print("=== app: /api/predictions has no 'error' key when the calendar fetch succeeds ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
-        webapp_app._calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": 900}  # avoid cross-test cache pollution
+        webapp_app._calendar_cache = {
+            "events": None, "fetched_at": 0.0, "ttl_seconds": 900,
+            "last_attempt_at": 0.0, "last_error": None,
+        }  # avoid cross-test cache pollution
         with patch.object(store, "DB_PATH", db_path), \
              patch.object(webapp_app, "fetch_calendar", return_value=_fake_events()), \
              patch.object(webapp_app, "filter_relevant_events", side_effect=lambda events, **kwargs: events):
@@ -368,7 +454,10 @@ def test_predictions_no_error_field_on_success():
 
 def test_calendar_fetch_is_cached_across_requests():
     print("=== app: /api/calendar and /api/predictions share one cached fetch, not one per request ===")
-    webapp_app._calendar_cache = {"events": None, "fetched_at": 0.0, "ttl_seconds": 900}  # avoid cross-test cache pollution
+    webapp_app._calendar_cache = {
+        "events": None, "fetched_at": 0.0, "ttl_seconds": 900,
+        "last_attempt_at": 0.0, "last_error": None,
+    }  # avoid cross-test cache pollution
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         with patch.object(store, "DB_PATH", db_path), \
@@ -399,6 +488,8 @@ if __name__ == "__main__":
     test_prediction_history_endpoint_returns_full_run_history()
     test_prediction_history_endpoint_missing_event_title_returns_empty()
     test_calendar_fetch_failure_does_not_500()
+    test_calendar_fetch_backs_off_after_failure_instead_of_retrying_every_call()
+    test_calendar_fetch_succeeds_after_backoff_clears_the_cached_error()
     test_predictions_fetch_failure_does_not_500()
     test_predictions_no_error_field_on_success()
     test_calendar_fetch_is_cached_across_requests()
