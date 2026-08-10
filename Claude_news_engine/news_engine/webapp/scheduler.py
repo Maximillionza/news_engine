@@ -16,7 +16,7 @@ from typing import Callable, Optional
 from config.settings import EVENT_SURPRISE_DIRECTION
 from data_layer.calendar_feed import EconomicEvent, fetch_calendar, filter_relevant_events
 from webapp.scoring_service import score_event_for_symbol
-from webapp.store import get_connection, record_run, get_latest_two
+from webapp.store import get_connection, record_run, get_latest_two, save_calendar_snapshot_if_changed
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 
 # Event dates/forecasts are published well ahead of time — nothing
@@ -24,9 +24,11 @@ from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 # a release is delayed). Polling flat-interval all week wastes cycles
 # for no benefit — and Forex Factory's free feed has a real rate limit
 # (observed live: repeated 429s from polling too often) — so the interval
-# tightens only as a relevant event actually approaches. Shared by the
-# scheduler loop below AND webapp/app.py's calendar cache TTL — same "how
-# urgent is this right now" question, answered once.
+# tightens only as a relevant event actually approaches. This loop is the
+# ONLY thing that ever calls fetch_calendar() live — webapp/app.py's API
+# routes just read whatever's persisted (see save_calendar_snapshot_if_changed
+# below), so a live feed outage never blocks a request, and there's only
+# ever one thing polling Forex Factory, not one per API route.
 FAR_INTERVAL_SECONDS = 12 * 60 * 60     # baseline: event isn't "today" yet (or no events at all)
 RAMP_INTERVAL_SECONDS = 60 * 60         # event IS today, but still more than 1h out
 FINAL_INTERVAL_SECONDS = 5 * 60         # final hour before the event, through the post-release grace window
@@ -122,6 +124,14 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
     # Prices, Challenger Job Cuts) reach scoring — see PRECURSOR_EVENTS /
     # EVENT_SURPRISE_DIRECTION in config/settings.py.
     events = filter_relevant_events(all_events, min_impact="Medium")
+
+    # This loop is the SOLE calendar fetcher for the whole dashboard — see
+    # module docstring. Persist immediately so /api/calendar and
+    # /api/predictions (webapp/app.py) can answer instantly from storage,
+    # never blocking a request on a live fetch or a live feed's rate limit.
+    # No-ops (returns False) if this fetch matches what's already stored —
+    # "store and use as current until new information supersedes this."
+    save_calendar_snapshot_if_changed(conn, events, dt.datetime.now(dt.timezone.utc))
 
     try:
         for ticker in tracked_symbols:

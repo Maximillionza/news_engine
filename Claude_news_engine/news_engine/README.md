@@ -182,6 +182,19 @@ before the new time. `webapp/dashboard.db` (gitignored) persists history
 across restarts so the before/after diff still works after you close and
 reopen the app.
 
+**The calendar is fetched live from exactly one place: this background
+loop.** It persists whatever it fetches into `webapp/dashboard.db`'s
+`calendar_snapshot` table — but only when the data actually changed;
+an unchanged fetch is a no-op, not even a timestamp bump ("store and use
+as current until new information supersedes this"). `/api/calendar` and
+`/api/predictions` never fetch live themselves — they just read whatever
+is currently persisted, instantly, regardless of the live feed's health
+at that moment. This means a Forex Factory rate-limit or outage no longer
+blanks the dashboard; it keeps showing the last known-good calendar until
+the background loop successfully fetches something new. Only genuinely
+fresh installs (or right after a restart, before the first background
+cycle completes) see "Calendar data not yet available."
+
 If the article-based accumulator below has already scored an event for
 XAUUSD/US30, its card also shows "backed by N articles" — a read-only
 display sourced from the accumulator's own database
