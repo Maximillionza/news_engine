@@ -11,7 +11,7 @@ import math
 from dataclasses import dataclass
 from typing import Optional
 
-from config.settings import SURPRISE_SENSITIVITY
+from config.settings import RISK_SENTIMENT_DAMPENING, SURPRISE_SENSITIVITY
 from data_layer.calendar_feed import EconomicEvent
 from scoring.probability_engine import Direction
 from webapp.symbols import SymbolClass
@@ -53,7 +53,7 @@ def score_event_for_symbol(event: EconomicEvent, symbol_class: SymbolClass) -> E
     elif relationship == "direct":
         symbol_score = usd_surprise
     elif relationship == "risk_sentiment":
-        symbol_score = -usd_surprise * 0.7
+        symbol_score = -usd_surprise * RISK_SENTIMENT_DAMPENING
     else:
         raise ValueError(f"Unknown usd_relationship {relationship!r} for {symbol_class.symbol!r}")
 
