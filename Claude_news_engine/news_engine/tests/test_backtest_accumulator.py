@@ -52,20 +52,20 @@ def test_first_snapshot_taken_immediately_second_only_in_near_window():
             # Cycle 1: 20h out, first snapshot should be taken.
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
             conn = store.get_connection(db_path)
-            assert store.count_predictions(conn, "Test Event", "XAUUSD") == 1
+            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1
 
             # Cycle 2: still 20h out (not near window) — second snapshot must NOT be taken yet.
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
-            assert store.count_predictions(conn, "Test Event", "XAUUSD") == 1, "should not take a 2nd snapshot outside the near window"
+            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1, "should not take a 2nd snapshot outside the near window"
 
             # Cycle 3: now inside the near window (2h out) — second snapshot should be taken.
             near_now = event.event_time_utc - dt.timedelta(hours=2)
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=near_now)
-            assert store.count_predictions(conn, "Test Event", "XAUUSD") == 2
+            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 2
 
             # Cycle 4: budget exhausted, must not take a 3rd snapshot even still in near window.
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=near_now)
-            assert store.count_predictions(conn, "Test Event", "XAUUSD") == 2, "budget cap must hold"
+            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 2, "budget cap must hold"
             conn.close()
     print("PASS\n")
 
@@ -106,8 +106,35 @@ def test_failed_scoring_for_one_pair_does_not_stop_others():
 
             accumulator.run_accumulator_cycle(["XAUUSD", "US30"], db_path=db_path, now=now)
             conn = store.get_connection(db_path)
-            assert store.count_predictions(conn, "Test Event", "XAUUSD") == 0, "the failing instrument should not get a row"
-            assert store.count_predictions(conn, "Test Event", "US30") == 1, "the other instrument should still succeed"
+            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 0, "the failing instrument should not get a row"
+            assert store.count_predictions(conn, "Test Event", "US30", event.event_time_utc) == 1, "the other instrument should still succeed"
+            conn.close()
+    print("PASS\n")
+
+
+def test_article_bundle_fetched_once_per_event_not_per_instrument():
+    print("=== accumulator: build_event_news_bundle is called ONCE per event, reused across all instruments needing a snapshot ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle) as mock_bundle, \
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()):
+
+            accumulator.run_accumulator_cycle(["XAUUSD", "US30"], db_path=db_path, now=now)
+
+            assert mock_bundle.call_count == 1, (
+                f"expected build_event_news_bundle to be called exactly once per event "
+                f"(reused across instruments), got {mock_bundle.call_count} calls"
+            )
+            conn = store.get_connection(db_path)
+            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1
+            assert store.count_predictions(conn, "Test Event", "US30", event.event_time_utc) == 1
             conn.close()
     print("PASS\n")
 
@@ -126,5 +153,6 @@ if __name__ == "__main__":
     test_first_snapshot_taken_immediately_second_only_in_near_window()
     test_high_impact_only_no_medium_widening()
     test_failed_scoring_for_one_pair_does_not_stop_others()
+    test_article_bundle_fetched_once_per_event_not_per_instrument()
     test_failed_calendar_fetch_returns_none_without_crashing()
     print("All backtest_accumulator tests passed.")

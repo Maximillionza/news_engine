@@ -22,11 +22,36 @@ def test_record_and_count_predictions():
         conn = get_connection(db_path)
         event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=dt.timezone.utc)
 
-        assert count_predictions(conn, "CPI m/m", "XAUUSD") == 0
+        assert count_predictions(conn, "CPI m/m", "XAUUSD", event_time) == 0
         record_prediction(conn, "CPI m/m", "XAUUSD", event_time, 0.71, "bullish", 0.55, 12, False)
-        assert count_predictions(conn, "CPI m/m", "XAUUSD") == 1
+        assert count_predictions(conn, "CPI m/m", "XAUUSD", event_time) == 1
         record_prediction(conn, "CPI m/m", "XAUUSD", event_time, 0.68, "bullish", 0.60, 15, False)
-        assert count_predictions(conn, "CPI m/m", "XAUUSD") == 2
+        assert count_predictions(conn, "CPI m/m", "XAUUSD", event_time) == 2
+        conn.close()
+    print("PASS\n")
+
+
+def test_count_predictions_scoped_to_event_occurrence_not_just_title():
+    print("=== backtest_store: count_predictions is scoped to (title, instrument, event_time_utc), not title alone ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        august_time = dt.datetime(2026, 8, 7, 12, 30, tzinfo=dt.timezone.utc)
+        september_time = dt.datetime(2026, 9, 4, 12, 30, tzinfo=dt.timezone.utc)
+
+        # August occurrence of a recurring title consumes its full 2-snapshot budget.
+        record_prediction(conn, "Non-Farm Employment Change", "XAUUSD", august_time, 0.71, "bullish", 0.55, 12, False)
+        record_prediction(conn, "Non-Farm Employment Change", "XAUUSD", august_time, 0.68, "bullish", 0.60, 15, False)
+        assert count_predictions(conn, "Non-Farm Employment Change", "XAUUSD", august_time) == 2
+
+        # September's occurrence of the SAME title/instrument must start fresh at 0 —
+        # this is the exact scenario that was broken when the query only filtered on
+        # (event_title, instrument) and ignored event_time_utc.
+        assert count_predictions(conn, "Non-Farm Employment Change", "XAUUSD", september_time) == 0
+        record_prediction(conn, "Non-Farm Employment Change", "XAUUSD", september_time, 0.65, "bearish", 0.50, 9, False)
+        assert count_predictions(conn, "Non-Farm Employment Change", "XAUUSD", september_time) == 1
+        # August's count must remain unaffected by September's new row.
+        assert count_predictions(conn, "Non-Farm Employment Change", "XAUUSD", august_time) == 2
         conn.close()
     print("PASS\n")
 
@@ -83,6 +108,7 @@ def test_confirmed_cases_joins_latest_prediction_with_outcome():
 
 if __name__ == "__main__":
     test_record_and_count_predictions()
+    test_count_predictions_scoped_to_event_occurrence_not_just_title()
     test_awaiting_outcome_uses_latest_snapshot_and_excludes_confirmed()
     test_confirmed_cases_joins_latest_prediction_with_outcome()
     print("All backtest_store tests passed.")

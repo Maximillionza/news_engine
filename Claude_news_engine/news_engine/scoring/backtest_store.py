@@ -101,16 +101,24 @@ def record_prediction(
     return cursor.lastrowid
 
 
-def count_predictions(conn: sqlite3.Connection, event_title: str, instrument: str) -> int:
+def count_predictions(
+    conn: sqlite3.Connection, event_title: str, instrument: str, event_time_utc: dt.datetime,
+) -> int:
     """
     How many prediction snapshots already exist for this (event,
-    instrument) pair. This is pure data access — the accumulator's own
-    snapshot budget cap enforcement lives in scoring/backtest_accumulator.py,
-    not here.
+    instrument, event_time_utc) OCCURRENCE — not the event title alone.
+    Forex Factory event titles are stable and recur monthly/quarterly
+    (e.g. "Non-Farm Employment Change" happens every month) with the SAME
+    title but a DIFFERENT event_time_utc each time, so scoping must
+    include event_time_utc or the budget cap would silently stop
+    accumulating for that title forever after its first occurrence. This
+    is pure data access — the accumulator's own snapshot budget cap
+    enforcement lives in scoring/backtest_accumulator.py, not here.
     """
     row = conn.execute(
-        "SELECT COUNT(*) AS n FROM predictions WHERE event_title = ? AND instrument = ?",
-        (event_title, instrument),
+        "SELECT COUNT(*) AS n FROM predictions "
+        "WHERE event_title = ? AND instrument = ? AND event_time_utc = ?",
+        (event_title, instrument, event_time_utc.isoformat()),
     ).fetchone()
     return row["n"]
 

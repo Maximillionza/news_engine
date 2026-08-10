@@ -68,18 +68,36 @@ def run_accumulator_cycle(
         sources = None  # lazily built, only if at least one pair actually needs a fetch this cycle
         for event in active:
             hours_until = (event.event_time_utc - now).total_seconds() / 3600.0
+
+            # Figure out which instruments actually need a snapshot this
+            # cycle BEFORE fetching anything — the article bundle is
+            # identical across instruments for a given event, so it must
+            # be fetched at most once per event, not once per instrument
+            # (previously this doubled real API spend beyond the
+            # intended SNAPSHOT_BUDGET_PER_PAIR budget).
+            instruments_needing_snapshot = []
             for instrument in instruments:
-                existing = count_predictions(conn, event.title, instrument)
+                existing = count_predictions(conn, event.title, instrument, event.event_time_utc)
                 if existing >= SNAPSHOT_BUDGET_PER_PAIR:
                     continue
                 if existing == 1 and hours_until > NEAR_WINDOW_HOURS:
                     continue  # second snapshot only allowed in the final stretch
+                instruments_needing_snapshot.append(instrument)
 
-                if sources is None:
-                    sources = build_all_preview_sources()
+            if not instruments_needing_snapshot:
+                continue
 
+            if sources is None:
+                sources = build_all_preview_sources()
+
+            try:
+                bundle = build_event_news_bundle(event, sources, query="", mode="live")
+            except Exception as exc:  # noqa: BLE001 — a failed fetch must not crash the loop
+                print(f"[backtest_accumulator] WARNING: article fetch failed for {event.title}: {exc}")
+                continue
+
+            for instrument in instruments_needing_snapshot:
                 try:
-                    bundle = build_event_news_bundle(event, sources, query="", mode="live")
                     result = score_bundle(bundle, instrument)
                 except Exception as exc:  # noqa: BLE001 — one pair's failure must not stop the others
                     print(f"[backtest_accumulator] WARNING: scoring failed for {instrument}/{event.title}: {exc}")
