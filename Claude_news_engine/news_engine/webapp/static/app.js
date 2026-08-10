@@ -134,12 +134,24 @@ function renderCard(symbolEntry) {
 
   const next = events[0];
 
+  // article_count only exists for events the article-based backtest
+  // accumulator has independently processed (High-impact XAUUSD/US30
+  // only, budget-capped) - absent for everything else, which is expected.
+  // The accumulator's whole point is a BLIND prediction made BEFORE the
+  // event, so this needs to show in the pending state too, not just once
+  // resolved — that's exactly when "we already have an article-based
+  // read, even though the official number hasn't printed yet" matters.
+  const articleCountLine = next.article_count != null
+    ? `<div style="font-size:12px;color:#888">backed by ${next.article_count} article${next.article_count === 1 ? '' : 's'}</div>`
+    : '';
+
   if (next.direction === "pending") {
     // The event/when data is already in the response — showing it here
     // instead of a generic placeholder tells the user WHAT they're
     // actually waiting on, not just that something is pending.
     body += `<div class="pending">Awaiting: ${escapeHtml(next.event_title)}<br>
-      <span style="font-size:12px;color:#888">${formatEventDateTime(next.event_time_utc)}</span></div>`;
+      <span style="font-size:12px;color:#888">${formatEventDateTime(next.event_time_utc)}</span></div>
+      ${articleCountLine}`;
     el.innerHTML = body;
     el.querySelector(".remove-btn").addEventListener("click", () => removeSymbol(symbol));
     return el;
@@ -174,13 +186,6 @@ function renderCard(symbolEntry) {
       </div>`;
     }
   }
-
-  // article_count only exists for events the article-based backtest
-  // accumulator has independently processed (High-impact XAUUSD/US30
-  // only, budget-capped) - absent for everything else, which is expected.
-  const articleCountLine = next.article_count != null
-    ? `<div style="font-size:12px;color:#888">backed by ${next.article_count} article${next.article_count === 1 ? '' : 's'}</div>`
-    : '';
 
   body += `<div class="gauge-row">${gaugeSvg(next.probability, next.direction)}
     <div><div class="gauge-label ${dirClass}">${directionLabel(next.direction)} ${pct}%</div>
