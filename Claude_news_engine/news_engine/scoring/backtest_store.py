@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from scoring.probability_engine import Direction
+
 DB_PATH = Path(__file__).parent / "backtest_log.db"
 
 _SCHEMA = """
@@ -37,6 +39,15 @@ CREATE TABLE IF NOT EXISTS outcomes (
     actual_direction TEXT NOT NULL,
     actual_move_note TEXT NOT NULL,
     confirmed_at_utc TEXT NOT NULL,
+    UNIQUE(event_title, instrument, event_time_utc)
+);
+CREATE TABLE IF NOT EXISTS dismissals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_title TEXT NOT NULL,
+    instrument TEXT NOT NULL,
+    event_time_utc TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    dismissed_at_utc TEXT NOT NULL,
     UNIQUE(event_title, instrument, event_time_utc)
 );
 """
@@ -147,6 +158,11 @@ def get_predictions_awaiting_outcome(
               WHERE o.event_title = p.event_title AND o.instrument = p.instrument
                 AND o.event_time_utc = p.event_time_utc
           )
+          AND NOT EXISTS (
+              SELECT 1 FROM dismissals x
+              WHERE x.event_title = p.event_title AND x.instrument = p.instrument
+                AND x.event_time_utc = p.event_time_utc
+          )
         ORDER BY p.event_time_utc ASC
         """,
         (now.isoformat(),),
@@ -163,12 +179,66 @@ def record_outcome(
     actual_move_note: str,
     confirmed_at_utc: Optional[dt.datetime] = None,
 ) -> int:
+    # Validated here, not just in the interactive CLI (scripts/confirm_backtest_outcomes.py)
+    # — that check is UI-layer only and doesn't protect any other caller. An
+    # unrecognized value (typo, wrong case) would otherwise sit silently in the
+    # DB until build_real_backtest_report() crashes on Direction(...) much later,
+    # for every case in the report, not just the bad one.
+    try:
+        Direction(actual_direction)
+    except ValueError:
+        valid = ", ".join(d.value for d in Direction)
+        raise ValueError(
+            f"actual_direction={actual_direction!r} is not valid — must be one of: {valid}"
+        )
+
     confirmed_at = confirmed_at_utc or dt.datetime.now(dt.timezone.utc)
     cursor = conn.execute(
         "INSERT INTO outcomes (event_title, instrument, event_time_utc, actual_direction, "
         "actual_move_note, confirmed_at_utc) VALUES (?, ?, ?, ?, ?, ?)",
         (event_title, instrument, event_time_utc.isoformat(), actual_direction,
          actual_move_note, confirmed_at.isoformat()),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def record_dismissal(
+    conn: sqlite3.Connection,
+    event_title: str,
+    instrument: str,
+    event_time_utc: dt.datetime,
+    reason: str,
+    dismissed_at_utc: Optional[dt.datetime] = None,
+) -> int:
+    """
+    Marks a (event, instrument, occurrence) prediction as never going to
+    get a real outcome — e.g. Forex Factory rescheduled or canceled the
+    event after the prediction was made. Without this, such a prediction
+    has no way to leave get_predictions_awaiting_outcome()'s queue: it
+    would resurface on every future --list / interactive run forever,
+    since a matching outcomes row can never legitimately arrive.
+
+    Refuses to dismiss a pair that already has a real confirmed outcome —
+    dismissal and confirmation are mutually exclusive terminal states for
+    a given (event_title, instrument, event_time_utc), and a genuine
+    result must never be silently discarded by a later dismissal.
+    """
+    already_confirmed = conn.execute(
+        "SELECT 1 FROM outcomes WHERE event_title = ? AND instrument = ? AND event_time_utc = ?",
+        (event_title, instrument, event_time_utc.isoformat()),
+    ).fetchone()
+    if already_confirmed:
+        raise ValueError(
+            f"{event_title!r}/{instrument!r} at {event_time_utc.isoformat()} already has a "
+            "confirmed real outcome — refusing to dismiss it"
+        )
+
+    dismissed_at = dismissed_at_utc or dt.datetime.now(dt.timezone.utc)
+    cursor = conn.execute(
+        "INSERT INTO dismissals (event_title, instrument, event_time_utc, reason, dismissed_at_utc) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (event_title, instrument, event_time_utc.isoformat(), reason, dismissed_at.isoformat()),
     )
     conn.commit()
     return cursor.lastrowid

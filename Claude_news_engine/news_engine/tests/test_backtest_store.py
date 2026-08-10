@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scoring.backtest_store import (
     get_connection, record_prediction, count_predictions,
     get_predictions_awaiting_outcome, record_outcome, get_all_confirmed_cases,
+    record_dismissal,
 )
 
 
@@ -83,6 +84,82 @@ def test_awaiting_outcome_uses_latest_snapshot_and_excludes_confirmed():
     print("PASS\n")
 
 
+def test_record_outcome_rejects_invalid_actual_direction():
+    print("=== backtest_store: record_outcome validates actual_direction at the data layer ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 1, 12, 30, tzinfo=dt.timezone.utc)
+        record_prediction(conn, "NFP", "XAUUSD", event_time, 0.7, "bullish", 0.4, 8, False)
+
+        # A capitalization typo — exactly the case the interactive CLI's own
+        # lowercase-then-check catches, but nothing stopped a non-CLI caller
+        # (or a future script) from persisting it straight into the DB, where
+        # it would later crash build_real_backtest_report()'s Direction(...).
+        try:
+            record_outcome(conn, "NFP", "XAUUSD", event_time, "Bullish", "typo'd case")
+            raise AssertionError("expected ValueError for invalid actual_direction, none raised")
+        except ValueError as e:
+            assert "Bullish" in str(e), f"error message should name the bad value, got: {e}"
+
+        # Nothing should have been persisted by the rejected call.
+        awaiting = get_predictions_awaiting_outcome(conn, now=dt.datetime(2026, 8, 10, tzinfo=dt.timezone.utc))
+        assert len(awaiting) == 1, "rejected outcome must not be recorded — prediction should still be awaiting"
+        conn.close()
+    print("PASS\n")
+
+
+def test_dismissed_prediction_stops_appearing_in_awaiting_outcome():
+    print("=== backtest_store: a dismissed prediction (rescheduled/canceled event) leaves the awaiting-outcome queue for good ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        past_event = dt.datetime(2026, 8, 1, 12, 30, tzinfo=dt.timezone.utc)
+        now = dt.datetime(2026, 8, 10, tzinfo=dt.timezone.utc)
+        record_prediction(conn, "CPI m/m", "XAUUSD", past_event, 0.7, "bullish", 0.4, 8, False)
+
+        awaiting = get_predictions_awaiting_outcome(conn, now=now)
+        assert len(awaiting) == 1, "prediction should be awaiting an outcome before any dismissal"
+
+        # The event never actually happened at this time — Forex Factory
+        # rescheduled/canceled it — so a real outcome will never arrive.
+        # Without dismissal this row would surface on every single future
+        # --list / interactive run, forever.
+        record_dismissal(conn, "CPI m/m", "XAUUSD", past_event, "rescheduled to next week per FF calendar")
+
+        awaiting_after = get_predictions_awaiting_outcome(conn, now=now)
+        assert len(awaiting_after) == 0, "dismissed prediction must no longer appear as awaiting outcome"
+
+        # A dismissed pair must not show up as a confirmed case either — it
+        # was never actually resolved, never fabricate a result for it.
+        cases = get_all_confirmed_cases(conn)
+        assert len(cases) == 0, "a dismissed (not confirmed) pair must not appear in confirmed cases"
+        conn.close()
+    print("PASS\n")
+
+
+def test_dismissing_an_already_confirmed_pair_is_rejected():
+    print("=== backtest_store: record_dismissal refuses a pair that already has a real confirmed outcome ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 1, 12, 30, tzinfo=dt.timezone.utc)
+        record_prediction(conn, "CPI m/m", "XAUUSD", event_time, 0.7, "bullish", 0.4, 8, False)
+        record_outcome(conn, "CPI m/m", "XAUUSD", event_time, "bullish", "confirmed real move")
+
+        try:
+            record_dismissal(conn, "CPI m/m", "XAUUSD", event_time, "mistaken dismissal attempt")
+            raise AssertionError("expected a ValueError, dismissing an already-confirmed pair silently succeeded")
+        except ValueError:
+            pass
+
+        # The real confirmed outcome must be untouched by the rejected dismissal.
+        cases = get_all_confirmed_cases(conn)
+        assert len(cases) == 1
+        conn.close()
+    print("PASS\n")
+
+
 def test_confirmed_cases_joins_latest_prediction_with_outcome():
     print("=== backtest_store: get_all_confirmed_cases joins the latest snapshot with its outcome ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -110,5 +187,8 @@ if __name__ == "__main__":
     test_record_and_count_predictions()
     test_count_predictions_scoped_to_event_occurrence_not_just_title()
     test_awaiting_outcome_uses_latest_snapshot_and_excludes_confirmed()
+    test_record_outcome_rejects_invalid_actual_direction()
+    test_dismissed_prediction_stops_appearing_in_awaiting_outcome()
+    test_dismissing_an_already_confirmed_pair_is_rejected()
     test_confirmed_cases_joins_latest_prediction_with_outcome()
     print("All backtest_store tests passed.")
