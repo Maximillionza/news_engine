@@ -65,6 +65,35 @@ def test_scoring_cycle_writes_new_rows_and_skips_duplicates():
     print("PASS\n")
 
 
+def test_scoring_cycle_persists_calendar_snapshot_on_success():
+    print("=== scheduler: run_scoring_cycle persists the calendar snapshot on a successful fetch, no-ops when unchanged ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(scheduler, "fetch_calendar", return_value=_fake_events()), \
+             patch.object(scheduler, "filter_relevant_events", side_effect=lambda events, **kwargs: events):
+
+            conn = store.get_connection(db_path)
+            assert store.get_calendar_snapshot(conn) is None, "nothing persisted before the first cycle"
+
+            scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
+            snapshot = store.get_calendar_snapshot(conn)
+            assert snapshot is not None
+            assert len(snapshot.events) == 1
+            first_fetched_at = snapshot.fetched_at_utc
+
+            # Second cycle, identical event data — must NOT touch the stored
+            # timestamp (webapp/store.py's save_calendar_snapshot_if_changed
+            # is a no-op on unchanged data — this is the caller-side check
+            # that the scheduler actually calls it with real fetched data,
+            # not just that the function itself works in isolation).
+            scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
+            snapshot_after = store.get_calendar_snapshot(conn)
+            assert snapshot_after.fetched_at_utc == first_fetched_at, \
+                "an unchanged second fetch must not bump the persisted snapshot's timestamp"
+            conn.close()
+    print("PASS\n")
+
+
 def test_unrecognized_symbol_skipped_not_crashed():
     print("=== scheduler: an unrecognized tracked symbol is skipped, not a crash ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -80,13 +109,16 @@ def test_failed_calendar_fetch_does_not_crash_or_wipe_data():
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
 
-        # pre-populate the DB with one existing row so there's something to wipe
+        # pre-populate the DB with one existing row + a calendar snapshot,
+        # so there's something to wipe.
         conn = store.get_connection(db_path)
         store.record_run(
             conn, "XAUUSD", "Non-Farm Employment Change",
             dt.datetime(2026, 8, 7, 12, 30, tzinfo=UTC_TZ),
             0.62, "up", 1.5,
         )
+        stale_fetched_at = dt.datetime(2026, 8, 9, 12, 0, tzinfo=UTC_TZ)
+        store.save_calendar_snapshot_if_changed(conn, _fake_events(), stale_fetched_at)
         conn.close()
 
         with patch.object(scheduler, "fetch_calendar", side_effect=Exception("network down")):
@@ -95,6 +127,14 @@ def test_failed_calendar_fetch_does_not_crash_or_wipe_data():
         conn = store.get_connection(db_path)
         runs = store.get_latest_two(conn, "XAUUSD", "Non-Farm Employment Change")
         assert len(runs) == 1, "existing row must survive a failed calendar fetch"
+        # A failed fetch never reaches save_calendar_snapshot_if_changed at
+        # all (that call sits after the fetch_calendar try/except) — the
+        # previously-persisted snapshot (however stale) must stay exactly
+        # as it was, "store and use as current until new information
+        # supersedes this" — a failure is not new information.
+        snapshot = store.get_calendar_snapshot(conn)
+        assert snapshot.fetched_at_utc == stale_fetched_at.isoformat(), \
+            "a failed fetch must not touch the persisted calendar snapshot"
         conn.close()
     print("PASS\n")
 
@@ -246,6 +286,7 @@ def test_adaptive_interval_reschedule_detection_is_optional():
 
 if __name__ == "__main__":
     test_scoring_cycle_writes_new_rows_and_skips_duplicates()
+    test_scoring_cycle_persists_calendar_snapshot_on_success()
     test_unrecognized_symbol_skipped_not_crashed()
     test_failed_calendar_fetch_does_not_crash_or_wipe_data()
     test_pending_then_released_event_produces_two_row_lifecycle()

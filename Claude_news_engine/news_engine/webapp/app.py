@@ -9,16 +9,15 @@ from __future__ import annotations
 import sys
 import os
 import datetime as dt
-import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from data_layer.calendar_feed import fetch_calendar, filter_relevant_events
-from webapp.scheduler import RAMP_INTERVAL_SECONDS, compute_adaptive_interval_seconds, start_scheduler
+from webapp.scheduler import start_scheduler
 from webapp.store import (
     get_connection, get_latest_two, get_history,
     add_tracked_symbol, remove_tracked_symbol, list_tracked_symbols,
+    get_calendar_snapshot,
 )
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 from scoring.backtest_store import (
@@ -28,63 +27,6 @@ from scoring.backtest_store import (
 app = Flask(__name__, static_folder="static")
 
 DEFAULT_SYMBOLS = ["XAUUSD", "US30"]
-
-# /api/calendar and /api/predictions both need the same filtered event
-# list, and the frontend polls both every 60s (refreshAll() in app.js).
-# Without a cache that's 2 live requests/min to Forex Factory's free feed
-# forever — no auth, no rate-limit tolerance — which gets the dashboard
-# 429'd in practice (observed live). A cache shared by both routes cuts
-# that to one fetch per TTL window regardless of poll frequency or how
-# many browser tabs are open. TTL is adaptive (webapp.scheduler.compute_adaptive_interval_seconds)
-# — the same "how urgent is this right now" question the background
-# scheduler answers for its own poll cadence, reused here rather than a
-# second hardcoded constant. Starts at RAMP_INTERVAL_SECONDS before the
-# first successful fetch, since there's no event data yet to reason from.
-_calendar_cache = {
-    "events": None, "fetched_at": 0.0, "ttl_seconds": RAMP_INTERVAL_SECONDS,
-    "last_attempt_at": 0.0, "last_error": None,
-}
-
-# How long to back off after a FAILED fetch before attempting the live feed
-# again. Distinct from ttl_seconds above (which only advances on success) —
-# without this, a failure left fetched_at untouched, so with no successful
-# fetch ever recorded, every single incoming request would immediately
-# retry the live feed with zero cooldown: observed live, a 429 that never
-# got a chance to clear because every dashboard poll kept re-triggering it.
-FAILED_FETCH_BACKOFF_SECONDS = RAMP_INTERVAL_SECONDS
-
-
-def _get_cached_events(now_fn=time.monotonic):
-    """
-    Shared cache for the two routes below. Raises whatever
-    fetch_calendar()/filter_relevant_events() raises on a cache miss —
-    callers already handle that by degrading to an empty list plus an
-    error field, so a real fetch failure still surfaces as "stale." On a
-    fresh failure, re-raises the SAME cached error for
-    FAILED_FETCH_BACKOFF_SECONDS instead of re-attempting the live fetch
-    on every request during that window (see FAILED_FETCH_BACKOFF_SECONDS).
-    `now_fn` is injectable so tests can control elapsed time without
-    monkeypatching the global `time` module (which Flask/Werkzeug
-    internals may also call).
-    """
-    now = now_fn()
-    if _calendar_cache["events"] is not None and (now - _calendar_cache["fetched_at"]) < _calendar_cache["ttl_seconds"]:
-        return _calendar_cache["events"]
-
-    if _calendar_cache["last_error"] is not None and (now - _calendar_cache["last_attempt_at"]) < FAILED_FETCH_BACKOFF_SECONDS:
-        raise _calendar_cache["last_error"]
-
-    _calendar_cache["last_attempt_at"] = now
-    try:
-        events = filter_relevant_events(fetch_calendar("thisweek"), min_impact="Medium")
-    except Exception as exc:  # noqa: BLE001 — cached and re-raised, callers already degrade gracefully
-        _calendar_cache["last_error"] = exc
-        raise
-    _calendar_cache["events"] = events
-    _calendar_cache["fetched_at"] = now
-    _calendar_cache["ttl_seconds"] = compute_adaptive_interval_seconds(events)
-    _calendar_cache["last_error"] = None
-    return events
 
 
 def _ensure_defaults() -> None:
@@ -152,20 +94,19 @@ def remove_symbol(ticker: str):
 
 @app.route("/api/calendar", methods=["GET"])
 def get_calendar():
-    try:
-        events = _get_cached_events()
-    except Exception as exc:  # noqa: BLE001 — a failed live fetch must not 500 the whole dashboard
-        return jsonify({"error": f"calendar fetch failed: {exc}", "events": []}), 200
-    return jsonify({
-        "events": [
-            {
-                "title": e.title, "country": e.country, "impact": e.impact,
-                "event_time_utc": e.event_time_utc.isoformat(),
-                "forecast": e.forecast, "actual": e.actual,
-            }
-            for e in events
-        ],
-    })
+    # No live fetch here at all — webapp/scheduler.py's background loop is
+    # the SOLE calendar fetcher (see its module docstring); this route just
+    # reads whatever it last persisted, instantly, regardless of the live
+    # feed's health right now. `error` here means "nothing has ever been
+    # fetched successfully yet" (fresh install, scheduler hasn't completed
+    # its first cycle) — not "a live request just failed," since no live
+    # request happens in this code path anymore.
+    conn = get_connection()
+    snapshot = get_calendar_snapshot(conn)
+    conn.close()
+    if snapshot is None:
+        return jsonify({"error": "Calendar data not yet available — waiting for the first background fetch.", "events": [], "fetched_at_utc": None})
+    return jsonify({"events": snapshot.events, "fetched_at_utc": snapshot.fetched_at_utc})
 
 
 @app.route("/api/predictions", methods=["GET"])
@@ -179,28 +120,23 @@ def get_predictions():
     # only score below.
     backtest_conn = get_backtest_connection()
     symbols = list_tracked_symbols(conn)
-    # Same failed-live-fetch degradation as /api/calendar (empty list, not a
-    # 500) but this route was silently swallowing the exception with no way
-    # for the frontend to know the event list — and therefore every score
-    # below — might be stale. Surface it the same way /api/calendar does.
-    error = None
-    try:
-        events = _get_cached_events()
-    except Exception as exc:  # noqa: BLE001 — a failed live fetch must not 500 the whole dashboard
-        events = []
-        error = f"calendar fetch failed: {exc}"
+    # No live fetch here either — same reasoning as /api/calendar. `error`
+    # means "nothing persisted yet," not "a live request just failed."
+    snapshot = get_calendar_snapshot(conn)
+    events = snapshot.events if snapshot is not None else []
+    error = None if snapshot is not None else "Calendar data not yet available — waiting for the first background fetch."
 
     predictions = []
     for ticker in symbols:
         symbol_class = classify_symbol(ticker)
         entry = {"symbol": ticker, "symbol_class": symbol_class.symbol_class, "events": []}
         for event in events:
-            runs = get_latest_two(conn, ticker, event.title)
+            runs = get_latest_two(conn, ticker, event["title"])
             if not runs:
                 continue
             latest = runs[0]
             previous = runs[1] if len(runs) > 1 else None
-            accumulator_prediction = get_latest_prediction(backtest_conn, event.title, ticker)
+            accumulator_prediction = get_latest_prediction(backtest_conn, event["title"], ticker)
             # The accumulator's own blind, article-based call — direction
             # and probability, not just how many articles backed it. This
             # is a REAL prediction the accumulator already made independently,
@@ -217,8 +153,8 @@ def get_predictions():
                     "article_count": accumulator_prediction.article_count,
                 }
             entry["events"].append({
-                "event_title": event.title,
-                "event_time_utc": event.event_time_utc.isoformat(),
+                "event_title": event["title"],
+                "event_time_utc": event["event_time_utc"],
                 "probability": latest.probability,
                 "direction": latest.direction,
                 "previous_probability": previous.probability if previous else None,

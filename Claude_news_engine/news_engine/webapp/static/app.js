@@ -212,8 +212,14 @@ async function refreshDashboard() {
   const resp = await fetch("/api/predictions");
   const data = await resp.json();
 
+  // "error" here means the background loop (webapp/scheduler.py) hasn't
+  // completed its first successful fetch yet — not "a live request just
+  // failed," since no route ever fetches live anymore. Once a snapshot
+  // exists, it's shown as current until the background loop persists new
+  // data — no per-request staleness, so this notice only ever appears
+  // before the very first fetch (fresh install / recent restart).
   if (data.error) {
-    predictionsStaleNoticeEl.textContent = `Predictions may be stale — last calendar refresh failed (${data.error})`;
+    predictionsStaleNoticeEl.textContent = data.error;
     predictionsStaleNoticeEl.style.display = "";
   } else {
     predictionsStaleNoticeEl.textContent = "";
@@ -230,7 +236,7 @@ async function refreshCalendar() {
   const events = data.events || [];
 
   if (data.error) {
-    calendarStaleNoticeEl.textContent = `Calendar data may be stale — last refresh failed (${data.error})`;
+    calendarStaleNoticeEl.textContent = data.error;
     calendarStaleNoticeEl.style.display = "";
   } else {
     calendarStaleNoticeEl.textContent = "";

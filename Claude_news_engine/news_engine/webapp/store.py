@@ -1,16 +1,25 @@
 """
-SQLite persistence for the dashboard — two concerns in one file since
+SQLite persistence for the dashboard — three concerns in one file since
 they share the same DB and open/close lifecycle:
   1. prediction_runs — one row per (symbol, event, scoring run), powers
      the before/after diff strip surviving server restarts.
   2. tracked_symbols — which tickers the dashboard currently tracks,
      added/removed via the API.
+  3. calendar_snapshot — the current known-good calendar, persisted by
+     webapp/scheduler.py's background loop (the SOLE calendar fetcher —
+     see its module docstring) and read-only for API routes. Routes never
+     fetch live themselves: a request is answered from whatever's stored,
+     instantly, regardless of the live feed's health at that moment. Per
+     explicit product decision, a fetch that returns unchanged data does
+     NOT touch the stored row — "store and use as current until new
+     information supersedes this" — see save_calendar_snapshot_if_changed().
 """
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -30,6 +39,11 @@ CREATE TABLE IF NOT EXISTS prediction_runs (
 CREATE TABLE IF NOT EXISTS tracked_symbols (
     symbol TEXT PRIMARY KEY
 );
+CREATE TABLE IF NOT EXISTS calendar_snapshot (
+    id INTEGER PRIMARY KEY CHECK (id = 1),  -- singleton row, the current snapshot
+    events_json TEXT NOT NULL,
+    fetched_at_utc TEXT NOT NULL
+);
 """
 
 
@@ -43,6 +57,12 @@ class PredictionRun:
     probability: Optional[float]
     direction: str
     raw_score: Optional[float]
+
+
+@dataclass
+class CalendarSnapshot:
+    events: list[dict] = field(default_factory=list)  # plain dicts: title/country/impact/event_time_utc/forecast/previous/actual
+    fetched_at_utc: str = ""
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
@@ -115,3 +135,56 @@ def remove_tracked_symbol(conn: sqlite3.Connection, symbol: str) -> None:
 def list_tracked_symbols(conn: sqlite3.Connection) -> list[str]:
     rows = conn.execute("SELECT symbol FROM tracked_symbols ORDER BY symbol").fetchall()
     return [row["symbol"] for row in rows]
+
+
+def _event_to_dict(event) -> dict:
+    """
+    Serializes an EconomicEvent (data_layer.calendar_feed) to a plain,
+    JSON-safe dict for calendar_snapshot storage — deliberately duck-typed
+    (no import of EconomicEvent itself) so this module doesn't need to
+    know the calendar feed's exact type, just its attribute shape.
+    Excludes `raw` (the source API's raw dict) — not needed for display,
+    would bloat storage and churn the diff on every fetch for no reason.
+    """
+    return {
+        "title": event.title,
+        "country": event.country,
+        "impact": event.impact,
+        "event_time_utc": event.event_time_utc.isoformat(),
+        "forecast": event.forecast,
+        "previous": event.previous,
+        "actual": event.actual,
+    }
+
+
+def get_calendar_snapshot(conn: sqlite3.Connection) -> Optional[CalendarSnapshot]:
+    """Returns the current persisted calendar snapshot, or None if nothing has been fetched successfully yet."""
+    row = conn.execute("SELECT events_json, fetched_at_utc FROM calendar_snapshot WHERE id = 1").fetchone()
+    if row is None:
+        return None
+    return CalendarSnapshot(events=json.loads(row["events_json"]), fetched_at_utc=row["fetched_at_utc"])
+
+
+def save_calendar_snapshot_if_changed(
+    conn: sqlite3.Connection, events: list, fetched_at_utc: dt.datetime,
+) -> bool:
+    """
+    Persists `events` (a list of EconomicEvent) as the current calendar
+    snapshot, but ONLY if it actually differs from what's already stored —
+    explicit product decision: a fetch that returns identical data is not
+    new information and must not touch the stored row, not even its
+    timestamp. "Store and use as current until new information
+    supersedes this." Returns True if the snapshot was updated, False if
+    unchanged (including when it matches byte-for-byte after serialization).
+    """
+    new_serialized = json.dumps([_event_to_dict(e) for e in events], sort_keys=True)
+    row = conn.execute("SELECT events_json FROM calendar_snapshot WHERE id = 1").fetchone()
+    if row is not None and row["events_json"] == new_serialized:
+        return False
+    conn.execute(
+        "INSERT INTO calendar_snapshot (id, events_json, fetched_at_utc) VALUES (1, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET events_json = excluded.events_json, fetched_at_utc = excluded.fetched_at_utc",
+        (new_serialized, fetched_at_utc.isoformat()),
+    )
+    conn.commit()
+    return True
