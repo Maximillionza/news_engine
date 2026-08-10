@@ -13,9 +13,27 @@ and a distinct concern, run as its own standalone process.
 
 Budget-capped, not continuous: article fetches (RSS + Alpha Vantage) are
 rate-limited resources, unlike the dashboard's free essence-only scoring.
-At most SNAPSHOT_BUDGET_PER_PAIR prediction snapshots per (event,
+At most SNAPSHOT_BUDGET_PER_PAIR RECORDED prediction snapshots per (event,
 instrument) pair — one when the event enters its pre-event window, one
 more only once inside the final FINAL_SNAPSHOT_WINDOW_HOURS stretch.
+
+A "recorded snapshot" is now diff-aware, not automatic: every eligible
+check re-scores fresh articles, but the result only gets WRITTEN (and
+counts against the budget) if it materially differs from the current
+latest prediction for that pair — a direction flip (contradicts), or a
+same-direction move of at least MATERIAL_CHANGE_THRESHOLD_PROBABILITY
+(a stronger indication). Supporting articles that just reinforce the
+existing read are checked, scored, and then discarded without a write —
+"current sentiment is the truth until articles are found to contradict
+or change it," per explicit product decision, mirroring the same
+store-and-only-update-on-real-change pattern webapp/store.py's
+calendar_snapshot uses. Consequence: within the final stretch, an
+unchanged read can be re-checked on every accumulator cycle without
+ever consuming the budget — bounded by FINAL_SNAPSHOT_WINDOW_HOURS's
+width and the accumulator's own cycle interval (5 min in the final-hour
+tier), not unbounded, but a real increase in fetch volume near the event
+compared to the old always-record-twice design. Worth watching against
+Alpha Vantage's 25/day quota if this becomes a problem in practice.
 
 FINAL_SNAPSHOT_WINDOW_HOURS is deliberately its OWN, much tighter constant,
 not webapp.scheduler.FINAL_WINDOW_HOURS (1h) — that constant answers "how
@@ -39,10 +57,16 @@ from data_layer.calendar_feed import fetch_calendar, filter_relevant_events, eve
 from data_layer.event_context import build_event_news_bundle
 from data_layer.rss_sources import build_all_preview_sources
 from scoring.probability_engine import score_bundle
-from scoring.backtest_store import get_connection, record_prediction, count_predictions
+from scoring.backtest_store import get_connection, record_prediction, count_predictions, get_latest_prediction
 from webapp.scheduler import compute_adaptive_interval_seconds
 
 SNAPSHOT_BUDGET_PER_PAIR = 2
+# A same-direction probability move smaller than this is "supporting" the
+# current sentiment, not changing it — no write. 0.10 = 10 percentage
+# points (e.g. stored BULLISH 65% -> new read BULLISH 71% is NOT material;
+# BULLISH 65% -> BULLISH 76% IS). A direction flip is always material,
+# regardless of this threshold — see _is_material_change().
+MATERIAL_CHANGE_THRESHOLD_PROBABILITY = 0.10
 # How close to the actual event time the FINAL snapshot must be taken —
 # deliberately much tighter than webapp.scheduler.FINAL_WINDOW_HOURS (1h),
 # see module docstring. 30 minutes: comfortably inside the adaptive
@@ -53,6 +77,26 @@ FINAL_SNAPSHOT_WINDOW_HOURS = 0.5
 # reason an adaptive interval from — same fallback pattern as
 # webapp/scheduler.py's SCHEDULER_INTERVAL_SECONDS.
 ACCUMULATOR_FALLBACK_INTERVAL_SECONDS = 15 * 60
+
+
+def _is_material_change(new_direction: str, new_probability: float, current_direction: str, current_probability: float) -> bool:
+    """
+    True if a freshly-scored read is different ENOUGH from the current
+    latest recorded prediction to be worth writing a new snapshot for —
+    "current sentiment is the truth until articles are found to contradict
+    or change it." A direction flip (including into/out of neutral) is
+    always material, regardless of magnitude — that's a contradiction of
+    the current read, not a matter of degree. Within the same direction,
+    only a move of at least MATERIAL_CHANGE_THRESHOLD_PROBABILITY counts —
+    supporting articles that just reinforce the existing call add to its
+    validity without triggering a rewrite.
+    """
+    if new_direction != current_direction:
+        return True
+    # 1e-9 tolerance for float imprecision — e.g. 0.75 - 0.65 == 0.09999999999999998
+    # in IEEE754, which would otherwise fail an exact-boundary >= comparison
+    # for what's really a value AT the threshold.
+    return abs(new_probability - current_probability) >= MATERIAL_CHANGE_THRESHOLD_PROBABILITY - 1e-9
 
 
 def run_accumulator_cycle(
@@ -83,19 +127,24 @@ def run_accumulator_cycle(
         for event in active:
             hours_until = (event.event_time_utc - now).total_seconds() / 3600.0
 
-            # Figure out which instruments actually need a snapshot this
-            # cycle BEFORE fetching anything — the article bundle is
+            # Figure out which instruments are still eligible to be CHECKED
+            # this cycle BEFORE fetching anything — the article bundle is
             # identical across instruments for a given event, so it must
             # be fetched at most once per event, not once per instrument
             # (previously this doubled real API spend beyond the
-            # intended SNAPSHOT_BUDGET_PER_PAIR budget).
+            # intended SNAPSHOT_BUDGET_PER_PAIR budget). `existing` counts
+            # RECORDED (written) snapshots, not checks — a check that finds
+            # no material change is still a check, but doesn't consume
+            # budget (see _is_material_change() below), so this pair can
+            # stay eligible for repeated checks within the final stretch
+            # even after its first check.
             instruments_needing_snapshot = []
             for instrument in instruments:
                 existing = count_predictions(conn, event.title, instrument, event.event_time_utc)
                 if existing >= SNAPSHOT_BUDGET_PER_PAIR:
                     continue
                 if existing == 1 and hours_until > FINAL_SNAPSHOT_WINDOW_HOURS:
-                    continue  # second snapshot only allowed in the final stretch
+                    continue  # second recorded snapshot only allowed in the final stretch
                 instruments_needing_snapshot.append(instrument)
 
             if not instruments_needing_snapshot:
@@ -115,6 +164,16 @@ def run_accumulator_cycle(
                     result = score_bundle(bundle, instrument)
                 except Exception as exc:  # noqa: BLE001 — one pair's failure must not stop the others
                     print(f"[backtest_accumulator] WARNING: scoring failed for {instrument}/{event.title}: {exc}")
+                    continue
+
+                latest = get_latest_prediction(conn, event.title, instrument)
+                if latest is not None and not _is_material_change(
+                    result.direction.value, result.probability, latest.direction, latest.probability,
+                ):
+                    print(
+                        f"[backtest_accumulator] checked {instrument} / {event.title}: "
+                        f"{result.summary()} — unchanged from current, not recorded"
+                    )
                     continue
 
                 record_prediction(

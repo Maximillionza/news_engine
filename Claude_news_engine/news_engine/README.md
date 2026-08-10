@@ -249,11 +249,23 @@ from scoring.backtest import build_real_backtest_report
 build_real_backtest_report().print_report()
 ```
 
-Budget-capped: at most 2 article-fetch snapshots per (event, instrument)
-pair (once on window entry, once in the final stretch) — article fetches
-are rate-limited (Alpha Vantage: 25/day), unlike the dashboard's free
+Budget-capped: at most 2 *recorded* snapshots per (event, instrument) pair
+(once on window entry, once in the final stretch) — article fetches are
+rate-limited (Alpha Vantage: 25/day), unlike the dashboard's free
 essence-only scoring. High-impact USD events only, no Medium-impact
 widening.
+
+**The stored prediction is diff-aware, not automatic.** Every eligible
+check re-fetches and re-scores fresh articles, but only WRITES a new
+snapshot (consuming the budget) if the result materially differs from
+the current one — a direction flip, or a same-direction probability move
+of at least 10 percentage points. Supporting articles that just reinforce
+the existing read are checked and discarded without a write — "current
+sentiment is the truth until articles are found to contradict or change
+it." Consequence: within the final stretch, an unchanged read can be
+re-checked on every accumulator cycle without ever spending the budget —
+bounded, but a real increase in fetch volume near an event compared to
+the old always-record-twice design.
 
 This is also what finally makes real calibration of
 `TIME_DECAY_HALF_LIFE_MINUTES`/`CONTRADICTION_MIN_MAGNITUDE`/the sigmoid

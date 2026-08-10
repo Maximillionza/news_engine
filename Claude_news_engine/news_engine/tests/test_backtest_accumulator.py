@@ -47,35 +47,114 @@ def test_first_snapshot_taken_immediately_second_only_in_final_snapshot_window()
              patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
-             patch.object(accumulator, "score_bundle", return_value=_fake_result()):
+             patch.object(accumulator, "score_bundle", side_effect=[
+                 _fake_result(probability=0.7, direction=Direction.BULLISH),   # cycle 1
+                 _fake_result(probability=0.85, direction=Direction.BULLISH),  # cycle 4 — materially stronger, must record
+             ]):
 
-            # Cycle 1: 20h out, first snapshot should be taken.
+            # Cycle 1: 20h out, first snapshot should be taken (nothing to compare against yet).
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
             conn = store.get_connection(db_path)
             assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1
 
-            # Cycle 2: still 20h out (not near window) — second snapshot must NOT be taken yet.
+            # Cycle 2: still 20h out (not near window) — second check must NOT even happen yet.
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
-            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1, "should not take a 2nd snapshot outside the near window"
+            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1, "should not check again outside the near window"
 
             # Cycle 3: 2h out — outside the accumulator's own, much tighter
-            # FINAL_SNAPSHOT_WINDOW_HOURS (30 min) — the final snapshot must
+            # FINAL_SNAPSHOT_WINDOW_HOURS (30 min) — the final check must
             # NOT fire this early (this is the exact gap the old
             # shared-with-webapp.scheduler-threshold behavior had).
             still_too_early = event.event_time_utc - dt.timedelta(hours=2)
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=still_too_early)
             assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1, \
-                "must not take the final snapshot merely for being inside a wider scheduler-style window"
+                "must not check merely for being inside a wider scheduler-style window"
 
-            # Cycle 4: now genuinely close to the event — second snapshot should be taken.
+            # Cycle 4: now genuinely close to the event, and the score moved
+            # materially (0.7 -> 0.85, +15pp) — second snapshot recorded.
             near_now = event.event_time_utc - dt.timedelta(minutes=20)
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=near_now)
             assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 2
 
-            # Cycle 5: budget exhausted, must not take a 3rd snapshot even still in the final window.
+            # Cycle 5: budget exhausted (2 RECORDED snapshots reached), must
+            # not take a 3rd even still in the final window.
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=near_now)
             assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 2, "budget cap must hold"
             conn.close()
+    print("PASS\n")
+
+
+def test_unchanged_score_is_checked_but_not_recorded():
+    print("=== accumulator: a re-check within the final window that finds NO material change is not recorded, but still checked ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
+             patch.object(accumulator, "score_bundle", side_effect=[
+                 _fake_result(probability=0.70, direction=Direction.BULLISH),  # cycle 1
+                 _fake_result(probability=0.74, direction=Direction.BULLISH),  # cycle 2 — same direction, only +4pp, below threshold
+             ]) as mock_score:
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+            conn = store.get_connection(db_path)
+            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1
+
+            near_now = event.event_time_utc - dt.timedelta(minutes=20)
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=near_now)
+            assert mock_score.call_count == 2, "the second cycle must still fetch+score — supporting articles are checked, not skipped"
+            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1, \
+                "a sub-threshold same-direction move is supporting, not material — must not be recorded"
+
+            latest = store.get_latest_prediction(conn, "Test Event", "XAUUSD")
+            assert latest.probability == 0.70, "the stored prediction must remain the ORIGINAL, unreplaced by the unrecorded check"
+            conn.close()
+    print("PASS\n")
+
+
+def test_direction_flip_is_always_recorded_regardless_of_magnitude():
+    print("=== accumulator: a direction flip is always material, even with a tiny probability change ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
+             patch.object(accumulator, "score_bundle", side_effect=[
+                 _fake_result(probability=0.55, direction=Direction.BULLISH),  # cycle 1
+                 _fake_result(probability=0.56, direction=Direction.BEARISH),  # cycle 2 — tiny probability move, but direction FLIPPED
+             ]):
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+            conn = store.get_connection(db_path)
+
+            near_now = event.event_time_utc - dt.timedelta(minutes=20)
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=near_now)
+            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 2, \
+                "a direction flip must always be recorded, regardless of how small the probability move is"
+            latest = store.get_latest_prediction(conn, "Test Event", "XAUUSD")
+            assert latest.direction == "bearish"
+            conn.close()
+    print("PASS\n")
+
+
+def test_is_material_change_threshold_boundary():
+    print("=== accumulator: _is_material_change — same-direction moves at/above 10pp are material, below are not ===")
+    # Exactly at the threshold — material (>= , not strictly >).
+    assert accumulator._is_material_change("bullish", 0.75, "bullish", 0.65) is True
+    # Just under the threshold — not material.
+    assert accumulator._is_material_change("bullish", 0.7499, "bullish", 0.65) is False
+    # A direction flip is material regardless of magnitude, even a near-zero move.
+    assert accumulator._is_material_change("bearish", 0.6501, "bullish", 0.65) is True
+    # Identical direction and probability — not material.
+    assert accumulator._is_material_change("bullish", 0.65, "bullish", 0.65) is False
     print("PASS\n")
 
 
@@ -160,6 +239,9 @@ def test_failed_calendar_fetch_returns_none_without_crashing():
 
 if __name__ == "__main__":
     test_first_snapshot_taken_immediately_second_only_in_final_snapshot_window()
+    test_unchanged_score_is_checked_but_not_recorded()
+    test_direction_flip_is_always_recorded_regardless_of_magnitude()
+    test_is_material_change_threshold_boundary()
     test_high_impact_only_no_medium_widening()
     test_failed_scoring_for_one_pair_does_not_stop_others()
     test_article_bundle_fetched_once_per_event_not_per_instrument()
