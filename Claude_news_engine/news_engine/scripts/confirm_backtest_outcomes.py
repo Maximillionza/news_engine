@@ -13,6 +13,7 @@ Usage:
 import sys
 import os
 import datetime as dt
+from contextlib import closing
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -21,41 +22,37 @@ from scoring.backtest_store import get_connection, get_predictions_awaiting_outc
 
 def main():
     list_only = "--list" in sys.argv
-    conn = get_connection()
-    awaiting = get_predictions_awaiting_outcome(conn)
+    with closing(get_connection()) as conn:
+        awaiting = get_predictions_awaiting_outcome(conn)
 
-    if not awaiting:
-        print("Nothing awaiting confirmation — every past prediction already has a recorded outcome.")
-        conn.close()
-        return
+        if not awaiting:
+            print("Nothing awaiting confirmation — every past prediction already has a recorded outcome.")
+            return
 
-    print(f"{len(awaiting)} prediction(s) awaiting outcome confirmation:\n")
-    for p in awaiting:
-        print(f"  {p.instrument} / {p.event_title} ({p.event_time_utc}) — "
-              f"predicted {p.direction.upper()} {p.probability:.0%}, "
-              f"{p.confidence:.0%} confidence, {p.article_count} articles")
+        print(f"{len(awaiting)} prediction(s) awaiting outcome confirmation:\n")
+        for p in awaiting:
+            print(f"  {p.instrument} / {p.event_title} ({p.event_time_utc}) — "
+                  f"predicted {p.direction.upper()} {p.probability:.0%}, "
+                  f"{p.confidence:.0%} confidence, {p.article_count} articles")
 
-    if list_only:
-        conn.close()
-        return
+        if list_only:
+            return
 
-    print("\nFor each, research the real outcome and enter it below (blank direction to skip):\n")
-    for p in awaiting:
-        print(f"--- {p.instrument} / {p.event_title} ({p.event_time_utc}) ---")
-        print(f"    predicted: {p.direction.upper()} {p.probability:.0%}")
-        direction = input("    actual direction (bullish/bearish/neutral, blank to skip): ").strip().lower()
-        if not direction:
-            print("    skipped.\n")
-            continue
-        if direction not in {"bullish", "bearish", "neutral"}:
-            print(f"    {direction!r} is not bullish/bearish/neutral — skipped.\n")
-            continue
-        note = input("    real outcome note (what actually happened, with source): ").strip()
-        event_time = dt.datetime.fromisoformat(p.event_time_utc)
-        record_outcome(conn, p.event_title, p.instrument, event_time, direction, note)
-        print("    recorded.\n")
-
-    conn.close()
+        print("\nFor each, research the real outcome and enter it below (blank direction to skip):\n")
+        for p in awaiting:
+            print(f"--- {p.instrument} / {p.event_title} ({p.event_time_utc}) ---")
+            print(f"    predicted: {p.direction.upper()} {p.probability:.0%}")
+            direction = input("    actual direction (bullish/bearish/neutral, blank to skip): ").strip().lower()
+            if not direction:
+                print("    skipped.\n")
+                continue
+            if direction not in {"bullish", "bearish", "neutral"}:
+                print(f"    {direction!r} is not bullish/bearish/neutral — skipped.\n")
+                continue
+            note = input("    real outcome note (what actually happened, with source): ").strip()
+            event_time = dt.datetime.fromisoformat(p.event_time_utc)
+            record_outcome(conn, p.event_title, p.instrument, event_time, direction, note)
+            print("    recorded.\n")
 
 
 if __name__ == "__main__":
