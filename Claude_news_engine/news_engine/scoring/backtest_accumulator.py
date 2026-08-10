@@ -15,9 +15,17 @@ Budget-capped, not continuous: article fetches (RSS + Alpha Vantage) are
 rate-limited resources, unlike the dashboard's free essence-only scoring.
 At most SNAPSHOT_BUDGET_PER_PAIR prediction snapshots per (event,
 instrument) pair — one when the event enters its pre-event window, one
-more only once inside the final NEAR_WINDOW_HOURS stretch (same "how
-close is close" definition as webapp/scheduler.py, reused directly
-rather than re-defined).
+more only once inside the final FINAL_SNAPSHOT_WINDOW_HOURS stretch.
+
+FINAL_SNAPSHOT_WINDOW_HOURS is deliberately its OWN, much tighter constant,
+not webapp.scheduler.NEAR_WINDOW_HOURS (4h) — that constant answers "how
+urgent is polling right now" for the dashboard's adaptive interval, a
+different question from "how close to the actual release should this
+pipeline's LAST snapshot land". Reusing it here meant the second snapshot
+could fire as early as 3h59m before the event and then never update again,
+capturing a stale picture. compute_adaptive_interval_seconds (imported
+below) is still reused for polling cadence — only the snapshot-timing
+threshold is decoupled.
 """
 from __future__ import annotations
 
@@ -32,9 +40,15 @@ from data_layer.event_context import build_event_news_bundle
 from data_layer.rss_sources import build_all_preview_sources
 from scoring.probability_engine import score_bundle
 from scoring.backtest_store import get_connection, record_prediction, count_predictions
-from webapp.scheduler import compute_adaptive_interval_seconds, NEAR_WINDOW_HOURS
+from webapp.scheduler import compute_adaptive_interval_seconds
 
 SNAPSHOT_BUDGET_PER_PAIR = 2
+# How close to the actual event time the FINAL snapshot must be taken —
+# deliberately much tighter than webapp.scheduler.NEAR_WINDOW_HOURS (4h),
+# see module docstring. 30 minutes: comfortably inside the adaptive
+# scheduler's 5-minute NEAR-tier polling cadence, so it reliably lands
+# close to the release rather than hours ahead of it.
+FINAL_SNAPSHOT_WINDOW_HOURS = 0.5
 # Used when a calendar fetch fails and there's no fresh event list to
 # reason an adaptive interval from — same fallback pattern as
 # webapp/scheduler.py's SCHEDULER_INTERVAL_SECONDS.
@@ -80,7 +94,7 @@ def run_accumulator_cycle(
                 existing = count_predictions(conn, event.title, instrument, event.event_time_utc)
                 if existing >= SNAPSHOT_BUDGET_PER_PAIR:
                     continue
-                if existing == 1 and hours_until > NEAR_WINDOW_HOURS:
+                if existing == 1 and hours_until > FINAL_SNAPSHOT_WINDOW_HOURS:
                     continue  # second snapshot only allowed in the final stretch
                 instruments_needing_snapshot.append(instrument)
 
