@@ -63,8 +63,22 @@ function directionClass(direction) {
   return "neutral";
 }
 
-function gaugeSvg(probability, direction) {
-  const pct = Math.round(probability * 100);
+// `probability` is P(bullish) throughout this whole system (0-100%, 50%
+// = neutral) - the SAME single number for either direction, which is
+// exactly what made "SELL 39%" ambiguous (is 39% the sell confidence, or
+// the leftover bullish reading?). This returns P(that specific direction)
+// instead: BUY shows the raw number as-is, SELL shows its complement
+// (100 - raw) - e.g. a raw 39% BUY-probability reads as "SELL 61%", each
+// direction now genuinely "out of its own 100," never sharing one scale.
+function directionPct(probability, direction) {
+  const raw = Math.round(probability * 100);
+  return direction === "bearish" ? 100 - raw : raw;
+}
+
+function gaugeSvg(pct, direction) {
+  // `pct` is already the per-direction display percentage (directionPct())
+  // — the arc fills to match the number shown, not the raw shared-scale
+  // probability, so a "SELL 61%" gauge visually reads as 61% filled, not 39%.
   const color = direction === "bullish" ? "#2e7d32" : direction === "bearish" ? "#c62828" : "#888";
   const circumference = 2 * Math.PI * 26;
   const filled = (pct / 100) * circumference;
@@ -176,7 +190,7 @@ function renderCard(symbolEntry) {
   // absent for everything else, which is expected.
   function articlePredictionHtml(pred) {
     if (!pred) return '';
-    const pct = Math.round(pred.probability * 100);
+    const pct = directionPct(pred.probability, pred.direction);
     const dClass = directionClass(pred.direction);
     return `<div class="article-prediction ${dClass}">
       📰 Article-based read: <b>${directionLabel(pred.direction)} ${pct}%</b>
@@ -198,7 +212,7 @@ function renderCard(symbolEntry) {
     return el;
   }
 
-  const pct = Math.round(next.probability * 100);
+  const pct = directionPct(next.probability, next.direction);
   const dirClass = directionClass(next.direction);
 
   // A pending -> real transition is a first real score, not a diff — only
@@ -218,20 +232,33 @@ function renderCard(symbolEntry) {
   }
 
   if (hasPreviousChange) {
-    const prevPct = Math.round(next.previous_probability * 100);
-    const delta = pct - prevPct;
-    if (delta !== 0) {
-      body += `<div class="diff-strip">${diffPieSvg(prevPct, delta)}
-        <div>Previous: <b>${directionLabel(next.previous_direction)} ${prevPct}%</b><br>
-        <span class="${delta >= 0 ? 'delta-up' : 'delta-down'}">${delta >= 0 ? '▲' : '▼'} ${delta >= 0 ? '+' : ''}${delta}pp → now ${pct}%</span></div>
+    // previous_probability/previous_direction are remapped onto THEIR OWN
+    // direction's basis, same as pct above — comparing "confidence within
+    // the same call" only makes sense when the direction didn't change. A
+    // flip (e.g. previous BUY -> now SELL) isn't a numeric delta at all;
+    // showing "-9pp" for a full reversal would misrepresent it as a minor
+    // wobble instead of the call flipping entirely.
+    const prevPct = directionPct(next.previous_probability, next.previous_direction);
+    if (next.previous_direction !== next.direction) {
+      body += `<div class="diff-strip reversed">
+        <div>↔ Reversed: was <b>${directionLabel(next.previous_direction)} ${prevPct}%</b> → now <b>${directionLabel(next.direction)} ${pct}%</b></div>
       </div>`;
+    } else {
+      const delta = pct - prevPct;
+      if (delta !== 0) {
+        body += `<div class="diff-strip">${diffPieSvg(prevPct, delta)}
+          <div>Previous: <b>${directionLabel(next.previous_direction)} ${prevPct}%</b><br>
+          <span class="${delta >= 0 ? 'delta-up' : 'delta-down'}">${delta >= 0 ? '▲' : '▼'} ${delta >= 0 ? '+' : ''}${delta}pp → now ${pct}%</span></div>
+        </div>`;
+      }
     }
   }
 
-  body += `<div class="gauge-row">${gaugeSvg(next.probability, next.direction)}
+  body += `<div class="gauge-row">${gaugeSvg(pct, next.direction)}
     <div><div class="gauge-label ${dirClass}">${directionLabel(next.direction)} ${pct}%</div>
     <div style="font-size:12px;color:#888">${escapeHtml(next.event_title)}</div>
-    ${articlePredictionLine}</div></div>`;
+    ${articlePredictionLine}</div></div>
+    <div class="bull-bear-scale">${bullBearScaleSvg(next.probability)}</div>`;
   body += dayStripHtml(next.event_time_utc);
 
   el.innerHTML = body;
