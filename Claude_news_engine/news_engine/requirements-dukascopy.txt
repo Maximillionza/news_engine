@@ -1,0 +1,4 @@
+# Only needed for scripts/confirm_backtest_outcomes.py's --auto flag (Dukascopy
+# price-based outcome auto-confirmation). Core scoring/backtest pipeline has no
+# dependency on this — install only if you want auto-confirmation.
+dukascopy-python>=4.0.1
