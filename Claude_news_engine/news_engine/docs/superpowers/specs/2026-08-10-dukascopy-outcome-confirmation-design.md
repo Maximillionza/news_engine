@@ -48,38 +48,56 @@ never a wrong answer. Worth a manual ToS read before leaning on this heavily.
 
 ## 1. Data fetch — `data_layer/dukascopy_feed.py`
 
+**Revised after research spike (2026-08-10, during plan-writing):** hand-rolling
+the `.bi5` LZMA/struct parser turned out to carry a real, hard-to-verify risk —
+the raw tick price is a scaled integer, and the per-instrument decimal-scaling
+divisor (1000? 100000? does it differ for an index CFD vs. spot gold?) could not
+be confirmed with confidence from available documentation. A wrong divisor would
+silently produce a garbage price, not a loud error — exactly the kind of mistake
+this spec's whole point is to avoid making manually.
+
+Instead, use the `dukascopy-python` PyPI package (MIT license, actively
+maintained, `requires-python = ">=3.10"`, deps: `pandas` + `requests`) — it
+already solves the fetch/decompress/parse/scale problem, including instrument
+constants for both instruments this project needs:
+`dukascopy_python.instruments.INSTRUMENT_FX_METALS_XAU_USD` (`"XAU/USD"`) and
+`dukascopy_python.instruments.INSTRUMENT_IDX_AMERICA_E_D_J_IND`
+(`"E_D&J-Ind"`, Dow Jones). This is a deliberate departure from "stdlib-only" —
+flagged to the user, who did not object.
+
 ```python
 def get_price_at(instrument: str, when_utc: dt.datetime) -> Optional[PricePoint]:
     """
-    Fetches the Dukascopy hourly tick file(s) covering `when_utc` and
-    returns the price of the first tick AT OR AFTER when_utc — same
-    no-lookahead discipline event_context.py already enforces on the
-    prediction side, applied here on the confirmation side: we only ever
-    look at the first real print at/after the requested instant, never
-    something that happened before it that might flatter the classification.
-    Returns None on any fetch/parse failure or if no tick exists in the
-    requested window (market closed, data gap) — never raises out to the
-    caller, matching every other feed module in this codebase.
+    Fetches Dukascopy tick data for a short window starting at when_utc and
+    returns the price of the first tick — i.e. the first real print AT OR
+    AFTER when_utc, same no-lookahead discipline event_context.py already
+    enforces on the prediction side, applied here on the confirmation side.
+    Returns None on any fetch failure, or if the window contains no ticks
+    at all (market closed, data gap) — never raises out to the caller,
+    matching every other feed module in this codebase.
     """
 ```
 
-- Instrument mapping is a 2-entry dict, `{"XAUUSD": "xauusd", "US30": "usa30idxusd"}`
+- Instrument mapping is a 2-entry dict, `{"XAUUSD": INSTRUMENT_FX_METALS_XAU_USD, "US30": INSTRUMENT_IDX_AMERICA_E_D_J_IND}`
   — deliberately not reusing `config.settings.INSTRUMENTS` directly (that dict's
   keys are the right lookup, but its values are UI labels/relationships, not
-  Dukascopy's instrument codes; a small local mapping keeps this module from
-  reaching into an unrelated config concern for an unrelated purpose).
-- URL pattern: `https://datafeed.dukascopy.com/datafeed/{INSTRUMENT}/{YEAR}/{MONTH_0INDEXED}/{DAY}/{HOUR}h_ticks.bi5`
-  (Dukascopy's month component is 0-indexed in this URL scheme — verified during
-  research, must not be dropped during implementation). A window crossing an hour
-  boundary (e.g. 23:50 UTC) may need the next hour's file too if the target
-  timestamp's own hour has no tick at/after it near the hour boundary.
-- Parsing: `.bi5` files are LZMA-compressed fixed-width binary tick records
-  (stdlib `lzma` + `struct`, no new dependency — matches this project's existing
-  bias toward zero-dependency core, opt-in extras only for FinBERT/LLM). Exact
-  byte layout to be confirmed against a reference implementation
-  (`dukascopy-node`'s source) during implementation, not re-derived from memory.
-- HTTP: plain `requests` (already a base dependency). A 404 (no data — weekend,
-  holiday, feed gap) is not an error condition, just "no tick here" → `None`.
+  Dukascopy's instrument identifiers; a small local mapping keeps this module
+  from reaching into an unrelated config concern for an unrelated purpose).
+- Implementation: `dukascopy_python.fetch(instrument, dukascopy_python.INTERVAL_TICK, dukascopy_python.OFFER_SIDE_BID, start=when_utc, end=when_utc + dt.timedelta(minutes=5))`
+  — a tight 5-minute window is enough to catch the next real tick without
+  pulling a large range; BID consistently (documented choice, avoids spread
+  noise from mixing sides across the two measurement points). Returns a pandas
+  DataFrame; take the first row's `bidPrice` (renamed `PricePoint.price` at
+  this module's boundary — callers never touch pandas directly, keeping the
+  third-party dependency contained to this one file, same pattern
+  `data_layer/news_feed.py` already uses to contain Alpha Vantage's response
+  shape).
+- An empty DataFrame (no ticks in the 5-minute window — market closed, weekend,
+  data gap) or any raised exception (network failure, library error) → `None`.
+- New dependency: `dukascopy-python` (pulls in `pandas`). Added to a new
+  `requirements-dukascopy.txt`, following this project's existing opt-in-file
+  convention (`requirements-webapp.txt`, `requirements-contextual.txt`) — the
+  core RSS-only pipeline stays free of it.
 
 ## 2. Classification — `scoring/outcome_classifier.py`
 
@@ -147,10 +165,10 @@ python scripts/confirm_backtest_outcomes.py --auto <no other flag>  # auto phase
 
 ## Testing
 
-- `data_layer/dukascopy_feed.py`: hand-crafted `.bi5`-format byte fixtures (no
-  live network, no committed real Dukascopy binary) covering URL construction
-  (including the 0-indexed month), tick parsing, "first tick at-or-after"
-  selection, and a 404/empty-response → `None` path.
+- `data_layer/dukascopy_feed.py`: mock `dukascopy_python.fetch()` (no live
+  network) with synthetic pandas DataFrames — a normal non-empty result (assert
+  the first row's price is returned), an empty DataFrame (assert `None`), and a
+  raised exception (assert `None`, not a crash).
 - `scoring/outcome_classifier.py`: mock `get_price_at()` with synthetic price
   pairs — exactly-0.15% move, just under, just over (both directions), one side
   returning `None` (fetch failure) → all assert the correct `ClassificationResult`.
