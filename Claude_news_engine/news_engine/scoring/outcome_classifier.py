@@ -12,6 +12,7 @@ docs/superpowers/specs/2026-08-10-dukascopy-outcome-confirmation-design.md.
 from __future__ import annotations
 
 import datetime as dt
+import math
 from dataclasses import dataclass
 from typing import Optional
 
@@ -33,10 +34,14 @@ def classify(instrument: str, event_time_utc: dt.datetime) -> ClassificationResu
     before = get_price_at(instrument, event_time_utc)
     after = get_price_at(instrument, event_time_utc + dt.timedelta(minutes=MEASUREMENT_WINDOW_MINUTES))
 
-    if before is None or after is None:
+    if (
+        before is None or after is None
+        or not math.isfinite(before.price) or not math.isfinite(after.price)
+        or before.price <= 0
+    ):
         return ClassificationResult(
             direction=None, move_pct=None,
-            note="Dukascopy: no data available (market closed or feed gap)",
+            note="Dukascopy: no usable price data (market closed, feed gap, or bad tick)",
         )
 
     move_pct = (after.price - before.price) / before.price * 100

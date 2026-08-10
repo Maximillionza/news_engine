@@ -69,11 +69,9 @@ def get_price_at(instrument: str, when_utc: dt.datetime) -> Optional[PricePoint]
             when_utc,
             window_end,
         )
-    except Exception as exc:  # noqa: BLE001 — a failed fetch must degrade to None, never crash the caller
+        if df is None or df.empty:
+            return None
+        return PricePoint(price=float(df.iloc[0]["bidPrice"]))
+    except Exception as exc:  # noqa: BLE001 — a failed fetch/parse must degrade to None, never crash the caller
         print(f"[dukascopy_feed] WARNING: fetch failed for {instrument} at {when_utc.isoformat()}: {exc}")
         return None
-
-    if df is None or df.empty:
-        return None
-
-    return PricePoint(price=float(df.iloc[0]["bidPrice"]))

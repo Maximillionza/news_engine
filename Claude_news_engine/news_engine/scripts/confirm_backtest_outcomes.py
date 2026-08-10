@@ -30,7 +30,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scoring.backtest_store import (
     get_connection, get_predictions_awaiting_outcome, record_outcome, record_dismissal,
 )
-from scoring.outcome_classifier import classify
 
 
 def run_auto_confirm_phase(conn) -> dict:
@@ -41,13 +40,30 @@ def run_auto_confirm_phase(conn) -> dict:
     event_time_utc) to the ClassificationResult computed for that row, so
     the interactive loop can show a leftover row's already-computed
     classification instead of re-fetching it.
+
+    Imports scoring.outcome_classifier lazily, here, not at module level —
+    that import chain pulls in the optional dukascopy-python/pandas
+    dependency (see requirements-dukascopy.txt), and bare/--list invocation
+    must stay fully manual with zero Dukascopy calls, per the design spec.
     """
+    try:
+        from scoring.outcome_classifier import classify
+    except ImportError as exc:
+        raise SystemExit(
+            "--auto needs the optional Dukascopy dependency — install it with:\n"
+            "  pip install -r requirements-dukascopy.txt"
+        ) from exc
+
     awaiting = get_predictions_awaiting_outcome(conn)
     auto_confirmed = 0
     suggestions = {}
     for p in awaiting:
         event_time = dt.datetime.fromisoformat(p.event_time_utc)
-        result = classify(p.instrument, event_time)
+        try:
+            result = classify(p.instrument, event_time)
+        except Exception as exc:  # noqa: BLE001 — one bad row must not crash the auto phase
+            print(f"[confirm_backtest_outcomes] WARNING: classify failed for {p.instrument}/{p.event_title}: {exc}")
+            continue
         if result.direction is not None:
             record_outcome(conn, p.event_title, p.instrument, event_time, result.direction.value, result.note)
             auto_confirmed += 1

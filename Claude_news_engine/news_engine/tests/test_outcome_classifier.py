@@ -63,7 +63,18 @@ def test_fetch_failure_is_ambiguous_with_no_move_pct():
         result = outcome_classifier.classify("XAUUSD", event_time)
         assert result.direction is None
         assert result.move_pct is None
-        assert "no data available" in result.note
+        assert "no usable price data" in result.note
+    print("PASS\n")
+
+
+def test_nan_price_is_ambiguous_not_a_fabricated_direction():
+    print("=== outcome_classifier: a NaN price (bad tick) classifies as ambiguous, never a fabricated direction ===")
+    event_time = dt.datetime(2026, 8, 7, 12, 30, tzinfo=dt.timezone.utc)
+    with patch.object(outcome_classifier, "get_price_at", side_effect=[PricePoint(price=float("nan")), PricePoint(price=2404.00)]):
+        result = outcome_classifier.classify("XAUUSD", event_time)
+        assert result.direction is None
+        assert result.move_pct is None
+        assert "no usable price data" in result.note
     print("PASS\n")
 
 
@@ -83,5 +94,6 @@ if __name__ == "__main__":
     test_move_exactly_at_threshold_classifies_not_ambiguous()
     test_move_just_under_threshold_is_ambiguous()
     test_fetch_failure_is_ambiguous_with_no_move_pct()
+    test_nan_price_is_ambiguous_not_a_fabricated_direction()
     test_never_returns_neutral()
     print("All outcome_classifier tests passed.")
