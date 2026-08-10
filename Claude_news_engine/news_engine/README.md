@@ -147,6 +147,41 @@ re-scores every 15 minutes; `webapp/dashboard.db` (gitignored) persists
 history across restarts so the before/after diff still works after you
 close and reopen the app.
 
+## Article-based backtest accumulator (optional)
+
+Separate from the dashboard above (which is essence-only, no articles at
+all) — this accumulates REAL backtest data for the article-based
+pipeline (`scoring/probability_engine.py`) automatically, going forward.
+Predictions are made blind (before the event, real fetched articles),
+persisted immediately; outcomes are confirmed manually afterward via
+research, same rigor as `tests/run_historical_backtest.py`'s
+reconstructed cases — just applied to real predictions instead.
+
+```bash
+python scoring/backtest_accumulator.py   # runs one cycle; import start_accumulator() for continuous operation
+python scripts/confirm_backtest_outcomes.py --list   # see what's awaiting confirmation
+python scripts/confirm_backtest_outcomes.py          # confirm outcomes interactively
+```
+
+Then view real accuracy at any time:
+
+```python
+from scoring.backtest import build_real_backtest_report
+build_real_backtest_report().print_report()
+```
+
+Budget-capped: at most 2 article-fetch snapshots per (event, instrument)
+pair (once on window entry, once in the final stretch) — article fetches
+are rate-limited (Alpha Vantage: 25/day), unlike the dashboard's free
+essence-only scoring. High-impact USD events only, no Medium-impact
+widening.
+
+This is also what finally makes real calibration of
+`TIME_DECAY_HALF_LIFE_MINUTES`/`CONTRADICTION_MIN_MAGNITUDE`/the sigmoid
+steepness `k` possible — once this log has enough real confirmed cases,
+those constants can be revisited against genuine data instead of guesses
+(see "Known gaps" below).
+
 ## Known gaps / things to watch
 
 - **Sentiment scoring now has 3 tiers**, cheapest/most-deterministic
