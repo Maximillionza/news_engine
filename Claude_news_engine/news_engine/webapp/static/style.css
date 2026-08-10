@@ -46,6 +46,7 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .article-prediction.bullish { background: rgba(46, 125, 50, 0.10); color: var(--bullish); border: 1px solid rgba(46, 125, 50, 0.3); }
 .article-prediction.bearish { background: rgba(198, 40, 40, 0.10); color: var(--bearish); border: 1px solid rgba(198, 40, 40, 0.3); }
 .article-prediction.neutral { background: rgba(136, 136, 136, 0.10); color: var(--neutral); border: 1px solid rgba(136, 136, 136, 0.3); }
+.bull-bear-scale { margin-top: 6px; display: flex; justify-content: center; }
 
 .day-strip { display: flex; gap: 4px; margin-top: 14px; overflow-x: auto; }
 .day-cell { flex: 0 0 auto; padding: 6px 8px; font-size: 11px; text-align: center; border-radius: 6px; border: 1px solid transparent; background: #f0f0f0; }

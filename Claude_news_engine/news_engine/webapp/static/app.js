@@ -78,6 +78,36 @@ function gaugeSvg(probability, direction) {
     </svg>`;
 }
 
+let _bullBearScaleCounter = 0;
+
+// Bear(red)<->Bull(green) horizontal scale with a sliding indicator at
+// `probability` (0.0-1.0) — where the article-based read sits relative to
+// full-bear/full-bull, not "confidence in the shown direction." Directly
+// addresses the ambiguity of a bare "SELL 39%" label: visually, 39% is
+// obviously a mild lean toward the red end, not a strong one, without
+// requiring the reader to do (100 - 39)% math in their head.
+function bullBearScaleSvg(probability) {
+  const id = `bbgrad-${_bullBearScaleCounter++}`;
+  const pct = Math.max(0, Math.min(100, probability * 100));
+  const trackX = 4, trackWidth = 172;
+  const indicatorX = trackX + (pct / 100) * trackWidth;
+  return `
+    <svg width="180" height="34" viewBox="0 0 180 34">
+      <defs>
+        <linearGradient id="${id}" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#c62828"/>
+          <stop offset="50%" stop-color="#ddd"/>
+          <stop offset="100%" stop-color="#2e7d32"/>
+        </linearGradient>
+      </defs>
+      <rect x="${trackX}" y="12" width="${trackWidth}" height="7" rx="3.5" fill="url(#${id})"/>
+      <line x1="90" y1="8" x2="90" y2="23" stroke="#999" stroke-width="1"/>
+      <circle cx="${indicatorX}" cy="15.5" r="6.5" fill="#222" stroke="#fff" stroke-width="2"/>
+      <text x="${trackX}" y="33" font-size="9" fill="#c62828" font-weight="bold">BEAR</text>
+      <text x="${trackX + trackWidth}" y="33" font-size="9" fill="#2e7d32" font-weight="bold" text-anchor="end">BULL</text>
+    </svg>`;
+}
+
 function diffPieSvg(previousPct, delta) {
   const isUp = delta >= 0;
   const baseColor = "#a5d6a7";
@@ -151,6 +181,7 @@ function renderCard(symbolEntry) {
     return `<div class="article-prediction ${dClass}">
       📰 Article-based read: <b>${directionLabel(pred.direction)} ${pct}%</b>
       <span style="font-size:12px;color:#888">(backed by ${pred.article_count} article${pred.article_count === 1 ? '' : 's'})</span>
+      <div class="bull-bear-scale">${bullBearScaleSvg(pred.probability)}</div>
     </div>`;
   }
   const articlePredictionLine = articlePredictionHtml(next.article_prediction);
