@@ -138,4 +138,4 @@ if __name__ == "__main__":
     tracked = list(INSTRUMENTS.keys())
     print(f"Running one accumulator cycle for: {tracked}")
     run_accumulator_cycle(tracked)
-    print("Done. For continuous operation, import start_accumulator() into a long-running process.")
+    print("Done. For continuous operation, run scripts/run_accumulator.py instead.")
