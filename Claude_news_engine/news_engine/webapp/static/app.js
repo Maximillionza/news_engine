@@ -175,9 +175,17 @@ function renderCard(symbolEntry) {
     }
   }
 
+  // article_count only exists for events the article-based backtest
+  // accumulator has independently processed (High-impact XAUUSD/US30
+  // only, budget-capped) - absent for everything else, which is expected.
+  const articleCountLine = next.article_count != null
+    ? `<div style="font-size:12px;color:#888">backed by ${next.article_count} article${next.article_count === 1 ? '' : 's'}</div>`
+    : '';
+
   body += `<div class="gauge-row">${gaugeSvg(next.probability, next.direction)}
     <div><div class="gauge-label ${dirClass}">${directionLabel(next.direction)} ${pct}%</div>
-    <div style="font-size:12px;color:#888">${escapeHtml(next.event_title)}</div></div></div>`;
+    <div style="font-size:12px;color:#888">${escapeHtml(next.event_title)}</div>
+    ${articleCountLine}</div></div>`;
   body += dayStripHtml(next.event_time_utc);
 
   el.innerHTML = body;

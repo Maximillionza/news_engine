@@ -21,6 +21,9 @@ from webapp.store import (
     add_tracked_symbol, remove_tracked_symbol, list_tracked_symbols,
 )
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
+from scoring.backtest_store import (
+    get_connection as get_backtest_connection, get_latest_prediction,
+)
 
 app = Flask(__name__, static_folder="static")
 
@@ -143,6 +146,13 @@ def get_calendar():
 @app.route("/api/predictions", methods=["GET"])
 def get_predictions():
     conn = get_connection()
+    # Separate connection to the article-based accumulator's own DB
+    # (scoring/backtest_log.db), read-only here — this dashboard route
+    # still computes nothing from articles itself (scoring_service.py is
+    # untouched); it only displays a count the accumulator already
+    # produced independently, purely for context alongside the essence-
+    # only score below.
+    backtest_conn = get_backtest_connection()
     symbols = list_tracked_symbols(conn)
     # Same failed-live-fetch degradation as /api/calendar (empty list, not a
     # 500) but this route was silently swallowing the exception with no way
@@ -165,6 +175,7 @@ def get_predictions():
                 continue
             latest = runs[0]
             previous = runs[1] if len(runs) > 1 else None
+            accumulator_prediction = get_latest_prediction(backtest_conn, event.title, ticker)
             entry["events"].append({
                 "event_title": event.title,
                 "event_time_utc": event.event_time_utc.isoformat(),
@@ -172,6 +183,7 @@ def get_predictions():
                 "direction": latest.direction,
                 "previous_probability": previous.probability if previous else None,
                 "previous_direction": previous.direction if previous else None,
+                "article_count": accumulator_prediction.article_count if accumulator_prediction else None,
             })
 
         # A resolved score always outranks a still-pending one, regardless
@@ -194,6 +206,7 @@ def get_predictions():
         predictions.append(entry)
 
     conn.close()
+    backtest_conn.close()
     return jsonify({"predictions": predictions, "error": error})
 
 
