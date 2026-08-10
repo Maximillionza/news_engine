@@ -12,6 +12,11 @@ const calendarListEl = document.getElementById("calendar-list");
 const addForm = document.getElementById("add-symbol-form");
 const addInput = document.getElementById("add-symbol-input");
 const calendarStaleNoticeEl = document.getElementById("calendar-stale-notice");
+const predictionsStaleNoticeEl = document.getElementById("predictions-stale-notice");
+
+function formatEventDateTime(eventTimeUtc) {
+  return new Date(eventTimeUtc).toLocaleString();
+}
 
 document.getElementById("tab-dashboard").addEventListener("click", () => showView("dashboard"));
 document.getElementById("tab-calendar").addEventListener("click", () => showView("calendar"));
@@ -130,7 +135,11 @@ function renderCard(symbolEntry) {
   const next = events[0];
 
   if (next.direction === "pending") {
-    body += `<div class="pending">Awaiting next tracked event</div>`;
+    // The event/when data is already in the response — showing it here
+    // instead of a generic placeholder tells the user WHAT they're
+    // actually waiting on, not just that something is pending.
+    body += `<div class="pending">Awaiting: ${escapeHtml(next.event_title)}<br>
+      <span style="font-size:12px;color:#888">${formatEventDateTime(next.event_time_utc)}</span></div>`;
     el.innerHTML = body;
     el.querySelector(".remove-btn").addEventListener("click", () => removeSymbol(symbol));
     return el;
@@ -179,8 +188,17 @@ function renderCard(symbolEntry) {
 async function refreshDashboard() {
   const resp = await fetch("/api/predictions");
   const data = await resp.json();
+
+  if (data.error) {
+    predictionsStaleNoticeEl.textContent = `Predictions may be stale — last calendar refresh failed (${data.error})`;
+    predictionsStaleNoticeEl.style.display = "";
+  } else {
+    predictionsStaleNoticeEl.textContent = "";
+    predictionsStaleNoticeEl.style.display = "none";
+  }
+
   cardsEl.innerHTML = "";
-  data.forEach((entry) => cardsEl.appendChild(renderCard(entry)));
+  (data.predictions || []).forEach((entry) => cardsEl.appendChild(renderCard(entry)));
 }
 
 async function refreshCalendar() {

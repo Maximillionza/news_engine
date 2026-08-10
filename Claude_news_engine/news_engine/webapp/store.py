@@ -76,20 +76,27 @@ def record_run(
 
 
 def get_latest_two(conn: sqlite3.Connection, symbol: str, event_title: str) -> list[PredictionRun]:
-    """Most recent run first. Returns 0, 1, or 2 rows — callers must handle fewer than 2 (no diff possible yet)."""
+    """
+    Most recent run first. Returns 0, 1, or 2 rows — callers must handle
+    fewer than 2 (no diff possible yet). `id` breaks ties on identical
+    scored_at_utc (e.g. a scheduler cycle stamping every run with one
+    shared "now") — SQLite gives no ordering guarantee among ties on
+    scored_at_utc alone, so without this "most recent" could silently
+    pick the earlier-inserted row.
+    """
     rows = conn.execute(
         "SELECT * FROM prediction_runs WHERE symbol = ? AND event_title = ? "
-        "ORDER BY scored_at_utc DESC LIMIT 2",
+        "ORDER BY scored_at_utc DESC, id DESC LIMIT 2",
         (symbol, event_title),
     ).fetchall()
     return [PredictionRun(**dict(row)) for row in rows]
 
 
 def get_history(conn: sqlite3.Connection, symbol: str, event_title: str) -> list[PredictionRun]:
-    """Full run history for a (symbol, event) pair, oldest first."""
+    """Full run history for a (symbol, event) pair, oldest first. `id` breaks scored_at_utc ties, same reasoning as get_latest_two()."""
     rows = conn.execute(
         "SELECT * FROM prediction_runs WHERE symbol = ? AND event_title = ? "
-        "ORDER BY scored_at_utc ASC",
+        "ORDER BY scored_at_utc ASC, id ASC",
         (symbol, event_title),
     ).fetchall()
     return [PredictionRun(**dict(row)) for row in rows]

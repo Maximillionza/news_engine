@@ -83,6 +83,16 @@ def get_symbols():
     ])
 
 
+# CSRF note on the two state-changing routes below (POST/DELETE /api/symbols):
+# no CSRF token, because there's no session/auth to bind one to (single-user,
+# no login anywhere in this app). This is not an open hole today — no CORS
+# headers are configured anywhere in this codebase (grep confirms it), so the
+# browser's own same-origin policy already blocks a cross-site page's fetch()
+# from completing a JSON POST here (it requires a preflight this server never
+# answers with Access-Control-Allow-Origin), and DELETE isn't issuable by a
+# plain HTML <form> at all. If real auth is ever added, revisit this — a
+# session existing is what would make a token-based CSRF defense meaningful,
+# not the other way around.
 @app.route("/api/symbols", methods=["POST"])
 def add_symbol():
     data = request.get_json(silent=True) or {}
@@ -134,10 +144,16 @@ def get_calendar():
 def get_predictions():
     conn = get_connection()
     symbols = list_tracked_symbols(conn)
+    # Same failed-live-fetch degradation as /api/calendar (empty list, not a
+    # 500) but this route was silently swallowing the exception with no way
+    # for the frontend to know the event list — and therefore every score
+    # below — might be stale. Surface it the same way /api/calendar does.
+    error = None
     try:
         events = _get_cached_events()
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — a failed live fetch must not 500 the whole dashboard
         events = []
+        error = f"calendar fetch failed: {exc}"
 
     predictions = []
     for ticker in symbols:
@@ -178,7 +194,7 @@ def get_predictions():
         predictions.append(entry)
 
     conn.close()
-    return jsonify(predictions)
+    return jsonify({"predictions": predictions, "error": error})
 
 
 @app.route("/api/predictions/<symbol>/history", methods=["GET"])

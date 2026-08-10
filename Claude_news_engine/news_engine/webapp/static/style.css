@@ -47,7 +47,7 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .day-cell.today { outline: 2px solid var(--bullish); outline-offset: -2px; background: #e8f5e9; font-weight: bold; }
 .day-cell.event { border: 2px solid #ef6c00; background: #fff3e0; font-weight: bold; }
 
-#calendar-stale-notice { background: #fff3e0; color: #ef6c00; border: 1px solid #ffcc80; border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 12px; }
+.stale-notice { background: #fff3e0; color: #ef6c00; border: 1px solid #ffcc80; border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 12px; }
 
 #calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 16px; }
 .cal-cell { min-height: 60px; padding: 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; background: #fff; }

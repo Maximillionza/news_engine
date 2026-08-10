@@ -75,6 +75,32 @@ def test_pending_run_round_trips_with_null_probability():
     print("PASS\n")
 
 
+def test_get_latest_two_breaks_identical_scored_at_ties_by_id():
+    print("=== store: get_latest_two/get_history break scored_at_utc ties by insertion (id), not undefined SQLite order ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 7, 12, 30, tzinfo=dt.timezone.utc)
+        # Same scored_at_utc for both rows — e.g. a scheduler cycle that
+        # stamps every run with one shared "now" value. Without an id
+        # tiebreaker, ORDER BY scored_at_utc DESC alone has no guaranteed
+        # order among ties; which row get_latest_two() calls "most recent"
+        # would be left to SQLite's whim rather than actual insertion order.
+        tied_time = dt.datetime(2026, 8, 5, 10, 0, tzinfo=dt.timezone.utc)
+        record_run(conn, "XAUUSD", "CPI", event_time, 0.50, "bullish", 0.10, scored_at_utc=tied_time)
+        record_run(conn, "XAUUSD", "CPI", event_time, 0.60, "bullish", 0.20, scored_at_utc=tied_time)
+
+        runs = get_latest_two(conn, "XAUUSD", "CPI")
+        assert runs[0].probability == 0.60, "the LATER-inserted row must win the tie, not an arbitrary SQLite order"
+        assert runs[1].probability == 0.50
+
+        history = get_history(conn, "XAUUSD", "CPI")
+        assert history[0].probability == 0.50, "history must stay oldest-inserted-first on a tie"
+        assert history[1].probability == 0.60
+        conn.close()
+    print("PASS\n")
+
+
 def test_tracked_symbols_add_remove_list():
     print("=== store: tracked symbols add/remove/list round-trip, duplicates ignored ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -96,5 +122,6 @@ if __name__ == "__main__":
     test_round_trip_and_diff()
     test_fewer_than_two_runs()
     test_pending_run_round_trips_with_null_probability()
+    test_get_latest_two_breaks_identical_scored_at_ties_by_id()
     test_tracked_symbols_add_remove_list()
     print("All store tests passed.")
