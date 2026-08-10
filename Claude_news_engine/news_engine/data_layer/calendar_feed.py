@@ -7,13 +7,25 @@ FairEconomy (the data provider behind FF's widget). This is the same feed
 used by countless retail trading tools — no login/auth required, no ToS
 violation, it's a public read-only data endpoint.
 
-Feed docs / discovery: https://nfs.faireconomy.media/ff_calendar_thisweek.json
-Also available: ff_calendar_lastweek.json, ff_calendar_nextweek.json
+Feed: https://nfs.faireconomy.media/ff_calendar_thisweek.json — the only
+period that actually exists. "lastweek"/"nextweek" variants were assumed
+to exist here (comment predating this investigation) but were confirmed,
+live and via research, to be nonexistent — a plain nginx 404, not an
+auth/permission response, and no documentation anywhere (retail trading
+tool forums, MQL5/MT4 EA discussions that all consume this same feed)
+references them either. There is no way to fetch historical or future-week
+calendar data from this feed at all — "thisweek" is genuinely all there is.
+The only workaround for historical events (e.g. backtesting) is manual
+reconstruction from real researched data — see
+tests/run_historical_backtest.py for the established pattern.
 
-NOTE: this sandbox's network egress is locked to a specific domain allowlist
-and does not include nfs.faireconomy.media, so this module can't be live
-network-tested here. Run it in your own environment (or the eventual MT5/VPS
-host) where general internet access is available.
+Rate limit, per Forex Factory's own published guidance: max 2 downloads
+per 5 minutes across ALL formats (json/xml/ics/csv) combined, and their
+explicit recommendation is to fetch once a week and cache it, not poll on
+an interval. This project got rate-limited (429) twice in the same
+session before this was known — see webapp/scheduler.py's adaptive poll
+interval and webapp/app.py's shared cache, both added specifically to
+respect this.
 """
 from __future__ import annotations
 
@@ -148,11 +160,19 @@ def _parse_event_datetime(raw_date: str) -> dt.datetime:
 
 def fetch_calendar(period: str = "thisweek", timeout: int = 15) -> list[EconomicEvent]:
     """
-    Fetch the raw FF calendar feed for a given period.
-    period: 'lastweek' | 'thisweek' | 'nextweek'
+    Fetch the raw FF calendar feed. "thisweek" is the only period that
+    exists — confirmed live and via research (see this module's
+    docstring); "lastweek"/"nextweek" are rejected here explicitly rather
+    than left to fail as a generic 404 from the network call, so the
+    error tells you WHY instead of just that the request failed.
     """
-    if period not in {"lastweek", "thisweek", "nextweek"}:
-        raise ValueError("period must be one of: lastweek, thisweek, nextweek")
+    if period != "thisweek":
+        raise ValueError(
+            f"period {period!r} is not available — this feed only ever serves 'thisweek', "
+            "confirmed live (plain 404, not an auth error) and via research; "
+            "there is no historical/future-week endpoint to fetch from. "
+            "See this module's docstring for the reconstruction workaround."
+        )
 
     url = FF_BASE_URL.format(period=period)
     resp = requests.get(url, timeout=timeout, headers={"User-Agent": "news-fundamental-engine/0.1"})
