@@ -21,7 +21,7 @@ from webapp.store import (
 )
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 from scoring.backtest_store import (
-    get_connection as get_backtest_connection, get_latest_prediction,
+    get_connection as get_backtest_connection, get_latest_two_predictions,
 )
 
 app = Flask(__name__, static_folder="static")
@@ -136,7 +136,6 @@ def get_predictions():
                 continue
             latest = runs[0]
             previous = runs[1] if len(runs) > 1 else None
-            accumulator_prediction = get_latest_prediction(backtest_conn, event["title"], ticker)
             # The accumulator's own blind, article-based call — direction
             # and probability, not just how many articles backed it. This
             # is a REAL prediction the accumulator already made independently,
@@ -145,12 +144,29 @@ def get_predictions():
             # "pending," since the accumulator predicts BEFORE the event
             # resolves. Previously only article_count surfaced here, which
             # left the actual call itself invisible on the dashboard.
+            #
+            # Two rows, not one: scoring/backtest_accumulator.py only
+            # RECORDS a snapshot on a material change (direction flip, or a
+            # same-direction move past its threshold) — so unlike the
+            # essence-only score's every-cycle rows, any two consecutive
+            # article predictions represent a genuine shift, not noise.
+            # That's exactly what the frontend's diff strip needs.
+            accumulator_runs = get_latest_two_predictions(backtest_conn, event["title"], ticker)
+            accumulator_prediction = accumulator_runs[0] if accumulator_runs else None
+            accumulator_previous = accumulator_runs[1] if len(accumulator_runs) > 1 else None
             article_prediction = None
             if accumulator_prediction is not None:
                 article_prediction = {
                     "direction": accumulator_prediction.direction,
                     "probability": accumulator_prediction.probability,
                     "article_count": accumulator_prediction.article_count,
+                }
+            previous_article_prediction = None
+            if accumulator_previous is not None:
+                previous_article_prediction = {
+                    "direction": accumulator_previous.direction,
+                    "probability": accumulator_previous.probability,
+                    "article_count": accumulator_previous.article_count,
                 }
             entry["events"].append({
                 "event_title": event["title"],
@@ -161,6 +177,7 @@ def get_predictions():
                 "previous_direction": previous.direction if previous else None,
                 "article_count": accumulator_prediction.article_count if accumulator_prediction else None,
                 "article_prediction": article_prediction,
+                "previous_article_prediction": previous_article_prediction,
             })
 
         # A resolved score always outranks a still-pending one, regardless

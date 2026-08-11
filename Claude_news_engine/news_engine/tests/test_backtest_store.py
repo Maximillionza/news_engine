@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scoring.backtest_store import (
     get_connection, record_prediction, count_predictions,
     get_predictions_awaiting_outcome, record_outcome, get_all_confirmed_cases,
-    record_dismissal, get_latest_prediction,
+    record_dismissal, get_latest_prediction, get_latest_two_predictions,
 )
 
 
@@ -204,6 +204,49 @@ def test_get_latest_prediction_returns_none_when_nothing_recorded():
     print("PASS\n")
 
 
+def test_get_latest_two_predictions_returns_most_recent_first():
+    print("=== backtest_store: get_latest_two_predictions returns the 2 most recent recorded snapshots, most recent first ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=dt.timezone.utc)
+        t1 = dt.datetime(2026, 8, 10, tzinfo=dt.timezone.utc)
+        t2 = dt.datetime(2026, 8, 11, tzinfo=dt.timezone.utc)
+        record_prediction(conn, "CPI m/m", "XAUUSD", event_time, 0.55, "bullish", 0.3, 40, False, scored_at_utc=t1)
+        record_prediction(conn, "CPI m/m", "XAUUSD", event_time, 0.30, "bearish", 0.4, 127, False, scored_at_utc=t2)
+
+        latest_two = get_latest_two_predictions(conn, "CPI m/m", "XAUUSD")
+        assert len(latest_two) == 2
+        assert latest_two[0].probability == 0.30, "most recent (t2) must come first"
+        assert latest_two[1].probability == 0.55
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_latest_two_predictions_returns_one_row_when_only_one_recorded():
+    print("=== backtest_store: get_latest_two_predictions returns just 1 row when only 1 snapshot has ever been recorded ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=dt.timezone.utc)
+        record_prediction(conn, "CPI m/m", "XAUUSD", event_time, 0.55, "bullish", 0.3, 40, False)
+
+        latest_two = get_latest_two_predictions(conn, "CPI m/m", "XAUUSD")
+        assert len(latest_two) == 1
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_latest_two_predictions_empty_when_nothing_recorded():
+    print("=== backtest_store: get_latest_two_predictions returns an empty list, not an error, when nothing exists ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        assert get_latest_two_predictions(conn, "Nonexistent Event", "XAUUSD") == []
+        conn.close()
+    print("PASS\n")
+
+
 def test_confirmed_cases_joins_latest_prediction_with_outcome():
     print("=== backtest_store: get_all_confirmed_cases joins the latest snapshot with its outcome ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -237,5 +280,8 @@ if __name__ == "__main__":
     test_get_latest_prediction_returns_most_recent_snapshot()
     test_get_latest_prediction_breaks_scored_at_ties_by_id()
     test_get_latest_prediction_returns_none_when_nothing_recorded()
+    test_get_latest_two_predictions_returns_most_recent_first()
+    test_get_latest_two_predictions_returns_one_row_when_only_one_recorded()
+    test_get_latest_two_predictions_empty_when_nothing_recorded()
     test_confirmed_cases_joins_latest_prediction_with_outcome()
     print("All backtest_store tests passed.")

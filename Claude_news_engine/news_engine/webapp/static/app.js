@@ -122,6 +122,33 @@ function bullBearScaleSvg(probability) {
     </svg>`;
 }
 
+// Shared by the essence-only gauge and the article-based read — both
+// compare a previous (direction, probability) pair against a current one.
+// previous_probability/probability are remapped onto THEIR OWN direction's
+// basis via directionPct(), same as everywhere else — comparing
+// "confidence within the same call" only makes sense when the direction
+// didn't change. A flip (e.g. previous BUY -> now SELL) isn't a numeric
+// delta at all; showing "-9pp" for a full reversal would misrepresent it
+// as a minor wobble instead of the call flipping entirely. Returns '' if
+// there's nothing meaningful to show (identical direction+probability).
+function buildDiffStripHtml(prevDirection, prevProbability, currDirection, currProbability) {
+  const prevPct = directionPct(prevProbability, prevDirection);
+  const currPct = directionPct(currProbability, currDirection);
+
+  if (prevDirection !== currDirection) {
+    return `<div class="diff-strip reversed">
+      <div>↔ Reversed: was <b>${directionLabel(prevDirection)} ${prevPct}%</b> → now <b>${directionLabel(currDirection)} ${currPct}%</b></div>
+    </div>`;
+  }
+
+  const delta = currPct - prevPct;
+  if (delta === 0) return '';
+  return `<div class="diff-strip">${diffPieSvg(prevPct, delta)}
+    <div>Previous: <b>${directionLabel(prevDirection)} ${prevPct}%</b><br>
+    <span class="${delta >= 0 ? 'delta-up' : 'delta-down'}">${delta >= 0 ? '▲' : '▼'} ${delta >= 0 ? '+' : ''}${delta}pp → now ${currPct}%</span></div>
+  </div>`;
+}
+
 function diffPieSvg(previousPct, delta) {
   const isUp = delta >= 0;
   const baseColor = "#a5d6a7";
@@ -188,17 +215,25 @@ function renderCard(symbolEntry) {
   // not a footnote. Only present for events the accumulator has
   // independently processed (High-impact XAUUSD/US30 only, budget-capped) —
   // absent for everything else, which is expected.
-  function articlePredictionHtml(pred) {
+  function articlePredictionHtml(pred, prevPred) {
     if (!pred) return '';
     const pct = directionPct(pred.probability, pred.direction);
     const dClass = directionClass(pred.direction);
+    // Unlike the essence-only score (a fresh row most cycles),
+    // scoring/backtest_accumulator.py only records a snapshot on a
+    // material change — so any previous_article_prediction present here
+    // is a genuine shift worth showing, never noise.
+    const diffHtml = prevPred
+      ? buildDiffStripHtml(prevPred.direction, prevPred.probability, pred.direction, pred.probability)
+      : '';
     return `<div class="article-prediction ${dClass}">
       📰 Article-based read: <b>${directionLabel(pred.direction)} ${pct}%</b>
       <span style="font-size:12px;color:#888">(backed by ${pred.article_count} article${pred.article_count === 1 ? '' : 's'})</span>
       <div class="bull-bear-scale">${bullBearScaleSvg(pred.probability)}</div>
+      ${diffHtml}
     </div>`;
   }
-  const articlePredictionLine = articlePredictionHtml(next.article_prediction);
+  const articlePredictionLine = articlePredictionHtml(next.article_prediction, next.previous_article_prediction);
 
   if (next.direction === "pending") {
     // The event/when data is already in the response — showing it here
@@ -232,26 +267,7 @@ function renderCard(symbolEntry) {
   }
 
   if (hasPreviousChange) {
-    // previous_probability/previous_direction are remapped onto THEIR OWN
-    // direction's basis, same as pct above — comparing "confidence within
-    // the same call" only makes sense when the direction didn't change. A
-    // flip (e.g. previous BUY -> now SELL) isn't a numeric delta at all;
-    // showing "-9pp" for a full reversal would misrepresent it as a minor
-    // wobble instead of the call flipping entirely.
-    const prevPct = directionPct(next.previous_probability, next.previous_direction);
-    if (next.previous_direction !== next.direction) {
-      body += `<div class="diff-strip reversed">
-        <div>↔ Reversed: was <b>${directionLabel(next.previous_direction)} ${prevPct}%</b> → now <b>${directionLabel(next.direction)} ${pct}%</b></div>
-      </div>`;
-    } else {
-      const delta = pct - prevPct;
-      if (delta !== 0) {
-        body += `<div class="diff-strip">${diffPieSvg(prevPct, delta)}
-          <div>Previous: <b>${directionLabel(next.previous_direction)} ${prevPct}%</b><br>
-          <span class="${delta >= 0 ? 'delta-up' : 'delta-down'}">${delta >= 0 ? '▲' : '▼'} ${delta >= 0 ? '+' : ''}${delta}pp → now ${pct}%</span></div>
-        </div>`;
-      }
-    }
+    body += buildDiffStripHtml(next.previous_direction, next.previous_probability, next.direction, next.probability);
   }
 
   body += `<div class="gauge-row">${gaugeSvg(pct, next.direction)}

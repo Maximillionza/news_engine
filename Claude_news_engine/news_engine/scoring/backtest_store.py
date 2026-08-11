@@ -185,20 +185,40 @@ def get_latest_prediction(
     scored_at_utc ties, same reasoning as get_latest_two() in
     webapp/store.py.
     """
-    row = conn.execute(
+    latest_two = get_latest_two_predictions(conn, event_title, instrument)
+    return latest_two[0] if latest_two else None
+
+
+def get_latest_two_predictions(
+    conn: sqlite3.Connection, event_title: str, instrument: str,
+) -> list[Prediction]:
+    """
+    Most recent RECORDED prediction snapshots for this (event_title,
+    instrument) pair, most recent first — 0, 1, or 2 rows. Backs the
+    dashboard's article-based diff strip (webapp/app.py), mirroring
+    webapp/store.py's get_latest_two() for the essence-only score: since
+    scoring/backtest_accumulator.py only records a snapshot on a material
+    change (direction flip or a same-direction move past its threshold —
+    see backtest_accumulator.MATERIAL_CHANGE_THRESHOLD_PROBABILITY), any
+    two consecutive rows here represent a genuine shift worth showing, not
+    noise. `id` breaks scored_at_utc ties, same reasoning as
+    get_latest_two() in webapp/store.py.
+    """
+    rows = conn.execute(
         "SELECT * FROM predictions WHERE event_title = ? AND instrument = ? "
-        "ORDER BY scored_at_utc DESC, id DESC LIMIT 1",
+        "ORDER BY scored_at_utc DESC, id DESC LIMIT 2",
         (event_title, instrument),
-    ).fetchone()
-    if row is None:
-        return None
-    d = dict(row)
-    return Prediction(
-        id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
-        event_time_utc=d["event_time_utc"], scored_at_utc=d["scored_at_utc"],
-        probability=d["probability"], direction=d["direction"], confidence=d["confidence"],
-        article_count=d["article_count"], contradiction_flag=bool(d["contradiction_flag"]),
-    )
+    ).fetchall()
+    predictions = []
+    for row in rows:
+        d = dict(row)
+        predictions.append(Prediction(
+            id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
+            event_time_utc=d["event_time_utc"], scored_at_utc=d["scored_at_utc"],
+            probability=d["probability"], direction=d["direction"], confidence=d["confidence"],
+            article_count=d["article_count"], contradiction_flag=bool(d["contradiction_flag"]),
+        ))
+    return predictions
 
 
 def record_outcome(
