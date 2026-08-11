@@ -310,9 +310,13 @@ function renderCard(symbolEntry) {
         return;
       }
       panel.style.display = "";
+      if (panel.dataset.loaded === "true") {
+        return;  // already fetched and rendered on an earlier expand — reuse it, don't re-fetch
+      }
       panel.innerHTML = "Loading…";
       const resp = await fetch(`/api/event_history?title=${encodeURIComponent(historyBtn.dataset.eventTitle)}`);
       const data = await resp.json();
+      panel.dataset.loaded = "true";
       if (!data.occurrences || data.occurrences.length === 0) {
         panel.innerHTML = "<div style=\"font-size:12px;color:#888\">No history recorded yet</div>";
         return;
@@ -320,7 +324,7 @@ function renderCard(symbolEntry) {
       const rows = data.occurrences.map((o) => {
         const dateLabel = new Date(o.event_time_utc).toLocaleDateString(undefined, { year: "numeric", month: "short" });
         const surpriseLabel = o.surprise_direction
-          ? `(${o.surprise_direction.replace("_", "-")})`
+          ? `(${escapeHtml(o.surprise_direction.replace("_", "-"))})`
           : "(pending)";
         return `<div>${dateLabel}: forecast ${escapeHtml(o.forecast ?? "—")}, previous ${escapeHtml(o.previous ?? "—")}, actual ${escapeHtml(o.actual ?? "—")} ${surpriseLabel}</div>`;
       }).join("");
