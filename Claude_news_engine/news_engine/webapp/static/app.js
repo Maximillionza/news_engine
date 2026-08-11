@@ -235,13 +235,29 @@ function renderCard(symbolEntry) {
   }
   const articlePredictionLine = articlePredictionHtml(next.article_prediction, next.previous_article_prediction);
 
+  // print_prediction is the accumulator's separate "will THIS number beat
+  // or miss forecast" call (scoring/print_direction.py), distinct from
+  // article_prediction's price-direction call above. Absent (null) for
+  // events with no PRINT_SURPRISE_LEXICON coverage or no call made yet —
+  // rendered as nothing, never a fabricated placeholder.
+  function printPredictionHtml(printPred) {
+    if (!printPred) return '';
+    const label = printPred.direction === 'higher' ? 'HIGHER'
+      : printPred.direction === 'lower' ? 'LOWER' : 'IN LINE with';
+    const confPct = Math.round(printPred.confidence * 100);
+    return `<div class="print-prediction">
+      📊 Print call: likely <b>${label}</b> than forecast <span style="font-size:12px;color:#888">(${confPct}% confidence)</span>
+    </div>`;
+  }
+  const printPredictionLine = printPredictionHtml(next.print_prediction);
+
   if (next.direction === "pending") {
     // The event/when data is already in the response — showing it here
     // instead of a generic placeholder tells the user WHAT they're
     // actually waiting on, not just that something is pending.
     body += `<div class="pending">Awaiting: ${escapeHtml(next.event_title)}<br>
       <span style="font-size:12px;color:#888">${formatEventDateTime(next.event_time_utc)}</span></div>
-      ${articlePredictionLine}`;
+      ${articlePredictionLine}${printPredictionLine}`;
     el.innerHTML = body;
     el.querySelector(".remove-btn").addEventListener("click", () => removeSymbol(symbol));
     return el;
@@ -273,12 +289,45 @@ function renderCard(symbolEntry) {
   body += `<div class="gauge-row">${gaugeSvg(pct, next.direction)}
     <div><div class="gauge-label ${dirClass}">${directionLabel(next.direction)} ${pct}%</div>
     <div style="font-size:12px;color:#888">${escapeHtml(next.event_title)}</div>
-    ${articlePredictionLine}</div></div>
+    ${articlePredictionLine}${printPredictionLine}</div></div>
     <div class="bull-bear-scale">${bullBearScaleSvg(next.probability)}</div>`;
   body += dayStripHtml(next.event_time_utc);
+  const historyToggleId = `history-${symbol}-${next.event_title.replace(/[^a-zA-Z0-9]/g, '')}`;
+  body += `<div class="history-toggle">
+    <button class="history-toggle-btn" data-event-title="${escapeHtml(next.event_title)}" data-target="${historyToggleId}">History ▾</button>
+    <div class="history-panel" id="${historyToggleId}" style="display:none"></div>
+  </div>`;
 
   el.innerHTML = body;
   el.querySelector(".remove-btn").addEventListener("click", () => removeSymbol(symbol));
+
+  const historyBtn = el.querySelector(".history-toggle-btn");
+  if (historyBtn) {
+    historyBtn.addEventListener("click", async () => {
+      const panel = document.getElementById(historyBtn.dataset.target);
+      if (panel.style.display !== "none") {
+        panel.style.display = "none";
+        return;
+      }
+      panel.style.display = "";
+      panel.innerHTML = "Loading…";
+      const resp = await fetch(`/api/event_history?title=${encodeURIComponent(historyBtn.dataset.eventTitle)}`);
+      const data = await resp.json();
+      if (!data.occurrences || data.occurrences.length === 0) {
+        panel.innerHTML = "<div style=\"font-size:12px;color:#888\">No history recorded yet</div>";
+        return;
+      }
+      const rows = data.occurrences.map((o) => {
+        const dateLabel = new Date(o.event_time_utc).toLocaleDateString(undefined, { year: "numeric", month: "short" });
+        const surpriseLabel = o.surprise_direction
+          ? `(${o.surprise_direction.replace("_", "-")})`
+          : "(pending)";
+        return `<div>${dateLabel}: forecast ${escapeHtml(o.forecast ?? "—")}, previous ${escapeHtml(o.previous ?? "—")}, actual ${escapeHtml(o.actual ?? "—")} ${surpriseLabel}</div>`;
+      }).join("");
+      panel.innerHTML = `${rows}<div style="margin-top:4px;font-weight:bold">→ ${escapeHtml(data.trend_summary)}</div>`;
+    });
+  }
+
   return el;
 }
 

@@ -63,3 +63,9 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 
 #calendar-list { list-style: none; padding: 0; }
 #calendar-list li { padding: 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+
+.print-prediction { margin-top: 4px; font-size: 13px; }
+.history-toggle { margin-top: 8px; }
+.history-toggle-btn { background: none; border: none; color: #666; font-size: 12px; cursor: pointer; padding: 2px 0; }
+.history-toggle-btn:hover { text-decoration: underline; }
+.history-panel { font-size: 12px; color: #555; margin-top: 4px; padding-left: 8px; border-left: 2px solid #ddd; }
