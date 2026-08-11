@@ -189,6 +189,33 @@ EVENT_SURPRISE_DIRECTION = {
     # worse, a fabricated one from unrelated fields.
 }
 
+# Phrase-based lexicon for scoring/print_direction.py's print-surprise call
+# — "will THIS release come in higher or lower than forecast," derived from
+# article language, distinct from scoring/sentiment.py's general USD-
+# directional lexicon. Only the 4 highest-traffic events (from
+# EVENT_SURPRISE_DIRECTION) get an entry for this first pass; an event
+# title with no entry here always returns None from score_print_direction()
+# — never a guessed call. Adding coverage for another event later is a
+# config-only change here, no code changes required.
+PRINT_SURPRISE_LEXICON = {
+    "CPI m/m": {
+        "higher": ["sticky inflation", "hotter than expected", "upside surprise", "inflation accelerat"],
+        "lower": ["cooling inflation", "softer than expected", "downside surprise", "disinflation"],
+    },
+    "Core CPI m/m": {
+        "higher": ["sticky core inflation", "hotter than expected", "upside surprise"],
+        "lower": ["cooling", "softer than expected", "downside surprise"],
+    },
+    "Non-Farm Employment Change": {
+        "higher": ["blowout jobs", "stronger than expected", "beat estimates", "hot jobs report"],
+        "lower": ["weaker than expected", "missed estimates", "soft jobs report", "payrolls disappoint"],
+    },
+    "Unemployment Rate": {
+        "higher": ["rate ticks up", "unemployment rises", "labor market cooling"],
+        "lower": ["rate ticks down", "unemployment falls", "labor market tightening"],
+    },
+}
+
 # Trust weight for a precursor's structured surprise contribution — high,
 # since it's a real released number rather than lexicon-guessed text, but
 # not 1.0: the higher_bullish/higher_bearish direction mapping above is
