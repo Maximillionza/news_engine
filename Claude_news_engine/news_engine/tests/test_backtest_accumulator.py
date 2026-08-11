@@ -36,50 +36,57 @@ def _fake_result(probability=0.7, direction=Direction.BULLISH):
     )
 
 
-def test_first_snapshot_taken_immediately_second_only_in_final_snapshot_window():
-    print("=== accumulator: first snapshot on window entry, second only within FINAL_SNAPSHOT_WINDOW_HOURS, third never ===")
+def test_checks_every_cycle_regardless_of_how_far_out_the_event_is():
+    print("=== accumulator: checks (fetches+scores) every cycle the event is active — no per-pair check budget or timing gate ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
-        event = _fake_event(hours_from_now=20, now=now)  # inside 72h pre-window, outside FINAL_SNAPSHOT_WINDOW_HOURS
+        event = _fake_event(hours_from_now=60, now=now)  # far out (60h), well outside the old final-window gate
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score:
+
+            # Three cycles, all still far from the event — every one of
+            # them must fetch+score. Real regression test: the old design
+            # would only check once here (window entry) and go silent for
+            # the rest of the pre-event window — exactly the gap observed
+            # live (a full 24h with an identical scored_at_utc).
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now + dt.timedelta(hours=1))
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now + dt.timedelta(hours=2))
+
+            assert mock_score.call_count == 3, f"expected a check on every cycle, got {mock_score.call_count}"
+    print("PASS\n")
+
+
+def test_no_cap_on_recorded_snapshots_multiple_material_changes_all_recorded():
+    print("=== accumulator: no fixed cap on recorded snapshots — every material change gets written, however many there are ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=60, now=now)
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
              patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
              patch.object(accumulator, "score_bundle", side_effect=[
-                 _fake_result(probability=0.7, direction=Direction.BULLISH),   # cycle 1
-                 _fake_result(probability=0.85, direction=Direction.BULLISH),  # cycle 4 — materially stronger, must record
+                 _fake_result(probability=0.55, direction=Direction.BULLISH),   # cycle 1: first ever, always recorded
+                 _fake_result(probability=0.70, direction=Direction.BULLISH),   # cycle 2: +15pp, material -> recorded
+                 _fake_result(probability=0.30, direction=Direction.BEARISH),   # cycle 3: flip -> recorded
              ]):
 
-            # Cycle 1: 20h out, first snapshot should be taken (nothing to compare against yet).
-            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+            for i in range(3):
+                accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now + dt.timedelta(hours=i))
+
             conn = store.get_connection(db_path)
-            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1
-
-            # Cycle 2: still 20h out (not near window) — second check must NOT even happen yet.
-            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
-            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1, "should not check again outside the near window"
-
-            # Cycle 3: 2h out — outside the accumulator's own, much tighter
-            # FINAL_SNAPSHOT_WINDOW_HOURS (30 min) — the final check must
-            # NOT fire this early (this is the exact gap the old
-            # shared-with-webapp.scheduler-threshold behavior had).
-            still_too_early = event.event_time_utc - dt.timedelta(hours=2)
-            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=still_too_early)
-            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 1, \
-                "must not check merely for being inside a wider scheduler-style window"
-
-            # Cycle 4: now genuinely close to the event, and the score moved
-            # materially (0.7 -> 0.85, +15pp) — second snapshot recorded.
-            near_now = event.event_time_utc - dt.timedelta(minutes=20)
-            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=near_now)
-            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 2
-
-            # Cycle 5: budget exhausted (2 RECORDED snapshots reached), must
-            # not take a 3rd even still in the final window.
-            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=near_now)
-            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 2, "budget cap must hold"
+            assert store.count_predictions(conn, "Test Event", "XAUUSD", event.event_time_utc) == 3, \
+                "the old design capped at 2 RECORDED snapshots total - three genuine material changes must all be recorded now"
+            latest = store.get_latest_prediction(conn, "Test Event", "XAUUSD")
+            assert latest.direction == "bearish" and abs(latest.probability - 0.30) < 1e-9
             conn.close()
     print("PASS\n")
 
@@ -310,7 +317,8 @@ def test_failed_calendar_fetch_returns_none_without_crashing():
 
 
 if __name__ == "__main__":
-    test_first_snapshot_taken_immediately_second_only_in_final_snapshot_window()
+    test_checks_every_cycle_regardless_of_how_far_out_the_event_is()
+    test_no_cap_on_recorded_snapshots_multiple_material_changes_all_recorded()
     test_unchanged_score_is_checked_but_not_recorded()
     test_direction_flip_is_always_recorded_regardless_of_magnitude()
     test_is_material_change_threshold_boundary()

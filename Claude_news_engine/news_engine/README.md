@@ -249,23 +249,32 @@ from scoring.backtest import build_real_backtest_report
 build_real_backtest_report().print_report()
 ```
 
-Budget-capped: at most 2 *recorded* snapshots per (event, instrument) pair
-(once on window entry, once in the final stretch) — article fetches are
-rate-limited (Alpha Vantage: 25/day), unlike the dashboard's free
-essence-only scoring. High-impact USD events only, no Medium-impact
-widening.
+High-impact USD events only, no Medium-impact widening — article fetches
+are rate-limited (Alpha Vantage: 25/day), unlike the dashboard's free
+essence-only scoring. Also blends in already-released precursor data
+(PPI before CPI, ADP before NFP — see `config.settings.PRECURSOR_EVENTS`)
+alongside article sentiment when a real precursor relationship exists and
+has actually printed.
 
-**The stored prediction is diff-aware, not automatic.** Every eligible
-check re-fetches and re-scores fresh articles, but only WRITES a new
-snapshot (consuming the budget) if the result materially differs from
-the current one — a direction flip, or a same-direction probability move
-of at least 10 percentage points. Supporting articles that just reinforce
-the existing read are checked and discarded without a write — "current
-sentiment is the truth until articles are found to contradict or change
-it." Consequence: within the final stretch, an unchanged read can be
-re-checked on every accumulator cycle without ever spending the budget —
-bounded, but a real increase in fetch volume near an event compared to
-the old always-record-twice design.
+**Checks every instrument for every active event on every cycle** —
+12h baseline days out, hourly once within 24h, 5min in the final hour
+(same adaptive cadence the dashboard uses). Whether a check gets
+**written** is a separate, diff-aware decision: only if the result
+materially differs from the current stored prediction — a direction
+flip, or a same-direction probability move of at least 10 percentage
+points. Supporting articles that just reinforce the existing read are
+checked and discarded without a write — "current sentiment is the truth
+until articles are found to contradict or change it." No cap on how many
+times a genuinely material change can be recorded.
+
+**Revised 2026-08-11** — this used to check only twice total per pair
+(window entry + a narrow final-30min stretch), which meant a real news
+shift over most of a multi-day pre-event window was never picked up:
+observed live, CPI predictions sat with an identical `scored_at_utc` for
+a full 24 hours. Checking every cycle instead is a deliberate, real
+increase in article-fetch volume — roughly an order of magnitude more
+calls per event over its full pre-event lifetime. Watch Alpha Vantage's
+25/day quota if this becomes a problem in practice.
 
 This is also what finally makes real calibration of
 `TIME_DECAY_HALF_LIFE_MINUTES`/`CONTRADICTION_MIN_MAGNITUDE`/the sigmoid

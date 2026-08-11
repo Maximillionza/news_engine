@@ -20,39 +20,32 @@ Deliberately NOT wired into webapp/ — the dashboard is essence-only by
 design (no article fetching at all); this accumulator is article-based
 and a distinct concern, run as its own standalone process.
 
-Budget-capped, not continuous: article fetches (RSS + Alpha Vantage) are
-rate-limited resources, unlike the dashboard's free essence-only scoring.
-At most SNAPSHOT_BUDGET_PER_PAIR RECORDED prediction snapshots per (event,
-instrument) pair — one when the event enters its pre-event window, one
-more only once inside the final FINAL_SNAPSHOT_WINDOW_HOURS stretch.
-
-A "recorded snapshot" is now diff-aware, not automatic: every eligible
-check re-scores fresh articles, but the result only gets WRITTEN (and
-counts against the budget) if it materially differs from the current
-latest prediction for that pair — a direction flip (contradicts), or a
-same-direction move of at least MATERIAL_CHANGE_THRESHOLD_PROBABILITY
-(a stronger indication). Supporting articles that just reinforce the
-existing read are checked, scored, and then discarded without a write —
+CHECKS every instrument for every active (pre-event-window) event on
+EVERY cycle — no separate per-pair check budget. Cadence is governed
+entirely by the accumulator's own outer loop (compute_adaptive_interval_seconds,
+imported below): 12h baseline days out, hourly once an event is within
+24h, 5min in the final hour. Whether a check actually gets WRITTEN to
+scoring/backtest_store.py's log is a completely separate decision, gated
+purely by _is_material_change() — a direction flip (contradicts), or a
+same-direction move of at least MATERIAL_CHANGE_THRESHOLD_PROBABILITY (a
+stronger indication). Supporting articles that just reinforce the
+existing read are checked, scored, and discarded without a write —
 "current sentiment is the truth until articles are found to contradict
-or change it," per explicit product decision, mirroring the same
-store-and-only-update-on-real-change pattern webapp/store.py's
-calendar_snapshot uses. Consequence: within the final stretch, an
-unchanged read can be re-checked on every accumulator cycle without
-ever consuming the budget — bounded by FINAL_SNAPSHOT_WINDOW_HOURS's
-width and the accumulator's own cycle interval (5 min in the final-hour
-tier), not unbounded, but a real increase in fetch volume near the event
-compared to the old always-record-twice design. Worth watching against
-Alpha Vantage's 25/day quota if this becomes a problem in practice.
+or change it," per explicit product decision.
 
-FINAL_SNAPSHOT_WINDOW_HOURS is deliberately its OWN, much tighter constant,
-not webapp.scheduler.FINAL_WINDOW_HOURS (1h) — that constant answers "how
-urgent is polling right now" for the dashboard's adaptive interval, a
-different question from "how close to the actual release should this
-pipeline's LAST snapshot land". Reusing it here meant the second snapshot
-could fire as early as 3h59m before the event and then never update again,
-capturing a stale picture. compute_adaptive_interval_seconds (imported
-below) is still reused for polling cadence — only the snapshot-timing
-threshold is decoupled.
+**Revised 2026-08-11, correcting a real gap**: the original design only
+checked twice total per pair (window entry + a narrow final-30min
+stretch), which meant a genuine news shift building over most of a
+multi-day pre-event window was never picked up — observed live, CPI
+predictions sat unchanged with an identical scored_at_utc for a full 24
+hours despite the accumulator process running the whole time. Checking
+every cycle instead of twice is a REAL, DELIBERATE increase in article-
+fetch volume (RSS + Alpha Vantage) — roughly an order of magnitude more
+calls per event over its full pre-event lifetime than the old design.
+Alpha Vantage's free tier is 25 requests/day; watch it. If this becomes
+a problem in practice, the fix is re-introducing a check-frequency cap
+(NOT reverting to a recorded-snapshot budget — that's what caused the
+original gap).
 """
 from __future__ import annotations
 
@@ -66,22 +59,15 @@ from data_layer.calendar_feed import fetch_calendar, filter_relevant_events, eve
 from data_layer.event_context import build_event_news_bundle
 from data_layer.rss_sources import build_all_preview_sources
 from scoring.probability_engine import score_bundle
-from scoring.backtest_store import get_connection, record_prediction, count_predictions, get_latest_prediction
+from scoring.backtest_store import get_connection, record_prediction, get_latest_prediction
 from webapp.scheduler import compute_adaptive_interval_seconds
 
-SNAPSHOT_BUDGET_PER_PAIR = 2
 # A same-direction probability move smaller than this is "supporting" the
 # current sentiment, not changing it — no write. 0.10 = 10 percentage
 # points (e.g. stored BULLISH 65% -> new read BULLISH 71% is NOT material;
 # BULLISH 65% -> BULLISH 76% IS). A direction flip is always material,
 # regardless of this threshold — see _is_material_change().
 MATERIAL_CHANGE_THRESHOLD_PROBABILITY = 0.10
-# How close to the actual event time the FINAL snapshot must be taken —
-# deliberately much tighter than webapp.scheduler.FINAL_WINDOW_HOURS (1h),
-# see module docstring. 30 minutes: comfortably inside the adaptive
-# scheduler's 5-minute final-hour polling cadence, so it reliably lands
-# close to the release rather than hours ahead of it.
-FINAL_SNAPSHOT_WINDOW_HOURS = 0.5
 # Used when a calendar fetch fails and there's no fresh event list to
 # reason an adaptive interval from — same fallback pattern as
 # webapp/scheduler.py's SCHEDULER_INTERVAL_SECONDS.
@@ -132,33 +118,13 @@ def run_accumulator_cycle(
         events = filter_relevant_events(all_events)
         active = events_in_pre_window(events, now_utc=now)
 
-        sources = None  # lazily built, only if at least one pair actually needs a fetch this cycle
+        sources = None  # lazily built, only if at least one event is actually active this cycle
         for event in active:
-            hours_until = (event.event_time_utc - now).total_seconds() / 3600.0
-
-            # Figure out which instruments are still eligible to be CHECKED
-            # this cycle BEFORE fetching anything — the article bundle is
-            # identical across instruments for a given event, so it must
-            # be fetched at most once per event, not once per instrument
-            # (previously this doubled real API spend beyond the
-            # intended SNAPSHOT_BUDGET_PER_PAIR budget). `existing` counts
-            # RECORDED (written) snapshots, not checks — a check that finds
-            # no material change is still a check, but doesn't consume
-            # budget (see _is_material_change() below), so this pair can
-            # stay eligible for repeated checks within the final stretch
-            # even after its first check.
-            instruments_needing_snapshot = []
-            for instrument in instruments:
-                existing = count_predictions(conn, event.title, instrument, event.event_time_utc)
-                if existing >= SNAPSHOT_BUDGET_PER_PAIR:
-                    continue
-                if existing == 1 and hours_until > FINAL_SNAPSHOT_WINDOW_HOURS:
-                    continue  # second recorded snapshot only allowed in the final stretch
-                instruments_needing_snapshot.append(instrument)
-
-            if not instruments_needing_snapshot:
-                continue
-
+            # Every tracked instrument is checked for every active event on
+            # every cycle — no per-pair check budget (see module docstring
+            # for why, and the real fetch-volume cost of this). The article
+            # bundle is still fetched at most once per EVENT, not once per
+            # instrument — identical across instruments for a given event.
             if sources is None:
                 sources = build_all_preview_sources()
 
@@ -179,7 +145,7 @@ def run_accumulator_cycle(
             if precursors:
                 print(f"[backtest_accumulator] precursors for {event.title}: {[p.title for p in precursors]}")
 
-            for instrument in instruments_needing_snapshot:
+            for instrument in instruments:
                 try:
                     result = score_bundle(bundle, instrument, precursor_events=precursors)
                 except Exception as exc:  # noqa: BLE001 — one pair's failure must not stop the others
