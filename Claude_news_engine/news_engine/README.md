@@ -256,25 +256,47 @@ essence-only scoring. Also blends in already-released precursor data
 alongside article sentiment when a real precursor relationship exists and
 has actually printed.
 
-**Checks every instrument for every active event on every cycle** —
-12h baseline days out, hourly once within 24h, 5min in the final hour
-(same adaptive cadence the dashboard uses). Whether a check gets
-**written** is a separate, diff-aware decision: only if the result
-materially differs from the current stored prediction — a direction
-flip, or a same-direction probability move of at least 10 percentage
-points. Supporting articles that just reinforce the existing read are
-checked and discarded without a write — "current sentiment is the truth
-until articles are found to contradict or change it." No cap on how many
-times a genuinely material change can be recorded.
+**Checks every instrument for every active event on every cycle** — but
+the cycle itself now has its own adaptive cadence, tighter than a flat
+"check every loop tick" and independent of the dashboard's tiers
+(`scoring/backtest_accumulator.py`'s
+`compute_accumulator_interval_seconds()`):
 
-**Revised 2026-08-11** — this used to check only twice total per pair
-(window entry + a narrow final-30min stretch), which meant a real news
-shift over most of a multi-day pre-event window was never picked up:
+| Window | Interval |
+|---|---|
+| Nothing within `PRE_EVENT_WINDOW_HOURS` yet | 12h (`FAR_INTERVAL_SECONDS`) |
+| Inside the pre-event window, still >24h out | 1h (`HOURLY_INTERVAL_SECONDS`) |
+| Within 24h of the event, outside the final hour | 15min (`DAY_OF_EVENT_INTERVAL_SECONDS`) |
+| Final hour before release, or ≤30min after it (`POST_RELEASE_GRACE_MINUTES`) | 5min (`FINAL_INTERVAL_SECONDS`) — never throttled |
+
+A rolling-24h check budget (`check_log` table,
+`record_check()`/`count_recent_checks()` in `scoring/backtest_store.py`)
+guards against Alpha Vantage quota exhaustion: once the rolling count
+hits `DAILY_CHECK_BUDGET_THRESHOLD` (20), the Hourly and Day-of-event
+tiers fall back to a 3h floor (`BUDGET_FALLBACK_INTERVAL_SECONDS`) — the
+Final tier is exempt, since missing the check right before an actual
+release is worse than a little extra spend.
+
+Whether a check gets **written** is a separate, diff-aware decision:
+only if the result materially differs from the current stored
+prediction — a direction flip, or a same-direction probability move of
+at least 10 percentage points. Supporting articles that just reinforce
+the existing read are checked and discarded without a write — "current
+sentiment is the truth until articles are found to contradict or change
+it." No cap on how many times a genuinely material change can be
+recorded.
+
+**Revised 2026-08-11 (twice)** — first pass replaced the old
+twice-total-per-pair budget model (window entry + a narrow final-30min
+stretch) with "check every cycle," since a real news shift over most of
+a multi-day pre-event window was never picked up under the old model:
 observed live, CPI predictions sat with an identical `scored_at_utc` for
-a full 24 hours. Checking every cycle instead is a deliberate, real
-increase in article-fetch volume — roughly an order of magnitude more
-calls per event over its full pre-event lifetime. Watch Alpha Vantage's
-25/day quota if this becomes a problem in practice.
+a full 24 hours despite the process running. That fixed staleness but
+checked on every loop tick regardless of how far out the event was —
+this second pass adds the Hourly/Day-of-event/Final tiering above so
+checks ramp up as the event approaches instead of firing at a flat rate,
+plus the rolling budget fallback so a busy day (multiple concurrent
+events) can't blow through Alpha Vantage's 25/day quota unnoticed.
 
 This is also what finally makes real calibration of
 `TIME_DECAY_HALF_LIFE_MINUTES`/`CONTRADICTION_MIN_MAGNITUDE`/the sigmoid

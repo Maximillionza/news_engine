@@ -13,6 +13,7 @@ from scoring.backtest_store import (
     get_connection, record_prediction, count_predictions,
     get_predictions_awaiting_outcome, record_outcome, get_all_confirmed_cases,
     record_dismissal, get_latest_prediction, get_latest_two_predictions,
+    record_check, count_recent_checks,
 )
 
 
@@ -270,6 +271,25 @@ def test_confirmed_cases_joins_latest_prediction_with_outcome():
     print("PASS\n")
 
 
+def test_record_check_and_count_recent_checks():
+    print("=== backtest_store: record_check + count_recent_checks round-trip, scoped to the rolling window ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        now = dt.datetime(2026, 8, 11, 12, 0, tzinfo=dt.timezone.utc)
+
+        assert count_recent_checks(conn, since=now - dt.timedelta(hours=24)) == 0
+
+        record_check(conn, now - dt.timedelta(hours=30))  # outside the 24h window
+        record_check(conn, now - dt.timedelta(hours=10))  # inside
+        record_check(conn, now - dt.timedelta(hours=1))   # inside
+
+        count = count_recent_checks(conn, since=now - dt.timedelta(hours=24))
+        assert count == 2, f"expected only the 2 checks inside the last 24h, got {count}"
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_record_and_count_predictions()
     test_count_predictions_scoped_to_event_occurrence_not_just_title()
@@ -284,4 +304,5 @@ if __name__ == "__main__":
     test_get_latest_two_predictions_returns_one_row_when_only_one_recorded()
     test_get_latest_two_predictions_empty_when_nothing_recorded()
     test_confirmed_cases_joins_latest_prediction_with_outcome()
+    test_record_check_and_count_recent_checks()
     print("All backtest_store tests passed.")

@@ -22,30 +22,33 @@ and a distinct concern, run as its own standalone process.
 
 CHECKS every instrument for every active (pre-event-window) event on
 EVERY cycle — no separate per-pair check budget. Cadence is governed
-entirely by the accumulator's own outer loop (compute_adaptive_interval_seconds,
-imported below): 12h baseline days out, hourly once an event is within
-24h, 5min in the final hour. Whether a check actually gets WRITTEN to
-scoring/backtest_store.py's log is a completely separate decision, gated
-purely by _is_material_change() — a direction flip (contradicts), or a
-same-direction move of at least MATERIAL_CHANGE_THRESHOLD_PROBABILITY (a
-stronger indication). Supporting articles that just reinforce the
-existing read are checked, scored, and discarded without a write —
-"current sentiment is the truth until articles are found to contradict
-or change it," per explicit product decision.
+entirely by the accumulator's own outer loop
+(compute_accumulator_interval_seconds, below — its OWN tiers, decoupled
+from webapp.scheduler's, see that function for why): hourly baseline once
+an event enters its pre-event window, tighter (15min) the day of the
+event, tightest (5min) in the final hour. A rolling-24h check-count
+budget (DAILY_CHECK_BUDGET_THRESHOLD) throttles the hourly/day-of-event
+tiers back to a 3-hour floor if checking gets too frequent for Alpha
+Vantage's real 25/day quota — the final-hour tier is always exempt.
+Whether a check actually gets WRITTEN to scoring/backtest_store.py's log
+is a completely separate decision, gated purely by _is_material_change()
+— a direction flip (contradicts), or a same-direction move of at least
+MATERIAL_CHANGE_THRESHOLD_PROBABILITY (a stronger indication). Supporting
+articles that just reinforce the existing read are checked, scored, and
+discarded without a write — "current sentiment is the truth until
+articles are found to contradict or change it," per explicit product
+decision.
 
-**Revised 2026-08-11, correcting a real gap**: the original design only
-checked twice total per pair (window entry + a narrow final-30min
-stretch), which meant a genuine news shift building over most of a
-multi-day pre-event window was never picked up — observed live, CPI
-predictions sat unchanged with an identical scored_at_utc for a full 24
-hours despite the accumulator process running the whole time. Checking
-every cycle instead of twice is a REAL, DELIBERATE increase in article-
-fetch volume (RSS + Alpha Vantage) — roughly an order of magnitude more
-calls per event over its full pre-event lifetime than the old design.
-Alpha Vantage's free tier is 25 requests/day; watch it. If this becomes
-a problem in practice, the fix is re-introducing a check-frequency cap
-(NOT reverting to a recorded-snapshot budget — that's what caused the
-original gap).
+**Revised 2026-08-11 (twice)**: first to check every cycle instead of
+just twice total per pair — the original design meant a genuine news
+shift building over most of a multi-day pre-event window was never
+picked up (observed live: CPI predictions sat unchanged with an
+identical scored_at_utc for a full 24 hours). Then to add the hourly/
+day-of-event/budget-fallback tiering above, once "check every cycle"
+alone proved too blunt a knob — the accumulator's own outer loop used to
+just reuse webapp.scheduler's 12h/1h/5min tiers, which doesn't match
+"hourly baseline, tighter the day of the event, protected from
+exhausting the article-fetch budget" on its own.
 """
 from __future__ import annotations
 
@@ -55,12 +58,14 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from config.settings import PRE_EVENT_WINDOW_HOURS
 from data_layer.calendar_feed import fetch_calendar, filter_relevant_events, events_in_pre_window, find_precursor_events
 from data_layer.event_context import build_event_news_bundle
 from data_layer.rss_sources import build_all_preview_sources
 from scoring.probability_engine import score_bundle
-from scoring.backtest_store import get_connection, record_prediction, get_latest_prediction
-from webapp.scheduler import compute_adaptive_interval_seconds
+from scoring.backtest_store import (
+    get_connection, record_prediction, get_latest_prediction, record_check, count_recent_checks,
+)
 
 # A same-direction probability move smaller than this is "supporting" the
 # current sentiment, not changing it — no write. 0.10 = 10 percentage
@@ -72,6 +77,32 @@ MATERIAL_CHANGE_THRESHOLD_PROBABILITY = 0.10
 # reason an adaptive interval from — same fallback pattern as
 # webapp/scheduler.py's SCHEDULER_INTERVAL_SECONDS.
 ACCUMULATOR_FALLBACK_INTERVAL_SECONDS = 15 * 60
+
+# The accumulator's OWN polling cadence — deliberately decoupled from
+# webapp.scheduler's adaptive interval, which answers "how urgent is the
+# DASHBOARD's calendar polling," a different question from "how often
+# should the accumulator re-check ARTICLES for an active event."
+FAR_INTERVAL_SECONDS = 12 * 60 * 60      # nothing within any tracked event's pre-event window
+HOURLY_INTERVAL_SECONDS = 60 * 60        # baseline once at least one event is active (within its pre-event window)
+DAY_OF_EVENT_INTERVAL_SECONDS = 15 * 60  # tighter once an active event is within 24h
+FINAL_INTERVAL_SECONDS = 5 * 60          # tightest, within the final hour (or post-release grace)
+
+DAY_OF_EVENT_WINDOW_HOURS = 24
+FINAL_WINDOW_HOURS = 1
+POST_RELEASE_GRACE_MINUTES = 30
+
+# Budget protection: hourly/day-of-event checking is a real, deliberate
+# increase in article-fetch volume (see module docstring). If the rolling
+# 24h check count gets close to Alpha Vantage's real 25/day quota, fall
+# back to a slower cadence rather than either exhausting the quota outright
+# or (worse) going fully silent — "spare a small %": reserve ~20% (5 of 25)
+# as a floor. Once DAILY_CHECK_BUDGET_THRESHOLD checks have happened in the
+# last 24h, further hourly/day-of-event checks back off to
+# BUDGET_FALLBACK_INTERVAL_SECONDS until the rolling window frees up
+# capacity again. Never applied to FINAL_INTERVAL_SECONDS — missing the
+# check right before an actual release is worse than a little extra spend.
+DAILY_CHECK_BUDGET_THRESHOLD = 20
+BUDGET_FALLBACK_INTERVAL_SECONDS = 3 * 60 * 60
 
 
 def _is_material_change(new_direction: str, new_probability: float, current_direction: str, current_probability: float) -> bool:
@@ -92,6 +123,39 @@ def _is_material_change(new_direction: str, new_probability: float, current_dire
     # in IEEE754, which would otherwise fail an exact-boundary >= comparison
     # for what's really a value AT the threshold.
     return abs(new_probability - current_probability) >= MATERIAL_CHANGE_THRESHOLD_PROBABILITY - 1e-9
+
+
+def compute_accumulator_interval_seconds(
+    events: Optional[list],
+    now: Optional[dt.datetime] = None,
+    recent_check_count: int = 0,
+) -> int:
+    """
+    The accumulator's own polling cadence — how often its outer loop wakes
+    up to run a cycle (which checks every tracked instrument for every
+    active event that cycle, per the module docstring). `recent_check_count`
+    is the rolling-24h check count from scoring.backtest_store.count_recent_checks() —
+    see DAILY_CHECK_BUDGET_THRESHOLD above for how it throttles the result.
+    """
+    if not events:
+        return FAR_INTERVAL_SECONDS
+
+    now = now or dt.datetime.now(dt.timezone.utc)
+    tightest = FAR_INTERVAL_SECONDS
+    for event in events:
+        if event.actual:
+            continue  # already resolved — doesn't need tight polling anymore
+        hours_until = (event.event_time_utc - now).total_seconds() / 3600.0
+        if -POST_RELEASE_GRACE_MINUTES / 60.0 <= hours_until <= FINAL_WINDOW_HOURS:
+            return FINAL_INTERVAL_SECONDS  # tightest possible, always exempt from the budget fallback below
+        if hours_until <= DAY_OF_EVENT_WINDOW_HOURS:
+            tightest = min(tightest, DAY_OF_EVENT_INTERVAL_SECONDS)
+        elif hours_until <= PRE_EVENT_WINDOW_HOURS:
+            tightest = min(tightest, HOURLY_INTERVAL_SECONDS)
+
+    if tightest in (DAY_OF_EVENT_INTERVAL_SECONDS, HOURLY_INTERVAL_SECONDS) and recent_check_count >= DAILY_CHECK_BUDGET_THRESHOLD:
+        tightest = max(tightest, BUDGET_FALLBACK_INTERVAL_SECONDS)
+    return tightest
 
 
 def run_accumulator_cycle(
@@ -133,6 +197,11 @@ def run_accumulator_cycle(
             except Exception as exc:  # noqa: BLE001 — a failed fetch must not crash the loop
                 print(f"[backtest_accumulator] WARNING: article fetch failed for {event.title}: {exc}")
                 continue
+
+            # Logged on a successful fetch only — roughly one Alpha Vantage
+            # credit spent, in the worst case. Feeds compute_accumulator_interval_seconds()'s
+            # budget-fallback check on the NEXT cycle (see module docstring).
+            record_check(conn, now)
 
             # Against the FULL unfiltered calendar (all_events), not the
             # High-impact-only `events` list above — precursors like ADP,
@@ -179,10 +248,18 @@ def start_accumulator(instruments: list[str]) -> None:
         while True:
             try:
                 events = run_accumulator_cycle(instruments)
-                interval = (
-                    ACCUMULATOR_FALLBACK_INTERVAL_SECONDS if events is None
-                    else compute_adaptive_interval_seconds(events)
-                )
+                if events is None:
+                    interval = ACCUMULATOR_FALLBACK_INTERVAL_SECONDS
+                else:
+                    now = dt.datetime.now(dt.timezone.utc)
+                    conn = get_connection()
+                    try:
+                        recent_checks = count_recent_checks(conn, since=now - dt.timedelta(hours=24))
+                    finally:
+                        conn.close()
+                    interval = compute_accumulator_interval_seconds(events, now=now, recent_check_count=recent_checks)
+                    if interval >= BUDGET_FALLBACK_INTERVAL_SECONDS:
+                        print(f"[backtest_accumulator] check budget: {recent_checks} in the last 24h — backing off to {interval}s")
             except Exception as exc:  # noqa: BLE001 — the loop must survive any unhandled error
                 print(f"[backtest_accumulator] ERROR: cycle failed, will retry next interval: {exc}")
                 interval = ACCUMULATOR_FALLBACK_INTERVAL_SECONDS

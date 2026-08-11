@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.settings import UTC_TZ
+from config.settings import UTC_TZ, PRE_EVENT_WINDOW_HOURS
 from data_layer.calendar_feed import EconomicEvent
 from data_layer.event_context import EventNewsBundle
 from scoring.probability_engine import Direction, ProbabilityResult
@@ -34,6 +34,67 @@ def _fake_result(probability=0.7, direction=Direction.BULLISH):
         probability=probability, direction=direction, confidence=0.5,
         article_count=5, contradiction_flag=False, contradiction_note=None,
     )
+
+
+def test_interval_far_when_nothing_active():
+    print("=== accumulator interval: FAR (12h) when no events, or nothing within the pre-event window ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    assert accumulator.compute_accumulator_interval_seconds(None, now=now) == accumulator.FAR_INTERVAL_SECONDS
+    assert accumulator.compute_accumulator_interval_seconds([], now=now) == accumulator.FAR_INTERVAL_SECONDS
+    far_event = _fake_event(hours_from_now=PRE_EVENT_WINDOW_HOURS + 10, now=now)
+    assert accumulator.compute_accumulator_interval_seconds([far_event], now=now) == accumulator.FAR_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_interval_hourly_once_within_pre_event_window():
+    print("=== accumulator interval: HOURLY baseline once an event is within its pre-event window, still outside 24h ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    event = _fake_event(hours_from_now=PRE_EVENT_WINDOW_HOURS - 5, now=now)  # inside the pre-event window, outside 24h
+    assert accumulator.compute_accumulator_interval_seconds([event], now=now) == accumulator.HOURLY_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_interval_tighter_day_of_event():
+    print("=== accumulator interval: tighter (15min) once an event is within 24h, outside the final hour ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    event = _fake_event(hours_from_now=10, now=now)
+    assert accumulator.compute_accumulator_interval_seconds([event], now=now) == accumulator.DAY_OF_EVENT_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_interval_final_within_1h_or_grace():
+    print("=== accumulator interval: FINAL (5min) within the final hour, and briefly after a scheduled release ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    soon = _fake_event(hours_from_now=0.5, now=now)
+    assert accumulator.compute_accumulator_interval_seconds([soon], now=now) == accumulator.FINAL_INTERVAL_SECONDS
+    just_passed = _fake_event(hours_from_now=-0.25, now=now)
+    assert accumulator.compute_accumulator_interval_seconds([just_passed], now=now) == accumulator.FINAL_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_interval_budget_fallback_applies_to_hourly_and_day_of_event_only():
+    print("=== accumulator interval: budget fallback (3h) kicks in once the rolling check count hits the threshold ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    over_budget = accumulator.DAILY_CHECK_BUDGET_THRESHOLD
+
+    hourly_event = _fake_event(hours_from_now=PRE_EVENT_WINDOW_HOURS - 5, now=now)
+    interval = accumulator.compute_accumulator_interval_seconds([hourly_event], now=now, recent_check_count=over_budget)
+    assert interval == accumulator.BUDGET_FALLBACK_INTERVAL_SECONDS, "hourly tier must back off once over budget"
+
+    day_of_event = _fake_event(hours_from_now=10, now=now)
+    interval = accumulator.compute_accumulator_interval_seconds([day_of_event], now=now, recent_check_count=over_budget)
+    assert interval == accumulator.BUDGET_FALLBACK_INTERVAL_SECONDS, "day-of-event tier must also back off once over budget"
+
+    # The FINAL tier is always exempt — missing the check right before an
+    # actual release is worse than a little extra article-fetch spend.
+    final_event = _fake_event(hours_from_now=0.5, now=now)
+    interval = accumulator.compute_accumulator_interval_seconds([final_event], now=now, recent_check_count=over_budget)
+    assert interval == accumulator.FINAL_INTERVAL_SECONDS, "the final-hour tier must NEVER be throttled by the check budget"
+
+    # Under budget — no throttling, normal tiers apply.
+    interval = accumulator.compute_accumulator_interval_seconds([hourly_event], now=now, recent_check_count=0)
+    assert interval == accumulator.HOURLY_INTERVAL_SECONDS
+    print("PASS\n")
 
 
 def test_checks_every_cycle_regardless_of_how_far_out_the_event_is():
@@ -87,6 +148,47 @@ def test_no_cap_on_recorded_snapshots_multiple_material_changes_all_recorded():
                 "the old design capped at 2 RECORDED snapshots total - three genuine material changes must all be recorded now"
             latest = store.get_latest_prediction(conn, "Test Event", "XAUUSD")
             assert latest.direction == "bearish" and abs(latest.probability - 0.30) < 1e-9
+            conn.close()
+    print("PASS\n")
+
+
+def test_run_accumulator_cycle_logs_a_check_on_successful_fetch():
+    print("=== accumulator: run_accumulator_cycle logs a check (record_check) on every successful article fetch ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()):
+
+            conn = store.get_connection(db_path)
+            assert store.count_recent_checks(conn, since=now - dt.timedelta(hours=24)) == 0
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+            assert store.count_recent_checks(conn, since=now - dt.timedelta(hours=24)) == 1
+            conn.close()
+    print("PASS\n")
+
+
+def test_run_accumulator_cycle_does_not_log_a_check_on_failed_fetch():
+    print("=== accumulator: a FAILED article fetch does not log a check — only successful fetches count against the budget ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", side_effect=Exception("article fetch blew up")):
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+            conn = store.get_connection(db_path)
+            assert store.count_recent_checks(conn, since=now - dt.timedelta(hours=24)) == 0
             conn.close()
     print("PASS\n")
 
@@ -317,6 +419,13 @@ def test_failed_calendar_fetch_returns_none_without_crashing():
 
 
 if __name__ == "__main__":
+    test_interval_far_when_nothing_active()
+    test_interval_hourly_once_within_pre_event_window()
+    test_interval_tighter_day_of_event()
+    test_interval_final_within_1h_or_grace()
+    test_interval_budget_fallback_applies_to_hourly_and_day_of_event_only()
+    test_run_accumulator_cycle_logs_a_check_on_successful_fetch()
+    test_run_accumulator_cycle_does_not_log_a_check_on_failed_fetch()
     test_checks_every_cycle_regardless_of_how_far_out_the_event_is()
     test_no_cap_on_recorded_snapshots_multiple_material_changes_all_recorded()
     test_unchanged_score_is_checked_but_not_recorded()

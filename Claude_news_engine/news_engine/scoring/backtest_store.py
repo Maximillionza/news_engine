@@ -50,6 +50,10 @@ CREATE TABLE IF NOT EXISTS dismissals (
     dismissed_at_utc TEXT NOT NULL,
     UNIQUE(event_title, instrument, event_time_utc)
 );
+CREATE TABLE IF NOT EXISTS check_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    checked_at_utc TEXT NOT NULL
+);
 """
 
 
@@ -293,6 +297,33 @@ def record_dismissal(
     )
     conn.commit()
     return cursor.lastrowid
+
+
+def record_check(conn: sqlite3.Connection, checked_at_utc: dt.datetime) -> int:
+    """
+    Logs one article-fetch check attempt (roughly one Alpha Vantage credit
+    spent, in the worst case) — used by scoring/backtest_accumulator.py to
+    self-throttle its own polling frequency against a rolling 24h budget.
+    Deliberately NOT keyed to a specific (event, instrument) pair — this
+    tracks aggregate check VOLUME across everything the accumulator is
+    doing, since the resource being protected (Alpha Vantage's daily
+    quota) is shared across all of it, not per-pair.
+    """
+    cursor = conn.execute(
+        "INSERT INTO check_log (checked_at_utc) VALUES (?)",
+        (checked_at_utc.isoformat(),),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def count_recent_checks(conn: sqlite3.Connection, since: dt.datetime) -> int:
+    """How many checks have been logged at or after `since` — the rolling-window count record_check() feeds."""
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM check_log WHERE checked_at_utc >= ?",
+        (since.isoformat(),),
+    ).fetchone()
+    return row["n"]
 
 
 def get_all_confirmed_cases(conn: sqlite3.Connection) -> list[tuple[Prediction, Outcome]]:
