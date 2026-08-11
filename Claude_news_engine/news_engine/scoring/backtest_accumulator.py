@@ -7,6 +7,15 @@ persists each prediction to scoring/backtest_store.py's log — a genuine,
 growing record of real predictions made blind, before the event, to be
 confirmed against real outcomes later via scripts/confirm_backtest_outcomes.py.
 
+Also blends in structured precursor data: already-released leading
+indicators (e.g. PPI before CPI, ADP before NFP — see config.settings'
+PRECURSOR_EVENTS and data_layer.calendar_feed.find_precursor_events())
+get passed into score_bundle() alongside article sentiment, found
+against the FULL unfiltered calendar since precursors are typically
+Medium impact. Not every event has a configured precursor, and a
+precursor with nothing released yet in the target's pre-event window
+contributes nothing — both are normal, not a bug.
+
 Deliberately NOT wired into webapp/ — the dashboard is essence-only by
 design (no article fetching at all); this accumulator is article-based
 and a distinct concern, run as its own standalone process.
@@ -53,7 +62,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from data_layer.calendar_feed import fetch_calendar, filter_relevant_events, events_in_pre_window
+from data_layer.calendar_feed import fetch_calendar, filter_relevant_events, events_in_pre_window, find_precursor_events
 from data_layer.event_context import build_event_news_bundle
 from data_layer.rss_sources import build_all_preview_sources
 from scoring.probability_engine import score_bundle
@@ -159,9 +168,20 @@ def run_accumulator_cycle(
                 print(f"[backtest_accumulator] WARNING: article fetch failed for {event.title}: {exc}")
                 continue
 
+            # Against the FULL unfiltered calendar (all_events), not the
+            # High-impact-only `events` list above — precursors like ADP,
+            # PPI m/m are typically Medium impact and would be silently
+            # excluded if this searched the filtered list instead. Same
+            # per-event, once-not-per-instrument reasoning as the article
+            # bundle above: precursor relationships are about the EVENT,
+            # not which instrument is being scored.
+            precursors = find_precursor_events(event, all_events)
+            if precursors:
+                print(f"[backtest_accumulator] precursors for {event.title}: {[p.title for p in precursors]}")
+
             for instrument in instruments_needing_snapshot:
                 try:
-                    result = score_bundle(bundle, instrument)
+                    result = score_bundle(bundle, instrument, precursor_events=precursors)
                 except Exception as exc:  # noqa: BLE001 — one pair's failure must not stop the others
                     print(f"[backtest_accumulator] WARNING: scoring failed for {instrument}/{event.title}: {exc}")
                     continue

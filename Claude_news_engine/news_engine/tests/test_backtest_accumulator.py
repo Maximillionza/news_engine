@@ -158,6 +158,78 @@ def test_is_material_change_threshold_boundary():
     print("PASS\n")
 
 
+def test_precursor_events_found_and_passed_to_score_bundle():
+    print("=== accumulator: an already-released precursor event (e.g. PPI before CPI) is found and blended into scoring ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        # "CPI m/m" is a real key in config.settings.PRECURSOR_EVENTS,
+        # mapped to ["PPI m/m", "Core PPI m/m", "Import Prices m/m"] —
+        # using a real title so find_precursor_events()'s real config
+        # lookup actually matches, not a mocked stand-in.
+        target = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High",
+            event_time_utc=now + dt.timedelta(hours=20), forecast="0.2%", actual=None,
+        )
+        precursor = EconomicEvent(
+            title="Core PPI m/m", country="USD", impact="Medium",
+            event_time_utc=now - dt.timedelta(hours=5), forecast="0.2%", actual="0.4%",  # already released
+        )
+        unrelated = EconomicEvent(
+            title="Some Unrelated Report", country="USD", impact="Low",
+            event_time_utc=now - dt.timedelta(hours=3), forecast="1.0%", actual="1.0%",
+        )
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[target, precursor, unrelated]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: [e for e in events if e.impact == "High"]), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=target, articles=[], as_of_utc=now)), \
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score:
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+            mock_score.assert_called_once()
+            _, kwargs = mock_score.call_args
+            assert "precursor_events" in kwargs, "score_bundle must be called with precursor_events, not left at its None default"
+            precursors_passed = kwargs["precursor_events"]
+            assert len(precursors_passed) == 1, f"expected exactly the PPI precursor (Medium impact, real actual, before target), got {precursors_passed}"
+            assert precursors_passed[0].title == "Core PPI m/m"
+    print("PASS\n")
+
+
+def test_precursor_events_uses_unfiltered_calendar_not_high_impact_only():
+    print("=== accumulator: precursor lookup uses the FULL unfiltered calendar, not the High-impact-only filtered list ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        target = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High",
+            event_time_utc=now + dt.timedelta(hours=20), forecast="0.2%", actual=None,
+        )
+        # Medium impact — filter_relevant_events() (High-only) would drop
+        # this from the SCORING candidate list, but it must still be found
+        # as a precursor, since find_precursor_events() is explicitly
+        # supposed to search the full calendar (precursors are typically
+        # Medium impact, per the module's own established convention).
+        precursor = EconomicEvent(
+            title="PPI m/m", country="USD", impact="Medium",
+            event_time_utc=now - dt.timedelta(hours=5), forecast="0.2%", actual="0.5%",
+        )
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[target, precursor]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: [e for e in events if e.impact == "High"]), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=target, articles=[], as_of_utc=now)), \
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score:
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+            _, kwargs = mock_score.call_args
+            titles_passed = [e.title for e in kwargs["precursor_events"]]
+            assert "PPI m/m" in titles_passed, "Medium-impact precursor must still be found via the full unfiltered calendar"
+    print("PASS\n")
+
+
 def test_high_impact_only_no_medium_widening():
     print("=== accumulator: uses filter_relevant_events with default (High-only), not Medium widening like the dashboard ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -181,7 +253,7 @@ def test_failed_scoring_for_one_pair_does_not_stop_others():
         now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
         event = _fake_event(hours_from_now=20, now=now)
 
-        def flaky_score_bundle(bundle, instrument):
+        def flaky_score_bundle(bundle, instrument, precursor_events=None):
             if instrument == "XAUUSD":
                 raise Exception("scoring blew up")
             return _fake_result()
@@ -242,6 +314,8 @@ if __name__ == "__main__":
     test_unchanged_score_is_checked_but_not_recorded()
     test_direction_flip_is_always_recorded_regardless_of_magnitude()
     test_is_material_change_threshold_boundary()
+    test_precursor_events_found_and_passed_to_score_bundle()
+    test_precursor_events_uses_unfiltered_calendar_not_high_impact_only()
     test_high_impact_only_no_medium_widening()
     test_failed_scoring_for_one_pair_does_not_stop_others()
     test_article_bundle_fetched_once_per_event_not_per_instrument()
