@@ -304,6 +304,33 @@ steepness `k` possible — once this log has enough real confirmed cases,
 those constants can be revisited against genuine data instead of guesses
 (see "Known gaps" below).
 
+### Economic-print prediction + trend history
+
+Two additive signals, separate from the article-based direction call above:
+
+- **Print-direction call** (`scoring/print_direction.py`) — "will THIS
+  release come in higher or lower than forecast," derived from article
+  language via `config.settings.PRINT_SURPRISE_LEXICON` (currently covers
+  CPI m/m, Core CPI m/m, Non-Farm Employment Change, Unemployment Rate —
+  config-only to extend). Reuses the accumulator's already-fetched article
+  bundle, zero extra fetch cost. Shown on the dashboard as a "📊 Print call"
+  badge next to the article-based read.
+- **Event history** (`webapp/store.py`'s `event_history` table) — persists
+  forecast/previous/actual per event occurrence, captured by
+  `webapp/scheduler.py`'s existing fetch cycle for every calendar event
+  (all impact levels), surviving the weekly Forex Factory rollover that
+  previously erased it. A "History ▾" toggle on each dashboard card shows
+  past occurrences plus a `summarize_trend()` line ("beat forecast 3 of
+  last 4", "trending higher for 2 consecutive releases").
+
+Both are purely additive/display — neither feeds back into
+`score_bundle()`'s instrument scoring or `_is_material_change()`'s
+recording logic. See
+`docs/superpowers/specs/2026-08-11-economic-print-prediction-trend-history-design.md`
+for the full design and the explicit out-of-scope list (numeric print-value
+estimation, feeding the trend back into scoring — deferred to a future pass
+once there's enough real data to know if it's predictive).
+
 ## Known gaps / things to watch
 
 - **Sentiment scoring now has 3 tiers**, cheapest/most-deterministic
