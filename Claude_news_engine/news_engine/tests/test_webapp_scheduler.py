@@ -284,6 +284,27 @@ def test_adaptive_interval_reschedule_detection_is_optional():
     print("PASS\n")
 
 
+def test_run_scoring_cycle_records_event_history_for_every_event():
+    print("=== scheduler: run_scoring_cycle records event_history for every fetched event, not just tracked-symbol matches ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        event = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High",
+            event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
+            forecast="0.3%", previous="0.4%", actual=None,
+        )
+        with patch.object(scheduler, "fetch_calendar", return_value=[event]), \
+             patch.object(store, "DB_PATH", db_path):
+            scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
+
+        conn = store.get_connection(db_path)
+        rows = store.get_event_history(conn, "CPI m/m")
+        assert len(rows) == 1
+        assert rows[0].forecast == "0.3%"
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_scoring_cycle_writes_new_rows_and_skips_duplicates()
     test_scoring_cycle_persists_calendar_snapshot_on_success()
@@ -299,4 +320,5 @@ if __name__ == "__main__":
     test_adaptive_interval_sense_check_for_a_just_rescheduled_event()
     test_adaptive_interval_no_sense_check_without_a_reschedule()
     test_adaptive_interval_reschedule_detection_is_optional()
+    test_run_scoring_cycle_records_event_history_for_every_event()
     print("All scheduler tests passed.")

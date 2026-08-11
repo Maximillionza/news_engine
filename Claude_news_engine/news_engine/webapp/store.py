@@ -44,6 +44,18 @@ CREATE TABLE IF NOT EXISTS calendar_snapshot (
     events_json TEXT NOT NULL,
     fetched_at_utc TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS event_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_title TEXT NOT NULL,
+    event_time_utc TEXT NOT NULL,
+    forecast TEXT,
+    previous TEXT,
+    actual TEXT,
+    surprise_direction TEXT,
+    recorded_at_utc TEXT NOT NULL,
+    updated_at_utc TEXT NOT NULL,
+    UNIQUE(event_title, event_time_utc)
+);
 """
 
 
@@ -63,6 +75,16 @@ class PredictionRun:
 class CalendarSnapshot:
     events: list[dict] = field(default_factory=list)  # plain dicts: title/country/impact/event_time_utc/forecast/previous/actual
     fetched_at_utc: str = ""
+
+
+@dataclass
+class EventHistoryRow:
+    event_title: str
+    event_time_utc: str
+    forecast: Optional[str]
+    previous: Optional[str]
+    actual: Optional[str]
+    surprise_direction: Optional[str]
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
@@ -188,3 +210,49 @@ def save_calendar_snapshot_if_changed(
     )
     conn.commit()
     return True
+
+
+def upsert_event_history(
+    conn: sqlite3.Connection,
+    event,  # EconomicEvent — duck-typed, same reasoning as _event_to_dict()
+    surprise_direction: Optional[str],
+    now: dt.datetime,
+) -> None:
+    """
+    Records this event occurrence's forecast/previous, filling in
+    actual/surprise_direction once available without ever blanking a
+    previously-recorded actual on a later, stale re-fetch that hasn't
+    caught up yet (the `WHERE excluded.actual IS NOT NULL` guard below —
+    SQLite's ON CONFLICT DO UPDATE has no per-column conditional syntax,
+    so the WHERE clause on the whole UPDATE governs whether the actual/
+    surprise_direction pair updates at all; forecast/previous are
+    harmless to re-write identically every time since they don't change
+    after an event first appears on the calendar).
+    """
+    conn.execute(
+        """
+        INSERT INTO event_history
+            (event_title, event_time_utc, forecast, previous, actual, surprise_direction, recorded_at_utc, updated_at_utc)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(event_title, event_time_utc) DO UPDATE SET
+            actual = excluded.actual,
+            surprise_direction = excluded.surprise_direction,
+            updated_at_utc = excluded.updated_at_utc
+        WHERE excluded.actual IS NOT NULL
+        """,
+        (
+            event.title, event.event_time_utc.isoformat(), event.forecast, event.previous,
+            event.actual, surprise_direction, now.isoformat(), now.isoformat(),
+        ),
+    )
+    conn.commit()
+
+
+def get_event_history(conn: sqlite3.Connection, event_title: str, limit: int = 6) -> list[EventHistoryRow]:
+    """Past occurrences of this event title, most recent first, capped at `limit`. Empty list if none recorded yet."""
+    rows = conn.execute(
+        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction "
+        "FROM event_history WHERE event_title = ? ORDER BY event_time_utc DESC LIMIT ?",
+        (event_title, limit),
+    ).fetchall()
+    return [EventHistoryRow(**dict(row)) for row in rows]

@@ -14,9 +14,11 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from config.settings import EVENT_SURPRISE_DIRECTION
-from data_layer.calendar_feed import EconomicEvent, fetch_calendar, filter_relevant_events
+from data_layer.calendar_feed import EconomicEvent, classify_surprise, fetch_calendar, filter_relevant_events
 from webapp.scoring_service import score_event_for_symbol
-from webapp.store import get_connection, record_run, get_latest_two, save_calendar_snapshot_if_changed
+from webapp.store import (
+    get_connection, record_run, get_latest_two, save_calendar_snapshot_if_changed, upsert_event_history,
+)
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 
 # Event dates/forecasts are published well ahead of time — nothing
@@ -132,6 +134,10 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
     # No-ops (returns False) if this fetch matches what's already stored —
     # "store and use as current until new information supersedes this."
     save_calendar_snapshot_if_changed(conn, events, dt.datetime.now(dt.timezone.utc))
+
+    now_for_history = dt.datetime.now(dt.timezone.utc)
+    for event in events:
+        upsert_event_history(conn, event, classify_surprise(event), now_for_history)
 
     try:
         for ticker in tracked_symbols:

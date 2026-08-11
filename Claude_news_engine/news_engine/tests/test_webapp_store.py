@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import webapp.store as store
 from webapp.store import (
     get_connection, record_run, get_latest_two, get_history,
     add_tracked_symbol, remove_tracked_symbol, list_tracked_symbols,
@@ -187,6 +188,114 @@ def test_calendar_snapshot_updates_when_data_actually_changes():
     print("PASS\n")
 
 
+def test_upsert_event_history_creates_row_on_first_sight():
+    print("=== store: upsert_event_history creates a row with forecast/previous, actual still NULL, on first sight ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High",
+            event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
+            forecast="0.3%", previous="0.4%", actual=None,
+        )
+        now = dt.datetime(2026, 8, 5, 9, 0, tzinfo=UTC_TZ)
+        store.upsert_event_history(conn, event, surprise_direction=None, now=now)
+
+        rows = store.get_event_history(conn, "CPI m/m")
+        assert len(rows) == 1
+        assert rows[0].forecast == "0.3%"
+        assert rows[0].previous == "0.4%"
+        assert rows[0].actual is None
+        assert rows[0].surprise_direction is None
+        conn.close()
+    print("PASS\n")
+
+
+def test_upsert_event_history_fills_actual_on_later_sight_without_clobbering_forecast():
+    print("=== store: a later upsert (post-release) fills actual/surprise_direction, leaves forecast/previous untouched ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        pre_event = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High", event_time_utc=event_time,
+            forecast="0.3%", previous="0.4%", actual=None,
+        )
+        store.upsert_event_history(conn, pre_event, surprise_direction=None, now=dt.datetime(2026, 8, 5, 9, 0, tzinfo=UTC_TZ))
+
+        post_event = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High", event_time_utc=event_time,
+            forecast="0.3%", previous="0.4%", actual="0.5%",
+        )
+        store.upsert_event_history(conn, post_event, surprise_direction="higher", now=dt.datetime(2026, 8, 12, 13, 0, tzinfo=UTC_TZ))
+
+        rows = store.get_event_history(conn, "CPI m/m")
+        assert len(rows) == 1
+        assert rows[0].forecast == "0.3%"
+        assert rows[0].previous == "0.4%"
+        assert rows[0].actual == "0.5%"
+        assert rows[0].surprise_direction == "higher"
+        conn.close()
+    print("PASS\n")
+
+
+def test_upsert_event_history_stale_refetch_does_not_blank_actual():
+    print("=== store: a stale re-fetch with actual=None never blanks a previously-recorded actual ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        released = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High", event_time_utc=event_time,
+            forecast="0.3%", previous="0.4%", actual="0.5%",
+        )
+        store.upsert_event_history(conn, released, surprise_direction="higher", now=dt.datetime(2026, 8, 12, 13, 0, tzinfo=UTC_TZ))
+
+        stale_refetch = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High", event_time_utc=event_time,
+            forecast="0.3%", previous="0.4%", actual=None,
+        )
+        store.upsert_event_history(conn, stale_refetch, surprise_direction=None, now=dt.datetime(2026, 8, 12, 13, 5, tzinfo=UTC_TZ))
+
+        rows = store.get_event_history(conn, "CPI m/m")
+        assert rows[0].actual == "0.5%"
+        assert rows[0].surprise_direction == "higher"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_event_history_multiple_occurrences_most_recent_first_and_limit():
+    print("=== store: get_event_history returns occurrences most-recent-first, capped at limit ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        for month, actual in [(6, "0.5%"), (7, "0.4%"), (8, "0.6%")]:
+            event = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High",
+                event_time_utc=dt.datetime(2026, month, 12, 12, 30, tzinfo=UTC_TZ),
+                forecast="0.3%", previous="0.3%", actual=actual,
+            )
+            store.upsert_event_history(conn, event, surprise_direction="higher", now=dt.datetime(2026, month, 12, 13, 0, tzinfo=UTC_TZ))
+
+        rows = store.get_event_history(conn, "CPI m/m", limit=2)
+        assert len(rows) == 2
+        assert rows[0].event_time_utc.startswith("2026-08")
+        assert rows[1].event_time_utc.startswith("2026-07")
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_event_history_unknown_title_returns_empty_list():
+    print("=== store: get_event_history for a title with no history returns an empty list, not an error ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        rows = store.get_event_history(conn, "Nonexistent Event")
+        assert rows == []
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_round_trip_and_diff()
     test_fewer_than_two_runs()
@@ -196,4 +305,9 @@ if __name__ == "__main__":
     test_calendar_snapshot_round_trips_and_is_none_before_first_fetch()
     test_calendar_snapshot_unchanged_fetch_does_not_touch_the_stored_row()
     test_calendar_snapshot_updates_when_data_actually_changes()
+    test_upsert_event_history_creates_row_on_first_sight()
+    test_upsert_event_history_fills_actual_on_later_sight_without_clobbering_forecast()
+    test_upsert_event_history_stale_refetch_does_not_blank_actual()
+    test_get_event_history_multiple_occurrences_most_recent_first_and_limit()
+    test_get_event_history_unknown_title_returns_empty_list()
     print("All store tests passed.")
