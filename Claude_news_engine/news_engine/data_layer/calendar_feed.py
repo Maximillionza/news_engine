@@ -37,6 +37,7 @@ from typing import Optional
 import requests
 
 from config.settings import (
+    EVENT_HISTORY_IN_LINE_TOLERANCE,
     EVENT_SURPRISE_DIRECTION,
     LOCAL_TZ,
     PRE_EVENT_WINDOW_HOURS,
@@ -112,6 +113,41 @@ class EconomicEvent:
             f"<EconomicEvent {self.title!r} [{self.country}/{self.impact}] "
             f"local={self.event_time_local.strftime('%Y-%m-%d %H:%M %Z')}>"
         )
+
+
+def classify_surprise(event: "EconomicEvent") -> Optional[str]:
+    """
+    Literal actual-vs-forecast comparison for this event — "did the print
+    come in above, below, or in line with what was forecast." Distinct
+    from usd_surprise_score()'s USD-bullish/bearish-mapped magnitude:
+    that answers "was this good or bad for the dollar," this answers "was
+    the number itself higher or lower than expected," which for a
+    'higher_bearish' indicator (e.g. Unemployment Rate) point in OPPOSITE
+    directions from the bullish/bearish read.
+
+    Reuses EVENT_SURPRISE_DIRECTION only as an is-this-title-tracked gate
+    (same set of titles usd_surprise_score() recognizes) — not for its
+    higher_bullish/higher_bearish values, which don't apply here.
+
+    Returns 'higher', 'lower', 'in_line', or None — never a fabricated
+    guess — when the title isn't tracked or forecast/actual don't parse.
+    """
+    if event.title not in EVENT_SURPRISE_DIRECTION:
+        return None
+
+    forecast = _parse_numeric(event.forecast)
+    actual = _parse_numeric(event.actual)
+    if forecast is None or actual is None:
+        return None
+
+    if abs(forecast) > 1e-9:
+        pct_diff = (actual - forecast) / abs(forecast)
+    else:
+        pct_diff = actual - forecast
+
+    if abs(pct_diff) <= EVENT_HISTORY_IN_LINE_TOLERANCE:
+        return "in_line"
+    return "higher" if pct_diff > 0 else "lower"
 
 
 def _parse_numeric(value: Optional[str]) -> Optional[float]:

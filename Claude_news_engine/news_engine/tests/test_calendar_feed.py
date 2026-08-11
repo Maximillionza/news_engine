@@ -8,7 +8,14 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data_layer.calendar_feed import fetch_calendar
+import datetime as dt
+
+from data_layer.calendar_feed import (
+    EconomicEvent,
+    classify_surprise,
+    fetch_calendar,
+)
+from config.settings import UTC_TZ
 
 
 def test_lastweek_rejected_with_informative_error():
@@ -42,8 +49,85 @@ def test_arbitrary_invalid_period_rejected():
     print("PASS\n")
 
 
+def test_classify_surprise_higher_when_actual_above_forecast():
+    print("=== classify_surprise: actual clearly above forecast returns 'higher' ===")
+    event = EconomicEvent(
+        title="CPI m/m", country="USD", impact="High",
+        event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
+        forecast="0.3%", actual="0.5%",
+    )
+    assert classify_surprise(event) == "higher"
+    print("PASS\n")
+
+
+def test_classify_surprise_lower_when_actual_below_forecast():
+    print("=== classify_surprise: actual clearly below forecast returns 'lower' ===")
+    event = EconomicEvent(
+        title="CPI m/m", country="USD", impact="High",
+        event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
+        forecast="0.5%", actual="0.2%",
+    )
+    assert classify_surprise(event) == "lower"
+    print("PASS\n")
+
+
+def test_classify_surprise_in_line_within_tolerance():
+    print("=== classify_surprise: a tiny delta within EVENT_HISTORY_IN_LINE_TOLERANCE returns 'in_line' ===")
+    event = EconomicEvent(
+        title="CPI m/m", country="USD", impact="High",
+        event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
+        forecast="0.40%", actual="0.41%",  # 2.5% relative delta, well under the 5% tolerance
+    )
+    assert classify_surprise(event) == "in_line"
+    print("PASS\n")
+
+
+def test_classify_surprise_none_when_title_not_tracked():
+    print("=== classify_surprise: an event title outside EVENT_SURPRISE_DIRECTION returns None, never guessed ===")
+    event = EconomicEvent(
+        title="Some Untracked Indicator", country="USD", impact="High",
+        event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
+        forecast="0.3%", actual="0.5%",
+    )
+    assert classify_surprise(event) is None
+    print("PASS\n")
+
+
+def test_classify_surprise_none_when_forecast_or_actual_missing():
+    print("=== classify_surprise: missing forecast or actual returns None, not a fabricated guess ===")
+    event = EconomicEvent(
+        title="CPI m/m", country="USD", impact="High",
+        event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
+        forecast="0.3%", actual=None,
+    )
+    assert classify_surprise(event) is None
+    print("PASS\n")
+
+
+def test_classify_surprise_is_literal_not_bullish_bearish():
+    print("=== classify_surprise: 'higher' means actual > forecast literally, independent of USD-bullish/bearish direction ===")
+    # Unemployment Rate is 'higher_bearish' in EVENT_SURPRISE_DIRECTION (a
+    # higher actual is USD-bearish) — but classify_surprise must still say
+    # 'higher' here, since actual DID come in above forecast. Conflating the
+    # two would silently invert the displayed history for bearish-mapped
+    # indicators.
+    event = EconomicEvent(
+        title="Unemployment Rate", country="USD", impact="High",
+        event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
+        forecast="4.0%", actual="4.3%",
+    )
+    assert classify_surprise(event) == "higher"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_lastweek_rejected_with_informative_error()
     test_nextweek_rejected_with_informative_error()
     test_arbitrary_invalid_period_rejected()
+    test_classify_surprise_higher_when_actual_above_forecast()
+    test_classify_surprise_lower_when_actual_below_forecast()
+    test_classify_surprise_in_line_within_tolerance()
+    test_classify_surprise_none_when_title_not_tracked()
+    test_classify_surprise_none_when_forecast_or_actual_missing()
+    test_classify_surprise_is_literal_not_bullish_bearish()
     print("All calendar_feed tests passed.")

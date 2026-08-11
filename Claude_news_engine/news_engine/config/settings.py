@@ -213,6 +213,13 @@ PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES = PRE_EVENT_WINDOW_HOURS * 60
 # constant in this file: needs real backtest data to calibrate.
 SURPRISE_SENSITIVITY = 3.0
 
+# Below this relative (or, when forecast≈0, absolute) delta between actual
+# and forecast, classify_surprise() below calls it 'in_line' rather than
+# 'higher'/'lower' — a literal actual-vs-forecast comparison for event
+# history/trend display, distinct from usd_surprise_score()'s continuous
+# bullish/bearish-mapped magnitude used for instrument-score blending.
+EVENT_HISTORY_IN_LINE_TOLERANCE = 0.05
+
 # --- Free-tier API sources worth adding later (not yet implemented) ---
 # GDELT      — free, huge global news volume, good for a "how much is this
 #               story spreading" signal rather than individual article quality
