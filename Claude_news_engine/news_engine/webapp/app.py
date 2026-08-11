@@ -17,11 +17,13 @@ from webapp.scheduler import start_scheduler
 from webapp.store import (
     get_connection, get_latest_two, get_history,
     add_tracked_symbol, remove_tracked_symbol, list_tracked_symbols,
-    get_calendar_snapshot,
+    get_calendar_snapshot, get_event_history,
 )
+from webapp.trend import summarize_trend
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 from scoring.backtest_store import (
     get_connection as get_backtest_connection, get_latest_two_predictions,
+    get_latest_print_prediction,
 )
 
 app = Flask(__name__, static_folder="static")
@@ -109,6 +111,24 @@ def get_calendar():
     return jsonify({"events": snapshot.events, "fetched_at_utc": snapshot.fetched_at_utc})
 
 
+@app.route("/api/event_history", methods=["GET"])
+def get_event_history_route():
+    title = request.args.get("title", "")
+    conn = get_connection()
+    rows = get_event_history(conn, title)
+    conn.close()
+    return jsonify({
+        "occurrences": [
+            {
+                "event_time_utc": r.event_time_utc, "forecast": r.forecast,
+                "previous": r.previous, "actual": r.actual, "surprise_direction": r.surprise_direction,
+            }
+            for r in rows
+        ],
+        "trend_summary": summarize_trend(rows),
+    })
+
+
 @app.route("/api/predictions", methods=["GET"])
 def get_predictions():
     conn = get_connection()
@@ -168,6 +188,10 @@ def get_predictions():
                     "probability": accumulator_previous.probability,
                     "article_count": accumulator_previous.article_count,
                 }
+            print_call = get_latest_print_prediction(backtest_conn, event["title"])
+            print_prediction = None
+            if print_call is not None:
+                print_prediction = {"direction": print_call.predicted_vs_forecast, "confidence": print_call.confidence}
             entry["events"].append({
                 "event_title": event["title"],
                 "event_time_utc": event["event_time_utc"],
@@ -178,6 +202,7 @@ def get_predictions():
                 "article_count": accumulator_prediction.article_count if accumulator_prediction else None,
                 "article_prediction": article_prediction,
                 "previous_article_prediction": previous_article_prediction,
+                "print_prediction": print_prediction,
             })
 
         # A resolved score always outranks a still-pending one, regardless

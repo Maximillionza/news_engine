@@ -455,6 +455,96 @@ def test_calendar_and_predictions_read_the_same_persisted_snapshot():
     print("PASS\n")
 
 
+def test_event_history_endpoint_returns_occurrences_and_trend():
+    print("=== app: /api/event_history returns past occurrences plus a summarized trend ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dashboard.db"
+        with patch.object(store, "DB_PATH", db_path):
+            conn = store.get_connection(db_path)
+            for month, actual, surprise in [(6, "0.4%", "higher"), (7, "0.5%", "higher")]:
+                event = EconomicEvent(
+                    title="CPI m/m", country="USD", impact="High",
+                    event_time_utc=dt.datetime(2026, month, 12, 12, 30, tzinfo=UTC_TZ),
+                    forecast="0.3%", previous="0.3%", actual=actual,
+                )
+                store.upsert_event_history(conn, event, surprise, now=dt.datetime(2026, month, 12, 13, 0, tzinfo=UTC_TZ))
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/event_history?title=CPI m/m")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert len(data["occurrences"]) == 2
+            assert data["occurrences"][0]["actual"] == "0.5%"  # most recent first
+            assert "trend_summary" in data
+    print("PASS\n")
+
+
+def test_event_history_endpoint_unknown_title_returns_empty():
+    print("=== app: /api/event_history for an unknown title returns an empty list, not a 500 ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dashboard.db"
+        with patch.object(store, "DB_PATH", db_path):
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/event_history?title=Nonexistent Event")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["occurrences"] == []
+    print("PASS\n")
+
+
+def test_predictions_includes_print_prediction_when_accumulator_scored_it():
+    print("=== app: /api/predictions includes print_prediction sourced from the accumulator's print_predictions table ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dashboard.db"
+        backtest_db_path = Path(tmp) / "backtest.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            events = _fake_events()
+            _seed_calendar(db_path, events)
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            store.record_run(conn, "XAUUSD", events[0].title, events[0].event_time_utc, 0.6, "bullish", 0.4)
+            conn.close()
+
+            from scoring.print_direction import PrintCall
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_print_prediction_if_changed(
+                bconn, events[0].title, events[0].event_time_utc,
+                PrintCall(direction="higher", confidence=0.62, article_count=4),
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            data = resp.get_json()
+            event_entry = data["predictions"][0]["events"][0]
+            assert event_entry["print_prediction"] == {"direction": "higher", "confidence": 0.62}
+    print("PASS\n")
+
+
+def test_predictions_print_prediction_is_none_when_never_scored():
+    print("=== app: /api/predictions omits print_prediction (None) when the accumulator never made a print call ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dashboard.db"
+        backtest_db_path = Path(tmp) / "backtest.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            events = _fake_events()
+            _seed_calendar(db_path, events)
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            store.record_run(conn, "XAUUSD", events[0].title, events[0].event_time_utc, 0.6, "bullish", 0.4)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            data = resp.get_json()
+            event_entry = data["predictions"][0]["events"][0]
+            assert event_entry["print_prediction"] is None
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
@@ -473,4 +563,8 @@ if __name__ == "__main__":
     test_predictions_returns_not_yet_available_before_first_fetch()
     test_predictions_no_error_field_on_success()
     test_calendar_and_predictions_read_the_same_persisted_snapshot()
+    test_event_history_endpoint_returns_occurrences_and_trend()
+    test_event_history_endpoint_unknown_title_returns_empty()
+    test_predictions_includes_print_prediction_when_accumulator_scored_it()
+    test_predictions_print_prediction_is_none_when_never_scored()
     print("All webapp.app tests passed.")
