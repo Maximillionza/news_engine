@@ -9,6 +9,9 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from config.settings import UTC_TZ
+from scoring.print_direction import PrintCall
+import scoring.backtest_store as store
 from scoring.backtest_store import (
     get_connection, record_prediction, count_predictions,
     get_predictions_awaiting_outcome, record_outcome, get_all_confirmed_cases,
@@ -290,6 +293,74 @@ def test_record_check_and_count_recent_checks():
     print("PASS\n")
 
 
+def test_record_print_prediction_if_changed_writes_first_call():
+    print("=== backtest_store: record_print_prediction_if_changed writes a row when nothing exists yet ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        call = PrintCall(direction="higher", confidence=0.6, article_count=3)
+
+        written = store.record_print_prediction_if_changed(conn, "CPI m/m", event_time, call, now=dt.datetime(2026, 8, 10, 9, 0, tzinfo=UTC_TZ))
+        assert written is True
+
+        latest = store.get_latest_print_prediction(conn, "CPI m/m")
+        assert latest is not None
+        assert latest.predicted_vs_forecast == "higher"
+        assert latest.confidence == 0.6
+        assert latest.article_count == 3
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_print_prediction_if_changed_skips_identical_call():
+    print("=== backtest_store: an identical predicted_vs_forecast call does not write a new row ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        first = PrintCall(direction="higher", confidence=0.6, article_count=3)
+        store.record_print_prediction_if_changed(conn, "CPI m/m", event_time, first, now=dt.datetime(2026, 8, 10, 9, 0, tzinfo=UTC_TZ))
+
+        second = PrintCall(direction="higher", confidence=0.7, article_count=4)
+        written = store.record_print_prediction_if_changed(conn, "CPI m/m", event_time, second, now=dt.datetime(2026, 8, 10, 10, 0, tzinfo=UTC_TZ))
+        assert written is False
+
+        latest = store.get_latest_print_prediction(conn, "CPI m/m")
+        assert latest.confidence == 0.6  # unchanged — the second call was never written
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_print_prediction_if_changed_writes_on_direction_flip():
+    print("=== backtest_store: a direction flip (higher -> lower) always writes a new row ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        first = PrintCall(direction="higher", confidence=0.6, article_count=3)
+        store.record_print_prediction_if_changed(conn, "CPI m/m", event_time, first, now=dt.datetime(2026, 8, 10, 9, 0, tzinfo=UTC_TZ))
+
+        flipped = PrintCall(direction="lower", confidence=0.55, article_count=5)
+        written = store.record_print_prediction_if_changed(conn, "CPI m/m", event_time, flipped, now=dt.datetime(2026, 8, 11, 9, 0, tzinfo=UTC_TZ))
+        assert written is True
+
+        latest = store.get_latest_print_prediction(conn, "CPI m/m")
+        assert latest.predicted_vs_forecast == "lower"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_latest_print_prediction_none_when_nothing_recorded():
+    print("=== backtest_store: get_latest_print_prediction returns None when nothing has been recorded for this event ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        assert store.get_latest_print_prediction(conn, "CPI m/m") is None
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_record_and_count_predictions()
     test_count_predictions_scoped_to_event_occurrence_not_just_title()
@@ -305,4 +376,8 @@ if __name__ == "__main__":
     test_get_latest_two_predictions_empty_when_nothing_recorded()
     test_confirmed_cases_joins_latest_prediction_with_outcome()
     test_record_check_and_count_recent_checks()
+    test_record_print_prediction_if_changed_writes_first_call()
+    test_record_print_prediction_if_changed_skips_identical_call()
+    test_record_print_prediction_if_changed_writes_on_direction_flip()
+    test_get_latest_print_prediction_none_when_nothing_recorded()
     print("All backtest_store tests passed.")

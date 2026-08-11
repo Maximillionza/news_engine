@@ -17,6 +17,7 @@ from data_layer.event_context import EventNewsBundle
 from scoring.probability_engine import Direction, ProbabilityResult
 import scoring.backtest_accumulator as accumulator
 import scoring.backtest_store as store
+import scoring.print_direction as accumulator_print_direction
 
 
 def _fake_event(hours_from_now, now):
@@ -306,6 +307,60 @@ def test_precursor_events_found_and_passed_to_score_bundle():
     print("PASS\n")
 
 
+def test_print_direction_call_recorded_once_per_event():
+    print("=== accumulator: score_print_direction is called once per event and recorded via record_print_prediction_if_changed ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High",
+            event_time_utc=now + dt.timedelta(hours=20),
+            forecast="0.3%", actual=None,
+        )
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+        fake_call = accumulator_print_direction.PrintCall(direction="higher", confidence=0.6, article_count=2)
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
+             patch.object(accumulator, "score_print_direction", return_value=fake_call):
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+            conn = store.get_connection(db_path)
+            latest = store.get_latest_print_prediction(conn, "CPI m/m")
+            assert latest is not None
+            assert latest.predicted_vs_forecast == "higher"
+            assert latest.article_count == 2
+            conn.close()
+    print("PASS\n")
+
+
+def test_print_direction_none_call_writes_nothing():
+    print("=== accumulator: score_print_direction returning None (no lexicon coverage) writes no print_predictions row ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
+             patch.object(accumulator, "score_print_direction", return_value=None):
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+            conn = store.get_connection(db_path)
+            assert store.get_latest_print_prediction(conn, event.title) is None
+            conn.close()
+    print("PASS\n")
+
+
 def test_precursor_events_uses_unfiltered_calendar_not_high_impact_only():
     print("=== accumulator: precursor lookup uses the FULL unfiltered calendar, not the High-impact-only filtered list ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -432,6 +487,8 @@ if __name__ == "__main__":
     test_direction_flip_is_always_recorded_regardless_of_magnitude()
     test_is_material_change_threshold_boundary()
     test_precursor_events_found_and_passed_to_score_bundle()
+    test_print_direction_call_recorded_once_per_event()
+    test_print_direction_none_call_writes_nothing()
     test_precursor_events_uses_unfiltered_calendar_not_high_impact_only()
     test_high_impact_only_no_medium_widening()
     test_failed_scoring_for_one_pair_does_not_stop_others()

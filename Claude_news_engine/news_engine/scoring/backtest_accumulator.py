@@ -63,8 +63,10 @@ from data_layer.calendar_feed import fetch_calendar, filter_relevant_events, eve
 from data_layer.event_context import build_event_news_bundle
 from data_layer.rss_sources import build_all_preview_sources
 from scoring.probability_engine import score_bundle
+from scoring.print_direction import score_print_direction
 from scoring.backtest_store import (
     get_connection, record_prediction, get_latest_prediction, record_check, count_recent_checks,
+    record_print_prediction_if_changed,
 )
 
 # A same-direction probability move smaller than this is "supporting" the
@@ -213,6 +215,12 @@ def run_accumulator_cycle(
             precursors = find_precursor_events(event, all_events)
             if precursors:
                 print(f"[backtest_accumulator] precursors for {event.title}: {[p.title for p in precursors]}")
+
+            print_call = score_print_direction(bundle)
+            if print_call is not None:
+                written = record_print_prediction_if_changed(conn, event.title, event.event_time_utc, print_call, now=now)
+                if written:
+                    print(f"[backtest_accumulator] print call for {event.title}: {print_call.direction} ({print_call.confidence:.0%} confidence, {print_call.article_count} articles)")
 
             for instrument in instruments:
                 try:

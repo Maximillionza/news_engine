@@ -54,6 +54,15 @@ CREATE TABLE IF NOT EXISTS check_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     checked_at_utc TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS print_predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_title TEXT NOT NULL,
+    event_time_utc TEXT NOT NULL,
+    predicted_vs_forecast TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    article_count INTEGER NOT NULL,
+    scored_at_utc TEXT NOT NULL
+);
 """
 
 
@@ -80,6 +89,17 @@ class Outcome:
     actual_direction: str
     actual_move_note: str
     confirmed_at_utc: str
+
+
+@dataclass
+class PrintPrediction:
+    id: int
+    event_title: str
+    event_time_utc: str
+    predicted_vs_forecast: str
+    confidence: float
+    article_count: int
+    scored_at_utc: str
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
@@ -365,3 +385,44 @@ def get_all_confirmed_cases(conn: sqlite3.Connection) -> list[tuple[Prediction, 
         )
         cases.append((prediction, outcome))
     return cases
+
+
+def get_latest_print_prediction(conn: sqlite3.Connection, event_title: str) -> Optional[PrintPrediction]:
+    """Most recent recorded print-direction call for this event title, across ALL its occurrences — None if never scored."""
+    row = conn.execute(
+        "SELECT * FROM print_predictions WHERE event_title = ? "
+        "ORDER BY scored_at_utc DESC, id DESC LIMIT 1",
+        (event_title,),
+    ).fetchone()
+    if row is None:
+        return None
+    return PrintPrediction(**dict(row))
+
+
+def record_print_prediction_if_changed(
+    conn: sqlite3.Connection,
+    event_title: str,
+    event_time_utc: dt.datetime,
+    call,  # PrintCall from scoring.print_direction — duck-typed to avoid a circular import (print_direction doesn't import this module, but keeping this module free of a hard dependency on it costs nothing)
+    now: Optional[dt.datetime] = None,
+) -> bool:
+    """
+    Writes a new print_predictions row only if `call.direction` differs
+    from the latest recorded call for this event title — same "current
+    call is the truth until articles contradict it" principle as
+    _is_material_change() in scoring/backtest_accumulator.py, applied to
+    a categorical value instead of a probability threshold. Returns
+    True if a row was written, False if skipped as unchanged.
+    """
+    latest = get_latest_print_prediction(conn, event_title)
+    if latest is not None and latest.predicted_vs_forecast == call.direction:
+        return False
+
+    scored_at = now or dt.datetime.now(dt.timezone.utc)
+    conn.execute(
+        "INSERT INTO print_predictions (event_title, event_time_utc, predicted_vs_forecast, confidence, article_count, scored_at_utc) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (event_title, event_time_utc.isoformat(), call.direction, call.confidence, call.article_count, scored_at.isoformat()),
+    )
+    conn.commit()
+    return True
