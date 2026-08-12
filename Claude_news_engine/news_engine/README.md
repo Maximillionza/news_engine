@@ -331,6 +331,41 @@ for the full design and the explicit out-of-scope list (numeric print-value
 estimation, feeding the trend back into scoring — deferred to a future pass
 once there's enough real data to know if it's predictive).
 
+### Trend-history feed-back into scoring
+
+The two signals above now also feed back into the article-based
+accumulator's actual instrument scoring
+(`scoring/probability_engine.score_bundle()`), not just the dashboard
+display — gated so neither contributes anything on thin data:
+
+- **This occurrence's print call** blends in at
+  `PRINT_CALL_TRUST_WEIGHT=0.5` (below a real precursor's `0.9`, above raw
+  article trust) whenever it's `higher`/`lower` (never `in_line`), decaying
+  like a precursor across the pre-event window.
+- **The event's historical beat/miss streak** blends in at
+  `TREND_STREAK_TRUST_WEIGHT=0.3`, with no time decay, but only once
+  `MIN_OCCURRENCES_FOR_TREND_PRIOR=3` confirmed past occurrences exist —
+  below that, exactly like a `None` print call, it contributes nothing at
+  all, not a diluted nudge.
+
+Both are additive to `score_bundle()`'s existing weighted-average math —
+called without them, `score_bundle()` produces byte-for-byte the same
+result as before this feature, verified by a dedicated regression test.
+`scoring/backtest_accumulator.py` computes the trend signal via a
+short-lived **read-only** connection to the dashboard's own
+`event_history` table (`webapp/store.py`) — the one deliberate crossing of
+this project's usual dashboard/accumulator pipeline separation, mirroring
+the existing reverse precedent where `webapp/app.py` already reads the
+accumulator's DB read-only for display.
+
+See
+`docs/superpowers/specs/2026-08-12-trend-history-scoring-feedback-design.md`
+for the full design, including why the trust weights and the
+3-occurrence gate are launch defaults rather than tuned values — this
+session's first live CPI release produced one correct print call and one
+wrong one out of two, exactly the kind of thin sample this design
+protects live scoring from over-trusting.
+
 ## Known gaps / things to watch
 
 - **Sentiment scoring now has 3 tiers**, cheapest/most-deterministic
