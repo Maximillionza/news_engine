@@ -20,6 +20,7 @@ from webapp.store import (
     get_calendar_snapshot, get_event_history,
 )
 from webapp.trend import summarize_trend
+from webapp.history import build_print_call_history
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 from scoring.backtest_store import (
     get_connection as get_backtest_connection, get_latest_two_predictions,
@@ -241,6 +242,24 @@ def get_prediction_history(symbol: str):
         {"scored_at_utc": r.scored_at_utc, "probability": r.probability, "direction": r.direction}
         for r in runs
     ])
+
+
+@app.route("/api/history", methods=["GET"])
+def get_print_call_history():
+    rows = build_print_call_history()
+    return jsonify({
+        "rows": [
+            {
+                "event_title": r.event_title, "event_time_utc": r.event_time_utc,
+                "instrument": r.instrument,
+                "previous": r.previous, "forecast": r.forecast, "actual": r.actual,
+                "unchanged_vs_previous": r.unchanged_vs_previous,
+                "ne_prediction": r.ne_prediction, "ne_confidence": r.ne_confidence,
+                "outcome": r.outcome,
+            }
+            for r in rows
+        ],
+    })
 
 
 def _get_tracked_symbols() -> list[str]:

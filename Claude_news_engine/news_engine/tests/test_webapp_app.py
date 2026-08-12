@@ -545,6 +545,58 @@ def test_predictions_print_prediction_is_none_when_never_scored():
     print("PASS\n")
 
 
+def test_history_endpoint_returns_numeric_and_text_rows():
+    print("=== app: /api/history returns build_print_call_history()'s rows as JSON, including the instrument field ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dashboard.db"
+        backtest_db_path = Path(tmp) / "backtest.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+            event = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High", event_time_utc=event_time,
+                forecast="0.1%", previous="-0.4%", actual="0.1%",
+            )
+            conn = store.get_connection(db_path)
+            store.upsert_event_history(conn, event, "in_line", now=event_time)
+            conn.close()
+
+            from scoring.print_direction import PrintCall
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_print_prediction_if_changed(
+                bconn, "CPI m/m", event_time,
+                PrintCall(direction="in_line", confidence=0.4, article_count=89), now=event_time,
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/history")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert len(data["rows"]) == 1
+            assert data["rows"][0]["event_title"] == "CPI m/m"
+            assert data["rows"][0]["instrument"] is None
+            assert data["rows"][0]["outcome"] == "Confirmed"
+    print("PASS\n")
+
+
+def test_history_endpoint_empty_when_nothing_resolved():
+    print("=== app: /api/history returns an empty list (200, not 500) when nothing has resolved yet ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dashboard.db"
+        backtest_db_path = Path(tmp) / "backtest.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            store.get_connection(db_path).close()
+            backtest_store.get_connection(backtest_db_path).close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/history")
+            assert resp.status_code == 200
+            assert resp.get_json()["rows"] == []
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
@@ -567,4 +619,6 @@ if __name__ == "__main__":
     test_event_history_endpoint_unknown_title_returns_empty()
     test_predictions_includes_print_prediction_when_accumulator_scored_it()
     test_predictions_print_prediction_is_none_when_never_scored()
+    test_history_endpoint_returns_numeric_and_text_rows()
+    test_history_endpoint_empty_when_nothing_resolved()
     print("All webapp.app tests passed.")
