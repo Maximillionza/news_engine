@@ -188,7 +188,9 @@ def get_predictions():
                     "probability": accumulator_previous.probability,
                     "article_count": accumulator_previous.article_count,
                 }
-            print_call = get_latest_print_prediction(backtest_conn, event["title"])
+            print_call = get_latest_print_prediction(
+                backtest_conn, event["title"], dt.datetime.fromisoformat(event["event_time_utc"]),
+            )
             print_prediction = None
             if print_call is not None:
                 print_prediction = {"direction": print_call.predicted_vs_forecast, "confidence": print_call.confidence}

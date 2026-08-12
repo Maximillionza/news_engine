@@ -387,16 +387,30 @@ def get_all_confirmed_cases(conn: sqlite3.Connection) -> list[tuple[Prediction, 
     return cases
 
 
-def get_latest_print_prediction(conn: sqlite3.Connection, event_title: str) -> Optional[PrintPrediction]:
-    """Most recent recorded print-direction call for this event title, across ALL its occurrences — None if never scored."""
+def get_latest_print_prediction(
+    conn: sqlite3.Connection, event_title: str, event_time_utc: dt.datetime,
+) -> Optional[PrintPrediction]:
+    """
+    Most recent recorded print-direction call for this specific (event_title,
+    event_time_utc) OCCURRENCE — None if never scored. Scoped to occurrence,
+    not title-only, for the same reason count_predictions() in this module
+    is: Forex Factory event titles recur monthly/quarterly with the SAME
+    title but a DIFFERENT event_time_utc each time, so a title-only lookup
+    would leak a prior occurrence's call onto an unrelated later one.
+    """
     row = conn.execute(
-        "SELECT * FROM print_predictions WHERE event_title = ? "
+        "SELECT * FROM print_predictions WHERE event_title = ? AND event_time_utc = ? "
         "ORDER BY scored_at_utc DESC, id DESC LIMIT 1",
-        (event_title,),
+        (event_title, event_time_utc.isoformat()),
     ).fetchone()
     if row is None:
         return None
-    return PrintPrediction(**dict(row))
+    d = dict(row)
+    return PrintPrediction(
+        id=d["id"], event_title=d["event_title"], event_time_utc=d["event_time_utc"],
+        predicted_vs_forecast=d["predicted_vs_forecast"], confidence=d["confidence"],
+        article_count=d["article_count"], scored_at_utc=d["scored_at_utc"],
+    )
 
 
 def record_print_prediction_if_changed(
@@ -408,13 +422,14 @@ def record_print_prediction_if_changed(
 ) -> bool:
     """
     Writes a new print_predictions row only if `call.direction` differs
-    from the latest recorded call for this event title — same "current
-    call is the truth until articles contradict it" principle as
-    _is_material_change() in scoring/backtest_accumulator.py, applied to
-    a categorical value instead of a probability threshold. Returns
-    True if a row was written, False if skipped as unchanged.
+    from the latest recorded call for this exact (event_title,
+    event_time_utc) OCCURRENCE — same "current call is the truth until
+    articles contradict it" principle as _is_material_change() in
+    scoring/backtest_accumulator.py, applied to a categorical value instead
+    of a probability threshold. Returns True if a row was written, False if
+    skipped as unchanged.
     """
-    latest = get_latest_print_prediction(conn, event_title)
+    latest = get_latest_print_prediction(conn, event_title, event_time_utc)
     if latest is not None and latest.predicted_vs_forecast == call.direction:
         return False
 

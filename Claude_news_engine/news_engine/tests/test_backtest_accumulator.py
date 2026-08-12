@@ -330,7 +330,7 @@ def test_print_direction_call_recorded_once_per_event():
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
 
             conn = store.get_connection(db_path)
-            latest = store.get_latest_print_prediction(conn, "CPI m/m")
+            latest = store.get_latest_print_prediction(conn, "CPI m/m", event.event_time_utc)
             assert latest is not None
             assert latest.predicted_vs_forecast == "higher"
             assert latest.article_count == 2
@@ -356,7 +356,7 @@ def test_print_direction_none_call_writes_nothing():
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
 
             conn = store.get_connection(db_path)
-            assert store.get_latest_print_prediction(conn, event.title) is None
+            assert store.get_latest_print_prediction(conn, event.title, event.event_time_utc) is None
             conn.close()
     print("PASS\n")
 

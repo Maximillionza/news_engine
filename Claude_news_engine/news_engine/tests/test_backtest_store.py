@@ -304,7 +304,7 @@ def test_record_print_prediction_if_changed_writes_first_call():
         written = store.record_print_prediction_if_changed(conn, "CPI m/m", event_time, call, now=dt.datetime(2026, 8, 10, 9, 0, tzinfo=UTC_TZ))
         assert written is True
 
-        latest = store.get_latest_print_prediction(conn, "CPI m/m")
+        latest = store.get_latest_print_prediction(conn, "CPI m/m", event_time)
         assert latest is not None
         assert latest.predicted_vs_forecast == "higher"
         assert latest.confidence == 0.6
@@ -326,7 +326,7 @@ def test_record_print_prediction_if_changed_skips_identical_call():
         written = store.record_print_prediction_if_changed(conn, "CPI m/m", event_time, second, now=dt.datetime(2026, 8, 10, 10, 0, tzinfo=UTC_TZ))
         assert written is False
 
-        latest = store.get_latest_print_prediction(conn, "CPI m/m")
+        latest = store.get_latest_print_prediction(conn, "CPI m/m", event_time)
         assert latest.confidence == 0.6  # unchanged — the second call was never written
         conn.close()
     print("PASS\n")
@@ -345,7 +345,7 @@ def test_record_print_prediction_if_changed_writes_on_direction_flip():
         written = store.record_print_prediction_if_changed(conn, "CPI m/m", event_time, flipped, now=dt.datetime(2026, 8, 11, 9, 0, tzinfo=UTC_TZ))
         assert written is True
 
-        latest = store.get_latest_print_prediction(conn, "CPI m/m")
+        latest = store.get_latest_print_prediction(conn, "CPI m/m", event_time)
         assert latest.predicted_vs_forecast == "lower"
         conn.close()
     print("PASS\n")
@@ -356,7 +356,33 @@ def test_get_latest_print_prediction_none_when_nothing_recorded():
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         conn = store.get_connection(db_path)
-        assert store.get_latest_print_prediction(conn, "CPI m/m") is None
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        assert store.get_latest_print_prediction(conn, "CPI m/m", event_time) is None
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_latest_print_prediction_is_scoped_to_occurrence_not_title():
+    print("=== backtest_store: get_latest_print_prediction does NOT leak a prior occurrence's call onto a different event_time_utc ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        july_time = dt.datetime(2026, 7, 12, 12, 30, tzinfo=UTC_TZ)
+        august_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        july_call = PrintCall(direction="higher", confidence=0.6, article_count=3)
+        store.record_print_prediction_if_changed(conn, "CPI m/m", july_time, july_call, now=july_time)
+
+        # August has never been scored — must NOT inherit July's call.
+        assert store.get_latest_print_prediction(conn, "CPI m/m", august_time) is None
+
+        # And an identical-direction call for August must still WRITE its own row
+        # (not get silently skipped as "unchanged" against July's stored call).
+        august_call = PrintCall(direction="higher", confidence=0.55, article_count=4)
+        written = store.record_print_prediction_if_changed(conn, "CPI m/m", august_time, august_call, now=august_time)
+        assert written is True
+
+        august_latest = store.get_latest_print_prediction(conn, "CPI m/m", august_time)
+        assert august_latest.confidence == 0.55  # August's own row, not July's
         conn.close()
     print("PASS\n")
 
@@ -380,4 +406,5 @@ if __name__ == "__main__":
     test_record_print_prediction_if_changed_skips_identical_call()
     test_record_print_prediction_if_changed_writes_on_direction_flip()
     test_get_latest_print_prediction_none_when_nothing_recorded()
+    test_get_latest_print_prediction_is_scoped_to_occurrence_not_title()
     print("All backtest_store tests passed.")

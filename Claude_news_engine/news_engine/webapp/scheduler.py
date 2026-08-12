@@ -136,7 +136,7 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
     save_calendar_snapshot_if_changed(conn, events, dt.datetime.now(dt.timezone.utc))
 
     now_for_history = dt.datetime.now(dt.timezone.utc)
-    for event in events:
+    for event in all_events:
         upsert_event_history(conn, event, classify_surprise(event), now_for_history)
 
     try:

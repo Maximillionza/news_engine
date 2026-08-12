@@ -242,11 +242,11 @@ function renderCard(symbolEntry) {
   // rendered as nothing, never a fabricated placeholder.
   function printPredictionHtml(printPred) {
     if (!printPred) return '';
-    const label = printPred.direction === 'higher' ? 'HIGHER'
-      : printPred.direction === 'lower' ? 'LOWER' : 'IN LINE with';
+    const label = printPred.direction === 'higher' ? 'HIGHER than forecast'
+      : printPred.direction === 'lower' ? 'LOWER than forecast' : 'IN LINE with forecast';
     const confPct = Math.round(printPred.confidence * 100);
     return `<div class="print-prediction">
-      📊 Print call: likely <b>${label}</b> than forecast <span style="font-size:12px;color:#888">(${confPct}% confidence)</span>
+      📊 Print call: likely <b>${label}</b> <span style="font-size:12px;color:#888">(${confPct}% confidence)</span>
     </div>`;
   }
   const printPredictionLine = printPredictionHtml(next.print_prediction);
@@ -325,7 +325,7 @@ function renderCard(symbolEntry) {
         const dateLabel = new Date(o.event_time_utc).toLocaleDateString(undefined, { year: "numeric", month: "short" });
         const surpriseLabel = o.surprise_direction
           ? `(${escapeHtml(o.surprise_direction.replace("_", "-"))})`
-          : "(pending)";
+          : (o.actual ? "(untracked)" : "(pending)");
         return `<div>${dateLabel}: forecast ${escapeHtml(o.forecast ?? "—")}, previous ${escapeHtml(o.previous ?? "—")}, actual ${escapeHtml(o.actual ?? "—")} ${surpriseLabel}</div>`;
       }).join("");
       panel.innerHTML = `${rows}<div style="margin-top:4px;font-weight:bold">→ ${escapeHtml(data.trend_summary)}</div>`;
@@ -353,8 +353,25 @@ async function refreshDashboard() {
     predictionsStaleNoticeEl.style.display = "none";
   }
 
+  // Capture which History panels are currently expanded so a fresh
+  // re-render below (which rebuilds every card from scratch, wiping
+  // panel state and the data-loaded fetch cache) can restore them
+  // afterward instead of silently collapsing them every 60s.
+  const expandedHistoryIds = Array.from(cardsEl.querySelectorAll('.history-panel'))
+    .filter((p) => p.style.display !== 'none')
+    .map((p) => p.id);
+
   cardsEl.innerHTML = "";
   (data.predictions || []).forEach((entry) => cardsEl.appendChild(renderCard(entry)));
+
+  // Re-expand (and re-fetch, since event_history may genuinely have
+  // changed) any panel that survives under the same deterministic id —
+  // i.e. this card's `next` event is still the same symbol+title.
+  expandedHistoryIds.forEach((id) => {
+    if (!document.getElementById(id)) return;  // that event is no longer this card's `next` — nothing to restore
+    const btn = document.querySelector(`[data-target="${id}"]`);
+    if (btn) btn.click();
+  });
 }
 
 async function refreshCalendar() {
