@@ -110,7 +110,8 @@ def test_checks_every_cycle_regardless_of_how_far_out_the_event_is():
              patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
-             patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score:
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score, \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             # Three cycles, all still far from the event — every one of
             # them must fetch+score. Real regression test: the old design
@@ -140,7 +141,8 @@ def test_no_cap_on_recorded_snapshots_multiple_material_changes_all_recorded():
                  _fake_result(probability=0.55, direction=Direction.BULLISH),   # cycle 1: first ever, always recorded
                  _fake_result(probability=0.70, direction=Direction.BULLISH),   # cycle 2: +15pp, material -> recorded
                  _fake_result(probability=0.30, direction=Direction.BEARISH),   # cycle 3: flip -> recorded
-             ]):
+             ]), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             for i in range(3):
                 accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now + dt.timedelta(hours=i))
@@ -165,7 +167,8 @@ def test_run_accumulator_cycle_logs_a_check_on_successful_fetch():
              patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
-             patch.object(accumulator, "score_bundle", return_value=_fake_result()):
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             conn = store.get_connection(db_path)
             assert store.count_recent_checks(conn, since=now - dt.timedelta(hours=24)) == 0
@@ -209,7 +212,8 @@ def test_unchanged_score_is_checked_but_not_recorded():
              patch.object(accumulator, "score_bundle", side_effect=[
                  _fake_result(probability=0.70, direction=Direction.BULLISH),  # cycle 1
                  _fake_result(probability=0.74, direction=Direction.BULLISH),  # cycle 2 — same direction, only +4pp, below threshold
-             ]) as mock_score:
+             ]) as mock_score, \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
             conn = store.get_connection(db_path)
@@ -241,7 +245,8 @@ def test_direction_flip_is_always_recorded_regardless_of_magnitude():
              patch.object(accumulator, "score_bundle", side_effect=[
                  _fake_result(probability=0.55, direction=Direction.BULLISH),  # cycle 1
                  _fake_result(probability=0.56, direction=Direction.BEARISH),  # cycle 2 — tiny probability move, but direction FLIPPED
-             ]):
+             ]), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
             conn = store.get_connection(db_path)
@@ -295,7 +300,8 @@ def test_precursor_events_found_and_passed_to_score_bundle():
              patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: [e for e in events if e.impact == "High"]), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=target, articles=[], as_of_utc=now)), \
-             patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score:
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score, \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
 
@@ -326,7 +332,8 @@ def test_print_direction_call_recorded_once_per_event():
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
-             patch.object(accumulator, "score_print_direction", return_value=fake_call):
+             patch.object(accumulator, "score_print_direction", return_value=fake_call), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
 
@@ -476,6 +483,41 @@ def test_trend_signal_is_none_when_dashboard_db_unreachable():
     print("PASS\n")
 
 
+def test_trend_signal_is_none_when_read_itself_fails():
+    print("=== accumulator: a failure during the event_history READ (not just connect) also fails open to trend_signal=None ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        dashboard_db_path = Path(tmp) / "dashboard.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+        event.title = "CPI m/m"
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+
+        # A real, reachable dashboard DB (so get_dashboard_connection succeeds) —
+        # the failure is injected into the READ call specifically.
+        webapp_store.get_connection(dashboard_db_path).close()
+
+        captured_kwargs = {}
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None):
+            captured_kwargs["trend_signal"] = trend_signal
+            return _fake_result()
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+             patch.object(accumulator, "score_print_direction", return_value=None), \
+             patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path), \
+             patch.object(accumulator, "get_event_history", side_effect=Exception("simulated read failure")):
+
+            events_result = accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+        assert events_result is not None  # cycle completed, did not crash/abort
+        assert captured_kwargs["trend_signal"] is None
+    print("PASS\n")
+
+
 def test_print_call_passed_to_score_bundle():
     print("=== accumulator: the already-computed print_call is passed through to score_bundle() ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -528,7 +570,8 @@ def test_precursor_events_uses_unfiltered_calendar_not_high_impact_only():
              patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: [e for e in events if e.impact == "High"]), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=target, articles=[], as_of_utc=now)), \
-             patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score:
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score, \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
 
@@ -545,7 +588,8 @@ def test_high_impact_only_no_medium_widening():
         now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
 
         with patch.object(accumulator, "fetch_calendar", return_value=[]) as mock_fetch, \
-             patch.object(accumulator, "filter_relevant_events", return_value=[]) as mock_filter:
+             patch.object(accumulator, "filter_relevant_events", return_value=[]) as mock_filter, \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
             mock_filter.assert_called_once_with(mock_fetch.return_value)
@@ -570,7 +614,8 @@ def test_failed_scoring_for_one_pair_does_not_stop_others():
              patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
-             patch.object(accumulator, "score_bundle", side_effect=flaky_score_bundle):
+             patch.object(accumulator, "score_bundle", side_effect=flaky_score_bundle), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             accumulator.run_accumulator_cycle(["XAUUSD", "US30"], db_path=db_path, now=now)
             conn = store.get_connection(db_path)
@@ -592,7 +637,8 @@ def test_article_bundle_fetched_once_per_event_not_per_instrument():
              patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle) as mock_bundle, \
-             patch.object(accumulator, "score_bundle", return_value=_fake_result()):
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             accumulator.run_accumulator_cycle(["XAUUSD", "US30"], db_path=db_path, now=now)
 
@@ -636,6 +682,7 @@ if __name__ == "__main__":
     test_trend_signal_passed_to_score_bundle_when_gate_met()
     test_trend_signal_is_none_when_gate_not_met()
     test_trend_signal_is_none_when_dashboard_db_unreachable()
+    test_trend_signal_is_none_when_read_itself_fails()
     test_print_call_passed_to_score_bundle()
     test_precursor_events_uses_unfiltered_calendar_not_high_impact_only()
     test_high_impact_only_no_medium_widening()

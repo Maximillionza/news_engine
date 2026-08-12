@@ -136,22 +136,23 @@ def _read_trend_signal(event_title: str):
     accumulator writes nothing there, mirroring the existing reverse
     precedent (webapp/app.py already reads scoring/backtest_store.py's DB
     read-only for display). Returns None (fail open, never crashes the
-    cycle) if the dashboard DB is unreachable, or if fewer than
-    MIN_OCCURRENCES_FOR_TREND_PRIOR confirmed occurrences exist yet —
+    cycle) if the dashboard DB is unreachable OR if the read itself fails
+    for any reason, or if fewer than MIN_OCCURRENCES_FOR_TREND_PRIOR
+    confirmed occurrences exist yet —
     trusting a thin pattern enough to nudge a live prediction is a bigger
     claim than merely displaying it (see webapp/trend.py's own, looser
     MIN_CONFIRMED_ROWS_FOR_A_TREND=2 display-only gate for contrast).
     """
+    conn = None
     try:
         conn = get_dashboard_connection(DASHBOARD_DB_PATH)
-    except Exception as exc:  # noqa: BLE001 — a missing/locked dashboard DB must not crash the accumulator cycle
+        rows = get_event_history(conn, event_title)
+    except Exception as exc:  # noqa: BLE001 — ANY dashboard-DB failure (open OR read) must not crash the accumulator cycle
         print(f"[backtest_accumulator] WARNING: could not read dashboard event_history for {event_title}: {exc}")
         return None
-
-    try:
-        rows = get_event_history(conn, event_title)
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
     confirmed = [r for r in rows if r.surprise_direction is not None]
     if len(confirmed) < MIN_OCCURRENCES_FOR_TREND_PRIOR:
