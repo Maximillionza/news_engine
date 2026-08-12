@@ -13,7 +13,8 @@ Check, and graceful (non-crashing) handling of an unresolvable agent-allocation 
   populate (see module docstring for what's not modeled yet). `WorkflowRun.review_tier` is
   the Phase 7 addition.
 - `engine.py` - `execute_workflow()`: one task per matched department, executed in a fixed
-  canonical order (`orchestrator/planner.py`'s `select_all_matching_departments`), halting on
+  canonical order (`orchestrator/classification.py`'s `select_all_matching_departments`,
+  originally `orchestrator/planner.py`'s), halting on
   the first task whose outcome is not achieved. Parallel Execution (EWOS sec.13) is not
   implemented - see module docstring. Phase 7: if "operations" (the Review Agent's
   department, `REVIEW_DEPARTMENT_ID`) is among the matched departments, it is not run as a
@@ -29,9 +30,10 @@ Check, and graceful (non-crashing) handling of an unresolvable agent-allocation 
   decides what to do with them.
 - `review.py` - Phase 7: TDL sec.17's risk-proportional Task Review tier table
   (`determine_review_tier`). Complexity scoring is still a fixed default everywhere in this
-  corpus (`orchestrator/planner.py`), so "peer_review" is the only tier this phase can ever
-  actually produce - the full table is implemented so the other tiers activate without
-  redesign once real complexity scoring exists.
+  corpus (`orchestrator/controller.py`, originally set in `orchestrator/planner.py`), so
+  "peer_review" is the only tier this phase can ever actually produce - the full table is
+  implemented so the other tiers activate without redesign once real complexity scoring
+  exists.
 - `knowledge.py` - Phase 7: `record_task_knowledge()` records
   `Agent --USES--> Capability --APPLIES_TO--> Workflow` (EKGS sec.5, UOL sec.6) to
   `knowledge_service` for every completed task, substantive or review. One capability per

@@ -144,7 +144,10 @@ together:
    differs, `None`/"Awaiting confirmation" if no `outcomes` row exists yet
    — outcome confirmation is a manual/`--auto` step in this system
    (`scripts/confirm_backtest_outcomes.py`), not automatic, so an
-   unconfirmed prediction is a normal, expected state, not an error.
+   unconfirmed prediction is a normal, expected state, not an error. For
+   text-only fallback rows, a prediction at or below `MIN_TEXT_EVENT_CONFIDENCE`
+   is shown but never judged, same shrug-exclusion guarantee the numeric
+   side already has.
 6. `previous`/`forecast`/`actual` are `None` for every fallback row (the
    event genuinely has none) — rendered as `—` in the UI, same as any
    other missing field.

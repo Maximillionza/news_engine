@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "news-engine-webapp",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "webapp.app"],
+      "port": 5001
+    }
+  ]
+}

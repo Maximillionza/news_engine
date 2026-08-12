@@ -375,11 +375,15 @@ def test_pre_filter_limit_does_not_starve_rare_row_type():
         dash_conn = store.get_connection(dash_db)
         bt_conn = backtest_store.get_connection(backtest_db)
 
-        # 60 recent, resolved numeric events — all more recent than the
-        # target below, all WITH a real print_predictions call, so they
-        # genuinely compete for get_resolved_event_history()'s pre-filter
-        # row budget (not silently dropped for lacking a call, unlike the
-        # old test's crowding rows).
+        # 60 recent, resolved numeric events, more recent than the target
+        # below — enough to fill get_resolved_event_history()'s pre-filter
+        # budget on their own at limit=50, which is exactly what starves
+        # the older target row out BEFORE any merge or print_predictions
+        # lookup happens. (These rows never get a print_predictions call
+        # themselves via record_prediction() — that writes to the
+        # unrelated `predictions` table — but that's fine: starvation
+        # here happens purely in the SQL pre-filter, upstream of any
+        # print_predictions lookup.)
         for i in range(60):
             event_time = base_time + dt.timedelta(days=i + 1)
             crowding_event = EconomicEvent(

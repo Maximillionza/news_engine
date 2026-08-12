@@ -8,9 +8,10 @@ SDK module for creating new capabilities.
 `builder.py`'s `build_capability()` validates and returns a `Capability` object (name,
 description, inputs, outputs, required_tools, complexity, evaluation) - Schema Validation
 only, see the module docstring for why the other pipeline gates don't apply. **Not yet wired
-into department/agent capability matching** (`orchestrator/planner.py`,
-`orchestrator/allocator.py`) - those still compare plain capability strings, a known
-weakness documented since Phase 5/6. This is a real step toward closing that gap, not a
+into department/agent capability matching** (`orchestrator/classification.py`, originally
+`orchestrator/planner.py`; `orchestrator/allocator.py`) - those still compare plain
+capability strings, a known weakness documented since Phase 5/6. This is a real step
+toward closing that gap, not a
 claim it's already closed.
 
 **Tests:** `Tests/unit/test_sdk_capability_and_workflow_builders.py`

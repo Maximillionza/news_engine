@@ -14,8 +14,9 @@ Evaluates regulatory applicability and risk.
   `applicable=None` (UNKNOWN), never a silent `False` - see module docstring.
 - `policy_impact.py` - `analyze_policy_impact()` (MVS sec.12, Test Category 008): Policy
   Added -> Impact Analysis -> Workflow Review -> Control Recommendation. Impact Analysis
-  reuses `orchestrator/planner.py`'s keyword-overlap mechanism against department
-  capabilities, not a second matcher; Control Recommendation is a templated string, not
-  AI-generated (no real model is wired anywhere in this corpus).
+  reuses `orchestrator/classification.py`'s keyword-overlap mechanism (originally
+  `orchestrator/planner.py`'s) against department capabilities, not a second matcher;
+  Control Recommendation is a templated string, not AI-generated (no real model is wired
+  anywhere in this corpus).
 
 **Tests:** `Tests/integration/test_compliance_intelligence.py`

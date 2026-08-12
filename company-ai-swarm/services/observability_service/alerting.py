@@ -8,8 +8,9 @@ Specification (EOCCS).md sec.25:
 Rule-based classification over real telemetry (Phase 3) and Escalation Records (Phase 8) -
 not a new monitoring system. Thresholds/mappings below are illustrative defaults, not tuned
 from real operational data - same honesty as every other fixed-default decision in this
-corpus (orchestrator/planner.py's complexity level, workflow_engine/review.py's tier
-mapping). The mechanism is real; the specific cutoffs are not claimed to be validated.
+corpus (orchestrator/controller.py's complexity level, originally orchestrator/planner.py's;
+workflow_engine/review.py's tier mapping). The mechanism is real; the specific cutoffs are
+not claimed to be validated.
 """
 
 from __future__ import annotations

@@ -386,7 +386,9 @@ merges two independent row sources:
   (`scoring/backtest_store.py`'s `predictions` table), Confirmed/Missed
   against a real confirmed `outcomes` row if one exists, "Awaiting
   confirmation" otherwise (outcome confirmation is a manual/`--auto` step
-  in this system, never automatic).
+  in this system, never automatic). A prediction at or below
+  `MIN_TEXT_EVENT_CONFIDENCE` is shown but never judged, same
+  shrug-exclusion guarantee the numeric side already has.
 
 Only occurrences **with** a real call appear in either case — neither
 condition alone. A `(= prev)` badge marks numeric occurrences where

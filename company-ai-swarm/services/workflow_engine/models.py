@@ -7,8 +7,8 @@ Phase 6 scope: these model only the fields Phase 6 actually populates. EWOS sec.
 `Trigger`, `Policies`, `Completion Criteria`, `Metrics`, and `Lifecycle State`, and sec.11's
 `Complexity`, `Risk`, and `Required Model Tier`, have no producer in this codebase yet -
 COOS sec.9's complexity scoring and RDL's reasoning-tier routing remain undefined (see
-orchestrator/planner.py and shared/model_gateway.py). Not modeling them here is the same
-honesty discipline as those modules, not an oversight.
+orchestrator/controller.py, originally orchestrator/planner.py, and shared/model_gateway.py).
+Not modeling them here is the same honesty discipline as those modules, not an oversight.
 """
 
 from __future__ import annotations

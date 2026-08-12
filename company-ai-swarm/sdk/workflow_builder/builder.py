@@ -6,8 +6,9 @@ dependencies, agents, validation.
 
 Phase 10 scope: Schema Validation only, same reasoning as capability_builder.py. Not yet
 consumed by workflow_engine.execute_workflow() (Phase 6/7), whose task list is still derived
-from department keyword-matching (orchestrator/planner.py), not from a stored
-WorkflowTemplate - a named gap, not silently dropped. A future phase could add "run this
+from department keyword-matching (orchestrator/classification.py, originally
+orchestrator/planner.py), not from a stored WorkflowTemplate - a named gap, not silently
+dropped. A future phase could add "run this
 stored template" as an alternate Workflow Engine entry point without touching
 execute_workflow()'s existing, tested behaviour.
 """

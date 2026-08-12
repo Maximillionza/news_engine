@@ -6,8 +6,9 @@ Recommendation.
 
 Honest scope: "Impact Analysis" is keyword-overlap matching between the policy's description
 and each department's name/purpose/mission/capabilities - the same weak-but-real mechanism
-already used for objective-to-department routing (orchestrator/planner.py's
-select_all_matching_departments), reused rather than inventing a second matcher. "Workflow
+already used for objective-to-department routing (services/orchestrator/classification.py's
+select_all_matching_departments, originally orchestrator/planner.py before that logic was
+relocated), reused rather than inventing a second matcher. "Workflow
 Review" is the resulting list of affected departments. "Control Recommendation" is a
 templated string naming the policy and affected departments, not an AI-generated
 recommendation - no real model is wired anywhere in this corpus yet (shared/model_gateway.py).

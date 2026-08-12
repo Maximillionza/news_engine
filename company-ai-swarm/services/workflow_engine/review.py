@@ -12,11 +12,11 @@ Expert/Enterprise Critical); sec.17's table has 4 rows for 5 levels, so Expert a
 Critical are both treated as "Critical" here - the corpus doesn't disambiguate them further.
 
 Honesty note, same shape as every other complexity-dependent module in this codebase
-(orchestrator/planner.py, shared/model_gateway.py): no numeric Task Complexity or Task Risk
+(orchestrator/controller.py, shared/model_gateway.py): no numeric Task Complexity or Task Risk
 scoring exists anywhere in the source corpus (TDL sec.7-8 define the scales, not how to
-compute a score). orchestrator/planner.py's complexity_level is a fixed "Level 2 Standard"
-default, so this table's "peer_review" row is the only tier Phase 7 can ever actually
-produce. The full table is implemented and consumable regardless, so that when real
+compute a score). orchestrator/controller.py's complexity_level is a fixed "Level 2 Standard"
+default (originally set in orchestrator/planner.py before that logic was relocated), so this
+table's "peer_review" row is the only tier Phase 7 can ever actually produce. The full table is implemented and consumable regardless, so that when real
 complexity scoring exists, the other three tiers activate without redesigning this module.
 """
 
