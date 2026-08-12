@@ -203,6 +203,44 @@ def test_predictions_prefers_resolved_event_over_pending_sibling_at_same_timesta
     print("PASS\n")
 
 
+def test_predictions_prefers_future_pending_event_over_a_past_stuck_pending_one():
+    print("=== app: among still-pending events, a genuinely upcoming one outranks one whose release time already passed ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime.now(dt.timezone.utc)
+        # Real-world shape observed live: an event's release time passes but
+        # it never resolves (the live calendar feed hasn't published its
+        # actual yet — a feed-lag issue, not a code bug), so it stays
+        # "pending" indefinitely. A pure abs(distance)-to-now sort treats
+        # "6h48m in the past, still stuck" as CLOSER than "11h in the
+        # future, genuinely upcoming" and keeps showing the stale one —
+        # exactly the bug this test locks in the fix for.
+        past_stuck_pending = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High",
+            event_time_utc=now - dt.timedelta(hours=6, minutes=48), forecast="0.1%", actual=None,
+        )
+        future_upcoming_pending = EconomicEvent(
+            title="PPI m/m", country="USD", impact="High",
+            event_time_utc=now + dt.timedelta(hours=11), forecast="0.2%", actual=None,
+        )
+        with patch.object(store, "DB_PATH", db_path):
+            _seed_calendar(db_path, [past_stuck_pending, future_upcoming_pending])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            store.record_run(conn, "XAUUSD", "CPI m/m", past_stuck_pending.event_time_utc, None, "pending", None)
+            store.record_run(conn, "XAUUSD", "PPI m/m", future_upcoming_pending.event_time_utc, None, "pending", None)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            assert events[0]["event_title"] == "PPI m/m", (
+                f"expected the genuinely upcoming pending event first, not the past one still stuck pending, "
+                f"got {events[0]['event_title']!r}"
+            )
+    print("PASS\n")
+
+
 def test_predictions_includes_article_count_from_accumulator_db():
     print("=== app: /api/predictions includes article_count read from the accumulator's own DB, for symbols it tracks ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -604,6 +642,7 @@ if __name__ == "__main__":
     test_predictions_sorts_resolved_events_by_proximity_to_now()
     test_predictions_prefers_resolved_over_pending_regardless_of_distance()
     test_predictions_prefers_resolved_event_over_pending_sibling_at_same_timestamp()
+    test_predictions_prefers_future_pending_event_over_a_past_stuck_pending_one()
     test_predictions_includes_article_count_from_accumulator_db()
     test_predictions_includes_previous_article_prediction_when_two_snapshots_exist()
     test_predictions_article_prediction_is_none_when_accumulator_never_scored_it()

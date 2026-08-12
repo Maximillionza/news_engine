@@ -217,11 +217,19 @@ def get_predictions():
         # CPI m/m, CPI y/y all at 12:30 UTC, and a naive proximity-only sort
         # would let a still-pending sibling, or even a pending event on an
         # entirely different day, mask one that has actually scored).
-        # Within each group (resolved / pending), proximity to now breaks ties.
+        #
+        # Within the pending group specifically, a genuinely UPCOMING event
+        # outranks one whose release time already passed but is still stuck
+        # "pending" (observed live: the calendar feed can lag publishing an
+        # actual for hours after the scheduled time) — abs(distance) alone
+        # treats "6h48m ago, stuck" as closer than "11h from now, upcoming"
+        # and would keep showing the stale event long after a real next
+        # event exists to show instead.
         now = dt.datetime.now(dt.timezone.utc)
         entry["events"].sort(
             key=lambda ev: (
                 ev["direction"] == "pending",
+                ev["direction"] == "pending" and dt.datetime.fromisoformat(ev["event_time_utc"]) < now,
                 abs((dt.datetime.fromisoformat(ev["event_time_utc"]) - now).total_seconds()),
             )
         )
