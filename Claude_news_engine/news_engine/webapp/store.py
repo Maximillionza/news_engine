@@ -256,3 +256,44 @@ def get_event_history(conn: sqlite3.Connection, event_title: str, limit: int = 6
         (event_title, limit),
     ).fetchall()
     return [EventHistoryRow(**dict(row)) for row in rows]
+
+
+def get_resolved_event_history(conn: sqlite3.Connection, limit: int = 200) -> list[EventHistoryRow]:
+    """
+    Every RESOLVED event occurrence (actual IS NOT NULL) across ALL event
+    titles, most recent first, capped at `limit`. Unlike get_event_history()
+    (scoped to one title, includes pending occurrences), this is the
+    cross-title, resolved-only query webapp/history.py's History tab needs
+    for its numeric-forecast rows.
+    """
+    rows = conn.execute(
+        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction "
+        "FROM event_history WHERE actual IS NOT NULL ORDER BY event_time_utc DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [EventHistoryRow(**dict(row)) for row in rows]
+
+
+def get_text_only_resolved_events(conn: sqlite3.Connection, now: Optional[dt.datetime] = None, limit: int = 200) -> list[EventHistoryRow]:
+    """
+    Past event occurrences that genuinely have NO forecast/actual figure
+    at all (forecast IS NULL AND actual IS NULL) — e.g. FOMC Statement,
+    FOMC Press Conference. Deliberately data-driven, not a check against
+    PRINT_SURPRISE_LEXICON/EVENT_SURPRISE_DIRECTION: an event missing
+    lexicon coverage today but that DOES have a real forecast (e.g. Core
+    PPI m/m before it's added to the lexicon) is a config gap, not the
+    same case as an event that structurally never publishes a number —
+    only the latter belongs here.
+
+    "Past" uses lexicographic ISO-8601 string comparison against `now`,
+    same pattern get_predictions_awaiting_outcome() (scoring/backtest_store.py)
+    already uses.
+    """
+    now = now or dt.datetime.now(dt.timezone.utc)
+    rows = conn.execute(
+        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction "
+        "FROM event_history WHERE forecast IS NULL AND actual IS NULL AND event_time_utc <= ? "
+        "ORDER BY event_time_utc DESC LIMIT ?",
+        (now.isoformat(), limit),
+    ).fetchall()
+    return [EventHistoryRow(**dict(row)) for row in rows]

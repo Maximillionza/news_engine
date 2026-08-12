@@ -296,6 +296,104 @@ def test_get_event_history_unknown_title_returns_empty_list():
     print("PASS\n")
 
 
+def test_get_resolved_event_history_only_returns_rows_with_actual():
+    print("=== store: get_resolved_event_history only returns rows where actual is set, across ALL titles ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        resolved = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High",
+            event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
+            forecast="0.1%", previous="-0.4%", actual="0.1%",
+        )
+        pending = EconomicEvent(
+            title="Core CPI m/m", country="USD", impact="High",
+            event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
+            forecast="0.2%", previous="0.0%", actual=None,
+        )
+        store.upsert_event_history(conn, resolved, "in_line", now=dt.datetime(2026, 8, 12, 13, 0, tzinfo=UTC_TZ))
+        store.upsert_event_history(conn, pending, None, now=dt.datetime(2026, 8, 12, 4, 0, tzinfo=UTC_TZ))
+
+        rows = store.get_resolved_event_history(conn)
+        assert len(rows) == 1
+        assert rows[0].event_title == "CPI m/m"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_resolved_event_history_most_recent_first_and_limit():
+    print("=== store: get_resolved_event_history orders most-recent-first, respects limit ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        for month, title in [(6, "CPI m/m"), (7, "PPI m/m"), (8, "NFP")]:
+            event = EconomicEvent(
+                title=title, country="USD", impact="High",
+                event_time_utc=dt.datetime(2026, month, 12, 12, 30, tzinfo=UTC_TZ),
+                forecast="0.1%", previous="0.1%", actual="0.2%",
+            )
+            store.upsert_event_history(conn, event, "higher", now=dt.datetime(2026, month, 12, 13, 0, tzinfo=UTC_TZ))
+
+        rows = store.get_resolved_event_history(conn, limit=2)
+        assert len(rows) == 2
+        assert rows[0].event_title == "NFP"
+        assert rows[1].event_title == "PPI m/m"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_text_only_resolved_events_requires_both_forecast_and_actual_null():
+    print("=== store: get_text_only_resolved_events only returns rows with BOTH forecast and actual NULL, past events only ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        now = dt.datetime(2026, 8, 12, 15, 0, tzinfo=UTC_TZ)
+
+        text_only_past = EconomicEvent(
+            title="FOMC Statement", country="USD", impact="High",
+            event_time_utc=now - dt.timedelta(hours=2),
+            forecast=None, previous=None, actual=None,
+        )
+        numeric_event = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High",
+            event_time_utc=now - dt.timedelta(hours=2),
+            forecast="0.1%", previous="-0.4%", actual="0.1%",
+        )
+        text_only_future = EconomicEvent(
+            title="FOMC Press Conference", country="USD", impact="High",
+            event_time_utc=now + dt.timedelta(hours=2),
+            forecast=None, previous=None, actual=None,
+        )
+        store.upsert_event_history(conn, text_only_past, None, now=now)
+        store.upsert_event_history(conn, numeric_event, "in_line", now=now)
+        store.upsert_event_history(conn, text_only_future, None, now=now)
+
+        rows = store.get_text_only_resolved_events(conn, now=now)
+        assert len(rows) == 1
+        assert rows[0].event_title == "FOMC Statement"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_text_only_resolved_events_excludes_event_missing_only_one_field():
+    print("=== store: an event with forecast set but actual null is NOT text-only (partial data, not genuinely numberless) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        now = dt.datetime(2026, 8, 12, 15, 0, tzinfo=UTC_TZ)
+        partial = EconomicEvent(
+            title="Advance GDP q/q", country="USD", impact="High",
+            event_time_utc=now - dt.timedelta(hours=2),
+            forecast="2.1%", previous="2.0%", actual=None,
+        )
+        store.upsert_event_history(conn, partial, None, now=now)
+
+        rows = store.get_text_only_resolved_events(conn, now=now)
+        assert rows == []
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_round_trip_and_diff()
     test_fewer_than_two_runs()
@@ -310,4 +408,8 @@ if __name__ == "__main__":
     test_upsert_event_history_stale_refetch_does_not_blank_actual()
     test_get_event_history_multiple_occurrences_most_recent_first_and_limit()
     test_get_event_history_unknown_title_returns_empty_list()
+    test_get_resolved_event_history_only_returns_rows_with_actual()
+    test_get_resolved_event_history_most_recent_first_and_limit()
+    test_get_text_only_resolved_events_requires_both_forecast_and_actual_null()
+    test_get_text_only_resolved_events_excludes_event_missing_only_one_field()
     print("All store tests passed.")
