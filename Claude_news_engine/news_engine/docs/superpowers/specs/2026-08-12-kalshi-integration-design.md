@@ -64,21 +64,85 @@ between two adjacent strikes, the **lower** strike wins, deterministically
 
 ### `config/settings.py`: `KALSHI_SERIES_BY_EVENT_TITLE`
 
-Config-only-to-extend mapping, same pattern as `PRINT_SURPRISE_LEXICON`:
+Config-only-to-extend mapping, same pattern as `PRINT_SURPRISE_LEXICON`.
+Every entry below was verified live against the actual market's
+`rules_primary` text (not just its title or `settlement_sources` —
+Kalshi's own metadata has real copy-paste errors: `KXPAYROLLS`'s listed
+settlement source URL points to a PPI page, `KXACPI`'s points to an
+employment-situation page). All 16 of this system's 19 tracked
+high-impact USD events with a numeric forecast (`EVENT_SURPRISE_DIRECTION`)
+have real, active Kalshi coverage:
 
 ```python
 KALSHI_SERIES_BY_EVENT_TITLE = {
-    "CPI m/m": "KXCPI",
-    "Core CPI m/m": "KXCPICORE",
-    "PPI m/m": "KXUSPPI",
     "Non-Farm Employment Change": "KXPAYROLLS",
+    "ADP Nonfarm Employment Change": "KXADP",
     "Unemployment Rate": "KXU3",
+    "Unemployment Claims": "KXJOBLESSCLAIMS",
+    "Challenger Job Cuts": "KXCHCUTS",
+    "CPI m/m": "KXCPI",
+    "CPI y/y": "KXCPIYOY",
+    "Core CPI m/m": "KXCPICORE",
+    "Core CPI y/y": "KXCPICOREYOY",
+    "PPI m/m": "KXUSPPI",
+    "Advance GDP q/q": "KXGDP",
+    "ISM Manufacturing PMI": "KXISMPMI",
+    "Retail Sales m/m": "KXUSRETAIL",
+    "Core PCE Price Index m/m": "KXPCECORE",
+    "Prelim UoM Consumer Sentiment": "KXUSMICHCSP",
 }
 ```
 
-An event title with no entry never triggers a Kalshi lookup at all — same
-"absent, not fabricated" guarantee as every other optional signal in this
-system.
+**Confirmed with no usable Kalshi coverage** (verified live, not left
+unchecked): `Average Hourly Earnings m/m` (Kalshi's `KXREALWAGES` prices
+a different, inflation-adjusted metric, not the raw nominal figure Forex
+Factory reports); `Core PPI m/m` and `Import Prices m/m` (no matching
+series exists at all); `ISM Services PMI` (the series `KXISMSERVICES`/
+`KXUSISMSERV` exist in Kalshi's category listing but currently have zero
+markets — dormant, not usable). These four simply have no entry — same
+"absent, not fabricated" guarantee as every other optional signal —
+revisit if Kalshi adds coverage later.
+
+An event title with no entry never triggers a Kalshi lookup at all.
+
+### FOMC / Federal Funds Rate — a second, parallel mapping
+
+Kalshi has strong, verified coverage for the Fed's actual rate decision
+(`KXFED` — confirmed live: "Will the upper bound of the federal funds
+rate be above X% following the Fed's [date] meeting?"), but
+`EVENT_SURPRISE_DIRECTION` deliberately excludes `"Federal Funds Rate"`/
+`"FOMC Statement"` — they're discrete policy decisions (cut/hold/hike),
+not a continuous forecast-vs-actual number, so they don't fit that dict's
+existing convention. Rather than force a numeric mapping onto a discrete
+decision, this event gets its own small, parallel dict:
+
+```python
+# For FOMC/Federal Funds Rate specifically — a discrete decision, not a
+# forecast-vs-actual numeric surprise, so it can't reuse
+# EVENT_SURPRISE_DIRECTION's convention. A rate hike is unambiguously
+# USD-bullish, a cut USD-bearish — simpler than the numeric case, just a
+# different shape.
+RATE_DECISION_DIRECTION = {
+    "hike": "bullish",
+    "hold": "neutral",
+    "cut": "bearish",
+}
+
+KALSHI_RATE_DECISION_SERIES = {
+    "Federal Funds Rate": "KXFED",
+}
+```
+
+`_build_kalshi_contribution()` (see Blend math below) checks
+`KALSHI_RATE_DECISION_SERIES` for a discrete-decision event title
+separately from `KALSHI_SERIES_BY_EVENT_TITLE`'s numeric-strike lookup —
+the two dicts are mutually exclusive per title, and the direction-mapping
+source (`RATE_DECISION_DIRECTION` vs `EVENT_SURPRISE_DIRECTION`) is
+chosen based on which dict matched. `KXFED`'s markets are themselves
+strike-threshold (e.g. "above 4.25%"), so the same nearest-strike-to-
+forecast selection logic applies — the *interpretation* of "higher than
+this strike" differs (a hike/higher rate is direction `'hike'`, mapped via
+`RATE_DECISION_DIRECTION`), not the strike-selection mechanism itself.
 
 ### `MIN_KALSHI_OPEN_INTEREST` liquidity gate
 
@@ -103,9 +167,14 @@ class KalshiMarketContribution:
 
 Duck-typed identically to the other three contribution types — flows
 through `_weighted_aggregate()`/`_agreement_and_coverage()` unchanged.
-`usd_sentiment` sign via the existing `EVENT_SURPRISE_DIRECTION` mapping
-(zero new direction-mapping logic, same reuse as the print call and trend
-streak). `trust_weight = KALSHI_TRUST_WEIGHT = 0.95` (new constant) —
+`usd_sentiment` sign via `EVENT_SURPRISE_DIRECTION` for the 15
+numeric-forecast events (zero new direction-mapping logic there, same
+reuse as the print call and trend streak) or `RATE_DECISION_DIRECTION`
+for the FOMC/Federal Funds Rate case (see below) — the caller
+(`scoring/backtest_accumulator.py`) already knows which dict matched
+from its title lookup, and passes the resolved direction-mapping value
+straight through rather than `_build_kalshi_contribution()` re-deriving
+it. `trust_weight = KALSHI_TRUST_WEIGHT = 0.95` (new constant) —
 above precursor's `0.9`, since this prices real money directly on the
 *exact* event being scored, not a related-but-different one. Decays like
 a precursor (`PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES`) — tied to a
@@ -157,8 +226,13 @@ event (same "compute once, reuse across instruments" pattern as the
 article bundle, precursor lookup, print call, and trend signal already
 follow):
 
-1. `KALSHI_SERIES_BY_EVENT_TITLE.get(event.title)` — no entry → skip,
-   `kalshi_read = None`.
+1. Look up `event.title` in `KALSHI_SERIES_BY_EVENT_TITLE` first, then
+   `KALSHI_RATE_DECISION_SERIES` if the first misses — the two are
+   mutually exclusive per title. Neither matches → skip,
+   `kalshi_read = None`. Which dict matched also selects the
+   direction-mapping source (`EVENT_SURPRISE_DIRECTION` for the numeric
+   case, `RATE_DECISION_DIRECTION` for the discrete-decision case) used
+   later when `_build_kalshi_contribution()` maps the sign.
 2. `target_strike` is `event.forecast` parsed via
    `data_layer.calendar_feed._parse_numeric()` (the same existing helper
    `usd_surprise_score()`/`classify_surprise()` already use for
