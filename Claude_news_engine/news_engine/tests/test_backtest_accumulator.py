@@ -359,7 +359,8 @@ def test_print_direction_none_call_writes_nothing():
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
-             patch.object(accumulator, "score_print_direction", return_value=None):
+             patch.object(accumulator, "score_print_direction", return_value=None), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
 
