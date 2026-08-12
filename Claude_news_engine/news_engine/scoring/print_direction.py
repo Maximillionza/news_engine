@@ -8,9 +8,14 @@ or an empty article set), but a distinct axis: sentiment.py answers "is
 this article USD-bullish/bearish," this answers "does article language
 suggest this specific number will beat or miss consensus."
 
-Deliberately NOT wired into score_bundle()'s instrument-score math —
-this is an additive, separately-stored signal (see
+Originally NOT wired into score_bundle()'s instrument-score math (an
+additive, separately-stored signal — see
 docs/superpowers/specs/2026-08-11-economic-print-prediction-trend-history-design.md).
+That has since changed: score_bundle() now optionally blends in the
+caller's PrintCall via a PrintCallContribution (see
+docs/superpowers/specs/2026-08-12-trend-history-scoring-feedback-design.md
+and scoring/probability_engine.py) — this module itself still only
+classifies text, it doesn't do the blending.
 """
 from __future__ import annotations
 

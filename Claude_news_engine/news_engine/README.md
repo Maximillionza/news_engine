@@ -323,13 +323,11 @@ Two additive signals, separate from the article-based direction call above:
   past occurrences plus a `summarize_trend()` line ("beat forecast 3 of
   last 4", "trending higher for 2 consecutive releases").
 
-Both are purely additive/display — neither feeds back into
-`score_bundle()`'s instrument scoring or `_is_material_change()`'s
-recording logic. See
+Both were purely additive/display when first shipped — see
 `docs/superpowers/specs/2026-08-11-economic-print-prediction-trend-history-design.md`
-for the full design and the explicit out-of-scope list (numeric print-value
-estimation, feeding the trend back into scoring — deferred to a future pass
-once there's enough real data to know if it's predictive).
+for that original design and its out-of-scope list (numeric print-value
+estimation, feeding the trend back into scoring). The trend-history
+feed-back into scoring has since shipped — see the next subsection.
 
 ### Trend-history feed-back into scoring
 
@@ -414,3 +412,4 @@ protects live scoring from over-trusting.
   are unvalidated guesses, same "don't retune without real evidence"
   discipline as the constants above — revisit once real auto-confirmed
   data accumulates, not before.
+- **`scoring/backtest.py`'s calibration harness and `scripts/run_live_check.py` don't pass `print_call`/`trend_signal` into `score_bundle()`** — only `scoring/backtest_accumulator.py`'s live cycle does. Backtested/live-check accuracy numbers therefore don't reflect the trend-history feed-back feature at all; they measure `score_bundle()` as if it were still article+precursor-only. Revisit if/when calibrating those two constants (`PRINT_CALL_TRUST_WEIGHT`/`TREND_STREAK_TRUST_WEIGHT`) against backtest results specifically — see `docs/superpowers/specs/2026-08-12-trend-history-scoring-feedback-design.md`'s out-of-scope list.
