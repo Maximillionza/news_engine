@@ -441,3 +441,49 @@ def record_print_prediction_if_changed(
     )
     conn.commit()
     return True
+
+
+def get_latest_prediction_for_occurrence(
+    conn: sqlite3.Connection, event_title: str, instrument: str, event_time_utc: dt.datetime,
+) -> Optional[Prediction]:
+    """
+    Most recent prediction snapshot for this EXACT (event_title,
+    instrument, event_time_utc) occurrence — unlike get_latest_prediction()
+    (title+instrument only), this is scoped to the specific occurrence,
+    same reasoning as get_latest_print_prediction()'s occurrence scoping:
+    a title recurs monthly/quarterly with the SAME title but a DIFFERENT
+    event_time_utc each time, so a title-only lookup would leak a prior
+    occurrence's prediction onto an unrelated later one.
+    """
+    row = conn.execute(
+        "SELECT * FROM predictions WHERE event_title = ? AND instrument = ? AND event_time_utc = ? "
+        "ORDER BY scored_at_utc DESC, id DESC LIMIT 1",
+        (event_title, instrument, event_time_utc.isoformat()),
+    ).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    return Prediction(
+        id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
+        event_time_utc=d["event_time_utc"], scored_at_utc=d["scored_at_utc"],
+        probability=d["probability"], direction=d["direction"], confidence=d["confidence"],
+        article_count=d["article_count"], contradiction_flag=bool(d["contradiction_flag"]),
+    )
+
+
+def get_outcome(
+    conn: sqlite3.Connection, event_title: str, instrument: str, event_time_utc: dt.datetime,
+) -> Optional[Outcome]:
+    """Confirmed outcome for this exact occurrence, or None if not yet confirmed — never fabricated."""
+    row = conn.execute(
+        "SELECT * FROM outcomes WHERE event_title = ? AND instrument = ? AND event_time_utc = ?",
+        (event_title, instrument, event_time_utc.isoformat()),
+    ).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    return Outcome(
+        id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
+        event_time_utc=d["event_time_utc"], actual_direction=d["actual_direction"],
+        actual_move_note=d["actual_move_note"], confirmed_at_utc=d["confirmed_at_utc"],
+    )

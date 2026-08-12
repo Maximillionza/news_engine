@@ -387,6 +387,53 @@ def test_get_latest_print_prediction_is_scoped_to_occurrence_not_title():
     print("PASS\n")
 
 
+def test_get_latest_prediction_for_occurrence_scoped_not_title_leak():
+    print("=== backtest_store: get_latest_prediction_for_occurrence does NOT leak a prior occurrence's prediction onto a different one ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        july_time = dt.datetime(2026, 7, 30, 18, 0, tzinfo=UTC_TZ)
+        august_time = dt.datetime(2026, 9, 17, 18, 0, tzinfo=UTC_TZ)
+        store.record_prediction(
+            conn, "FOMC Statement", "XAUUSD", july_time,
+            0.6, "bullish", 0.5, 40, False, scored_at_utc=july_time,
+        )
+
+        assert store.get_latest_prediction_for_occurrence(conn, "FOMC Statement", "XAUUSD", august_time) is None
+
+        latest = store.get_latest_prediction_for_occurrence(conn, "FOMC Statement", "XAUUSD", july_time)
+        assert latest is not None
+        assert latest.probability == 0.6
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_outcome_returns_none_when_unconfirmed():
+    print("=== backtest_store: get_outcome returns None when no outcome has been confirmed yet, not an error ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 7, 30, 18, 0, tzinfo=UTC_TZ)
+        assert store.get_outcome(conn, "FOMC Statement", "XAUUSD", event_time) is None
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_outcome_returns_confirmed_outcome():
+    print("=== backtest_store: get_outcome returns the confirmed outcome for this exact occurrence ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 7, 30, 18, 0, tzinfo=UTC_TZ)
+        store.record_outcome(conn, "FOMC Statement", "XAUUSD", event_time, "bullish", "gold rallied on dovish tone")
+
+        outcome = store.get_outcome(conn, "FOMC Statement", "XAUUSD", event_time)
+        assert outcome is not None
+        assert outcome.actual_direction == "bullish"
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_record_and_count_predictions()
     test_count_predictions_scoped_to_event_occurrence_not_just_title()
@@ -407,4 +454,7 @@ if __name__ == "__main__":
     test_record_print_prediction_if_changed_writes_on_direction_flip()
     test_get_latest_print_prediction_none_when_nothing_recorded()
     test_get_latest_print_prediction_is_scoped_to_occurrence_not_title()
+    test_get_latest_prediction_for_occurrence_scoped_not_title_leak()
+    test_get_outcome_returns_none_when_unconfirmed()
+    test_get_outcome_returns_confirmed_outcome()
     print("All backtest_store tests passed.")
