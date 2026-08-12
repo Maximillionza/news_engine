@@ -107,6 +107,26 @@ def test_compute_trend_signal_all_in_line_returns_none():
     print("PASS\n")
 
 
+def test_compute_trend_signal_single_row_saturates_tally_at_one():
+    print("=== compute_trend_signal: a single confirmed row can never reach MIN_STREAK_LENGTH, so it lands in the tally branch at strength=1.0 ===")
+    rows = [_row(8, "higher")]
+    signal = compute_trend_signal(rows)
+    assert signal is not None
+    assert signal.direction == "higher"
+    assert signal.strength == 1.0
+    print("PASS\n")
+
+
+def test_compute_trend_signal_in_line_lead_then_unanimous_still_saturates():
+    print("=== compute_trend_signal: an in_line row breaks the streak check without affecting the tally, so a short unanimous run behind it still saturates at 1.0 via the tally branch ===")
+    rows = [_row(8, "in_line"), _row(7, "higher"), _row(6, "higher")]
+    signal = compute_trend_signal(rows)
+    assert signal is not None
+    assert signal.direction == "higher"
+    assert signal.strength == 1.0
+    print("PASS\n")
+
+
 def test_summarize_trend_and_compute_trend_signal_agree_on_no_signal_cases():
     print("=== parity: summarize_trend's 'Mixed'/'Not enough history' cases correspond to compute_trend_signal returning None ===")
     mixed_rows = [_row(8, "higher"), _row(7, "lower"), _row(6, "higher"), _row(5, "lower")]
@@ -132,5 +152,7 @@ if __name__ == "__main__":
     test_compute_trend_signal_tally_majority_strength()
     test_compute_trend_signal_mixed_returns_none()
     test_compute_trend_signal_all_in_line_returns_none()
+    test_compute_trend_signal_single_row_saturates_tally_at_one()
+    test_compute_trend_signal_in_line_lead_then_unanimous_still_saturates()
     test_summarize_trend_and_compute_trend_signal_agree_on_no_signal_cases()
     print("All webapp_trend tests passed.")
