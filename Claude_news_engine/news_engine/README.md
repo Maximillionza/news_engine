@@ -364,6 +364,42 @@ session's first live CPI release produced one correct print call and one
 wrong one out of two, exactly the kind of thin sample this design
 protects live scoring from over-trusting.
 
+### History tab
+
+A third dashboard tab ("History", alongside Dashboard/Calendar) shows a
+consolidated, reviewable record of the engine's calls against what
+actually happened — `webapp/history.py`'s `build_print_call_history()`
+merges two independent row sources:
+
+- **Numeric events** (CPI, PPI, NFP, etc.) — `webapp/store.py`'s
+  `event_history` (resolved occurrences: Previous/Forecast/Actual) joined
+  with `scoring/backtest_store.py`'s `print_predictions` (the latest call
+  per occurrence), Confirmed/Missed via exact
+  `predicted_vs_forecast`/`surprise_direction` equality. A call at or
+  below `NO_HIT_CONFIDENCE` (0.15) is shown but excluded from judging
+  ("No strong call").
+- **Text-only events** (FOMC Statement, Press Conference, and anything
+  else with no forecast/actual figure at all — a data-driven distinction,
+  `forecast IS NULL AND actual IS NULL` in `event_history`, not a
+  lexicon-coverage check) — one row per instrument using the
+  accumulator's regular article-based sentiment call
+  (`scoring/backtest_store.py`'s `predictions` table), Confirmed/Missed
+  against a real confirmed `outcomes` row if one exists, "Awaiting
+  confirmation" otherwise (outcome confirmation is a manual/`--auto` step
+  in this system, never automatic).
+
+Only occurrences **with** a real call appear in either case — neither
+condition alone. A `(= prev)` badge marks numeric occurrences where
+`actual` exactly matches `previous` — display-only context (real pattern
+for inflation-type indicators specifically, per research done during this
+feature's design; never fed into scoring or the Confirmed/Missed
+judgment — see
+`docs/superpowers/specs/2026-08-12-history-tab-design.md`).
+
+Same read-only cross-pipeline pattern as the print-call badge and trend
+signal before it: opens a connection to the accumulator's DB, never
+writes to it, fails open to an empty result on any read error.
+
 ## Known gaps / things to watch
 
 - **Sentiment scoring now has 3 tiers**, cheapest/most-deterministic
