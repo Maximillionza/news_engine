@@ -363,6 +363,114 @@ def test_cross_pipeline_read_failure_fails_open_to_empty_list():
     print("PASS\n")
 
 
+def test_pre_filter_limit_does_not_starve_rare_row_type():
+    print("=== build_print_call_history: a rare row type is not starved out by the display limit being applied to the pre-filter ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        base_time = dt.datetime(2026, 8, 1, 12, 0, tzinfo=UTC_TZ)
+        now = base_time + dt.timedelta(days=60)
+
+        dash_conn = store.get_connection(dash_db)
+        bt_conn = backtest_store.get_connection(backtest_db)
+
+        # 60 common numeric events, all more recent than the one FOMC event below —
+        # with a naive limit=50 pre-filter on get_resolved_event_history, these
+        # alone would already exceed the display limit and could crowd out
+        # anything queried with the SAME limit in a separate, unrelated source.
+        for i in range(60):
+            event_time = base_time + dt.timedelta(days=i)
+            common_event = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High", event_time_utc=event_time,
+                forecast="0.1%", previous="0.1%", actual="0.1%",
+            )
+            store.upsert_event_history(dash_conn, common_event, "in_line", now=event_time)
+
+        # One old, rare text-only event (FOMC-style) — must still survive the merge.
+        fomc_time = base_time - dt.timedelta(days=5)
+        fomc_event = EconomicEvent(
+            title="FOMC Statement", country="USD", impact="High", event_time_utc=fomc_time,
+            forecast=None, previous=None, actual=None,
+        )
+        store.upsert_event_history(dash_conn, fomc_event, None, now=fomc_time)
+        backtest_store.record_prediction(
+            bt_conn, "FOMC Statement", "XAUUSD", fomc_time,
+            0.6, "bullish", 0.5, 40, False, scored_at_utc=fomc_time,
+        )
+        dash_conn.close()
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history(limit=50, now=now)
+
+        assert any(r.event_title == "FOMC Statement" for r in rows), (
+            "the rare text-only row was starved out of the pre-filter by the unrelated numeric rows sharing the same limit"
+        )
+    print("PASS\n")
+
+
+def test_null_surprise_direction_is_not_judged_as_missed():
+    print("=== build_print_call_history: a resolved event with surprise_direction=None is NOT judged Missed, stays unjudged ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        # actual is set (resolved) but surprise_direction is None — e.g. classify_surprise()
+        # failed to parse it, or the title fell out of EVENT_SURPRISE_DIRECTION coverage.
+        store.upsert_event_history(
+            dash_conn, _resolved_event("CPI m/m", event_time, "0.1%", "-0.4%", "<0.1%"),
+            None, now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_print_prediction_if_changed(
+            bt_conn, "CPI m/m", event_time,
+            PrintCall(direction="higher", confidence=0.6, article_count=50), now=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].outcome is None  # NOT "Missed" — surprise_direction was never known
+    print("PASS\n")
+
+
+def test_text_only_low_confidence_prediction_not_judged():
+    print("=== build_print_call_history: a text-only event's low-confidence prediction is not judged, even with a confirmed outcome ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 17, 18, 0, tzinfo=UTC_TZ)
+        now = event_time + dt.timedelta(hours=1)
+
+        dash_conn = store.get_connection(dash_db)
+        store.upsert_event_history(
+            dash_conn, _resolved_event("FOMC Statement", event_time, None, None, None),
+            None, now=now,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, "FOMC Statement", "XAUUSD", event_time,
+            0.51, "neutral", 0.009, 40, False, scored_at_utc=event_time,  # confidence=0.9%, well below the floor
+        )
+        backtest_store.record_outcome(bt_conn, "FOMC Statement", "XAUUSD", event_time, "neutral", "muted reaction")
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history(now=now)
+
+        assert len(rows) == 1
+        assert rows[0].outcome is None  # NOT judged, despite a confirmed outcome existing and technically matching
+    print("PASS\n")
+
+
 def test_empty_result_when_nothing_resolved():
     print("=== build_print_call_history: no resolved history at all returns an empty list, not an error ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -390,5 +498,8 @@ if __name__ == "__main__":
     test_future_text_only_event_excluded()
     test_partially_numeric_event_not_misclassified_as_text_only()
     test_cross_pipeline_read_failure_fails_open_to_empty_list()
+    test_pre_filter_limit_does_not_starve_rare_row_type()
+    test_null_surprise_direction_is_not_judged_as_missed()
+    test_text_only_low_confidence_prediction_not_judged()
     test_empty_result_when_nothing_resolved()
     print("All webapp_history tests passed.")

@@ -33,6 +33,22 @@ from webapp.store import get_connection, get_resolved_event_history, get_text_on
 
 DEFAULT_HISTORY_LIMIT = 50
 
+# Wide pre-filter for both source queries — must stay decoupled from the
+# display `limit` (default 50), or a rare row type (FOMC, ~8x/year) can be
+# starved out before the merge even happens by far more common events
+# (bond auctions, foreign central bank speeches, etc.) eating the budget.
+# Matches webapp.store's own get_resolved_event_history()/
+# get_text_only_resolved_events() default of 200.
+PRE_FILTER_LIMIT = 200
+
+# Text-only rows (no numeric forecast at all) get the same shrug-exclusion
+# floor as numeric rows' NO_HIT_CONFIDENCE, for the same record-integrity
+# reason: a near-zero-conviction prediction that happens to land right by
+# chance shouldn't pad the Confirmed/Missed track record. Same numeric
+# value as NO_HIT_CONFIDENCE for consistency, even though it's a different
+# metric (score_bundle()'s agreement×coverage, not a lexicon hit-count).
+MIN_TEXT_EVENT_CONFIDENCE = NO_HIT_CONFIDENCE
+
 
 @dataclass
 class HistoryRow:
@@ -73,8 +89,8 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
 
     dash_conn = get_connection()
     try:
-        numeric_resolved = get_resolved_event_history(dash_conn, limit=limit)
-        text_only_resolved = get_text_only_resolved_events(dash_conn, now=now, limit=limit)
+        numeric_resolved = get_resolved_event_history(dash_conn, limit=PRE_FILTER_LIMIT)
+        text_only_resolved = get_text_only_resolved_events(dash_conn, now=now, limit=PRE_FILTER_LIMIT)
     finally:
         dash_conn.close()
 
@@ -100,7 +116,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                 continue  # resolved event, but never scored by the accumulator — excluded, not shown with blanks
 
             outcome: Optional[str] = None
-            if call.confidence > NO_HIT_CONFIDENCE:
+            if call.confidence > NO_HIT_CONFIDENCE and event.surprise_direction is not None:
                 outcome = "Confirmed" if call.predicted_vs_forecast == event.surprise_direction else "Missed"
 
             rows.append(HistoryRow(
@@ -134,7 +150,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                     outcome_row = None
 
                 text_outcome: Optional[str] = None
-                if outcome_row is not None:
+                if outcome_row is not None and prediction.confidence > MIN_TEXT_EVENT_CONFIDENCE:
                     text_outcome = "Confirmed" if outcome_row.actual_direction == prediction.direction else "Missed"
 
                 rows.append(HistoryRow(
