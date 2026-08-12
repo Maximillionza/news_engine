@@ -58,7 +58,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from config.settings import PRE_EVENT_WINDOW_HOURS
+from config.settings import MIN_OCCURRENCES_FOR_TREND_PRIOR, PRE_EVENT_WINDOW_HOURS
 from data_layer.calendar_feed import fetch_calendar, filter_relevant_events, events_in_pre_window, find_precursor_events
 from data_layer.event_context import build_event_news_bundle
 from data_layer.rss_sources import build_all_preview_sources
@@ -68,6 +68,8 @@ from scoring.backtest_store import (
     get_connection, record_prediction, get_latest_prediction, record_check, count_recent_checks,
     record_print_prediction_if_changed,
 )
+from webapp.store import get_connection as get_dashboard_connection, get_event_history, DB_PATH as DASHBOARD_DB_PATH
+from webapp.trend import compute_trend_signal
 
 # A same-direction probability move smaller than this is "supporting" the
 # current sentiment, not changing it — no write. 0.10 = 10 percentage
@@ -125,6 +127,36 @@ def _is_material_change(new_direction: str, new_probability: float, current_dire
     # in IEEE754, which would otherwise fail an exact-boundary >= comparison
     # for what's really a value AT the threshold.
     return abs(new_probability - current_probability) >= MATERIAL_CHANGE_THRESHOLD_PROBABILITY - 1e-9
+
+
+def _read_trend_signal(event_title: str):
+    """
+    Reads webapp/store.py's event_history for this event title via a
+    short-lived READ-ONLY connection to the dashboard's own DB — the
+    accumulator writes nothing there, mirroring the existing reverse
+    precedent (webapp/app.py already reads scoring/backtest_store.py's DB
+    read-only for display). Returns None (fail open, never crashes the
+    cycle) if the dashboard DB is unreachable, or if fewer than
+    MIN_OCCURRENCES_FOR_TREND_PRIOR confirmed occurrences exist yet —
+    trusting a thin pattern enough to nudge a live prediction is a bigger
+    claim than merely displaying it (see webapp/trend.py's own, looser
+    MIN_CONFIRMED_ROWS_FOR_A_TREND=2 display-only gate for contrast).
+    """
+    try:
+        conn = get_dashboard_connection(DASHBOARD_DB_PATH)
+    except Exception as exc:  # noqa: BLE001 — a missing/locked dashboard DB must not crash the accumulator cycle
+        print(f"[backtest_accumulator] WARNING: could not read dashboard event_history for {event_title}: {exc}")
+        return None
+
+    try:
+        rows = get_event_history(conn, event_title)
+    finally:
+        conn.close()
+
+    confirmed = [r for r in rows if r.surprise_direction is not None]
+    if len(confirmed) < MIN_OCCURRENCES_FOR_TREND_PRIOR:
+        return None
+    return compute_trend_signal(confirmed)
 
 
 def compute_accumulator_interval_seconds(
@@ -222,9 +254,16 @@ def run_accumulator_cycle(
                 if written:
                     print(f"[backtest_accumulator] print call for {event.title}: {print_call.direction} ({print_call.confidence:.0%} confidence, {print_call.article_count} articles)")
 
+            trend_signal = _read_trend_signal(event.title)
+            if trend_signal is not None:
+                print(f"[backtest_accumulator] trend signal for {event.title}: {trend_signal.direction} (strength {trend_signal.strength:.2f})")
+
             for instrument in instruments:
                 try:
-                    result = score_bundle(bundle, instrument, precursor_events=precursors)
+                    result = score_bundle(
+                        bundle, instrument, precursor_events=precursors,
+                        print_call=print_call, trend_signal=trend_signal,
+                    )
                 except Exception as exc:  # noqa: BLE001 — one pair's failure must not stop the others
                     print(f"[backtest_accumulator] WARNING: scoring failed for {instrument}/{event.title}: {exc}")
                     continue

@@ -18,6 +18,7 @@ from scoring.probability_engine import Direction, ProbabilityResult
 import scoring.backtest_accumulator as accumulator
 import scoring.backtest_store as store
 import scoring.print_direction as accumulator_print_direction
+import webapp.store as webapp_store
 
 
 def _fake_event(hours_from_now, now):
@@ -361,6 +362,149 @@ def test_print_direction_none_call_writes_nothing():
     print("PASS\n")
 
 
+def test_trend_signal_passed_to_score_bundle_when_gate_met():
+    print("=== accumulator: a trend_signal is computed and passed to score_bundle() when >=3 confirmed occurrences exist ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        dashboard_db_path = Path(tmp) / "dashboard.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+        event.title = "CPI m/m"  # must be in EVENT_SURPRISE_DIRECTION for the gate to matter downstream
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+
+        # Seed 3 confirmed occurrences in the dashboard's event_history table.
+        dash_conn = webapp_store.get_connection(dashboard_db_path)
+        for month in (5, 6, 7):
+            hist_event = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High",
+                event_time_utc=dt.datetime(2026, month, 12, 12, 30, tzinfo=UTC_TZ),
+                forecast="0.3%", previous="0.3%", actual="0.5%",
+            )
+            webapp_store.upsert_event_history(dash_conn, hist_event, "higher", now=hist_event.event_time_utc)
+        dash_conn.close()
+
+        captured_kwargs = {}
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None):
+            captured_kwargs["trend_signal"] = trend_signal
+            return _fake_result()
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+             patch.object(accumulator, "score_print_direction", return_value=None), \
+             patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path):
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+        assert captured_kwargs["trend_signal"] is not None
+        assert captured_kwargs["trend_signal"].direction == "higher"
+    print("PASS\n")
+
+
+def test_trend_signal_is_none_when_gate_not_met():
+    print("=== accumulator: trend_signal is None when fewer than MIN_OCCURRENCES_FOR_TREND_PRIOR confirmed occurrences exist ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        dashboard_db_path = Path(tmp) / "dashboard.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+        event.title = "CPI m/m"
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+
+        # Seed only 2 confirmed occurrences — below MIN_OCCURRENCES_FOR_TREND_PRIOR=3.
+        dash_conn = webapp_store.get_connection(dashboard_db_path)
+        for month in (6, 7):
+            hist_event = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High",
+                event_time_utc=dt.datetime(2026, month, 12, 12, 30, tzinfo=UTC_TZ),
+                forecast="0.3%", previous="0.3%", actual="0.5%",
+            )
+            webapp_store.upsert_event_history(dash_conn, hist_event, "higher", now=hist_event.event_time_utc)
+        dash_conn.close()
+
+        captured_kwargs = {}
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None):
+            captured_kwargs["trend_signal"] = trend_signal
+            return _fake_result()
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+             patch.object(accumulator, "score_print_direction", return_value=None), \
+             patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path):
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+        assert captured_kwargs["trend_signal"] is None
+    print("PASS\n")
+
+
+def test_trend_signal_is_none_when_dashboard_db_unreachable():
+    print("=== accumulator: a failed dashboard-DB read fails OPEN to trend_signal=None, does not crash the cycle ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+        event.title = "CPI m/m"
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+
+        captured_kwargs = {}
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None):
+            captured_kwargs["trend_signal"] = trend_signal
+            return _fake_result()
+
+        # Nonexistent path in a directory that doesn't exist — get_connection's
+        # executescript() will raise (sqlite3.OperationalError: unable to open database file).
+        unreachable_dashboard_db = Path(tmp) / "nonexistent_subdir" / "dashboard.db"
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+             patch.object(accumulator, "score_print_direction", return_value=None), \
+             patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", unreachable_dashboard_db):
+
+            events_result = accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+        assert events_result is not None  # cycle completed, did not crash/return None
+        assert captured_kwargs["trend_signal"] is None
+    print("PASS\n")
+
+
+def test_print_call_passed_to_score_bundle():
+    print("=== accumulator: the already-computed print_call is passed through to score_bundle() ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        dashboard_db_path = Path(tmp) / "dashboard.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+        fake_call = accumulator_print_direction.PrintCall(direction="higher", confidence=0.6, article_count=2)
+
+        captured_kwargs = {}
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None):
+            captured_kwargs["print_call"] = print_call
+            return _fake_result()
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+             patch.object(accumulator, "score_print_direction", return_value=fake_call), \
+             patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path):
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+        assert captured_kwargs["print_call"] is fake_call
+    print("PASS\n")
+
+
 def test_precursor_events_uses_unfiltered_calendar_not_high_impact_only():
     print("=== accumulator: precursor lookup uses the FULL unfiltered calendar, not the High-impact-only filtered list ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -417,7 +561,7 @@ def test_failed_scoring_for_one_pair_does_not_stop_others():
         now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
         event = _fake_event(hours_from_now=20, now=now)
 
-        def flaky_score_bundle(bundle, instrument, precursor_events=None):
+        def flaky_score_bundle(bundle, instrument, precursor_events=None, print_call=None, trend_signal=None):
             if instrument == "XAUUSD":
                 raise Exception("scoring blew up")
             return _fake_result()
@@ -489,6 +633,10 @@ if __name__ == "__main__":
     test_precursor_events_found_and_passed_to_score_bundle()
     test_print_direction_call_recorded_once_per_event()
     test_print_direction_none_call_writes_nothing()
+    test_trend_signal_passed_to_score_bundle_when_gate_met()
+    test_trend_signal_is_none_when_gate_not_met()
+    test_trend_signal_is_none_when_dashboard_db_unreachable()
+    test_print_call_passed_to_score_bundle()
     test_precursor_events_uses_unfiltered_calendar_not_high_impact_only()
     test_high_impact_only_no_medium_widening()
     test_failed_scoring_for_one_pair_does_not_stop_others()
