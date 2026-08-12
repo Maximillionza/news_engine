@@ -192,11 +192,12 @@ EVENT_SURPRISE_DIRECTION = {
 # Phrase-based lexicon for scoring/print_direction.py's print-surprise call
 # — "will THIS release come in higher or lower than forecast," derived from
 # article language, distinct from scoring/sentiment.py's general USD-
-# directional lexicon. Only the 4 highest-traffic events (from
-# EVENT_SURPRISE_DIRECTION) get an entry for this first pass; an event
-# title with no entry here always returns None from score_print_direction()
-# — never a guessed call. Adding coverage for another event later is a
-# config-only change here, no code changes required.
+# directional lexicon. Initial 4 highest-traffic events (from
+# EVENT_SURPRISE_DIRECTION) plus PPI m/m/Core PPI m/m (added ahead of the
+# 2026-08-13 PPI release); an event title with no entry here always
+# returns None from score_print_direction() — never a guessed call.
+# Adding coverage for another event later is a config-only change here,
+# no code changes required.
 PRINT_SURPRISE_LEXICON = {
     "CPI m/m": {
         "higher": ["sticky inflation", "hotter than expected", "upside surprise", "inflation accelerat"],
@@ -213,6 +214,14 @@ PRINT_SURPRISE_LEXICON = {
     "Unemployment Rate": {
         "higher": ["rate ticks up", "unemployment rises", "labor market cooling"],
         "lower": ["rate ticks down", "unemployment falls", "labor market tightening"],
+    },
+    "PPI m/m": {
+        "higher": ["producer prices surge", "hotter than expected", "upside surprise", "wholesale prices rise"],
+        "lower": ["producer prices cool", "softer than expected", "downside surprise", "wholesale prices fall"],
+    },
+    "Core PPI m/m": {
+        "higher": ["producer prices surge", "hotter than expected", "upside surprise", "wholesale prices rise"],
+        "lower": ["producer prices cool", "softer than expected", "downside surprise", "wholesale prices fall"],
     },
 }
 

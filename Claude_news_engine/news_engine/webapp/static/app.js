@@ -54,7 +54,7 @@ async function removeSymbol(ticker) {
 function directionLabel(direction) {
   if (direction === "bullish") return "BUY";
   if (direction === "bearish") return "SELL";
-  return "HOLD";
+  return "INDECISIVE";
 }
 
 function directionClass(direction) {

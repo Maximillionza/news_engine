@@ -66,6 +66,24 @@ def test_unanimous_lower_hits():
     print("PASS\n")
 
 
+def test_ppi_lexicon_coverage_higher_and_lower():
+    print("=== score_print_direction: PPI m/m and Core PPI m/m have real lexicon coverage (added ahead of the 2026-08-13 release) ===")
+    higher_bundle = _bundle("PPI m/m", [
+        _article("Producer prices surge past estimates, wholesale prices rise sharply"),
+    ])
+    higher_call = score_print_direction(higher_bundle)
+    assert higher_call is not None
+    assert higher_call.direction == "higher"
+
+    lower_bundle = _bundle("Core PPI m/m", [
+        _article("Producer prices cool more than expected, downside surprise for wholesale costs"),
+    ])
+    lower_call = score_print_direction(lower_bundle)
+    assert lower_call is not None
+    assert lower_call.direction == "lower"
+    print("PASS\n")
+
+
 def test_mixed_hits_lower_confidence_correct_majority():
     print("=== score_print_direction: mixed higher/lower hits picks the majority side with lower confidence than unanimous ===")
     bundle = _bundle("CPI m/m", [
@@ -106,6 +124,7 @@ if __name__ == "__main__":
     test_no_lexicon_entry_returns_none()
     test_unanimous_higher_hits_high_confidence()
     test_unanimous_lower_hits()
+    test_ppi_lexicon_coverage_higher_and_lower()
     test_mixed_hits_lower_confidence_correct_majority()
     test_zero_hits_returns_in_line_low_confidence()
     test_no_articles_returns_none()
