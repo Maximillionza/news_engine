@@ -267,6 +267,65 @@ MIN_OCCURRENCES_FOR_TREND_PRIOR = 3
 # the whole window it's eligible to be found in.
 PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES = PRE_EVENT_WINDOW_HOURS * 60
 
+# --- Kalshi prediction-market integration ---
+# Kalshi (kalshi.com) is a CFTC-regulated prediction-market exchange with
+# free, unauthenticated public market-data access. Confirmed live this
+# session: real, active series exist for 15 of this system's 19 tracked
+# high-impact USD events. Config-only-to-extend, same pattern as
+# PRINT_SURPRISE_LEXICON — an event title with no entry here never
+# triggers a Kalshi lookup at all.
+KALSHI_SERIES_BY_EVENT_TITLE = {
+    "Non-Farm Employment Change": "KXPAYROLLS",
+    "ADP Nonfarm Employment Change": "KXADP",
+    "Unemployment Rate": "KXU3",
+    "Unemployment Claims": "KXJOBLESSCLAIMS",
+    "Challenger Job Cuts": "KXCHCUTS",
+    "CPI m/m": "KXCPI",
+    "CPI y/y": "KXCPIYOY",
+    "Core CPI m/m": "KXCPICORE",
+    "Core CPI y/y": "KXCPICOREYOY",
+    "PPI m/m": "KXUSPPI",
+    "Advance GDP q/q": "KXGDP",
+    "ISM Manufacturing PMI": "KXISMPMI",
+    "Retail Sales m/m": "KXUSRETAIL",
+    "Core PCE Price Index m/m": "KXPCECORE",
+    "Prelim UoM Consumer Sentiment": "KXUSMICHCSP",
+}
+# Confirmed with NO usable Kalshi coverage (verified live, not left
+# unchecked): Average Hourly Earnings m/m (Kalshi's closest match prices
+# a different, inflation-adjusted metric), Core PPI m/m and Import
+# Prices m/m (no matching series exists), ISM Services PMI (series
+# exists but has zero markets currently listed — dormant). These four
+# simply have no entry here.
+
+# FOMC/Federal Funds Rate is a discrete cut/hold/hike DECISION, not a
+# continuous forecast-vs-actual number — it can't reuse
+# EVENT_SURPRISE_DIRECTION's convention, so it gets its own small,
+# parallel mapping. Mutually exclusive with KALSHI_SERIES_BY_EVENT_TITLE
+# per title — an event title matches at most one of the two dicts.
+RATE_DECISION_DIRECTION = {
+    "hike": "bullish",
+    "hold": "neutral",
+    "cut": "bearish",
+}
+KALSHI_RATE_DECISION_SERIES = {
+    "Federal Funds Rate": "KXFED",
+}
+
+# A Kalshi market whose open_interest is below this floor is treated as
+# NO signal at all — same "contribute nothing, not a diluted nudge"
+# pattern already used for in_line print calls and thin trend history.
+# Protects the highest-trust-weight contribution in the system from
+# being driven by an illiquid, easily-skewed price (observed live: some
+# Kalshi strikes currently show zero 24h volume).
+MIN_KALSHI_OPEN_INTEREST = 10.0
+
+# Trust weight for a Kalshi market read when blended into score_bundle()
+# — above PRECURSOR_TRUST_WEIGHT (0.9), since this prices real money
+# directly on the EXACT event being scored, not a related-but-different
+# one via a structured surprise.
+KALSHI_TRUST_WEIGHT = 0.95
+
 # How many "percent-surprise units" it takes to saturate the surprise
 # score toward +-1.0 — same tanh-saturation idea as _score_to_probability's
 # k. Untuned placeholder, same honesty caveat as every other fixed
