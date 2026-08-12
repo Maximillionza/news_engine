@@ -224,6 +224,30 @@ PRINT_SURPRISE_LEXICON = {
 # tell apart).
 PRECURSOR_TRUST_WEIGHT = 0.9
 
+# Trust weight for THIS occurrence's print-direction call
+# (scoring/print_direction.py's score_print_direction()) when blended into
+# score_bundle() — below PRECURSOR_TRUST_WEIGHT (a real released number for
+# a DIFFERENT event, near-certain) since this is inference about a number
+# that hasn't printed yet, even though it's already an aggregate read
+# across the whole article bundle.
+PRINT_CALL_TRUST_WEIGHT = 0.5
+
+# Trust weight for the event's historical beat/miss streak
+# (webapp/trend.py's compute_trend_signal()) when blended into
+# score_bundle() — weaker than PRINT_CALL_TRUST_WEIGHT, since a streak is
+# a pattern over PAST events, not evidence about this one.
+TREND_STREAK_TRUST_WEIGHT = 0.3
+
+# Minimum confirmed (non-pending) historical occurrences required before
+# the trend streak contributes to scoring AT ALL — enforced by
+# scoring/backtest_accumulator.py before it ever calls
+# webapp.trend.compute_trend_signal(). Below this, zero contribution, not
+# a low-weight one. Deliberately stricter than webapp/trend.py's own
+# MIN_CONFIRMED_ROWS_FOR_A_TREND=2 (which only gates the DISPLAY string) —
+# trusting a 2-3 event pattern to nudge a live prediction is a bigger
+# claim than merely showing it on a dashboard.
+MIN_OCCURRENCES_FOR_TREND_PRIOR = 3
+
 # Precursors use their OWN, much slower time-decay half-life than article
 # sentiment. A structured forecast-vs-actual print doesn't go "stale"
 # minute to minute the way news chatter does — ADP's number is exactly as

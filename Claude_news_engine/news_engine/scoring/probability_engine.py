@@ -33,13 +33,16 @@ from config.settings import (
     CONTRADICTION_MIN_MAGNITUDE,
     ENABLE_FINBERT_SENTIMENT,
     ENABLE_LLM_SENTIMENT,
+    EVENT_SURPRISE_DIRECTION,
     INSTRUMENTS,
     PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES,
     PRECURSOR_TRUST_WEIGHT,
+    PRINT_CALL_TRUST_WEIGHT,
     RECENT_WINDOW_HOURS,
     RISK_SENTIMENT_DAMPENING,
     SOURCE_TRUST_WEIGHTS,
     TIME_DECAY_HALF_LIFE_MINUTES,
+    TREND_STREAK_TRUST_WEIGHT,
     UTC_TZ,
 )
 from data_layer.calendar_feed import EconomicEvent
@@ -78,6 +81,36 @@ class PrecursorContribution:
     special-case it.
     """
     event: EconomicEvent
+    usd_sentiment: float
+    trust_weight: float
+    time_weight: float
+    combined_weight: float
+
+
+@dataclass
+class PrintCallContribution:
+    """
+    Audit trail for this occurrence's print-direction call
+    (scoring/print_direction.py's PrintCall), mapped onto the USD axis via
+    EVENT_SURPRISE_DIRECTION. Duck-typed like PrecursorContribution — same
+    usd_sentiment/combined_weight fields — so it flows through the
+    existing weighted-average, agreement, and coverage math unchanged.
+    """
+    event_title: str
+    usd_sentiment: float
+    trust_weight: float
+    time_weight: float
+    combined_weight: float
+
+
+@dataclass
+class TrendStreakContribution:
+    """
+    Audit trail for the event's historical beat/miss streak
+    (webapp/trend.py's TrendSignal), mapped onto the USD axis via
+    EVENT_SURPRISE_DIRECTION. Duck-typed like PrecursorContribution.
+    """
+    event_title: str
     usd_sentiment: float
     trust_weight: float
     time_weight: float
@@ -226,6 +259,66 @@ def _build_precursor_contributions(
     return contributions
 
 
+def _build_print_call_contribution(
+    print_call,  # PrintCall | None — duck-typed, no import from scoring.print_direction needed
+    event: EconomicEvent,
+    as_of: dt.datetime,
+):
+    """
+    Returns None (no contribution) if print_call is None, its direction is
+    'in_line' (no lean either way), or the event's title has no
+    EVENT_SURPRISE_DIRECTION entry (defensive — PRINT_SURPRISE_LEXICON is
+    a subset of that dict, so this should never actually miss).
+    """
+    if print_call is None or print_call.direction == "in_line":
+        return None
+    surprise_map = EVENT_SURPRISE_DIRECTION.get(event.title)
+    if surprise_map is None:
+        return None
+
+    raw = print_call.confidence if print_call.direction == "higher" else -print_call.confidence
+    usd_sentiment = raw if surprise_map == "higher_bullish" else -raw
+
+    age_minutes = max(0.0, (as_of - event.event_time_utc).total_seconds() / 60.0)
+    time_w = 0.5 ** (age_minutes / PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES)
+    return PrintCallContribution(
+        event_title=event.title,
+        usd_sentiment=usd_sentiment,
+        trust_weight=PRINT_CALL_TRUST_WEIGHT,
+        time_weight=time_w,
+        combined_weight=PRINT_CALL_TRUST_WEIGHT * time_w,
+    )
+
+
+def _build_trend_streak_contribution(
+    trend_signal,  # TrendSignal | None — duck-typed (.direction, .strength), no import from webapp.trend
+    event: EconomicEvent,
+):
+    """
+    Returns None if trend_signal is None (either the accumulator's
+    MIN_OCCURRENCES_FOR_TREND_PRIOR gate wasn't met, or
+    compute_trend_signal() itself found no clean majority) or the event's
+    title has no EVENT_SURPRISE_DIRECTION entry. No time decay — a
+    historical streak isn't tied to a specific timestamp.
+    """
+    if trend_signal is None:
+        return None
+    surprise_map = EVENT_SURPRISE_DIRECTION.get(event.title)
+    if surprise_map is None:
+        return None
+
+    raw = trend_signal.strength if trend_signal.direction == "higher" else -trend_signal.strength
+    usd_sentiment = raw if surprise_map == "higher_bullish" else -raw
+
+    return TrendStreakContribution(
+        event_title=event.title,
+        usd_sentiment=usd_sentiment,
+        trust_weight=TREND_STREAK_TRUST_WEIGHT,
+        time_weight=1.0,
+        combined_weight=TREND_STREAK_TRUST_WEIGHT,
+    )
+
+
 def _weighted_aggregate(contributions: list[ArticleContribution]) -> float:
     total_weight = sum(c.combined_weight for c in contributions)
     if total_weight <= 0:
@@ -349,6 +442,8 @@ def score_bundle(
     bundle: EventNewsBundle,
     instrument: str,
     precursor_events: list[EconomicEvent] | None = None,
+    print_call=None,   # PrintCall | None — duck-typed
+    trend_signal=None,  # TrendSignal | None — duck-typed
 ) -> ProbabilityResult:
     """
     Main entry point: score an EventNewsBundle for a given instrument
@@ -361,6 +456,18 @@ def score_bundle(
     blended in as a structured, high-trust contribution alongside article
     sentiment — same USD-directional axis, same weighted-average math,
     just a different (and more reliable) source of signal.
+
+    print_call: optional — this occurrence's print-direction call
+    (scoring/print_direction.py's PrintCall). Blended in as a structured
+    contribution the same way a precursor is, but at a lower trust weight
+    (config.settings.PRINT_CALL_TRUST_WEIGHT) since it's inference about a
+    number that hasn't printed yet. An 'in_line' call contributes nothing.
+
+    trend_signal: optional — the event's historical beat/miss streak
+    (webapp/trend.py's TrendSignal, gated by the caller at
+    MIN_OCCURRENCES_FOR_TREND_PRIOR before being passed in here). Blended
+    in at TREND_STREAK_TRUST_WEIGHT, with no time decay. None contributes
+    nothing.
     """
     if instrument not in INSTRUMENTS:
         raise ValueError(f"Unknown instrument {instrument!r} — add it to config.settings.INSTRUMENTS first")
@@ -368,7 +475,14 @@ def score_bundle(
     as_of = bundle.as_of_utc
     article_contributions = _build_contributions(bundle.articles, as_of, TIME_DECAY_HALF_LIFE_MINUTES)
     precursor_contributions = _build_precursor_contributions(precursor_events or [], as_of)
-    all_contributions = article_contributions + precursor_contributions
+    print_call_contribution = _build_print_call_contribution(print_call, bundle.event, as_of)
+    trend_streak_contribution = _build_trend_streak_contribution(trend_signal, bundle.event)
+    extra_contributions = precursor_contributions + (
+        [print_call_contribution] if print_call_contribution is not None else []
+    ) + (
+        [trend_streak_contribution] if trend_streak_contribution is not None else []
+    )
+    all_contributions = article_contributions + extra_contributions
 
     if not all_contributions:
         return ProbabilityResult(
