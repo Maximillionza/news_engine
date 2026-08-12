@@ -11,6 +11,7 @@
   <nav>
     <button id="tab-dashboard" class="tab-btn active">Dashboard</button>
     <button id="tab-calendar" class="tab-btn">Calendar</button>
+    <button id="tab-history" class="tab-btn">History</button>
   </nav>
 </header>
 
@@ -27,6 +28,16 @@
   <div id="calendar-stale-notice" class="stale-notice" style="display:none"></div>
   <div id="calendar-grid"></div>
   <ul id="calendar-list"></ul>
+</section>
+
+<section id="view-history" style="display:none">
+  <div id="history-empty-notice" class="stale-notice" style="display:none">No confirmed calls yet.</div>
+  <table id="history-table" style="display:none">
+    <thead>
+      <tr><th>Event</th><th>Instr.</th><th>Previous</th><th>Forecast</th><th>Actual</th><th>NE Prediction</th><th>Outcome</th></tr>
+    </thead>
+    <tbody id="history-tbody"></tbody>
+  </table>
 </section>
 
 <script src="/static/app.js"></script>

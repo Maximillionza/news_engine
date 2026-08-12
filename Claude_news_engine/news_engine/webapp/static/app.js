@@ -20,12 +20,18 @@ function formatEventDateTime(eventTimeUtc) {
 
 document.getElementById("tab-dashboard").addEventListener("click", () => showView("dashboard"));
 document.getElementById("tab-calendar").addEventListener("click", () => showView("calendar"));
+document.getElementById("tab-history").addEventListener("click", () => {
+  showView("history");
+  loadHistoryIfNeeded();
+});
 
 function showView(name) {
   document.getElementById("view-dashboard").style.display = name === "dashboard" ? "" : "none";
   document.getElementById("view-calendar").style.display = name === "calendar" ? "" : "none";
+  document.getElementById("view-history").style.display = name === "history" ? "" : "none";
   document.getElementById("tab-dashboard").classList.toggle("active", name === "dashboard");
   document.getElementById("tab-calendar").classList.toggle("active", name === "calendar");
+  document.getElementById("tab-history").classList.toggle("active", name === "history");
 }
 
 addForm.addEventListener("submit", async (e) => {
@@ -423,3 +429,50 @@ async function refreshAll() {
 
 refreshAll();
 setInterval(refreshAll, POLL_INTERVAL_MS);
+
+let historyLoaded = false;
+
+async function loadHistoryIfNeeded() {
+  if (historyLoaded) return;  // fetched once per page load, not on the dashboard's poll cycle
+  historyLoaded = true;
+  const resp = await fetch("/api/history");
+  const data = await resp.json();
+  renderHistoryTable(data.rows || []);
+}
+
+function renderHistoryTable(rows) {
+  const table = document.getElementById("history-table");
+  const emptyNotice = document.getElementById("history-empty-notice");
+  const tbody = document.getElementById("history-tbody");
+
+  if (rows.length === 0) {
+    table.style.display = "none";
+    emptyNotice.style.display = "";
+    return;
+  }
+
+  emptyNotice.style.display = "none";
+  table.style.display = "";
+  tbody.innerHTML = rows.map((r) => {
+    const dateLabel = new Date(r.event_time_utc).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    const actualCell = r.unchanged_vs_previous
+      ? `${escapeHtml(r.actual ?? "—")} <span style="color:#888;font-size:11px">(= prev)</span>`
+      : escapeHtml(r.actual ?? "—");
+    // Numeric rows use higher/lower/in_line; text-event fallback rows use bullish/bearish/neutral.
+    const predictionLabel = { higher: "Higher", lower: "Lower", in_line: "In-line", bullish: "Bullish", bearish: "Bearish", neutral: "Neutral" }[r.ne_prediction] || escapeHtml(r.ne_prediction);
+    const outcomeLabel = r.outcome === null
+      ? `<span style="color:#888">${r.instrument ? "Awaiting confirmation" : "No strong call"}</span>`
+      : r.outcome === "Confirmed"
+        ? '<span style="color:#2e7d32;font-weight:bold">Confirmed</span>'
+        : '<span style="color:#c62828;font-weight:bold">Missed</span>';
+    return `<tr>
+      <td>${escapeHtml(r.event_title)}<br><span style="font-size:11px;color:#888">${dateLabel}</span></td>
+      <td>${escapeHtml(r.instrument ?? "")}</td>
+      <td>${escapeHtml(r.previous ?? "—")}</td>
+      <td>${escapeHtml(r.forecast ?? "—")}</td>
+      <td>${actualCell}</td>
+      <td>${predictionLabel} <span style="font-size:11px;color:#888">(${Math.round(r.ne_confidence * 100)}% conf.)</span></td>
+      <td>${outcomeLabel}</td>
+    </tr>`;
+  }).join("");
+}
