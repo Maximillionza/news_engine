@@ -87,6 +87,7 @@ def test_resolved_event_with_shrug_call_excluded_from_judging():
 
         assert len(rows) == 1
         assert rows[0].outcome is None
+        assert rows[0].unjudged_reason == "shrug"
     print("PASS\n")
 
 
@@ -219,6 +220,7 @@ def test_text_only_event_with_prediction_produces_fallback_row():
         assert rows[0].unchanged_vs_previous is False
         assert rows[0].ne_prediction == "bullish"
         assert rows[0].outcome is None  # not confirmed yet — "Awaiting confirmation"
+        assert rows[0].unjudged_reason == "pending"
     print("PASS\n")
 
 
@@ -364,47 +366,54 @@ def test_cross_pipeline_read_failure_fails_open_to_empty_list():
 
 
 def test_pre_filter_limit_does_not_starve_rare_row_type():
-    print("=== build_print_call_history: a rare row type is not starved out by the display limit being applied to the pre-filter ===")
+    print("=== build_print_call_history: a rare numeric row is not starved out of the SAME query's pre-filter by more recent numeric rows ===")
     with tempfile.TemporaryDirectory() as tmp:
         dash_db = Path(tmp) / "dashboard.db"
         backtest_db = Path(tmp) / "backtest.db"
         base_time = dt.datetime(2026, 8, 1, 12, 0, tzinfo=UTC_TZ)
-        now = base_time + dt.timedelta(days=60)
 
         dash_conn = store.get_connection(dash_db)
         bt_conn = backtest_store.get_connection(backtest_db)
 
-        # 60 common numeric events, all more recent than the one FOMC event below —
-        # with a naive limit=50 pre-filter on get_resolved_event_history, these
-        # alone would already exceed the display limit and could crowd out
-        # anything queried with the SAME limit in a separate, unrelated source.
+        # 60 recent, resolved numeric events — all more recent than the
+        # target below, all WITH a real print_predictions call, so they
+        # genuinely compete for get_resolved_event_history()'s pre-filter
+        # row budget (not silently dropped for lacking a call, unlike the
+        # old test's crowding rows).
         for i in range(60):
-            event_time = base_time + dt.timedelta(days=i)
-            common_event = EconomicEvent(
-                title="CPI m/m", country="USD", impact="High", event_time_utc=event_time,
+            event_time = base_time + dt.timedelta(days=i + 1)
+            crowding_event = EconomicEvent(
+                title="Retail Sales m/m", country="USD", impact="High", event_time_utc=event_time,
                 forecast="0.1%", previous="0.1%", actual="0.1%",
             )
-            store.upsert_event_history(dash_conn, common_event, "in_line", now=event_time)
+            store.upsert_event_history(dash_conn, crowding_event, "in_line", now=event_time)
+            backtest_store.record_prediction(
+                bt_conn, "Retail Sales m/m", "XAUUSD", event_time,
+                0.55, "bullish", 0.5, 40, False, scored_at_utc=event_time,
+            )
 
-        # One old, rare text-only event (FOMC-style) — must still survive the merge.
-        fomc_time = base_time - dt.timedelta(days=5)
-        fomc_event = EconomicEvent(
-            title="FOMC Statement", country="USD", impact="High", event_time_utc=fomc_time,
-            forecast=None, previous=None, actual=None,
+        # One OLDER, rare numeric event, also with a real print call — with
+        # limit=50 pushed into the pre-filter (the bug), this is pushed
+        # past position 50 by the 60 more-recent crowding rows and dropped
+        # BEFORE the merge/sort/truncate step ever runs.
+        target_time = base_time
+        target_event = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High", event_time_utc=target_time,
+            forecast="0.1%", previous="-0.4%", actual="0.1%",
         )
-        store.upsert_event_history(dash_conn, fomc_event, None, now=fomc_time)
-        backtest_store.record_prediction(
-            bt_conn, "FOMC Statement", "XAUUSD", fomc_time,
-            0.6, "bullish", 0.5, 40, False, scored_at_utc=fomc_time,
+        store.upsert_event_history(dash_conn, target_event, "in_line", now=target_time)
+        backtest_store.record_print_prediction_if_changed(
+            bt_conn, "CPI m/m", target_time,
+            PrintCall(direction="in_line", confidence=0.6, article_count=50), now=target_time,
         )
         dash_conn.close()
         bt_conn.close()
 
         with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
-            rows = history.build_print_call_history(limit=50, now=now)
+            rows = history.build_print_call_history(limit=50)
 
-        assert any(r.event_title == "FOMC Statement" for r in rows), (
-            "the rare text-only row was starved out of the pre-filter by the unrelated numeric rows sharing the same limit"
+        assert any(r.event_title == "CPI m/m" for r in rows), (
+            "the older, rare row was starved out of the pre-filter by more-recent rows sharing the same query and limit"
         )
     print("PASS\n")
 
@@ -437,6 +446,7 @@ def test_null_surprise_direction_is_not_judged_as_missed():
 
         assert len(rows) == 1
         assert rows[0].outcome is None  # NOT "Missed" — surprise_direction was never known
+        assert rows[0].unjudged_reason == "unknown_surprise"
     print("PASS\n")
 
 
@@ -468,6 +478,7 @@ def test_text_only_low_confidence_prediction_not_judged():
 
         assert len(rows) == 1
         assert rows[0].outcome is None  # NOT judged, despite a confirmed outcome existing and technically matching
+        assert rows[0].unjudged_reason == "shrug"
     print("PASS\n")
 
 

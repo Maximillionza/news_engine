@@ -255,7 +255,7 @@ def get_print_call_history():
                 "previous": r.previous, "forecast": r.forecast, "actual": r.actual,
                 "unchanged_vs_previous": r.unchanged_vs_previous,
                 "ne_prediction": r.ne_prediction, "ne_confidence": r.ne_confidence,
-                "outcome": r.outcome,
+                "outcome": r.outcome, "unjudged_reason": r.unjudged_reason,
             }
             for r in rows
         ],

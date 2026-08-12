@@ -62,6 +62,7 @@ class HistoryRow:
     ne_prediction: str
     ne_confidence: float
     outcome: Optional[str]          # 'Confirmed' | 'Missed' | None
+    unjudged_reason: Optional[str]  # None when outcome is a real verdict; else 'shrug' | 'unknown_surprise' | 'pending'
 
 
 def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[dt.datetime] = None) -> list[HistoryRow]:
@@ -116,7 +117,12 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                 continue  # resolved event, but never scored by the accumulator — excluded, not shown with blanks
 
             outcome: Optional[str] = None
-            if call.confidence > NO_HIT_CONFIDENCE and event.surprise_direction is not None:
+            unjudged_reason: Optional[str] = None
+            if call.confidence <= NO_HIT_CONFIDENCE:
+                unjudged_reason = "shrug"
+            elif event.surprise_direction is None:
+                unjudged_reason = "unknown_surprise"
+            else:
                 outcome = "Confirmed" if call.predicted_vs_forecast == event.surprise_direction else "Missed"
 
             rows.append(HistoryRow(
@@ -130,6 +136,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                 ne_prediction=call.predicted_vs_forecast,
                 ne_confidence=call.confidence,
                 outcome=outcome,
+                unjudged_reason=unjudged_reason,
             ))
 
         for event in text_only_resolved:
@@ -150,7 +157,12 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                     outcome_row = None
 
                 text_outcome: Optional[str] = None
-                if outcome_row is not None and prediction.confidence > MIN_TEXT_EVENT_CONFIDENCE:
+                text_unjudged_reason: Optional[str] = None
+                if prediction.confidence <= MIN_TEXT_EVENT_CONFIDENCE:
+                    text_unjudged_reason = "shrug"
+                elif outcome_row is None:
+                    text_unjudged_reason = "pending"
+                else:
                     text_outcome = "Confirmed" if outcome_row.actual_direction == prediction.direction else "Missed"
 
                 rows.append(HistoryRow(
@@ -164,6 +176,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                     ne_prediction=prediction.direction,
                     ne_confidence=prediction.confidence,
                     outcome=text_outcome,
+                    unjudged_reason=text_unjudged_reason,
                 ))
     finally:
         bt_conn.close()

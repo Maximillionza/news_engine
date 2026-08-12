@@ -461,7 +461,7 @@ function renderHistoryTable(rows) {
     // Numeric rows use higher/lower/in_line; text-event fallback rows use bullish/bearish/neutral.
     const predictionLabel = { higher: "Higher", lower: "Lower", in_line: "In-line", bullish: "Bullish", bearish: "Bearish", neutral: "Neutral" }[r.ne_prediction] || escapeHtml(r.ne_prediction);
     const outcomeLabel = r.outcome === null
-      ? `<span style="color:#888">${r.instrument ? "Awaiting confirmation" : "No strong call"}</span>`
+      ? `<span style="color:#888">${r.unjudged_reason === "pending" ? "Awaiting confirmation" : "No strong call"}</span>`
       : r.outcome === "Confirmed"
         ? '<span style="color:#2e7d32;font-weight:bold">Confirmed</span>'
         : '<span style="color:#c62828;font-weight:bold">Missed</span>';
