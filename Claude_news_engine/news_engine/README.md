@@ -382,9 +382,11 @@ the actual market's rules text rather than trusted titles/metadata
 (Kalshi's own series metadata has real errors — e.g. one series' listed
 settlement-source URL points to an unrelated indicator's page). FOMC/
 Federal Funds Rate — a discrete cut/hold/hike decision, not a continuous
-forecast-vs-actual number — gets its own small, parallel mapping
-(`KALSHI_RATE_DECISION_SERIES`) rather than being forced into the numeric
-convention.
+forecast-vs-actual number — was designed to get its own small, parallel
+mapping (`KALSHI_RATE_DECISION_SERIES`) rather than being forced into the
+numeric convention, but that mapping is currently **empty** (`{}`) — see
+below, FOMC is out of scope for the same reason as the excluded numeric
+events.
 
 Out of scope for now: FOMC/Federal Funds Rate and 6 numeric events
 (Unemployment Claims, Advance GDP q/q, Prelim UoM Consumer Sentiment,

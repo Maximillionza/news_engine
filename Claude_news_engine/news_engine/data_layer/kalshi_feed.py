@@ -7,7 +7,7 @@ response structure to this one file, callers only ever see KalshiRead.
 
 READ-ONLY. This module never authenticates, never places or cancels an
 order, never touches Kalshi's trading endpoints — only the public market-
-data reads (GET /markets/{series_ticker}/events, GET /markets).
+data reads (GET /events?series_ticker=..., GET /markets).
 """
 from __future__ import annotations
 
