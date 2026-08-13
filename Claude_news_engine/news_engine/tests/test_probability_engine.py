@@ -261,6 +261,8 @@ def test_kalshi_read_decays_with_age():
 
 def test_kalshi_and_print_call_and_trend_signal_all_present_all_contribute():
     print("=== score_bundle: kalshi_read, print_call, and trend_signal can all be present at once, none excludes another ===")
+    from config.settings import KALSHI_TRUST_WEIGHT, PRINT_CALL_TRUST_WEIGHT, TREND_STREAK_TRUST_WEIGHT
+
     event = _cpi_event()
     bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
     kalshi_read = _FakeKalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.7, open_interest=100.0)
@@ -268,8 +270,27 @@ def test_kalshi_and_print_call_and_trend_signal_all_present_all_contribute():
     trend_signal = _FakeTrendSignal(direction="higher", strength=0.8)
     all_result = score_bundle(bundle, "XAUUSD", print_call=print_call, trend_signal=trend_signal, kalshi_read=kalshi_read)
     kalshi_only_result = score_bundle(bundle, "XAUUSD", kalshi_read=kalshi_read)
-    # All three agreeing (same direction) should produce a stronger/more
-    # confident read than kalshi_read alone.
+
+    # A >= comparison on confidence alone can't fail even if the Kalshi
+    # contribution were silently dropped — with all three signals agreeing,
+    # confidence saturates at 1.0 (agreement x coverage) whether one
+    # contribution is present or three are, so that alone proves nothing.
+    # Instead, pin the exact weighted-average USD sentiment that can ONLY
+    # come out right if all three contributions (each with their own
+    # trust_weight and usd_sentiment) are genuinely blended in — as_of ==
+    # event_time_utc for every contribution here, so every time_weight is
+    # 1.0 and the combined_weight reduces to the trust_weight alone. This
+    # fails if any of the three were dropped, mis-weighted, or mis-signed.
+    expected_aggregate_usd = (
+        KALSHI_TRUST_WEIGHT * 0.7        # kalshi_read: implied_probability=0.7, 'higher' -> +0.7
+        + PRINT_CALL_TRUST_WEIGHT * 0.7  # print_call: confidence=0.7, 'higher' -> +0.7
+        + TREND_STREAK_TRUST_WEIGHT * 0.8  # trend_signal: strength=0.8, 'higher' -> +0.8
+    ) / (KALSHI_TRUST_WEIGHT + PRINT_CALL_TRUST_WEIGHT + TREND_STREAK_TRUST_WEIGHT)
+    assert abs(all_result.aggregate_usd_sentiment - expected_aggregate_usd) < 1e-9
+    # And it must differ from the kalshi-only read (0.7 exactly) — proves
+    # the other two signals are actually moving the blended output, not
+    # just present-but-inert.
+    assert all_result.aggregate_usd_sentiment != kalshi_only_result.aggregate_usd_sentiment
     assert all_result.confidence >= kalshi_only_result.confidence
     print("PASS\n")
 

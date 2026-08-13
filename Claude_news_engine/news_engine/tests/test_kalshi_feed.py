@@ -26,6 +26,10 @@ def _fake_events_response(event_ticker):
     return {"events": [{"event_ticker": event_ticker}]}
 
 
+def _fake_multi_events_response(*event_tickers):
+    return {"events": [{"event_ticker": t} for t in event_tickers]}
+
+
 def _fake_markets_response(strikes):
     """strikes: list of (floor_strike, yes_bid, yes_ask, open_interest_fp) tuples."""
     return {
@@ -139,6 +143,108 @@ def test_get_market_read_filters_markets_by_event_ticker_not_series_ticker():
     print("PASS\n")
 
 
+def test_get_market_read_returns_none_when_open_interest_below_floor():
+    print("=== kalshi_feed: get_market_read returns None when the nearest strike's open_interest_fp is below MIN_KALSHI_OPEN_INTEREST ===")
+    strikes_response = _fake_markets_response([
+        (0.2, "0.60", "0.70", str(kalshi_feed.MIN_KALSHI_OPEN_INTEREST - 1)),  # below the floor
+    ])
+    with patch.object(kalshi_feed.requests, "get") as mock_get:
+        mock_get.side_effect = [
+            _fake_response(_fake_events_response("KXCPI-26AUG")),
+            _fake_response(strikes_response),
+        ]
+        result = kalshi_feed.get_market_read("KXCPI", dt.date(2026, 8, 1), target_strike=0.2)
+        assert result is None
+    print("PASS\n")
+
+
+def test_get_market_read_uses_strike_exactly_at_open_interest_floor():
+    print("=== kalshi_feed: get_market_read uses the nearest strike when open_interest_fp is exactly AT MIN_KALSHI_OPEN_INTEREST (at/above floor -> used) ===")
+    strikes_response = _fake_markets_response([
+        (0.2, "0.60", "0.70", str(kalshi_feed.MIN_KALSHI_OPEN_INTEREST)),  # exactly at the floor
+    ])
+    with patch.object(kalshi_feed.requests, "get") as mock_get:
+        mock_get.side_effect = [
+            _fake_response(_fake_events_response("KXCPI-26AUG")),
+            _fake_response(strikes_response),
+        ]
+        result = kalshi_feed.get_market_read("KXCPI", dt.date(2026, 8, 1), target_strike=0.2)
+        assert result is not None
+        assert result.open_interest == kalshi_feed.MIN_KALSHI_OPEN_INTEREST
+    print("PASS\n")
+
+
+def test_get_market_read_selects_event_matching_event_month_among_multiple():
+    print("=== kalshi_feed: get_market_read selects the event whose ticker matches event_month when multiple events are open at once ===")
+    strikes_response = _fake_markets_response([
+        (0.2, "0.60", "0.70", "80"),
+    ])
+    with patch.object(kalshi_feed.requests, "get") as mock_get:
+        mock_get.side_effect = [
+            _fake_response(_fake_multi_events_response("KXCPI-26AUG", "KXCPI-26SEP")),
+            _fake_response(strikes_response),
+        ]
+        result = kalshi_feed.get_market_read("KXCPI", dt.date(2026, 8, 1), target_strike=0.2)
+        assert result is not None
+        markets_call_params = mock_get.call_args_list[1].kwargs["params"]
+        assert markets_call_params["event_ticker"] == "KXCPI-26AUG"
+    print("PASS\n")
+
+
+def test_get_market_read_returns_none_when_no_event_matches_event_month():
+    print("=== kalshi_feed: get_market_read returns None when no open event matches the requested event_month ===")
+    with patch.object(kalshi_feed.requests, "get") as mock_get:
+        mock_get.side_effect = [
+            _fake_response(_fake_multi_events_response("KXCPI-26SEP", "KXCPI-26OCT")),
+        ]
+        result = kalshi_feed.get_market_read("KXCPI", dt.date(2026, 8, 1), target_strike=0.2)
+        assert result is None
+        # Only the /events call should have happened — no /markets fetch
+        # for a month that was never resolved to an event ticker.
+        assert mock_get.call_count == 1
+    print("PASS\n")
+
+
+def test_get_market_read_returns_none_on_strike_unit_mismatch():
+    print("=== kalshi_feed: get_market_read returns None when target_strike is wildly outside all floor_strike values (simulated units mismatch) ===")
+    # Simulates a K-suffix forecast (e.g. "175K" -> 175000.0) hitting a
+    # market whose floor_strike values are actually already in thousands.
+    strikes_response = _fake_markets_response([
+        (100, "0.40", "0.50", "50"),
+        (200, "0.40", "0.50", "50"),
+        (300, "0.40", "0.50", "50"),
+    ])
+    with patch.object(kalshi_feed.requests, "get") as mock_get:
+        mock_get.side_effect = [
+            _fake_response(_fake_events_response("KXPAYROLLS-26AUG")),
+            _fake_response(strikes_response),
+        ]
+        result = kalshi_feed.get_market_read("KXPAYROLLS", dt.date(2026, 8, 1), target_strike=175000.0)
+        assert result is None
+    print("PASS\n")
+
+
+def test_get_market_read_does_not_reject_target_strike_near_ladder_edge():
+    print("=== kalshi_feed: get_market_read does NOT falsely reject a target_strike near the edge of a realistically-spaced strike ladder ===")
+    # Realistic NFP-style strike ladder (25K spacing), forecast landing
+    # right at the top edge of the ladder — must still produce a real read.
+    strikes_response = _fake_markets_response([
+        (100000, "0.40", "0.50", "50"),
+        (125000, "0.40", "0.50", "50"),
+        (150000, "0.40", "0.50", "50"),
+        (175000, "0.60", "0.70", "80"),  # top of the ladder, nearest to target
+    ])
+    with patch.object(kalshi_feed.requests, "get") as mock_get:
+        mock_get.side_effect = [
+            _fake_response(_fake_events_response("KXPAYROLLS-26AUG")),
+            _fake_response(strikes_response),
+        ]
+        result = kalshi_feed.get_market_read("KXPAYROLLS", dt.date(2026, 8, 1), target_strike=175000.0)
+        assert result is not None
+        assert result.strike == 175000.0
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_get_market_read_picks_nearest_strike_and_computes_midpoint()
     test_get_market_read_discretizes_higher_lower_in_line()
@@ -147,4 +253,10 @@ if __name__ == "__main__":
     test_get_market_read_returns_none_when_no_markets()
     test_get_market_read_returns_none_on_request_failure()
     test_get_market_read_filters_markets_by_event_ticker_not_series_ticker()
+    test_get_market_read_returns_none_when_open_interest_below_floor()
+    test_get_market_read_uses_strike_exactly_at_open_interest_floor()
+    test_get_market_read_selects_event_matching_event_month_among_multiple()
+    test_get_market_read_returns_none_when_no_event_matches_event_month()
+    test_get_market_read_returns_none_on_strike_unit_mismatch()
+    test_get_market_read_does_not_reject_target_strike_near_ladder_edge()
     print("All kalshi_feed tests passed.")

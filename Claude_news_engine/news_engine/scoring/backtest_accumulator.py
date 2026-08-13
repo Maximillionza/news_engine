@@ -61,15 +61,15 @@ from typing import Optional
 from config.settings import (
     KALSHI_RATE_DECISION_SERIES, KALSHI_SERIES_BY_EVENT_TITLE,
     MIN_OCCURRENCES_FOR_TREND_PRIOR, PRE_EVENT_WINDOW_HOURS,
-    RATE_DECISION_DIRECTION, EVENT_SURPRISE_DIRECTION,
+    EVENT_SURPRISE_DIRECTION,
 )
 from data_layer.calendar_feed import (
-    fetch_calendar, filter_relevant_events, events_in_pre_window,
+    EconomicEvent, fetch_calendar, filter_relevant_events, events_in_pre_window,
     find_precursor_events, _parse_numeric,
 )
 from data_layer.event_context import build_event_news_bundle
 from data_layer.rss_sources import build_all_preview_sources
-from data_layer.kalshi_feed import get_market_read
+from data_layer.kalshi_feed import KalshiRead, get_market_read
 from scoring.probability_engine import score_bundle
 from scoring.print_direction import score_print_direction
 from scoring.backtest_store import (
@@ -168,7 +168,7 @@ def _read_trend_signal(event_title: str):
     return compute_trend_signal(confirmed)
 
 
-def _read_kalshi_signal(event):
+def _read_kalshi_signal(event: EconomicEvent) -> tuple[Optional[KalshiRead], Optional[str]]:
     """
     Looks up event.title in KALSHI_SERIES_BY_EVENT_TITLE first (numeric
     events), then KALSHI_RATE_DECISION_SERIES (FOMC/Federal Funds Rate) —
@@ -211,6 +211,14 @@ def _read_kalshi_signal(event):
         read = get_market_read(series_ticker, event.event_time_utc.date(), target_strike)
     except Exception as exc:  # noqa: BLE001 — a failed Kalshi fetch must not crash the accumulator cycle
         print(f"[backtest_accumulator] WARNING: Kalshi fetch failed for {event.title}: {exc}")
+        return None, None
+
+    # get_market_read() itself fails open to None for a whole family of
+    # reasons (no matching event month, liquidity gate, unit-mismatch
+    # guard, missing market) — a None read means NO signal, so the
+    # resolved direction value must not leak out with it, matching this
+    # function's own documented (None, None) "no signal" contract.
+    if read is None:
         return None, None
 
     return read, surprise_direction_value
