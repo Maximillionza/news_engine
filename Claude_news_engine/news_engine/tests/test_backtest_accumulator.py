@@ -687,6 +687,7 @@ def test_kalshi_read_passed_to_score_bundle_for_numeric_event():
         captured_kwargs = {}
         def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
             captured_kwargs["kalshi_read"] = kalshi_read
+            captured_kwargs["kalshi_direction_override"] = kalshi_direction_override
             return _fake_result()
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
@@ -701,6 +702,8 @@ def test_kalshi_read_passed_to_score_bundle_for_numeric_event():
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
 
         assert captured_kwargs["kalshi_read"] is fake_read
+        assert captured_kwargs["kalshi_direction_override"] == "higher_bullish", \
+            "CPI m/m's EVENT_SURPRISE_DIRECTION entry must be resolved and passed through as the override"
         mock_kalshi.assert_called_once()
         args, kwargs = mock_kalshi.call_args
         assert args[0] == "KXCPI"  # series ticker resolved from KALSHI_SERIES_BY_EVENT_TITLE["CPI m/m"]
@@ -795,6 +798,38 @@ def test_kalshi_fetch_failure_fails_open_without_crashing_cycle():
     print("PASS\n")
 
 
+def test_kalshi_fetch_returning_none_fails_open_without_crashing_cycle():
+    print("=== accumulator: get_market_read() returning None (not raising) fails open, does not crash the cycle ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        dashboard_db_path = Path(tmp) / "dashboard.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+        event.title = "CPI m/m"
+        event.forecast = "0.1%"
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+
+        captured_kwargs = {}
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+            captured_kwargs["kalshi_read"] = kalshi_read
+            return _fake_result()
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+             patch.object(accumulator, "score_print_direction", return_value=None), \
+             patch.object(accumulator, "get_market_read", return_value=None), \
+             patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path):
+
+            events_result = accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+        assert events_result is not None  # cycle completed, did not crash
+        assert captured_kwargs["kalshi_read"] is None
+    print("PASS\n")
+
+
 def test_kalshi_read_for_fomc_uses_rate_decision_series():
     print("=== accumulator: 'Federal Funds Rate' resolves via KALSHI_RATE_DECISION_SERIES (KXFED), not KALSHI_SERIES_BY_EVENT_TITLE ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -810,6 +845,7 @@ def test_kalshi_read_for_fomc_uses_rate_decision_series():
         captured_kwargs = {}
         def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
             captured_kwargs["kalshi_read"] = kalshi_read
+            captured_kwargs["kalshi_direction_override"] = kalshi_direction_override
             return _fake_result()
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
@@ -826,6 +862,8 @@ def test_kalshi_read_for_fomc_uses_rate_decision_series():
         args, kwargs = mock_kalshi.call_args
         assert args[0] == "KXFED"
         assert captured_kwargs["kalshi_read"] is fake_read
+        assert captured_kwargs["kalshi_direction_override"] == "higher_bullish", \
+            "FOMC always resolves 'higher_bullish' regardless of EVENT_SURPRISE_DIRECTION, which has no 'Federal Funds Rate' entry"
     print("PASS\n")
 
 
@@ -859,5 +897,6 @@ if __name__ == "__main__":
     test_kalshi_lookup_skipped_for_event_with_no_series_mapping()
     test_kalshi_lookup_skipped_for_unparseable_forecast()
     test_kalshi_fetch_failure_fails_open_without_crashing_cycle()
+    test_kalshi_fetch_returning_none_fails_open_without_crashing_cycle()
     test_kalshi_read_for_fomc_uses_rate_decision_series()
     print("All backtest_accumulator tests passed.")
