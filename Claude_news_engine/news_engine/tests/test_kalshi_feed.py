@@ -245,6 +245,29 @@ def test_get_market_read_does_not_reject_target_strike_near_ladder_edge():
     print("PASS\n")
 
 
+def test_get_market_read_fetches_events_with_series_ticker_as_query_param():
+    print("=== kalshi_feed: get_market_read fetches /events with series_ticker as a query param, not a /series/{ticker}/events path ===")
+    strikes_response = _fake_markets_response([
+        (0.2, "0.60", "0.70", "80"),
+    ])
+    with patch.object(kalshi_feed.requests, "get") as mock_get:
+        mock_get.side_effect = [
+            _fake_response(_fake_events_response("KXCPI-26AUG")),
+            _fake_response(strikes_response),
+        ]
+        result = kalshi_feed.get_market_read("KXCPI", dt.date(2026, 8, 1), target_strike=0.2)
+        assert result is not None
+        # Verify the first call (events fetch) hits the plain /events endpoint
+        # with series_ticker passed as a query param, not baked into the path.
+        events_call = mock_get.call_args_list[0]
+        events_call_url = events_call.args[0] if events_call.args else events_call.kwargs.get("url")
+        assert events_call_url == f"{kalshi_feed.KALSHI_BASE_URL}/events"
+        assert "/series/" not in events_call_url
+        events_call_params = events_call.kwargs["params"]
+        assert events_call_params == {"series_ticker": "KXCPI"}
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_get_market_read_picks_nearest_strike_and_computes_midpoint()
     test_get_market_read_discretizes_higher_lower_in_line()
@@ -259,4 +282,5 @@ if __name__ == "__main__":
     test_get_market_read_returns_none_when_no_event_matches_event_month()
     test_get_market_read_returns_none_on_strike_unit_mismatch()
     test_get_market_read_does_not_reject_target_strike_near_ladder_edge()
+    test_get_market_read_fetches_events_with_series_ticker_as_query_param()
     print("All kalshi_feed tests passed.")

@@ -55,7 +55,7 @@ def _resolve_event_ticker(series_ticker: str, event_month: dt.date) -> Optional[
     series has no current event, or none of its events match
     `event_month` — fail closed, never guess which occurrence is meant.
     """
-    resp = requests.get(f"{KALSHI_BASE_URL}/series/{series_ticker}/events", timeout=15)
+    resp = requests.get(f"{KALSHI_BASE_URL}/events", params={"series_ticker": series_ticker}, timeout=15)
     resp.raise_for_status()
     events = resp.json().get("events", [])
     if not events:
