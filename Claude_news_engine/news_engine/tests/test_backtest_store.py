@@ -6,6 +6,7 @@ import os
 import tempfile
 import datetime as dt
 from pathlib import Path
+from dataclasses import dataclass
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -18,6 +19,14 @@ from scoring.backtest_store import (
     record_dismissal, get_latest_prediction, get_latest_two_predictions,
     record_check, count_recent_checks,
 )
+
+
+@dataclass
+class _FakeKalshiRead:
+    strike: float
+    implied_direction: str
+    implied_probability: float
+    open_interest: float
 
 
 def test_record_and_count_predictions():
@@ -434,6 +443,91 @@ def test_get_outcome_returns_confirmed_outcome():
     print("PASS\n")
 
 
+def test_record_kalshi_read_if_changed_writes_first_read():
+    print("=== backtest_store: record_kalshi_read_if_changed writes a row when nothing exists yet ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        read = _FakeKalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.62, open_interest=100.0)
+
+        written = store.record_kalshi_read_if_changed(conn, "CPI m/m", event_time, read, now=dt.datetime(2026, 8, 10, 9, 0, tzinfo=UTC_TZ))
+        assert written is True
+
+        latest = store.get_latest_kalshi_read(conn, "CPI m/m", event_time)
+        assert latest is not None
+        assert latest.implied_direction == "higher"
+        assert latest.implied_probability == 0.62
+        assert latest.strike == 0.3
+        assert latest.open_interest == 100.0
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_kalshi_read_if_changed_skips_identical_direction():
+    print("=== backtest_store: an identical implied_direction does not write a new row ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        first = _FakeKalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.62, open_interest=100.0)
+        store.record_kalshi_read_if_changed(conn, "CPI m/m", event_time, first, now=dt.datetime(2026, 8, 10, 9, 0, tzinfo=UTC_TZ))
+
+        second = _FakeKalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.71, open_interest=150.0)
+        written = store.record_kalshi_read_if_changed(conn, "CPI m/m", event_time, second, now=dt.datetime(2026, 8, 10, 10, 0, tzinfo=UTC_TZ))
+        assert written is False
+
+        latest = store.get_latest_kalshi_read(conn, "CPI m/m", event_time)
+        assert latest.implied_probability == 0.62  # unchanged — the second read was never written
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_kalshi_read_if_changed_writes_on_direction_flip():
+    print("=== backtest_store: a direction flip (higher -> lower) always writes a new row ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        first = _FakeKalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.62, open_interest=100.0)
+        store.record_kalshi_read_if_changed(conn, "CPI m/m", event_time, first, now=dt.datetime(2026, 8, 10, 9, 0, tzinfo=UTC_TZ))
+
+        flipped = _FakeKalshiRead(strike=0.3, implied_direction="lower", implied_probability=0.3, open_interest=90.0)
+        written = store.record_kalshi_read_if_changed(conn, "CPI m/m", event_time, flipped, now=dt.datetime(2026, 8, 11, 9, 0, tzinfo=UTC_TZ))
+        assert written is True
+
+        latest = store.get_latest_kalshi_read(conn, "CPI m/m", event_time)
+        assert latest.implied_direction == "lower"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_latest_kalshi_read_scoped_to_occurrence_not_title():
+    print("=== backtest_store: get_latest_kalshi_read does NOT leak a prior occurrence's read onto a different event_time_utc ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        july_time = dt.datetime(2026, 7, 12, 12, 30, tzinfo=UTC_TZ)
+        august_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        read = _FakeKalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.6, open_interest=100.0)
+        store.record_kalshi_read_if_changed(conn, "CPI m/m", july_time, read, now=july_time)
+
+        assert store.get_latest_kalshi_read(conn, "CPI m/m", august_time) is None
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_latest_kalshi_read_none_when_nothing_recorded():
+    print("=== backtest_store: get_latest_kalshi_read returns None when nothing has been recorded for this event ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        assert store.get_latest_kalshi_read(conn, "CPI m/m", event_time) is None
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_record_and_count_predictions()
     test_count_predictions_scoped_to_event_occurrence_not_just_title()
@@ -457,4 +551,9 @@ if __name__ == "__main__":
     test_get_latest_prediction_for_occurrence_scoped_not_title_leak()
     test_get_outcome_returns_none_when_unconfirmed()
     test_get_outcome_returns_confirmed_outcome()
+    test_record_kalshi_read_if_changed_writes_first_read()
+    test_record_kalshi_read_if_changed_skips_identical_direction()
+    test_record_kalshi_read_if_changed_writes_on_direction_flip()
+    test_get_latest_kalshi_read_scoped_to_occurrence_not_title()
+    test_get_latest_kalshi_read_none_when_nothing_recorded()
     print("All backtest_store tests passed.")

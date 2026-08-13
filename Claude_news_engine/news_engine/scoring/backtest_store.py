@@ -63,6 +63,16 @@ CREATE TABLE IF NOT EXISTS print_predictions (
     article_count INTEGER NOT NULL,
     scored_at_utc TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS kalshi_reads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_title TEXT NOT NULL,
+    event_time_utc TEXT NOT NULL,
+    strike REAL NOT NULL,
+    implied_direction TEXT NOT NULL,
+    implied_probability REAL NOT NULL,
+    open_interest REAL NOT NULL,
+    read_at_utc TEXT NOT NULL
+);
 """
 
 
@@ -100,6 +110,18 @@ class PrintPrediction:
     confidence: float
     article_count: int
     scored_at_utc: str
+
+
+@dataclass
+class KalshiReadRecord:
+    id: int
+    event_title: str
+    event_time_utc: str
+    strike: float
+    implied_direction: str
+    implied_probability: float
+    open_interest: float
+    read_at_utc: str
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
@@ -487,3 +509,58 @@ def get_outcome(
         event_time_utc=d["event_time_utc"], actual_direction=d["actual_direction"],
         actual_move_note=d["actual_move_note"], confirmed_at_utc=d["confirmed_at_utc"],
     )
+
+
+def get_latest_kalshi_read(
+    conn: sqlite3.Connection, event_title: str, event_time_utc: dt.datetime,
+) -> Optional[KalshiReadRecord]:
+    """
+    Most recent recorded Kalshi read for this specific (event_title,
+    event_time_utc) OCCURRENCE — None if never recorded. Scoped to
+    occurrence, not title-only, same reasoning as get_latest_print_prediction():
+    Forex Factory event titles recur monthly/quarterly with the SAME
+    title but a DIFFERENT event_time_utc each time.
+    """
+    row = conn.execute(
+        "SELECT * FROM kalshi_reads WHERE event_title = ? AND event_time_utc = ? "
+        "ORDER BY read_at_utc DESC, id DESC LIMIT 1",
+        (event_title, event_time_utc.isoformat()),
+    ).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    return KalshiReadRecord(
+        id=d["id"], event_title=d["event_title"], event_time_utc=d["event_time_utc"],
+        strike=d["strike"], implied_direction=d["implied_direction"],
+        implied_probability=d["implied_probability"], open_interest=d["open_interest"],
+        read_at_utc=d["read_at_utc"],
+    )
+
+
+def record_kalshi_read_if_changed(
+    conn: sqlite3.Connection,
+    event_title: str,
+    event_time_utc: dt.datetime,
+    read,  # KalshiRead from data_layer.kalshi_feed — duck-typed to avoid a hard dependency
+    now: Optional[dt.datetime] = None,
+) -> bool:
+    """
+    Writes a new kalshi_reads row only if `read.implied_direction` differs
+    from the latest recorded read for this exact occurrence — same
+    "current read is the truth until the market moves it" principle as
+    record_print_prediction_if_changed(). Returns True if a row was
+    written, False if skipped as unchanged.
+    """
+    latest = get_latest_kalshi_read(conn, event_title, event_time_utc)
+    if latest is not None and latest.implied_direction == read.implied_direction:
+        return False
+
+    read_at = now or dt.datetime.now(dt.timezone.utc)
+    conn.execute(
+        "INSERT INTO kalshi_reads (event_title, event_time_utc, strike, implied_direction, implied_probability, open_interest, read_at_utc) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (event_title, event_time_utc.isoformat(), read.strike, read.implied_direction,
+         read.implied_probability, read.open_interest, read_at.isoformat()),
+    )
+    conn.commit()
+    return True
