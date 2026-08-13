@@ -58,15 +58,23 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from config.settings import MIN_OCCURRENCES_FOR_TREND_PRIOR, PRE_EVENT_WINDOW_HOURS
-from data_layer.calendar_feed import fetch_calendar, filter_relevant_events, events_in_pre_window, find_precursor_events
+from config.settings import (
+    KALSHI_RATE_DECISION_SERIES, KALSHI_SERIES_BY_EVENT_TITLE,
+    MIN_OCCURRENCES_FOR_TREND_PRIOR, PRE_EVENT_WINDOW_HOURS,
+    RATE_DECISION_DIRECTION, EVENT_SURPRISE_DIRECTION,
+)
+from data_layer.calendar_feed import (
+    fetch_calendar, filter_relevant_events, events_in_pre_window,
+    find_precursor_events, _parse_numeric,
+)
 from data_layer.event_context import build_event_news_bundle
 from data_layer.rss_sources import build_all_preview_sources
+from data_layer.kalshi_feed import get_market_read
 from scoring.probability_engine import score_bundle
 from scoring.print_direction import score_print_direction
 from scoring.backtest_store import (
     get_connection, record_prediction, get_latest_prediction, record_check, count_recent_checks,
-    record_print_prediction_if_changed,
+    record_print_prediction_if_changed, record_kalshi_read_if_changed,
 )
 from webapp.store import get_connection as get_dashboard_connection, get_event_history, DB_PATH as DASHBOARD_DB_PATH
 from webapp.trend import compute_trend_signal
@@ -158,6 +166,54 @@ def _read_trend_signal(event_title: str):
     if len(confirmed) < MIN_OCCURRENCES_FOR_TREND_PRIOR:
         return None
     return compute_trend_signal(confirmed)
+
+
+def _read_kalshi_signal(event):
+    """
+    Looks up event.title in KALSHI_SERIES_BY_EVENT_TITLE first (numeric
+    events), then KALSHI_RATE_DECISION_SERIES (FOMC/Federal Funds Rate) —
+    mutually exclusive per title. Returns (kalshi_read, resolved_direction_value):
+
+    - Numeric event: resolved_direction_value is
+      EVENT_SURPRISE_DIRECTION[event.title] verbatim ('higher_bullish' or
+      'higher_bearish') — the standard convention every other structured
+      contribution in this module already uses.
+    - FOMC/Federal Funds Rate: resolved_direction_value is always
+      'higher_bullish' — a HIGHER Fed funds rate is unambiguously
+      USD-bullish, the same sign the numeric convention already encodes,
+      so this reuses that convention rather than introducing a second
+      one. (RATE_DECISION_DIRECTION itself, mapping a decision WORD like
+      'hike'/'cut' to a sentiment, isn't used here — Kalshi's KXFED
+      market already answers "will the rate be higher than X," the same
+      shape as every numeric market, so the decision-word mapping isn't
+      needed for this blend; it exists in config.settings for any future
+      caller that has a decision word instead of a market read.)
+
+    Returns (None, None) — never crashes the cycle — if no series
+    mapping matches this title, the forecast can't be parsed to a strike
+    target, or the market fetch fails for any reason.
+    """
+    series_ticker = KALSHI_SERIES_BY_EVENT_TITLE.get(event.title)
+    if series_ticker is not None:
+        surprise_direction_value = EVENT_SURPRISE_DIRECTION.get(event.title)
+    else:
+        series_ticker = KALSHI_RATE_DECISION_SERIES.get(event.title)
+        surprise_direction_value = "higher_bullish" if series_ticker is not None else None
+
+    if series_ticker is None or surprise_direction_value is None:
+        return None, None
+
+    target_strike = _parse_numeric(event.forecast)
+    if target_strike is None:
+        return None, None
+
+    try:
+        read = get_market_read(series_ticker, event.event_time_utc.date(), target_strike)
+    except Exception as exc:  # noqa: BLE001 — a failed Kalshi fetch must not crash the accumulator cycle
+        print(f"[backtest_accumulator] WARNING: Kalshi fetch failed for {event.title}: {exc}")
+        return None, None
+
+    return read, surprise_direction_value
 
 
 def compute_accumulator_interval_seconds(
@@ -259,11 +315,17 @@ def run_accumulator_cycle(
             if trend_signal is not None:
                 print(f"[backtest_accumulator] trend signal for {event.title}: {trend_signal.direction} (strength {trend_signal.strength:.2f})")
 
+            kalshi_read, kalshi_direction_value = _read_kalshi_signal(event)
+            if kalshi_read is not None:
+                record_kalshi_read_if_changed(conn, event.title, event.event_time_utc, kalshi_read, now=now)
+                print(f"[backtest_accumulator] Kalshi read for {event.title}: {kalshi_read.implied_direction} ({kalshi_read.implied_probability:.0%} implied, {kalshi_read.open_interest:.0f} open interest)")
+
             for instrument in instruments:
                 try:
                     result = score_bundle(
                         bundle, instrument, precursor_events=precursors,
                         print_call=print_call, trend_signal=trend_signal,
+                        kalshi_read=kalshi_read, kalshi_direction_override=kalshi_direction_value,
                     )
                 except Exception as exc:  # noqa: BLE001 — one pair's failure must not stop the others
                     print(f"[backtest_accumulator] WARNING: scoring failed for {instrument}/{event.title}: {exc}")

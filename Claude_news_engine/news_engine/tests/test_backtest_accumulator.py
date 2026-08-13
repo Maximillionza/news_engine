@@ -18,6 +18,7 @@ from scoring.probability_engine import Direction, ProbabilityResult
 import scoring.backtest_accumulator as accumulator
 import scoring.backtest_store as store
 import scoring.print_direction as accumulator_print_direction
+import data_layer.kalshi_feed as accumulator_kalshi_feed
 import webapp.store as webapp_store
 
 
@@ -301,6 +302,7 @@ def test_precursor_events_found_and_passed_to_score_bundle():
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=target, articles=[], as_of_utc=now)), \
              patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score, \
+             patch.object(accumulator, "get_market_read", return_value=None), \
              patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
@@ -333,6 +335,7 @@ def test_print_direction_call_recorded_once_per_event():
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
              patch.object(accumulator, "score_print_direction", return_value=fake_call), \
+             patch.object(accumulator, "get_market_read", return_value=None), \
              patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
@@ -392,7 +395,7 @@ def test_trend_signal_passed_to_score_bundle_when_gate_met():
         dash_conn.close()
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
             captured_kwargs["trend_signal"] = trend_signal
             return _fake_result()
 
@@ -402,6 +405,7 @@ def test_trend_signal_passed_to_score_bundle_when_gate_met():
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
              patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
+             patch.object(accumulator, "get_market_read", return_value=None), \
              patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
@@ -433,7 +437,7 @@ def test_trend_signal_is_none_when_gate_not_met():
         dash_conn.close()
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
             captured_kwargs["trend_signal"] = trend_signal
             return _fake_result()
 
@@ -443,6 +447,7 @@ def test_trend_signal_is_none_when_gate_not_met():
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
              patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
+             patch.object(accumulator, "get_market_read", return_value=None), \
              patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
@@ -461,7 +466,7 @@ def test_trend_signal_is_none_when_dashboard_db_unreachable():
         bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
             captured_kwargs["trend_signal"] = trend_signal
             return _fake_result()
 
@@ -475,6 +480,7 @@ def test_trend_signal_is_none_when_dashboard_db_unreachable():
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
              patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
+             patch.object(accumulator, "get_market_read", return_value=None), \
              patch.object(accumulator, "DASHBOARD_DB_PATH", unreachable_dashboard_db):
 
             events_result = accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
@@ -499,7 +505,7 @@ def test_trend_signal_is_none_when_read_itself_fails():
         webapp_store.get_connection(dashboard_db_path).close()
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
             captured_kwargs["trend_signal"] = trend_signal
             return _fake_result()
 
@@ -509,6 +515,7 @@ def test_trend_signal_is_none_when_read_itself_fails():
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
              patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
+             patch.object(accumulator, "get_market_read", return_value=None), \
              patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path), \
              patch.object(accumulator, "get_event_history", side_effect=Exception("simulated read failure")):
 
@@ -530,7 +537,7 @@ def test_print_call_passed_to_score_bundle():
         fake_call = accumulator_print_direction.PrintCall(direction="higher", confidence=0.6, article_count=2)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
             captured_kwargs["print_call"] = print_call
             return _fake_result()
 
@@ -572,6 +579,7 @@ def test_precursor_events_uses_unfiltered_calendar_not_high_impact_only():
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=target, articles=[], as_of_utc=now)), \
              patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score, \
+             patch.object(accumulator, "get_market_read", return_value=None), \
              patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
@@ -606,7 +614,7 @@ def test_failed_scoring_for_one_pair_does_not_stop_others():
         now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
         event = _fake_event(hours_from_now=20, now=now)
 
-        def flaky_score_bundle(bundle, instrument, precursor_events=None, print_call=None, trend_signal=None):
+        def flaky_score_bundle(bundle, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
             if instrument == "XAUUSD":
                 raise Exception("scoring blew up")
             return _fake_result()
@@ -664,6 +672,163 @@ def test_failed_calendar_fetch_returns_none_without_crashing():
     print("PASS\n")
 
 
+def test_kalshi_read_passed_to_score_bundle_for_numeric_event():
+    print("=== accumulator: a Kalshi read is fetched, recorded, and passed to score_bundle() for a numeric-forecast event ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        dashboard_db_path = Path(tmp) / "dashboard.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+        event.title = "CPI m/m"
+        event.forecast = "0.1%"
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+        fake_read = accumulator_kalshi_feed.KalshiRead(strike=0.1, implied_direction="higher", implied_probability=0.65, open_interest=100.0)
+
+        captured_kwargs = {}
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+            captured_kwargs["kalshi_read"] = kalshi_read
+            return _fake_result()
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+             patch.object(accumulator, "score_print_direction", return_value=None), \
+             patch.object(accumulator, "get_market_read", return_value=fake_read) as mock_kalshi, \
+             patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path):
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+        assert captured_kwargs["kalshi_read"] is fake_read
+        mock_kalshi.assert_called_once()
+        args, kwargs = mock_kalshi.call_args
+        assert args[0] == "KXCPI"  # series ticker resolved from KALSHI_SERIES_BY_EVENT_TITLE["CPI m/m"]
+
+        conn = store.get_connection(db_path)
+        latest = store.get_latest_kalshi_read(conn, "CPI m/m", event.event_time_utc)
+        assert latest is not None
+        assert latest.implied_direction == "higher"
+        conn.close()
+    print("PASS\n")
+
+
+def test_kalshi_lookup_skipped_for_event_with_no_series_mapping():
+    print("=== accumulator: an event title with no Kalshi series mapping never triggers get_market_read() ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        dashboard_db_path = Path(tmp) / "dashboard.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)  # "Test Event" — not in any Kalshi mapping
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+             patch.object(accumulator, "score_print_direction", return_value=None), \
+             patch.object(accumulator, "get_market_read") as mock_kalshi, \
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path):
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+        mock_kalshi.assert_not_called()
+    print("PASS\n")
+
+
+def test_kalshi_lookup_skipped_for_unparseable_forecast():
+    print("=== accumulator: an event with an unparseable/missing forecast skips the Kalshi lookup entirely ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        dashboard_db_path = Path(tmp) / "dashboard.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+        event.title = "CPI m/m"
+        event.forecast = None  # unparseable/missing
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+             patch.object(accumulator, "score_print_direction", return_value=None), \
+             patch.object(accumulator, "get_market_read") as mock_kalshi, \
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path):
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+        mock_kalshi.assert_not_called()
+    print("PASS\n")
+
+
+def test_kalshi_fetch_failure_fails_open_without_crashing_cycle():
+    print("=== accumulator: get_market_read() raising or returning None fails open, does not crash the cycle ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        dashboard_db_path = Path(tmp) / "dashboard.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+        event.title = "CPI m/m"
+        event.forecast = "0.1%"
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+
+        captured_kwargs = {}
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+            captured_kwargs["kalshi_read"] = kalshi_read
+            return _fake_result()
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+             patch.object(accumulator, "score_print_direction", return_value=None), \
+             patch.object(accumulator, "get_market_read", side_effect=Exception("network down")), \
+             patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path):
+
+            events_result = accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+        assert events_result is not None  # cycle completed, did not crash
+        assert captured_kwargs["kalshi_read"] is None
+    print("PASS\n")
+
+
+def test_kalshi_read_for_fomc_uses_rate_decision_series():
+    print("=== accumulator: 'Federal Funds Rate' resolves via KALSHI_RATE_DECISION_SERIES (KXFED), not KALSHI_SERIES_BY_EVENT_TITLE ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        dashboard_db_path = Path(tmp) / "dashboard.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+        event.title = "Federal Funds Rate"
+        event.forecast = "4.25%"
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+        fake_read = accumulator_kalshi_feed.KalshiRead(strike=4.25, implied_direction="higher", implied_probability=0.6, open_interest=50.0)
+
+        captured_kwargs = {}
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+            captured_kwargs["kalshi_read"] = kalshi_read
+            return _fake_result()
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+             patch.object(accumulator, "score_print_direction", return_value=None), \
+             patch.object(accumulator, "get_market_read", return_value=fake_read) as mock_kalshi, \
+             patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path):
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+        args, kwargs = mock_kalshi.call_args
+        assert args[0] == "KXFED"
+        assert captured_kwargs["kalshi_read"] is fake_read
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_interval_far_when_nothing_active()
     test_interval_hourly_once_within_pre_event_window()
@@ -690,4 +855,9 @@ if __name__ == "__main__":
     test_failed_scoring_for_one_pair_does_not_stop_others()
     test_article_bundle_fetched_once_per_event_not_per_instrument()
     test_failed_calendar_fetch_returns_none_without_crashing()
+    test_kalshi_read_passed_to_score_bundle_for_numeric_event()
+    test_kalshi_lookup_skipped_for_event_with_no_series_mapping()
+    test_kalshi_lookup_skipped_for_unparseable_forecast()
+    test_kalshi_fetch_failure_fails_open_without_crashing_cycle()
+    test_kalshi_read_for_fomc_uses_rate_decision_series()
     print("All backtest_accumulator tests passed.")
