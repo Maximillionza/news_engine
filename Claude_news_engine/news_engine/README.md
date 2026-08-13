@@ -375,15 +375,30 @@ free, unauthenticated public API access
 needed). **Read-only — this integration never trades, never places an
 order, never authenticates.**
 
-15 of this system's 19 numeric-forecast tracked events have confirmed,
-active Kalshi coverage (`config.settings.KALSHI_SERIES_BY_EVENT_TITLE`),
-each verified against the actual market's rules text rather than trusted
-titles/metadata (Kalshi's own series metadata has real errors — e.g. one
-series' listed settlement-source URL points to an unrelated indicator's
-page). FOMC/Federal Funds Rate — a discrete cut/hold/hike decision, not a
-continuous forecast-vs-actual number — gets its own small, parallel
-mapping (`KALSHI_RATE_DECISION_SERIES`) rather than being forced into the
-numeric convention.
+12 of this system's 19 numeric-forecast tracked events have confirmed,
+active, RESOLVABLE Kalshi coverage
+(`config.settings.KALSHI_SERIES_BY_EVENT_TITLE`), each verified against
+the actual market's rules text rather than trusted titles/metadata
+(Kalshi's own series metadata has real errors — e.g. one series' listed
+settlement-source URL points to an unrelated indicator's page). FOMC/
+Federal Funds Rate — a discrete cut/hold/hike decision, not a continuous
+forecast-vs-actual number — gets its own small, parallel mapping
+(`KALSHI_RATE_DECISION_SERIES`) rather than being forced into the numeric
+convention.
+
+Out of scope for now: FOMC/Federal Funds Rate and 3 numeric events
+(Unemployment Claims, Advance GDP q/q, Prelim UoM Consumer Sentiment) have
+real, active Kalshi markets but are excluded because Kalshi tickets those
+series to a specific DATE (a week-ending date, a release date, or an FOMC
+meeting date) rather than a month, which this integration's ticker
+resolution (`data_layer/kalshi_feed.py`'s `_resolve_event_ticker()`, month-
+suffix matching only) can't correctly resolve; adding real date-based
+ticket resolution for these four is a genuine follow-up, not implemented
+here. Separately, for the 12 resolvable events, Kalshi tickets the
+DATA/reference month, not the release month (e.g. the market titled "CPI
+in July" is the market for the report that releases in mid-August) — the
+accumulator shifts the release date back one month before resolving the
+ticker (`scoring/backtest_accumulator.py`'s `_shift_back_one_month()`).
 
 Highest trust tier in the system (`KALSHI_TRUST_WEIGHT=0.95`, above a
 precursor's `0.9`) — this prices real money directly on the exact event

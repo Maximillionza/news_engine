@@ -271,32 +271,56 @@ PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES = PRE_EVENT_WINDOW_HOURS * 60
 # Kalshi (kalshi.com) is a CFTC-regulated prediction-market exchange with
 # free, unauthenticated public market-data access. Confirmed live this
 # session: real, active series exist for 15 of this system's 19 tracked
-# high-impact USD events. Config-only-to-extend, same pattern as
-# PRINT_SURPRISE_LEXICON — an event title with no entry here never
-# triggers a Kalshi lookup at all.
+# high-impact USD events, but 4 of the 15 (3 here plus FOMC below) use a
+# DATE-based Kalshi ticker (a week-ending date, a specific release date,
+# or a specific FOMC meeting date) rather than a month, which
+# data_layer/kalshi_feed.py's _resolve_event_ticker() — month-suffix
+# matching only — cannot correctly resolve; it would either never match
+# (fail closed, silently dead) or, worse, match wrong. Those 4 are
+# deliberately dropped from live coverage below, leaving 12 genuinely
+# resolvable month-only-ticker events. Config-only-to-extend, same
+# pattern as PRINT_SURPRISE_LEXICON — an event title with no entry here
+# never triggers a Kalshi lookup at all.
 KALSHI_SERIES_BY_EVENT_TITLE = {
     "Non-Farm Employment Change": "KXPAYROLLS",
     "ADP Nonfarm Employment Change": "KXADP",
     "Unemployment Rate": "KXU3",
-    "Unemployment Claims": "KXJOBLESSCLAIMS",
     "Challenger Job Cuts": "KXCHCUTS",
     "CPI m/m": "KXCPI",
     "CPI y/y": "KXCPIYOY",
     "Core CPI m/m": "KXCPICORE",
     "Core CPI y/y": "KXCPICOREYOY",
     "PPI m/m": "KXUSPPI",
-    "Advance GDP q/q": "KXGDP",
     "ISM Manufacturing PMI": "KXISMPMI",
     "Retail Sales m/m": "KXUSRETAIL",
     "Core PCE Price Index m/m": "KXPCECORE",
-    "Prelim UoM Consumer Sentiment": "KXUSMICHCSP",
+    # "Unemployment Claims": "KXJOBLESSCLAIMS" — REMOVED. Kalshi tickets
+    # this series to a WEEK-ENDING DATE (e.g. "-26jun18"), not a month —
+    # month-suffix matching can't resolve it. Real coverage exists on
+    # Kalshi; adding correct date-based ticket resolution is a real
+    # follow-up feature, not implemented here.
+    # "Advance GDP q/q": "KXGDP" — REMOVED. Kalshi tickets this series to
+    # a specific RELEASE DATE (e.g. "-27jan30"), not a month — same
+    # reason as Unemployment Claims above.
+    # "Prelim UoM Consumer Sentiment": "KXUSMICHCSP" — REMOVED. Kalshi
+    # tickets this series to a specific RELEASE DATE (e.g. "-26may08"),
+    # not a month. Unlike CPI/PPI/etc., this one is NOT lagged — it's a
+    # same-month preliminary read — but it's still date-, not
+    # month-keyed, so month-suffix matching still can't resolve it.
 }
-# Confirmed with NO usable Kalshi coverage (verified live, not left
-# unchecked): Average Hourly Earnings m/m (Kalshi's closest match prices
-# a different, inflation-adjusted metric), Core PPI m/m and Import
-# Prices m/m (no matching series exists), ISM Services PMI (series
-# exists but has zero markets currently listed — dormant). These four
-# simply have no entry here.
+# Confirmed with NO usable Kalshi coverage AT ALL (verified live, not
+# left unchecked): Average Hourly Earnings m/m (Kalshi's closest match
+# prices a different, inflation-adjusted metric), Core PPI m/m and
+# Import Prices m/m (no matching series exists), ISM Services PMI
+# (series exists but has zero markets currently listed — dormant).
+# These four simply have no entry here and never will unless Kalshi
+# lists new markets.
+#
+# Distinct from the above: REAL Kalshi coverage exists for Unemployment
+# Claims, Advance GDP q/q, and Prelim UoM Consumer Sentiment (see the
+# commented-out entries in the dict above) — they're excluded only
+# because this integration's ticker resolution doesn't yet handle
+# date-based tickers, not because Kalshi has no market for them.
 
 # FOMC/Federal Funds Rate is a discrete cut/hold/hike DECISION, not a
 # continuous forecast-vs-actual number — it can't reuse
@@ -308,9 +332,13 @@ RATE_DECISION_DIRECTION = {
     "hold": "neutral",
     "cut": "bearish",
 }
-KALSHI_RATE_DECISION_SERIES = {
-    "Federal Funds Rate": "KXFED",
-}
+# Deliberately emptied (was {"Federal Funds Rate": "KXFED"}) — KXFED is
+# ticketed to a specific FOMC MEETING DATE (e.g. "-26mar19"), not a
+# month, same date-based-ticker problem as the 3 removed entries above.
+# _read_kalshi_signal()'s FOMC branch is left in place (see
+# scoring/backtest_accumulator.py) so re-adding correct coverage later,
+# once date-based ticket resolution exists, is a one-line change here.
+KALSHI_RATE_DECISION_SERIES = {}
 
 # A Kalshi market whose open_interest is below this floor is treated as
 # NO signal at all — same "contribute nothing, not a diluted nudge"

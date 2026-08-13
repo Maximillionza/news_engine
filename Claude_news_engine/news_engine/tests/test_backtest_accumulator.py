@@ -672,6 +672,18 @@ def test_failed_calendar_fetch_returns_none_without_crashing():
     print("PASS\n")
 
 
+def test_shift_back_one_month_normal_case():
+    print("=== accumulator: _shift_back_one_month shifts a normal month back by one, day pinned to 1 ===")
+    assert accumulator._shift_back_one_month(dt.date(2026, 8, 15)) == dt.date(2026, 7, 1)
+    print("PASS\n")
+
+
+def test_shift_back_one_month_year_rollover():
+    print("=== accumulator: _shift_back_one_month handles January -> prior December year rollover ===")
+    assert accumulator._shift_back_one_month(dt.date(2026, 1, 20)) == dt.date(2025, 12, 1)
+    print("PASS\n")
+
+
 def test_kalshi_read_passed_to_score_bundle_for_numeric_event():
     print("=== accumulator: a Kalshi read is fetched, recorded, and passed to score_bundle() for a numeric-forecast event ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -707,6 +719,12 @@ def test_kalshi_read_passed_to_score_bundle_for_numeric_event():
         mock_kalshi.assert_called_once()
         args, kwargs = mock_kalshi.call_args
         assert args[0] == "KXCPI"  # series ticker resolved from KALSHI_SERIES_BY_EVENT_TITLE["CPI m/m"]
+        # event.event_time_utc is now + 20h = 2026-08-11 (release date) — Kalshi
+        # tickets the DATA month, one month BEHIND the release, so the second
+        # positional arg must be the SHIFTED month (2026-07-01), not the raw
+        # release date's month (2026-08-11). See _shift_back_one_month().
+        assert args[1] == dt.date(2026, 7, 1), \
+            f"expected the release date shifted back one month, got {args[1]}"
 
         conn = store.get_connection(db_path)
         latest = store.get_latest_kalshi_read(conn, "CPI m/m", event.event_time_utc)
@@ -830,8 +848,16 @@ def test_kalshi_fetch_returning_none_fails_open_without_crashing_cycle():
     print("PASS\n")
 
 
-def test_kalshi_read_for_fomc_uses_rate_decision_series():
-    print("=== accumulator: 'Federal Funds Rate' resolves via KALSHI_RATE_DECISION_SERIES (KXFED), not KALSHI_SERIES_BY_EVENT_TITLE ===")
+def test_kalshi_read_skipped_for_fomc_now_that_rate_decision_series_is_empty():
+    print("=== accumulator: 'Federal Funds Rate' no longer resolves a Kalshi series — KALSHI_RATE_DECISION_SERIES is now empty ===")
+    # KXFED is ticketed to a specific FOMC MEETING DATE, not a month —
+    # month-suffix matching in _resolve_event_ticker() can't resolve it, so
+    # config.settings.KALSHI_RATE_DECISION_SERIES was deliberately emptied
+    # (see its comment there). This locks in the resulting behavior: FOMC/
+    # Federal Funds Rate now falls through _read_kalshi_signal() with no
+    # series match at all, get_market_read() is never called, and
+    # score_bundle() receives kalshi_read=None — mirroring
+    # test_kalshi_lookup_skipped_for_event_with_no_series_mapping()'s pattern.
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         dashboard_db_path = Path(tmp) / "dashboard.db"
@@ -840,7 +866,6 @@ def test_kalshi_read_for_fomc_uses_rate_decision_series():
         event.title = "Federal Funds Rate"
         event.forecast = "4.25%"
         bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
-        fake_read = accumulator_kalshi_feed.KalshiRead(strike=4.25, implied_direction="higher", implied_probability=0.6, open_interest=50.0)
 
         captured_kwargs = {}
         def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
@@ -853,17 +878,15 @@ def test_kalshi_read_for_fomc_uses_rate_decision_series():
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
-             patch.object(accumulator, "get_market_read", return_value=fake_read) as mock_kalshi, \
+             patch.object(accumulator, "get_market_read") as mock_kalshi, \
              patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
              patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
 
-        args, kwargs = mock_kalshi.call_args
-        assert args[0] == "KXFED"
-        assert captured_kwargs["kalshi_read"] is fake_read
-        assert captured_kwargs["kalshi_direction_override"] == "higher_bullish", \
-            "FOMC always resolves 'higher_bullish' regardless of EVENT_SURPRISE_DIRECTION, which has no 'Federal Funds Rate' entry"
+        mock_kalshi.assert_not_called()
+        assert captured_kwargs["kalshi_read"] is None
+        assert captured_kwargs["kalshi_direction_override"] is None
     print("PASS\n")
 
 
@@ -893,10 +916,12 @@ if __name__ == "__main__":
     test_failed_scoring_for_one_pair_does_not_stop_others()
     test_article_bundle_fetched_once_per_event_not_per_instrument()
     test_failed_calendar_fetch_returns_none_without_crashing()
+    test_shift_back_one_month_normal_case()
+    test_shift_back_one_month_year_rollover()
     test_kalshi_read_passed_to_score_bundle_for_numeric_event()
     test_kalshi_lookup_skipped_for_event_with_no_series_mapping()
     test_kalshi_lookup_skipped_for_unparseable_forecast()
     test_kalshi_fetch_failure_fails_open_without_crashing_cycle()
     test_kalshi_fetch_returning_none_fails_open_without_crashing_cycle()
-    test_kalshi_read_for_fomc_uses_rate_decision_series()
+    test_kalshi_read_skipped_for_fomc_now_that_rate_decision_series_is_empty()
     print("All backtest_accumulator tests passed.")

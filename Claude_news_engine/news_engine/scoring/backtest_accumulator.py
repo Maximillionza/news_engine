@@ -168,6 +168,22 @@ def _read_trend_signal(event_title: str):
     return compute_trend_signal(confirmed)
 
 
+def _shift_back_one_month(d: dt.date) -> dt.date:
+    """
+    Kalshi's month-only-ticker series (CPI, PPI, NFP, ADP, unemployment
+    rate, ISM PMI, PCE, retail sales, challenger job cuts, and their
+    y/y and core variants) ticket the DATA/REFERENCE month, not the
+    release month — confirmed live: the market titled "CPI in July"
+    (ticker KXCPI-26JUL) is the market for the report that RELEASES in
+    mid-August, one month later. Forex Factory's event_time_utc is the
+    release date, so this shifts it back one month before building the
+    expected Kalshi ticker suffix. Handles year rollover (January -> prior December).
+    """
+    if d.month == 1:
+        return d.replace(year=d.year - 1, month=12, day=1)
+    return d.replace(month=d.month - 1, day=1)
+
+
 def _read_kalshi_signal(event: EconomicEvent) -> tuple[Optional[KalshiRead], Optional[str]]:
     """
     Looks up event.title in KALSHI_SERIES_BY_EVENT_TITLE first (numeric
@@ -196,9 +212,16 @@ def _read_kalshi_signal(event: EconomicEvent) -> tuple[Optional[KalshiRead], Opt
     series_ticker = KALSHI_SERIES_BY_EVENT_TITLE.get(event.title)
     if series_ticker is not None:
         surprise_direction_value = EVENT_SURPRISE_DIRECTION.get(event.title)
+        # Month-only-ticker series (this branch only — see
+        # _shift_back_one_month()'s docstring): Kalshi tickets the
+        # data/reference month, one month BEHIND the Forex Factory release
+        # date, so the raw release date must be shifted back before it's
+        # used to build the expected ticker suffix.
+        event_month = _shift_back_one_month(event.event_time_utc.date())
     else:
         series_ticker = KALSHI_RATE_DECISION_SERIES.get(event.title)
         surprise_direction_value = "higher_bullish" if series_ticker is not None else None
+        event_month = event.event_time_utc.date()
 
     if series_ticker is None or surprise_direction_value is None:
         return None, None
@@ -208,7 +231,7 @@ def _read_kalshi_signal(event: EconomicEvent) -> tuple[Optional[KalshiRead], Opt
         return None, None
 
     try:
-        read = get_market_read(series_ticker, event.event_time_utc.date(), target_strike)
+        read = get_market_read(series_ticker, event_month, target_strike)
     except Exception as exc:  # noqa: BLE001 — a failed Kalshi fetch must not crash the accumulator cycle
         print(f"[backtest_accumulator] WARNING: Kalshi fetch failed for {event.title}: {exc}")
         return None, None
