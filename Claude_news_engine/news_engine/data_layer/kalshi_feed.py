@@ -71,7 +71,7 @@ def get_market_read(series_ticker: str, event_month: dt.date, target_strike: flo
 
         resp = requests.get(
             f"{KALSHI_BASE_URL}/markets",
-            params={"series_ticker": series_ticker, "status": "open"},
+            params={"event_ticker": event_ticker, "status": "open"},
             timeout=15,
         )
         resp.raise_for_status()

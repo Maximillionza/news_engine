@@ -118,6 +118,27 @@ def test_get_market_read_returns_none_on_request_failure():
     print("PASS\n")
 
 
+def test_get_market_read_filters_markets_by_event_ticker_not_series_ticker():
+    print("=== kalshi_feed: get_market_read filters /markets by event_ticker, not series_ticker, to scope to exactly one event ===")
+    strikes_response = _fake_markets_response([
+        (0.2, "0.60", "0.70", "80"),
+    ])
+    with patch.object(kalshi_feed.requests, "get") as mock_get:
+        mock_get.side_effect = [
+            _fake_response(_fake_events_response("KXCPI-26AUG")),
+            _fake_response(strikes_response),
+        ]
+        result = kalshi_feed.get_market_read("KXCPI", dt.date(2026, 8, 1), target_strike=0.2)
+        assert result is not None
+        # Verify the second call (markets fetch) uses event_ticker, not series_ticker
+        markets_call_params = mock_get.call_args_list[1].kwargs["params"]
+        assert "event_ticker" in markets_call_params
+        assert markets_call_params["event_ticker"] == "KXCPI-26AUG"
+        assert "series_ticker" not in markets_call_params
+        assert markets_call_params["status"] == "open"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_get_market_read_picks_nearest_strike_and_computes_midpoint()
     test_get_market_read_discretizes_higher_lower_in_line()
@@ -125,4 +146,5 @@ if __name__ == "__main__":
     test_get_market_read_returns_none_when_no_events()
     test_get_market_read_returns_none_when_no_markets()
     test_get_market_read_returns_none_on_request_failure()
+    test_get_market_read_filters_markets_by_event_ticker_not_series_ticker()
     print("All kalshi_feed tests passed.")
