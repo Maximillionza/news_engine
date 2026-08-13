@@ -182,6 +182,105 @@ def test_print_call_trust_weight_below_precursor_trust_weight():
     print("PASS\n")
 
 
+@dataclass
+class _FakeKalshiRead:
+    """Duck-typed stand-in for data_layer.kalshi_feed.KalshiRead — probability_engine.py never imports data_layer.kalshi_feed directly, tests exercise the duck-typed contract."""
+    strike: float
+    implied_direction: str
+    implied_probability: float
+    open_interest: float
+
+
+def test_kalshi_read_higher_on_bullish_indicator_is_bullish():
+    print("=== score_bundle: a 'higher' Kalshi read on a higher_bullish indicator contributes USD-bullish ===")
+    event = _cpi_event()
+    bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
+    kalshi_read = _FakeKalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.7, open_interest=100.0)
+    with patch.dict(probability_engine.INSTRUMENTS, {"USDJPY": {"label": "USD/JPY", "usd_relationship": "direct"}}):
+        result = score_bundle(bundle, "USDJPY", kalshi_read=kalshi_read)
+    assert result.direction == Direction.BULLISH
+    print("PASS\n")
+
+
+def test_kalshi_read_higher_on_bearish_indicator_flips_sign():
+    print("=== score_bundle: a 'higher' Kalshi read on a higher_bearish indicator contributes USD-bearish ===")
+    event = _unemployment_event()
+    bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
+    kalshi_read = _FakeKalshiRead(strike=4.0, implied_direction="higher", implied_probability=0.7, open_interest=100.0)
+    with patch.dict(probability_engine.INSTRUMENTS, {"USDJPY": {"label": "USD/JPY", "usd_relationship": "direct"}}):
+        result = score_bundle(bundle, "USDJPY", kalshi_read=kalshi_read)
+    assert result.direction == Direction.BEARISH
+    print("PASS\n")
+
+
+def test_kalshi_read_in_line_contributes_nothing():
+    print("=== score_bundle: an in_line Kalshi read adds ZERO contributions, not a zero-weight one ===")
+    event = _cpi_event()
+    bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
+    kalshi_read = _FakeKalshiRead(strike=0.3, implied_direction="in_line", implied_probability=0.5, open_interest=100.0)
+    result = score_bundle(bundle, "XAUUSD", kalshi_read=kalshi_read)
+    assert result.probability == 0.5  # identical to the no-kalshi-read case — proves zero contribution
+    print("PASS\n")
+
+
+def test_kalshi_read_none_contributes_nothing():
+    print("=== score_bundle: kalshi_read=None adds zero contributions ===")
+    event = _cpi_event()
+    bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
+    result = score_bundle(bundle, "XAUUSD", kalshi_read=None)
+    assert result.probability == 0.5
+    print("PASS\n")
+
+
+def test_kalshi_read_decays_with_age():
+    print("=== score_bundle: an old Kalshi read contributes less than a fresh one ===")
+    event = _cpi_event()
+    kalshi_read = _FakeKalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.7, open_interest=100.0)
+    # Same comparably-weighted anchor-article approach the existing
+    # test_print_call_decays_with_age test already uses — a single
+    # contribution's weight cancels algebraically in _weighted_aggregate(),
+    # so decay is only observable relative to a second, fixed contribution.
+    from data_layer.news_feed import NewsArticle
+    anchor_fresh = NewsArticle(
+        title="Markets await Friday's data release", summary="Traders are watching closely.",
+        source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+        url="https://example.test/neutral-fresh",
+    )
+    anchor_stale = NewsArticle(
+        title="Markets await Friday's data release", summary="Traders are watching closely.",
+        source="Test Wire", source_type="test", published_utc=EVENT_TIME + dt.timedelta(hours=47),
+        url="https://example.test/neutral-stale",
+    )
+    bundle_fresh = EventNewsBundle(event=event, articles=[anchor_fresh], as_of_utc=EVENT_TIME)
+    bundle_stale = EventNewsBundle(event=event, articles=[anchor_stale], as_of_utc=EVENT_TIME + dt.timedelta(hours=48))
+    fresh_result = score_bundle(bundle_fresh, "XAUUSD", kalshi_read=kalshi_read)
+    stale_result = score_bundle(bundle_stale, "XAUUSD", kalshi_read=kalshi_read)
+    assert abs(fresh_result.instrument_score) > abs(stale_result.instrument_score)
+    print("PASS\n")
+
+
+def test_kalshi_and_print_call_and_trend_signal_all_present_all_contribute():
+    print("=== score_bundle: kalshi_read, print_call, and trend_signal can all be present at once, none excludes another ===")
+    event = _cpi_event()
+    bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
+    kalshi_read = _FakeKalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.7, open_interest=100.0)
+    print_call = PrintCall(direction="higher", confidence=0.7, article_count=5)
+    trend_signal = _FakeTrendSignal(direction="higher", strength=0.8)
+    all_result = score_bundle(bundle, "XAUUSD", print_call=print_call, trend_signal=trend_signal, kalshi_read=kalshi_read)
+    kalshi_only_result = score_bundle(bundle, "XAUUSD", kalshi_read=kalshi_read)
+    # All three agreeing (same direction) should produce a stronger/more
+    # confident read than kalshi_read alone.
+    assert all_result.confidence >= kalshi_only_result.confidence
+    print("PASS\n")
+
+
+def test_kalshi_trust_weight_above_precursor_trust_weight():
+    print("=== sanity: KALSHI_TRUST_WEIGHT is above PRECURSOR_TRUST_WEIGHT, per the spec's trust tiering ===")
+    from config.settings import KALSHI_TRUST_WEIGHT, PRECURSOR_TRUST_WEIGHT
+    assert KALSHI_TRUST_WEIGHT > PRECURSOR_TRUST_WEIGHT
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_bundle_without_new_params_is_unchanged()
     test_print_call_higher_on_bullish_indicator_is_bullish_for_direct_instrument()
@@ -193,4 +292,11 @@ if __name__ == "__main__":
     test_trend_signal_does_not_decay_with_age()
     test_print_call_and_trend_signal_both_present_both_contribute()
     test_print_call_trust_weight_below_precursor_trust_weight()
+    test_kalshi_read_higher_on_bullish_indicator_is_bullish()
+    test_kalshi_read_higher_on_bearish_indicator_flips_sign()
+    test_kalshi_read_in_line_contributes_nothing()
+    test_kalshi_read_none_contributes_nothing()
+    test_kalshi_read_decays_with_age()
+    test_kalshi_and_print_call_and_trend_signal_all_present_all_contribute()
+    test_kalshi_trust_weight_above_precursor_trust_weight()
     print("All probability_engine tests passed.")

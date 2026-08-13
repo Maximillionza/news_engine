@@ -35,6 +35,7 @@ from config.settings import (
     ENABLE_LLM_SENTIMENT,
     EVENT_SURPRISE_DIRECTION,
     INSTRUMENTS,
+    KALSHI_TRUST_WEIGHT,
     PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES,
     PRECURSOR_TRUST_WEIGHT,
     PRINT_CALL_TRUST_WEIGHT,
@@ -109,6 +110,23 @@ class TrendStreakContribution:
     Audit trail for the event's historical beat/miss streak
     (webapp/trend.py's TrendSignal), mapped onto the USD axis via
     EVENT_SURPRISE_DIRECTION. Duck-typed like PrecursorContribution.
+    """
+    event_title: str
+    usd_sentiment: float
+    trust_weight: float
+    time_weight: float
+    combined_weight: float
+
+
+@dataclass
+class KalshiMarketContribution:
+    """
+    Audit trail for a Kalshi prediction-market read (data_layer.kalshi_feed's
+    KalshiRead), mapped onto the USD axis via EVENT_SURPRISE_DIRECTION (for
+    numeric events) or RATE_DECISION_DIRECTION (for FOMC/Federal Funds
+    Rate). Duck-typed like the other three contribution types — same
+    usd_sentiment/combined_weight fields — so it flows through the
+    existing weighted-average, agreement, and coverage math unchanged.
     """
     event_title: str
     usd_sentiment: float
@@ -319,6 +337,51 @@ def _build_trend_streak_contribution(
     )
 
 
+def _build_kalshi_contribution(
+    kalshi_read,  # KalshiRead | None — duck-typed, no import from data_layer.kalshi_feed needed
+    event: EconomicEvent,
+    as_of: dt.datetime,
+    surprise_direction_value: str | None = None,
+):
+    """
+    Returns None (no contribution) if kalshi_read is None, its direction
+    is 'in_line' (no lean either way), or no direction-mapping value was
+    resolved for this event title. surprise_direction_value is the
+    ALREADY-RESOLVED direction-mapping string ('higher_bullish' /
+    'higher_bearish' from EVENT_SURPRISE_DIRECTION, or 'bullish' /
+    'bearish' / 'neutral' straight from RATE_DECISION_DIRECTION for a
+    discrete FOMC decision) — the caller (scoring/backtest_accumulator.py)
+    already knows which of the two mapping dicts matched this event's
+    title from its own lookup, so this function doesn't re-derive it.
+    """
+    if kalshi_read is None or kalshi_read.implied_direction == "in_line":
+        return None
+    if surprise_direction_value is None:
+        return None
+
+    raw = kalshi_read.implied_probability if kalshi_read.implied_direction == "higher" else -kalshi_read.implied_probability
+    if surprise_direction_value == "higher_bullish":
+        usd_sentiment = raw
+    elif surprise_direction_value == "higher_bearish":
+        usd_sentiment = -raw
+    elif surprise_direction_value == "bullish":
+        usd_sentiment = abs(raw)
+    elif surprise_direction_value == "bearish":
+        usd_sentiment = -abs(raw)
+    else:  # 'neutral', or any unrecognized value — no lean, no contribution
+        return None
+
+    age_minutes = max(0.0, (as_of - event.event_time_utc).total_seconds() / 60.0)
+    time_w = 0.5 ** (age_minutes / PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES)
+    return KalshiMarketContribution(
+        event_title=event.title,
+        usd_sentiment=usd_sentiment,
+        trust_weight=KALSHI_TRUST_WEIGHT,
+        time_weight=time_w,
+        combined_weight=KALSHI_TRUST_WEIGHT * time_w,
+    )
+
+
 def _weighted_aggregate(contributions: list[ArticleContribution]) -> float:
     total_weight = sum(c.combined_weight for c in contributions)
     if total_weight <= 0:
@@ -444,6 +507,8 @@ def score_bundle(
     precursor_events: list[EconomicEvent] | None = None,
     print_call=None,   # PrintCall | None — duck-typed
     trend_signal=None,  # TrendSignal | None — duck-typed
+    kalshi_read=None,   # KalshiRead | None — duck-typed
+    kalshi_direction_override=None,  # str | None — 'higher_bullish'/'higher_bearish', see below
 ) -> ProbabilityResult:
     """
     Main entry point: score an EventNewsBundle for a given instrument
@@ -468,6 +533,24 @@ def score_bundle(
     MIN_OCCURRENCES_FOR_TREND_PRIOR before being passed in here). Blended
     in at TREND_STREAK_TRUST_WEIGHT, with no time decay. None contributes
     nothing.
+
+    kalshi_read: optional — a Kalshi prediction-market read
+    (data_layer/kalshi_feed.py's KalshiRead) for this occurrence. Blended
+    in at config.settings.KALSHI_TRUST_WEIGHT (the highest tier — real
+    money priced directly on the exact event being scored), with the same
+    decay a precursor uses. An 'in_line' read contributes nothing.
+
+    kalshi_direction_override: optional — a 'higher_bullish'/'higher_bearish'
+    string to use INSTEAD of looking up EVENT_SURPRISE_DIRECTION[bundle.event.title]
+    when resolving kalshi_read's USD-sentiment sign. Needed for events like
+    FOMC/Federal Funds Rate that aren't in EVENT_SURPRISE_DIRECTION at all
+    (a discrete rate decision, not a continuous forecast-vs-actual number)
+    — the caller (scoring/backtest_accumulator.py's _read_kalshi_signal())
+    already knows which of its two Kalshi-series dicts matched this
+    event's title and resolves the correct direction value itself, so
+    score_bundle() stays free of any FOMC-specific special-casing or a
+    dependency on config.settings.KALSHI_RATE_DECISION_SERIES. Ignored
+    when kalshi_read is None.
     """
     if instrument not in INSTRUMENTS:
         raise ValueError(f"Unknown instrument {instrument!r} — add it to config.settings.INSTRUMENTS first")
@@ -477,10 +560,17 @@ def score_bundle(
     precursor_contributions = _build_precursor_contributions(precursor_events or [], as_of)
     print_call_contribution = _build_print_call_contribution(print_call, bundle.event, as_of)
     trend_streak_contribution = _build_trend_streak_contribution(trend_signal, bundle.event)
+    kalshi_surprise_value = kalshi_direction_override if kalshi_direction_override is not None else EVENT_SURPRISE_DIRECTION.get(bundle.event.title)
+    kalshi_contribution = _build_kalshi_contribution(
+        kalshi_read, bundle.event, as_of,
+        surprise_direction_value=kalshi_surprise_value,
+    )
     extra_contributions = precursor_contributions + (
         [print_call_contribution] if print_call_contribution is not None else []
     ) + (
         [trend_streak_contribution] if trend_streak_contribution is not None else []
+    ) + (
+        [kalshi_contribution] if kalshi_contribution is not None else []
     )
     all_contributions = article_contributions + extra_contributions
 
