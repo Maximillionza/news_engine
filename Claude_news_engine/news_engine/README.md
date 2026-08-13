@@ -364,6 +364,43 @@ session's first live CPI release produced one correct print call and one
 wrong one out of two, exactly the kind of thin sample this design
 protects live scoring from over-trusting.
 
+### Kalshi prediction-market scoring contribution
+
+A fifth optional signal blends into `score_bundle()`, alongside article
+sentiment, precursor structured surprises, the print-direction lexicon
+call, and the trend-history streak — Kalshi's own real-money market price
+on the *exact* event being scored, read via `data_layer/kalshi_feed.py`'s
+free, unauthenticated public API access
+(`external-api.kalshi.com/trade-api/v2`, confirmed live, no API key
+needed). **Read-only — this integration never trades, never places an
+order, never authenticates.**
+
+15 of this system's 19 numeric-forecast tracked events have confirmed,
+active Kalshi coverage (`config.settings.KALSHI_SERIES_BY_EVENT_TITLE`),
+each verified against the actual market's rules text rather than trusted
+titles/metadata (Kalshi's own series metadata has real errors — e.g. one
+series' listed settlement-source URL points to an unrelated indicator's
+page). FOMC/Federal Funds Rate — a discrete cut/hold/hike decision, not a
+continuous forecast-vs-actual number — gets its own small, parallel
+mapping (`KALSHI_RATE_DECISION_SERIES`) rather than being forced into the
+numeric convention.
+
+Highest trust tier in the system (`KALSHI_TRUST_WEIGHT=0.95`, above a
+precursor's `0.9`) — this prices real money directly on the exact event
+being scored, not a related-but-different one. A market whose open
+interest is below `MIN_KALSHI_OPEN_INTEREST` contributes nothing, not a
+diluted nudge, protecting the highest-trust contribution from an
+illiquid, easily-skewed price. Persisted diff-aware in a new
+`kalshi_reads` table (`scoring/backtest_store.py`), mirroring
+`print_predictions` — no History tab column for it yet (a follow-up once
+that tab exists to extend).
+
+See
+`docs/superpowers/specs/2026-08-12-kalshi-integration-design.md` for the
+full design and its explicit out-of-scope list (no trading, no
+multi-strike probability-distribution blending, no calibration of the
+trust weight against real outcomes yet).
+
 ### History tab
 
 A third dashboard tab ("History", alongside Dashboard/Calendar) shows a
