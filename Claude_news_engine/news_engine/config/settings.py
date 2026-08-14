@@ -260,6 +260,13 @@ PRINT_SURPRISE_LEXICON = {
         "higher": ["claims rise unexpectedly", "jobless claims jump", "layoffs increase", "claims surprise to the upside"],
         "lower": ["claims fall", "jobless claims decline", "layoffs ease", "claims surprise to the downside"],
     },
+    # Added same day as the three above, same root cause: covered by
+    # ACCUMULATOR_MEDIUM_ALLOWLIST and EVENT_SURPRISE_DIRECTION but had no
+    # lexicon entry, so it could never produce a print_predictions row.
+    "Prelim UoM Consumer Sentiment": {
+        "higher": ["consumer sentiment improves", "confidence rises", "sentiment beats estimates", "upside surprise"],
+        "lower": ["consumer sentiment falls", "confidence declines", "sentiment misses estimates", "downside surprise"],
+    },
 }
 
 # Trust weight for a precursor's structured surprise contribution — high,
