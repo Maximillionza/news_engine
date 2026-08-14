@@ -363,6 +363,42 @@ def test_predictions_article_count_is_none_when_accumulator_never_scored_it():
     print("PASS\n")
 
 
+def test_predictions_shows_article_prediction_even_when_essence_score_missing():
+    print("=== /api/predictions: article_prediction/print_prediction show even when NO essence-only score exists yet for this symbol ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            _seed_calendar(db_path, _fake_events())
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            # Deliberately NO store.record_run() call — simulates a newly-added
+            # symbol before webapp/scheduler.py's next essence-only scoring cycle.
+            conn.close()
+
+            event_time = dt.datetime(2026, 8, 7, 12, 30, tzinfo=dt.timezone.utc)
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_prediction(
+                bconn, "Non-Farm Employment Change", "XAUUSD", event_time,
+                0.66, "bullish", 0.4, 12, False,
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            data = resp.get_json()
+            entry = next(e for e in data["predictions"] if e["symbol"] == "XAUUSD")
+            event = entry["events"][0]
+            assert event["article_prediction"] is not None  # THE bug fix — this was previously unreachable without an essence score
+            assert event["article_prediction"] == {
+                "direction": "bullish", "probability": 0.66, "article_count": 12,
+            }
+            assert event["direction"] == "pending", "no essence-only run recorded — direction must default to 'pending', not crash or None"
+            assert event["probability"] is None
+    print("PASS\n")
+
+
 def test_prediction_history_endpoint_returns_full_run_history():
     print("=== app: /api/predictions/<symbol>/history returns the full oldest-first run history for that (symbol, event) ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -647,6 +683,7 @@ if __name__ == "__main__":
     test_predictions_includes_previous_article_prediction_when_two_snapshots_exist()
     test_predictions_article_prediction_is_none_when_accumulator_never_scored_it()
     test_predictions_article_count_is_none_when_accumulator_never_scored_it()
+    test_predictions_shows_article_prediction_even_when_essence_score_missing()
     test_prediction_history_endpoint_returns_full_run_history()
     test_prediction_history_endpoint_missing_event_title_returns_empty()
     test_calendar_returns_not_yet_available_before_first_fetch()

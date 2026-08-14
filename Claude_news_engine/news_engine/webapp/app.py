@@ -153,9 +153,7 @@ def get_predictions():
         entry = {"symbol": ticker, "symbol_class": symbol_class.symbol_class, "events": []}
         for event in events:
             runs = get_latest_two(conn, ticker, event["title"])
-            if not runs:
-                continue
-            latest = runs[0]
+            latest = runs[0] if runs else None
             previous = runs[1] if len(runs) > 1 else None
             # The accumulator's own blind, article-based call — direction
             # and probability, not just how many articles backed it. This
@@ -195,11 +193,19 @@ def get_predictions():
             print_prediction = None
             if print_call is not None:
                 print_prediction = {"direction": print_call.predicted_vs_forecast, "confidence": print_call.confidence}
+
+            # An event is only worth including in this symbol's list at
+            # all if SOME layer has something to say about it — an event
+            # with zero essence score AND zero article prediction AND
+            # zero print call is genuinely nothing-yet, same as before.
+            if latest is None and article_prediction is None and print_prediction is None:
+                continue
+
             entry["events"].append({
                 "event_title": event["title"],
                 "event_time_utc": event["event_time_utc"],
-                "probability": latest.probability,
-                "direction": latest.direction,
+                "probability": latest.probability if latest else None,
+                "direction": latest.direction if latest else "pending",
                 "previous_probability": previous.probability if previous else None,
                 "previous_direction": previous.direction if previous else None,
                 "article_count": accumulator_prediction.article_count if accumulator_prediction else None,
