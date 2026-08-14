@@ -261,7 +261,11 @@ function renderCard(symbolEntry) {
     // The event/when data is already in the response — showing it here
     // instead of a generic placeholder tells the user WHAT they're
     // actually waiting on, not just that something is pending.
-    body += `<div class="pending">Awaiting: ${escapeHtml(next.event_title)}<br>
+    const hasAnySignal = articlePredictionLine || printPredictionLine;
+    const heading = hasAnySignal
+      ? `Awaiting essence score: ${escapeHtml(next.event_title)}`
+      : `Awaiting: ${escapeHtml(next.event_title)}`;
+    body += `<div class="pending">${heading}<br>
       <span style="font-size:12px;color:#888">${formatEventDateTime(next.event_time_utc)}</span></div>
       ${articlePredictionLine}${printPredictionLine}`;
     el.innerHTML = body;
