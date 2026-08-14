@@ -126,6 +126,25 @@ def run_seed(
             f"do not match any config.settings.EVENT_SURPRISE_DIRECTION key: {unrecognized}"
         )
 
+    # Empty-actual gate: a seeded fact is only ever supposed to represent a
+    # real, already-published number (that's the whole point of "seeded" —
+    # a pre-live-start historical fact, researched and confirmed, not a
+    # placeholder). webapp/store.py's upsert_event_history() ON CONFLICT
+    # CASE relies on a seeded row's `actual` being non-NULL to keep its
+    # source from ever being relabeled by a later live/web-fallback upsert
+    # for the same occurrence — a seeded fact with an empty actual would
+    # silently defeat that guarantee instead of raising here, where the
+    # mistake is obvious and fixable before any write happens.
+    missing_actual = sorted({
+        f"{fact.title}@{fact.event_time_utc.isoformat()}" for fact in facts
+        if not fact.actual
+    })
+    if missing_actual:
+        raise ValueError(
+            f"[seed_historical_data] {len(missing_actual)} HistoricalEventFact(s) have an "
+            f"empty/None actual — seeded facts must always carry a real actual: {missing_actual}"
+        )
+
     report = SeedReport()
     now = now or dt.datetime.now(UTC_TZ)
 

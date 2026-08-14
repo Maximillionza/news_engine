@@ -494,6 +494,54 @@ def test_get_events_with_stale_missing_actual_respects_grace_period():
     print("PASS\n")
 
 
+def test_upsert_event_history_seeded_source_survives_a_later_live_upsert_with_real_actual():
+    print("=== webapp/store: a 'seeded' row's source stays 'seeded' even when a later 'live' upsert supplies its own (redundant) real actual ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 1, 13, 12, 30, tzinfo=UTC_TZ)
+
+        seeded_event = _fake_event(title="CPI m/m", event_time_utc=event_time, actual="0.2%")
+        store.upsert_event_history(conn, seeded_event, "higher_bullish", dt.datetime(2026, 1, 13, 13, 0, tzinfo=UTC_TZ), source="seeded")
+
+        # A later re-fetch for the SAME occurrence, from the live scheduler,
+        # supplying its own real (redundant) actual — this must NOT flip
+        # source from 'seeded' to 'live', per upsert_event_history()'s
+        # documented guarantee.
+        live_event = _fake_event(title="CPI m/m", event_time_utc=event_time, actual="0.2%")
+        store.upsert_event_history(conn, live_event, "higher_bullish", dt.datetime(2026, 1, 13, 14, 0, tzinfo=UTC_TZ), source="live")
+
+        rows = store.get_event_history(conn, "CPI m/m")
+        assert rows[0].source == "seeded"
+        assert rows[0].actual == "0.2%"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_events_with_stale_missing_actual_excludes_text_only_events():
+    print("=== webapp/store: get_events_with_stale_missing_actual excludes structurally text-only events (forecast AND previous both NULL) past the grace period ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        now = dt.datetime(2026, 8, 14, 12, 0, tzinfo=UTC_TZ)
+
+        numeric_stale = _fake_event(title="PPI m/m", event_time_utc=now - dt.timedelta(hours=48), forecast="0.2%")
+        text_only_stale = EconomicEvent(
+            title="RBA Gov Bullock Speaks", country="USD", impact="High",
+            event_time_utc=now - dt.timedelta(hours=48), forecast=None, actual=None,
+        )
+        text_only_stale.previous = None
+
+        store.upsert_event_history(conn, numeric_stale, None, now)
+        store.upsert_event_history(conn, text_only_stale, None, now)
+
+        stale = store.get_events_with_stale_missing_actual(conn, now, grace_period_hours=6)
+        titles = {r.event_title for r in stale}
+        assert titles == {"PPI m/m"}  # text-only event excluded — it will never publish a comparable actual
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_round_trip_and_diff()
     test_fewer_than_two_runs()
@@ -517,4 +565,6 @@ if __name__ == "__main__":
     test_get_connection_migrates_preexisting_db_missing_source_column()
     test_get_connection_fresh_db_has_source_column_no_error()
     test_get_events_with_stale_missing_actual_respects_grace_period()
+    test_upsert_event_history_seeded_source_survives_a_later_live_upsert_with_real_actual()
+    test_get_events_with_stale_missing_actual_excludes_text_only_events()
     print("All store tests passed.")

@@ -63,7 +63,7 @@ class HistoryRow:
     ne_confidence: float
     outcome: Optional[str]          # 'Confirmed' | 'Missed' | None
     unjudged_reason: Optional[str]  # None when outcome is a real verdict; else 'shrug' | 'unknown_surprise' | 'pending'
-    source: str                     # 'live' | 'seeded' — for numeric rows, 'seeded' wins if either side of the join disagrees
+    source: str                     # 'live' | 'seeded' | 'live_web_fallback' — for numeric rows, 'seeded' wins if either side of the join disagrees, else 'live_web_fallback' wins if either side is 'live_web_fallback', else 'live'
 
 
 def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[dt.datetime] = None) -> list[HistoryRow]:
@@ -142,8 +142,17 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                 # the join (event_history + print_predictions); if it ever
                 # doesn't, 'seeded' wins — a partially-reconstructed row is
                 # more honestly labeled by its most-uncertain component, not
-                # its most-certain one.
-                source="seeded" if "seeded" in (event.source, call.source) else "live",
+                # its most-certain one. 'live_web_fallback' only ever lands
+                # in event_history (call.source can't be it in practice, but
+                # checking both sides costs nothing and keeps this resilient
+                # to a future write path), so it's checked next, before
+                # falling back to 'live'. Must genuinely distinguish all
+                # three values — never collapse to a live/seeded boolean.
+                source=(
+                    "seeded" if "seeded" in (event.source, call.source)
+                    else "live_web_fallback" if "live_web_fallback" in (event.source, call.source)
+                    else "live"
+                ),
             ))
 
         for event in text_only_resolved:
