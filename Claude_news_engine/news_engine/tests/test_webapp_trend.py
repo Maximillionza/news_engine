@@ -12,6 +12,7 @@ def _row(month, surprise):
     return EventHistoryRow(
         event_title="CPI m/m", event_time_utc=f"2026-{month:02d}-12T12:30:00+00:00",
         forecast="0.3%", previous="0.3%", actual="0.4%", surprise_direction=surprise,
+        source="live",
     )
 
 
