@@ -5,6 +5,7 @@ import sys
 import os
 import tempfile
 import datetime as dt
+import sqlite3
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -528,6 +529,81 @@ def test_get_latest_kalshi_read_none_when_nothing_recorded():
     print("PASS\n")
 
 
+def test_record_prediction_defaults_to_live_source():
+    print("=== backtest_store: record_prediction defaults source='live' ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        store.record_prediction(conn, "CPI m/m", "XAUUSD", event_time, 0.7, "bullish", 0.6, 3, False)
+        rows = conn.execute("SELECT source FROM predictions ORDER BY id DESC LIMIT 1").fetchall()
+        assert rows[0]["source"] == "live"
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_prediction_accepts_explicit_seeded_source():
+    print("=== backtest_store: record_prediction(source='seeded') round-trips ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 1, 13, 12, 30, tzinfo=UTC_TZ)
+        store.record_prediction(conn, "CPI m/m", "XAUUSD", event_time, 0.7, "bullish", 0.6, 5, False, source="seeded")
+        rows = conn.execute("SELECT source FROM predictions ORDER BY id DESC LIMIT 1").fetchall()
+        assert rows[0]["source"] == "seeded"
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_print_prediction_if_changed_source_param():
+    print("=== backtest_store: record_print_prediction_if_changed accepts and stores source ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 1, 13, 12, 30, tzinfo=UTC_TZ)
+        store.record_print_prediction_if_changed(conn, "CPI m/m", event_time, PrintCall(direction="higher", confidence=0.5, article_count=3), now=event_time, source="seeded")
+        rows = conn.execute("SELECT source FROM print_predictions ORDER BY id DESC LIMIT 1").fetchall()
+        assert rows[0]["source"] == "seeded"
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_outcome_source_param():
+    print("=== backtest_store: record_outcome accepts and stores source ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 1, 13, 12, 30, tzinfo=UTC_TZ)
+        store.record_outcome(conn, "CPI m/m", "XAUUSD", event_time, "bullish", "Dukascopy: +0.30% in 30min (auto)", source="seeded")
+        rows = conn.execute("SELECT source FROM outcomes ORDER BY id DESC LIMIT 1").fetchall()
+        assert rows[0]["source"] == "seeded"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_connection_migrates_all_four_source_columns():
+    print("=== backtest_store: get_connection() adds source to predictions/print_predictions/outcomes on a pre-existing DB ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        raw_conn = sqlite3.connect(db_path)
+        raw_conn.execute("""
+            CREATE TABLE predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, event_title TEXT NOT NULL, instrument TEXT NOT NULL,
+                event_time_utc TEXT NOT NULL, scored_at_utc TEXT NOT NULL, probability REAL NOT NULL,
+                direction TEXT NOT NULL, confidence REAL NOT NULL, article_count INTEGER NOT NULL,
+                contradiction_flag INTEGER NOT NULL
+            )
+        """)
+        raw_conn.commit()
+        raw_conn.close()
+
+        conn = store.get_connection(db_path)  # must not raise, must add source to predictions
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(predictions)").fetchall()}
+        assert "source" in cols
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_record_and_count_predictions()
     test_count_predictions_scoped_to_event_occurrence_not_just_title()
@@ -556,4 +632,9 @@ if __name__ == "__main__":
     test_record_kalshi_read_if_changed_writes_on_direction_flip()
     test_get_latest_kalshi_read_scoped_to_occurrence_not_title()
     test_get_latest_kalshi_read_none_when_nothing_recorded()
+    test_record_prediction_defaults_to_live_source()
+    test_record_prediction_accepts_explicit_seeded_source()
+    test_record_print_prediction_if_changed_source_param()
+    test_record_outcome_source_param()
+    test_get_connection_migrates_all_four_source_columns()
     print("All backtest_store tests passed.")

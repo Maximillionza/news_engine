@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS predictions (
     direction TEXT NOT NULL,
     confidence REAL NOT NULL,
     article_count INTEGER NOT NULL,
-    contradiction_flag INTEGER NOT NULL
+    contradiction_flag INTEGER NOT NULL,
+    source TEXT NOT NULL DEFAULT 'live'
 );
 CREATE TABLE IF NOT EXISTS outcomes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS outcomes (
     actual_direction TEXT NOT NULL,
     actual_move_note TEXT NOT NULL,
     confirmed_at_utc TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'live',
     UNIQUE(event_title, instrument, event_time_utc)
 );
 CREATE TABLE IF NOT EXISTS dismissals (
@@ -61,7 +63,8 @@ CREATE TABLE IF NOT EXISTS print_predictions (
     predicted_vs_forecast TEXT NOT NULL,
     confidence REAL NOT NULL,
     article_count INTEGER NOT NULL,
-    scored_at_utc TEXT NOT NULL
+    scored_at_utc TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'live'
 );
 CREATE TABLE IF NOT EXISTS kalshi_reads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,6 +91,7 @@ class Prediction:
     confidence: float
     article_count: int
     contradiction_flag: bool
+    source: str
 
 
 @dataclass
@@ -99,6 +103,7 @@ class Outcome:
     actual_direction: str
     actual_move_note: str
     confirmed_at_utc: str
+    source: str
 
 
 @dataclass
@@ -110,6 +115,7 @@ class PrintPrediction:
     confidence: float
     article_count: int
     scored_at_utc: str
+    source: str
 
 
 @dataclass
@@ -124,6 +130,21 @@ class KalshiReadRecord:
     read_at_utc: str
 
 
+def _migrate_add_source_columns(conn: sqlite3.Connection) -> None:
+    """
+    Same reasoning as webapp/store.py's _migrate_add_source_column() —
+    CREATE TABLE IF NOT EXISTS doesn't retroactively add a column.
+    Covers predictions, print_predictions, and outcomes (NOT
+    dismissals/check_log/kalshi_reads — no seeded rows are ever written
+    to those).
+    """
+    for table in ("predictions", "print_predictions", "outcomes"):
+        existing_columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if "source" not in existing_columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN source TEXT NOT NULL DEFAULT 'live'")
+    conn.commit()
+
+
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     # db_path resolved inside the body (not as a default arg value) so
     # tests can patch module-level DB_PATH and have it take effect.
@@ -131,6 +152,7 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
+    _migrate_add_source_columns(conn)
     return conn
 
 
@@ -145,14 +167,15 @@ def record_prediction(
     article_count: int,
     contradiction_flag: bool,
     scored_at_utc: Optional[dt.datetime] = None,
+    source: str = "live",
 ) -> int:
     scored_at = scored_at_utc or dt.datetime.now(dt.timezone.utc)
     cursor = conn.execute(
         "INSERT INTO predictions (event_title, instrument, event_time_utc, scored_at_utc, "
-        "probability, direction, confidence, article_count, contradiction_flag) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "probability, direction, confidence, article_count, contradiction_flag, source) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (event_title, instrument, event_time_utc.isoformat(), scored_at.isoformat(),
-         probability, direction, confidence, article_count, int(contradiction_flag)),
+         probability, direction, confidence, article_count, int(contradiction_flag), source),
     )
     conn.commit()
     return cursor.lastrowid
@@ -263,6 +286,7 @@ def get_latest_two_predictions(
             event_time_utc=d["event_time_utc"], scored_at_utc=d["scored_at_utc"],
             probability=d["probability"], direction=d["direction"], confidence=d["confidence"],
             article_count=d["article_count"], contradiction_flag=bool(d["contradiction_flag"]),
+            source=d["source"],
         ))
     return predictions
 
@@ -275,6 +299,7 @@ def record_outcome(
     actual_direction: str,
     actual_move_note: str,
     confirmed_at_utc: Optional[dt.datetime] = None,
+    source: str = "live",
 ) -> int:
     # Validated here, not just in the interactive CLI (scripts/confirm_backtest_outcomes.py)
     # — that check is UI-layer only and doesn't protect any other caller. An
@@ -292,9 +317,9 @@ def record_outcome(
     confirmed_at = confirmed_at_utc or dt.datetime.now(dt.timezone.utc)
     cursor = conn.execute(
         "INSERT INTO outcomes (event_title, instrument, event_time_utc, actual_direction, "
-        "actual_move_note, confirmed_at_utc) VALUES (?, ?, ?, ?, ?, ?)",
+        "actual_move_note, confirmed_at_utc, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (event_title, instrument, event_time_utc.isoformat(), actual_direction,
-         actual_move_note, confirmed_at.isoformat()),
+         actual_move_note, confirmed_at.isoformat(), source),
     )
     conn.commit()
     return cursor.lastrowid
@@ -377,7 +402,7 @@ def get_all_confirmed_cases(conn: sqlite3.Connection) -> list[tuple[Prediction, 
     rows = conn.execute(
         """
         SELECT p.*, o.actual_direction, o.actual_move_note, o.confirmed_at_utc,
-               o.id AS outcome_id
+               o.id AS outcome_id, o.source AS outcome_source
         FROM outcomes o
         JOIN predictions p ON p.event_title = o.event_title
                            AND p.instrument = o.instrument
@@ -399,11 +424,13 @@ def get_all_confirmed_cases(conn: sqlite3.Connection) -> list[tuple[Prediction, 
             event_time_utc=d["event_time_utc"], scored_at_utc=d["scored_at_utc"],
             probability=d["probability"], direction=d["direction"], confidence=d["confidence"],
             article_count=d["article_count"], contradiction_flag=bool(d["contradiction_flag"]),
+            source=d["source"],
         )
         outcome = Outcome(
             id=d["outcome_id"], event_title=d["event_title"], instrument=d["instrument"],
             event_time_utc=d["event_time_utc"], actual_direction=d["actual_direction"],
             actual_move_note=d["actual_move_note"], confirmed_at_utc=d["confirmed_at_utc"],
+            source=d["outcome_source"],
         )
         cases.append((prediction, outcome))
     return cases
@@ -432,6 +459,7 @@ def get_latest_print_prediction(
         id=d["id"], event_title=d["event_title"], event_time_utc=d["event_time_utc"],
         predicted_vs_forecast=d["predicted_vs_forecast"], confidence=d["confidence"],
         article_count=d["article_count"], scored_at_utc=d["scored_at_utc"],
+        source=d["source"],
     )
 
 
@@ -441,6 +469,7 @@ def record_print_prediction_if_changed(
     event_time_utc: dt.datetime,
     call,  # PrintCall from scoring.print_direction — duck-typed to avoid a circular import (print_direction doesn't import this module, but keeping this module free of a hard dependency on it costs nothing)
     now: Optional[dt.datetime] = None,
+    source: str = "live",
 ) -> bool:
     """
     Writes a new print_predictions row only if `call.direction` differs
@@ -457,9 +486,9 @@ def record_print_prediction_if_changed(
 
     scored_at = now or dt.datetime.now(dt.timezone.utc)
     conn.execute(
-        "INSERT INTO print_predictions (event_title, event_time_utc, predicted_vs_forecast, confidence, article_count, scored_at_utc) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (event_title, event_time_utc.isoformat(), call.direction, call.confidence, call.article_count, scored_at.isoformat()),
+        "INSERT INTO print_predictions (event_title, event_time_utc, predicted_vs_forecast, confidence, article_count, scored_at_utc, source) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (event_title, event_time_utc.isoformat(), call.direction, call.confidence, call.article_count, scored_at.isoformat(), source),
     )
     conn.commit()
     return True
@@ -490,6 +519,7 @@ def get_latest_prediction_for_occurrence(
         event_time_utc=d["event_time_utc"], scored_at_utc=d["scored_at_utc"],
         probability=d["probability"], direction=d["direction"], confidence=d["confidence"],
         article_count=d["article_count"], contradiction_flag=bool(d["contradiction_flag"]),
+        source=d["source"],
     )
 
 
@@ -508,6 +538,7 @@ def get_outcome(
         id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
         event_time_utc=d["event_time_utc"], actual_direction=d["actual_direction"],
         actual_move_note=d["actual_move_note"], confirmed_at_utc=d["confirmed_at_utc"],
+        source=d["source"],
     )
 
 
