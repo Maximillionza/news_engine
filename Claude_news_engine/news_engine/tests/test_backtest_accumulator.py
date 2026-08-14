@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.settings import UTC_TZ, PRE_EVENT_WINDOW_HOURS
+from config.settings import UTC_TZ, PRE_EVENT_WINDOW_HOURS, ACCUMULATOR_MEDIUM_ALLOWLIST
 from data_layer.calendar_feed import EconomicEvent
 from data_layer.event_context import EventNewsBundle
 from scoring.probability_engine import Direction, ProbabilityResult
@@ -22,9 +22,9 @@ import data_layer.kalshi_feed as accumulator_kalshi_feed
 import webapp.store as webapp_store
 
 
-def _fake_event(hours_from_now, now):
+def _fake_event(hours_from_now, now, title="Test Event", impact="High"):
     return EconomicEvent(
-        title="Test Event", country="USD", impact="High",
+        title=title, country="USD", impact=impact,
         event_time_utc=now + dt.timedelta(hours=hours_from_now),
         forecast="1.0%", actual=None,
     )
@@ -108,7 +108,7 @@ def test_checks_every_cycle_regardless_of_how_far_out_the_event_is():
         event = _fake_event(hours_from_now=60, now=now)  # far out (60h), well outside the old final-window gate
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
              patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score, \
@@ -135,7 +135,7 @@ def test_no_cap_on_recorded_snapshots_multiple_material_changes_all_recorded():
         event = _fake_event(hours_from_now=60, now=now)
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
              patch.object(accumulator, "score_bundle", side_effect=[
@@ -165,7 +165,7 @@ def test_run_accumulator_cycle_logs_a_check_on_successful_fetch():
         event = _fake_event(hours_from_now=20, now=now)
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
              patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
@@ -188,7 +188,7 @@ def test_run_accumulator_cycle_does_not_log_a_check_on_failed_fetch():
         event = _fake_event(hours_from_now=20, now=now)
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", side_effect=Exception("article fetch blew up")):
 
@@ -207,7 +207,7 @@ def test_unchanged_score_is_checked_but_not_recorded():
         event = _fake_event(hours_from_now=20, now=now)
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
              patch.object(accumulator, "score_bundle", side_effect=[
@@ -240,7 +240,7 @@ def test_direction_flip_is_always_recorded_regardless_of_magnitude():
         event = _fake_event(hours_from_now=20, now=now)
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
              patch.object(accumulator, "score_bundle", side_effect=[
@@ -298,7 +298,7 @@ def test_precursor_events_found_and_passed_to_score_bundle():
         )
 
         with patch.object(accumulator, "fetch_calendar", return_value=[target, precursor, unrelated]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: [e for e in events if e.impact == "High"]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: [e for e in events if e.impact == "High"]), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=target, articles=[], as_of_utc=now)), \
              patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score, \
@@ -330,7 +330,7 @@ def test_print_direction_call_recorded_once_per_event():
         fake_call = accumulator_print_direction.PrintCall(direction="higher", confidence=0.6, article_count=2)
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
@@ -358,7 +358,7 @@ def test_print_direction_none_call_writes_nothing():
         bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
@@ -400,7 +400,7 @@ def test_trend_signal_passed_to_score_bundle_when_gate_met():
             return _fake_result()
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
@@ -442,7 +442,7 @@ def test_trend_signal_is_none_when_gate_not_met():
             return _fake_result()
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
@@ -475,7 +475,7 @@ def test_trend_signal_is_none_when_dashboard_db_unreachable():
         unreachable_dashboard_db = Path(tmp) / "nonexistent_subdir" / "dashboard.db"
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
@@ -510,7 +510,7 @@ def test_trend_signal_is_none_when_read_itself_fails():
             return _fake_result()
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
@@ -542,7 +542,7 @@ def test_print_call_passed_to_score_bundle():
             return _fake_result()
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=fake_call), \
@@ -575,7 +575,7 @@ def test_precursor_events_uses_unfiltered_calendar_not_high_impact_only():
         )
 
         with patch.object(accumulator, "fetch_calendar", return_value=[target, precursor]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: [e for e in events if e.impact == "High"]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: [e for e in events if e.impact == "High"]), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=target, articles=[], as_of_utc=now)), \
              patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score, \
@@ -591,7 +591,7 @@ def test_precursor_events_uses_unfiltered_calendar_not_high_impact_only():
 
 
 def test_high_impact_only_no_medium_widening():
-    print("=== accumulator: uses filter_relevant_events with default (High-only), not Medium widening like the dashboard ===")
+    print("=== accumulator: uses filter_relevant_events with default (High-only) min_impact, not Medium widening like the dashboard — only the curated allowlist extra_titles kwarg is passed ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
@@ -601,9 +601,78 @@ def test_high_impact_only_no_medium_widening():
              patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
-            mock_filter.assert_called_once_with(mock_fetch.return_value)
-            # No min_impact kwarg — confirms this does NOT widen to Medium like webapp/scheduler.py does.
-            assert mock_filter.call_args.kwargs == {}
+            mock_filter.assert_called_once_with(mock_fetch.return_value, extra_titles=ACCUMULATOR_MEDIUM_ALLOWLIST)
+            # No min_impact kwarg — confirms this does NOT widen the THRESHOLD to Medium
+            # like webapp/scheduler.py does; only the curated allowlist is admitted.
+            assert set(mock_filter.call_args.kwargs.keys()) == {"extra_titles"}
+    print("PASS\n")
+
+
+def test_accumulator_includes_allowlisted_medium_events():
+    print("=== accumulator: run_accumulator_cycle() includes a Medium-impact event on the curated allowlist ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        high_event = _fake_event(hours_from_now=20, now=now, title="CPI m/m", impact="High")
+        allowlisted_medium = _fake_event(
+            hours_from_now=20, now=now, title="Retail Sales m/m", impact="Medium",
+        )
+
+        def _fake_bundle(event, sources, query="", mode="live"):
+            return EventNewsBundle(event=event, articles=[], as_of_utc=now)
+
+        # filter_relevant_events is NOT patched here — this exercises the
+        # real function (with the real ACCUMULATOR_MEDIUM_ALLOWLIST wired
+        # in at the call site) rather than bypassing it like most of this
+        # file's other tests do.
+        with patch.object(accumulator, "fetch_calendar", return_value=[high_event, allowlisted_medium]), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", side_effect=_fake_bundle), \
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
+             patch.object(accumulator, "get_market_read", return_value=None), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
+
+            events = accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+            titles = {e.title for e in events}
+            assert titles == {"CPI m/m", "Retail Sales m/m"}, f"expected both events, got {titles}"
+
+            conn = store.get_connection(db_path)
+            assert store.count_predictions(conn, "Retail Sales m/m", "XAUUSD", allowlisted_medium.event_time_utc) == 1, (
+                "the allowlisted Medium event must actually get processed and recorded, not just pass the filter"
+            )
+            conn.close()
+    print("PASS\n")
+
+
+def test_accumulator_excludes_non_allowlisted_medium_events():
+    print("=== accumulator: a Medium event NOT on the allowlist is still excluded ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        high_event = _fake_event(hours_from_now=20, now=now, title="CPI m/m", impact="High")
+        other_medium = _fake_event(
+            hours_from_now=20, now=now, title="Building Permits", impact="Medium",
+        )
+
+        def _fake_bundle(event, sources, query="", mode="live"):
+            return EventNewsBundle(event=event, articles=[], as_of_utc=now)
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[high_event, other_medium]), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", side_effect=_fake_bundle), \
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
+             patch.object(accumulator, "get_market_read", return_value=None), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
+
+            events = accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+            titles = {e.title for e in events}
+            assert titles == {"CPI m/m"}, f"Building Permits (non-allowlisted Medium) must be excluded, got {titles}"
+
+            conn = store.get_connection(db_path)
+            assert store.count_predictions(conn, "Building Permits", "XAUUSD", other_medium.event_time_utc) == 0
+            conn.close()
     print("PASS\n")
 
 
@@ -620,7 +689,7 @@ def test_failed_scoring_for_one_pair_does_not_stop_others():
             return _fake_result()
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=event, articles=[], as_of_utc=now)), \
              patch.object(accumulator, "score_bundle", side_effect=flaky_score_bundle), \
@@ -643,7 +712,7 @@ def test_article_bundle_fetched_once_per_event_not_per_instrument():
         bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle) as mock_bundle, \
              patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
@@ -703,7 +772,7 @@ def test_kalshi_read_passed_to_score_bundle_for_numeric_event():
             return _fake_result()
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
@@ -744,7 +813,7 @@ def test_kalshi_lookup_skipped_for_event_with_no_series_mapping():
         bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
@@ -770,7 +839,7 @@ def test_kalshi_lookup_skipped_for_unparseable_forecast():
         bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
@@ -801,7 +870,7 @@ def test_kalshi_fetch_failure_fails_open_without_crashing_cycle():
             return _fake_result()
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
@@ -833,7 +902,7 @@ def test_kalshi_fetch_returning_none_fails_open_without_crashing_cycle():
             return _fake_result()
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
@@ -874,7 +943,7 @@ def test_kalshi_read_skipped_for_fomc_now_that_rate_decision_series_is_empty():
             return _fake_result()
 
         with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
-             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events: events), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
@@ -913,6 +982,8 @@ if __name__ == "__main__":
     test_print_call_passed_to_score_bundle()
     test_precursor_events_uses_unfiltered_calendar_not_high_impact_only()
     test_high_impact_only_no_medium_widening()
+    test_accumulator_includes_allowlisted_medium_events()
+    test_accumulator_excludes_non_allowlisted_medium_events()
     test_failed_scoring_for_one_pair_does_not_stop_others()
     test_article_bundle_fetched_once_per_event_not_per_instrument()
     test_failed_calendar_fetch_returns_none_without_crashing()

@@ -189,6 +189,23 @@ EVENT_SURPRISE_DIRECTION = {
     # worse, a fabricated one from unrelated fields.
 }
 
+# Medium-impact USD titles genuinely worth accumulator (article-based)
+# coverage despite Forex Factory's generic "Medium" tag — curated, not a
+# blanket Medium+ threshold, to protect the accumulator's tuned signal
+# budget from dilution. Grounded against the LIVE calendar's real impact
+# tags (2026-08-14), not assumed: Unemployment Claims and Retail Sales
+# m/m/Prelim UoM Consumer Sentiment were confirmed Medium (not High) on
+# the actual feed. All three already have an EVENT_SURPRISE_DIRECTION
+# entry. Excluded: Core Retail Sales m/m (redundant with Retail Sales
+# m/m, no EVENT_SURPRISE_DIRECTION entry yet), Prelim UoM Inflation
+# Expectations (no forecast field to compare against), any
+# non-scheduled-print title (e.g. speeches).
+ACCUMULATOR_MEDIUM_ALLOWLIST = frozenset({
+    "Unemployment Claims",
+    "Retail Sales m/m",
+    "Prelim UoM Consumer Sentiment",
+})
+
 # Phrase-based lexicon for scoring/print_direction.py's print-surprise call
 # — "will THIS release come in higher or lower than forecast," derived from
 # article language, distinct from scoring/sentiment.py's general USD-

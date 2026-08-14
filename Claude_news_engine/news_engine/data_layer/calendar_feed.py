@@ -241,18 +241,23 @@ def filter_relevant_events(
     events: list[EconomicEvent],
     countries: tuple[str, ...] = ("USD",),
     min_impact: str = "High",
+    extra_titles: frozenset[str] = frozenset(),
 ) -> list[EconomicEvent]:
     """
     Narrow the full calendar down to the events that actually matter for
     gold / US30 directional analysis — high-impact USD releases by default
-    (NFP, CPI, FOMC, PCE, ISM, retail sales, etc.)
+    (NFP, CPI, FOMC, PCE, ISM, retail sales, etc.), plus any event whose
+    exact title is in extra_titles regardless of its impact tier (a
+    curated allowlist, e.g. config.settings.ACCUMULATOR_MEDIUM_ALLOWLIST —
+    never a blanket lower threshold, which would dilute callers that rely
+    on this function's default High-only behavior).
     """
     impact_rank = {"Low": 1, "Medium": 2, "High": 3}
     min_rank = impact_rank.get(min_impact, 3)
 
     return [
         e for e in events
-        if e.country in countries and impact_rank.get(e.impact, 0) >= min_rank
+        if e.country in countries and (impact_rank.get(e.impact, 0) >= min_rank or e.title in extra_titles)
     ]
 
 

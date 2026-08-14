@@ -14,8 +14,18 @@ from data_layer.calendar_feed import (
     EconomicEvent,
     classify_surprise,
     fetch_calendar,
+    filter_relevant_events,
 )
 from config.settings import UTC_TZ
+
+
+def _fake_event(title="CPI m/m", impact="High"):
+    """Helper for creating fake EconomicEvent with customizable title/impact."""
+    return EconomicEvent(
+        title=title, country="USD", impact=impact,
+        event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
+        forecast="0.2%", actual=None,
+    )
 
 
 def test_lastweek_rejected_with_informative_error():
@@ -120,6 +130,29 @@ def test_classify_surprise_is_literal_not_bullish_bearish():
     print("PASS\n")
 
 
+def test_filter_relevant_events_extra_titles_admits_medium_regardless_of_threshold():
+    print("=== filter_relevant_events: extra_titles admits a specific Medium title even under the default High threshold ===")
+    high_event = _fake_event(title="CPI m/m", impact="High")
+    allowlisted_medium = _fake_event(title="Retail Sales m/m", impact="Medium")
+    other_medium = _fake_event(title="Building Permits", impact="Medium")
+    result = filter_relevant_events(
+        [high_event, allowlisted_medium, other_medium],
+        extra_titles=frozenset({"Retail Sales m/m"}),
+    )
+    titles = {e.title for e in result}
+    assert titles == {"CPI m/m", "Retail Sales m/m"}
+    print("PASS\n")
+
+
+def test_filter_relevant_events_extra_titles_defaults_to_empty():
+    print("=== filter_relevant_events: omitting extra_titles reproduces today's exact High-only default ===")
+    high_event = _fake_event(title="CPI m/m", impact="High")
+    medium_event = _fake_event(title="Retail Sales m/m", impact="Medium")
+    result = filter_relevant_events([high_event, medium_event])
+    assert {e.title for e in result} == {"CPI m/m"}
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_lastweek_rejected_with_informative_error()
     test_nextweek_rejected_with_informative_error()
@@ -130,4 +163,6 @@ if __name__ == "__main__":
     test_classify_surprise_none_when_title_not_tracked()
     test_classify_surprise_none_when_forecast_or_actual_missing()
     test_classify_surprise_is_literal_not_bullish_bearish()
+    test_filter_relevant_events_extra_titles_admits_medium_regardless_of_threshold()
+    test_filter_relevant_events_extra_titles_defaults_to_empty()
     print("All calendar_feed tests passed.")

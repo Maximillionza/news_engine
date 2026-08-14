@@ -61,7 +61,7 @@ from typing import Optional
 from config.settings import (
     KALSHI_RATE_DECISION_SERIES, KALSHI_SERIES_BY_EVENT_TITLE,
     MIN_OCCURRENCES_FOR_TREND_PRIOR, PRE_EVENT_WINDOW_HOURS,
-    EVENT_SURPRISE_DIRECTION,
+    EVENT_SURPRISE_DIRECTION, ACCUMULATOR_MEDIUM_ALLOWLIST,
 )
 from data_layer.calendar_feed import (
     EconomicEvent, fetch_calendar, filter_relevant_events, events_in_pre_window,
@@ -299,9 +299,12 @@ def run_accumulator_cycle(
             print(f"[backtest_accumulator] WARNING: calendar fetch failed: {exc}")
             return None
 
-        # High-impact only (default) — article fetches are budget-limited,
-        # unlike the dashboard's free essence-only scoring which widens to Medium.
-        events = filter_relevant_events(all_events)
+        # High-impact only (default), plus a curated allowlist of specific
+        # Medium-impact titles worth the article-fetch budget (see
+        # config.settings.ACCUMULATOR_MEDIUM_ALLOWLIST) — NOT a blanket
+        # Medium+ threshold like the dashboard's free essence-only scoring,
+        # which would dilute this pipeline's tuned signal budget.
+        events = filter_relevant_events(all_events, extra_titles=ACCUMULATOR_MEDIUM_ALLOWLIST)
         active = events_in_pre_window(events, now_utc=now)
 
         sources = None  # lazily built, only if at least one event is actually active this cycle
