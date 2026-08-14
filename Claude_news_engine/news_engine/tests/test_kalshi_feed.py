@@ -268,6 +268,50 @@ def test_get_market_read_fetches_events_with_series_ticker_as_query_param():
     print("PASS\n")
 
 
+def test_resolve_event_ticker_by_date_matches_exact_date():
+    print("=== R4: get_market_read_by_date resolves a date-ticketed event on an exact date match ===")
+    strikes_response = _fake_markets_response([(0.2, "0.60", "0.70", "80")])
+    with patch.object(kalshi_feed.requests, "get") as mock_get:
+        mock_get.side_effect = [
+            _fake_response(_fake_multi_events_response("KXUSRETAIL-26JUL16", "KXUSRETAIL-26AUG14")),
+            _fake_response(strikes_response),
+        ]
+        result = kalshi_feed.get_market_read_by_date("KXUSRETAIL", dt.date(2026, 8, 14), target_strike=0.2)
+        assert result is not None
+        markets_call_params = mock_get.call_args_list[1].kwargs["params"]
+        assert markets_call_params["event_ticker"] == "KXUSRETAIL-26AUG14"
+    print("PASS\n")
+
+
+def test_resolve_event_ticker_by_date_falls_back_to_one_day_tolerance():
+    print("=== R4: get_market_read_by_date falls back to +/-1 day when no event matches the exact date ===")
+    strikes_response = _fake_markets_response([(0.2, "0.60", "0.70", "80")])
+    with patch.object(kalshi_feed.requests, "get") as mock_get:
+        # Ticket dated one day AFTER the requested date — the exact-date
+        # pass finds nothing, the tolerance pass should still resolve it.
+        mock_get.side_effect = [
+            _fake_response(_fake_events_response("KXUSRETAIL-26AUG15")),
+            _fake_response(strikes_response),
+        ]
+        result = kalshi_feed.get_market_read_by_date("KXUSRETAIL", dt.date(2026, 8, 14), target_strike=0.2)
+        assert result is not None
+        markets_call_params = mock_get.call_args_list[1].kwargs["params"]
+        assert markets_call_params["event_ticker"] == "KXUSRETAIL-26AUG15"
+    print("PASS\n")
+
+
+def test_resolve_event_ticker_by_date_fails_closed_with_no_match():
+    print("=== R4: get_market_read_by_date returns None (fail closed) when nothing matches within tolerance ===")
+    with patch.object(kalshi_feed.requests, "get") as mock_get:
+        mock_get.side_effect = [
+            _fake_response(_fake_events_response("KXUSRETAIL-26SEP16")),  # far outside +/-1 day
+        ]
+        result = kalshi_feed.get_market_read_by_date("KXUSRETAIL", dt.date(2026, 8, 14), target_strike=0.2)
+        assert result is None
+        assert mock_get.call_count == 1  # never reached the /markets fetch
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_get_market_read_picks_nearest_strike_and_computes_midpoint()
     test_get_market_read_discretizes_higher_lower_in_line()
@@ -283,4 +327,7 @@ if __name__ == "__main__":
     test_get_market_read_returns_none_on_strike_unit_mismatch()
     test_get_market_read_does_not_reject_target_strike_near_ladder_edge()
     test_get_market_read_fetches_events_with_series_ticker_as_query_param()
+    test_resolve_event_ticker_by_date_matches_exact_date()
+    test_resolve_event_ticker_by_date_falls_back_to_one_day_tolerance()
+    test_resolve_event_ticker_by_date_fails_closed_with_no_match()
     print("All kalshi_feed tests passed.")

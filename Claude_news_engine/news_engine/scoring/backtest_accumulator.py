@@ -59,7 +59,8 @@ from pathlib import Path
 from typing import Optional
 
 from config.settings import (
-    KALSHI_RATE_DECISION_SERIES, KALSHI_SERIES_BY_EVENT_TITLE,
+    KALSHI_DATE_TICKETED_SERIES_BY_EVENT_TITLE, KALSHI_RATE_DECISION_SERIES,
+    KALSHI_SERIES_BY_EVENT_TITLE,
     MIN_OCCURRENCES_FOR_TREND_PRIOR, PRE_EVENT_WINDOW_HOURS,
     EVENT_SURPRISE_DIRECTION, ACCUMULATOR_MEDIUM_ALLOWLIST,
 )
@@ -69,7 +70,7 @@ from data_layer.calendar_feed import (
 )
 from data_layer.event_context import build_event_news_bundle
 from data_layer.rss_sources import build_all_preview_sources
-from data_layer.kalshi_feed import KalshiRead, get_market_read
+from data_layer.kalshi_feed import KalshiRead, get_market_read, get_market_read_by_date
 from scoring.probability_engine import score_bundle
 from scoring.print_direction import score_print_direction
 from scoring.backtest_store import (
@@ -186,11 +187,16 @@ def _shift_back_one_month(d: dt.date) -> dt.date:
 
 def _read_kalshi_signal(event: EconomicEvent) -> tuple[Optional[KalshiRead], Optional[str]]:
     """
-    Looks up event.title in KALSHI_SERIES_BY_EVENT_TITLE first (numeric
-    events), then KALSHI_RATE_DECISION_SERIES (FOMC/Federal Funds Rate) —
-    mutually exclusive per title. Returns (kalshi_read, resolved_direction_value):
+    Looks up event.title in three mutually-exclusive dicts, in order:
+    KALSHI_SERIES_BY_EVENT_TITLE (month-ticketed numeric events),
+    KALSHI_DATE_TICKETED_SERIES_BY_EVENT_TITLE (date-ticketed numeric
+    events — R4, docs/fundamental-analysis-swot-2026-08-14.md), then
+    KALSHI_RATE_DECISION_SERIES (FOMC/Federal Funds Rate — also
+    month-ticketed, see that constant's comment in config.settings for
+    the live-verification that corrected its prior "date-ticketed"
+    misclassification). Returns (kalshi_read, resolved_direction_value):
 
-    - Numeric event: resolved_direction_value is
+    - Numeric event (either ticketing style): resolved_direction_value is
       EVENT_SURPRISE_DIRECTION[event.title] verbatim ('higher_bullish' or
       'higher_bearish') — the standard convention every other structured
       contribution in this module already uses.
@@ -206,45 +212,71 @@ def _read_kalshi_signal(event: EconomicEvent) -> tuple[Optional[KalshiRead], Opt
       caller that has a decision word instead of a market read.)
 
     Returns (None, None) — never crashes the cycle — if no series
-    mapping matches this title, the forecast can't be parsed to a strike
-    target, or the market fetch fails for any reason.
+    mapping matches this title, the forecast (or, for the FOMC branch,
+    forecast/previous fallback) can't be parsed to a strike target, or
+    the market fetch fails for any reason.
     """
-    series_ticker = KALSHI_SERIES_BY_EVENT_TITLE.get(event.title)
-    if series_ticker is not None:
+    month_series_ticker = KALSHI_SERIES_BY_EVENT_TITLE.get(event.title)
+    if month_series_ticker is not None:
         surprise_direction_value = EVENT_SURPRISE_DIRECTION.get(event.title)
+        if surprise_direction_value is None:
+            return None, None
+        target_strike = _parse_numeric(event.forecast)
+        if target_strike is None:
+            return None, None
         # Month-only-ticker series (this branch only — see
         # _shift_back_one_month()'s docstring): Kalshi tickets the
         # data/reference month, one month BEHIND the Forex Factory release
         # date, so the raw release date must be shifted back before it's
         # used to build the expected ticker suffix.
         event_month = _shift_back_one_month(event.event_time_utc.date())
-    else:
-        series_ticker = KALSHI_RATE_DECISION_SERIES.get(event.title)
-        surprise_direction_value = "higher_bullish" if series_ticker is not None else None
-        event_month = event.event_time_utc.date()
+        try:
+            read = get_market_read(month_series_ticker, event_month, target_strike)
+        except Exception as exc:  # noqa: BLE001 — a failed Kalshi fetch must not crash the accumulator cycle
+            print(f"[backtest_accumulator] WARNING: Kalshi fetch failed for {event.title}: {exc}")
+            return None, None
+        if read is None:
+            return None, None
+        return read, surprise_direction_value
 
-    if series_ticker is None or surprise_direction_value is None:
-        return None, None
+    date_series_ticker = KALSHI_DATE_TICKETED_SERIES_BY_EVENT_TITLE.get(event.title)
+    if date_series_ticker is not None:
+        surprise_direction_value = EVENT_SURPRISE_DIRECTION.get(event.title)
+        if surprise_direction_value is None:
+            return None, None
+        target_strike = _parse_numeric(event.forecast)
+        if target_strike is None:
+            return None, None
+        try:
+            read = get_market_read_by_date(date_series_ticker, event.event_time_utc.date(), target_strike)
+        except Exception as exc:  # noqa: BLE001 — a failed Kalshi fetch must not crash the accumulator cycle
+            print(f"[backtest_accumulator] WARNING: Kalshi date-ticketed fetch failed for {event.title}: {exc}")
+            return None, None
+        if read is None:
+            return None, None
+        return read, surprise_direction_value
 
-    target_strike = _parse_numeric(event.forecast)
-    if target_strike is None:
-        return None, None
+    rate_series_ticker = KALSHI_RATE_DECISION_SERIES.get(event.title)
+    if rate_series_ticker is not None:
+        surprise_direction_value = "higher_bullish"
+        # A HOLD-expected FOMC meeting sometimes carries the current rate
+        # only in `previous`, not `forecast`, on Forex Factory — fall back
+        # so this branch isn't dead every time forecast is blank.
+        target_strike = _parse_numeric(event.forecast)
+        if target_strike is None:
+            target_strike = _parse_numeric(event.previous)
+        if target_strike is None:
+            return None, None
+        try:
+            read = get_market_read(rate_series_ticker, event.event_time_utc.date(), target_strike)
+        except Exception as exc:  # noqa: BLE001 — a failed Kalshi fetch must not crash the accumulator cycle
+            print(f"[backtest_accumulator] WARNING: Kalshi fetch failed for {event.title}: {exc}")
+            return None, None
+        if read is None:
+            return None, None
+        return read, surprise_direction_value
 
-    try:
-        read = get_market_read(series_ticker, event_month, target_strike)
-    except Exception as exc:  # noqa: BLE001 — a failed Kalshi fetch must not crash the accumulator cycle
-        print(f"[backtest_accumulator] WARNING: Kalshi fetch failed for {event.title}: {exc}")
-        return None, None
-
-    # get_market_read() itself fails open to None for a whole family of
-    # reasons (no matching event month, liquidity gate, unit-mismatch
-    # guard, missing market) — a None read means NO signal, so the
-    # resolved direction value must not leak out with it, matching this
-    # function's own documented (None, None) "no signal" contract.
-    if read is None:
-        return None, None
-
-    return read, surprise_direction_value
+    return None, None
 
 
 def compute_accumulator_interval_seconds(

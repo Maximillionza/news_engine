@@ -917,16 +917,14 @@ def test_kalshi_fetch_returning_none_fails_open_without_crashing_cycle():
     print("PASS\n")
 
 
-def test_kalshi_read_skipped_for_fomc_now_that_rate_decision_series_is_empty():
-    print("=== accumulator: 'Federal Funds Rate' no longer resolves a Kalshi series — KALSHI_RATE_DECISION_SERIES is now empty ===")
-    # KXFED is ticketed to a specific FOMC MEETING DATE, not a month —
-    # month-suffix matching in _resolve_event_ticker() can't resolve it, so
-    # config.settings.KALSHI_RATE_DECISION_SERIES was deliberately emptied
-    # (see its comment there). This locks in the resulting behavior: FOMC/
-    # Federal Funds Rate now falls through _read_kalshi_signal() with no
-    # series match at all, get_market_read() is never called, and
-    # score_bundle() receives kalshi_read=None — mirroring
-    # test_kalshi_lookup_skipped_for_event_with_no_series_mapping()'s pattern.
+def test_read_kalshi_signal_resolves_fomc_via_month_ticker():
+    print("=== R4: accumulator: 'Federal Funds Rate' resolves via the MONTH-ticketed path — KXFED was misclassified as date-ticketed, now fixed ===")
+    # Live-verified 2026-08-14 against Kalshi's real /events?series_ticker=KXFED
+    # response: real tickers are month-only (e.g. "KXFED-26SEP"), the same
+    # shape get_market_read()/_resolve_event_ticker() already handle — see
+    # KALSHI_RATE_DECISION_SERIES's comment in config.settings. This
+    # replaces the old test that locked in the (wrong) empty-mapping
+    # behavior.
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         dashboard_db_path = Path(tmp) / "dashboard.db"
@@ -935,6 +933,7 @@ def test_kalshi_read_skipped_for_fomc_now_that_rate_decision_series_is_empty():
         event.title = "Federal Funds Rate"
         event.forecast = "4.25%"
         bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+        fake_read = accumulator_kalshi_feed.KalshiRead(strike=4.25, implied_direction="in_line", implied_probability=0.5, open_interest=100.0)
 
         captured_kwargs = {}
         def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
@@ -947,15 +946,61 @@ def test_kalshi_read_skipped_for_fomc_now_that_rate_decision_series_is_empty():
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
              patch.object(accumulator, "score_print_direction", return_value=None), \
-             patch.object(accumulator, "get_market_read") as mock_kalshi, \
+             patch.object(accumulator, "get_market_read", return_value=fake_read) as mock_kalshi, \
              patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
              patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path):
 
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
 
-        mock_kalshi.assert_not_called()
-        assert captured_kwargs["kalshi_read"] is None
-        assert captured_kwargs["kalshi_direction_override"] is None
+        mock_kalshi.assert_called_once()
+        args, kwargs = mock_kalshi.call_args
+        assert args[0] == "KXFED"
+        # No month-shift for FOMC (unlike CPI/NFP/etc.) — KXFED tickets its
+        # OWN meeting month, not the data-reference month one month back.
+        assert args[1] == event.event_time_utc.date(), \
+            f"expected the meeting's own release date, unshifted, got {args[1]}"
+        assert captured_kwargs["kalshi_read"] is fake_read
+        assert captured_kwargs["kalshi_direction_override"] == "higher_bullish"
+    print("PASS\n")
+
+
+def test_read_kalshi_signal_resolves_date_ticketed_event():
+    print("=== R4: accumulator: a date-ticketed event (e.g. Retail Sales m/m) resolves via get_market_read_by_date ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        dashboard_db_path = Path(tmp) / "dashboard.db"
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=20, now=now)
+        event.title = "Retail Sales m/m"
+        event.forecast = "0.3%"
+        bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
+        fake_read = accumulator_kalshi_feed.KalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.6, open_interest=100.0)
+
+        captured_kwargs = {}
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+            captured_kwargs["kalshi_read"] = kalshi_read
+            captured_kwargs["kalshi_direction_override"] = kalshi_direction_override
+            return _fake_result()
+
+        with patch.object(accumulator, "fetch_calendar", return_value=[event]), \
+             patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
+             patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+             patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+             patch.object(accumulator, "score_print_direction", return_value=None), \
+             patch.object(accumulator, "get_market_read_by_date", return_value=fake_read) as mock_kalshi_by_date, \
+             patch.object(accumulator, "get_market_read") as mock_kalshi_by_month, \
+             patch.object(accumulator, "score_bundle", side_effect=_capture_score_bundle), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path):
+
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
+
+        mock_kalshi_by_month.assert_not_called()
+        mock_kalshi_by_date.assert_called_once()
+        args, kwargs = mock_kalshi_by_date.call_args
+        assert args[0] == "KXUSRETAIL"
+        assert args[1] == event.event_time_utc.date()  # no month-lag for date-ticketed series
+        assert captured_kwargs["kalshi_read"] is fake_read
+        assert captured_kwargs["kalshi_direction_override"] == "higher_bullish"
     print("PASS\n")
 
 
@@ -994,5 +1039,6 @@ if __name__ == "__main__":
     test_kalshi_lookup_skipped_for_unparseable_forecast()
     test_kalshi_fetch_failure_fails_open_without_crashing_cycle()
     test_kalshi_fetch_returning_none_fails_open_without_crashing_cycle()
-    test_kalshi_read_skipped_for_fomc_now_that_rate_decision_series_is_empty()
+    test_read_kalshi_signal_resolves_fomc_via_month_ticker()
+    test_read_kalshi_signal_resolves_date_ticketed_event()
     print("All backtest_accumulator tests passed.")

@@ -345,30 +345,6 @@ KALSHI_SERIES_BY_EVENT_TITLE = {
     "Core CPI y/y": "KXCPICOREYOY",
     "ISM Manufacturing PMI": "KXISMPMI",
     "Core PCE Price Index m/m": "KXPCECORE",
-    # "Unemployment Claims": "KXJOBLESSCLAIMS" — REMOVED. Kalshi tickets
-    # this series to a WEEK-ENDING DATE (e.g. "-26jun18"), not a month —
-    # month-suffix matching can't resolve it. Real coverage exists on
-    # Kalshi; adding correct date-based ticket resolution is a real
-    # follow-up feature, not implemented here.
-    # "Advance GDP q/q": "KXGDP" — REMOVED. Kalshi tickets this series to
-    # a specific RELEASE DATE (e.g. "-27jan30"), not a month — same
-    # reason as Unemployment Claims above.
-    # "Prelim UoM Consumer Sentiment": "KXUSMICHCSP" — REMOVED. Kalshi
-    # tickets this series to a specific RELEASE DATE (e.g. "-26may08"),
-    # not a month. Unlike CPI/PPI/etc., this one is NOT lagged — it's a
-    # same-month preliminary read — but it's still date-, not
-    # month-keyed, so month-suffix matching still can't resolve it.
-    # "Challenger Job Cuts": "KXCHCUTS" — REMOVED. Live ground-truth check
-    # of real Kalshi tickers (e.g. "KXCHCUTS-26SEP03", "KXCHCUTS-26AUG06")
-    # shows this series is ticketed to a specific RELEASE DATE, not a
-    # month — same month-suffix-matching problem as the 3 above.
-    # "PPI m/m": "KXUSPPI" — REMOVED. Real ticker looks like
-    # "KXUSPPI-26MAY13" — a specific release date, not a month. This
-    # series also appears to have very few events listed at all,
-    # possibly low-volume/stale, independent of the date-ticket issue.
-    # "Retail Sales m/m": "KXUSRETAIL" — REMOVED. Real tickers look like
-    # "KXUSRETAIL-26AUG14", "KXUSRETAIL-26JUL16" — a specific release
-    # date, not a month, same problem as the others above.
 }
 # Confirmed with NO usable Kalshi coverage AT ALL (verified live, not
 # left unchecked): Average Hourly Earnings m/m (Kalshi's closest match
@@ -377,31 +353,48 @@ KALSHI_SERIES_BY_EVENT_TITLE = {
 # (series exists but has zero markets currently listed — dormant).
 # These four simply have no entry here and never will unless Kalshi
 # lists new markets.
-#
-# Distinct from the above: REAL Kalshi coverage exists for Unemployment
-# Claims, Advance GDP q/q, Prelim UoM Consumer Sentiment, Challenger Job
-# Cuts, PPI m/m, and Retail Sales m/m (see the commented-out entries in
-# the dict above) — they're excluded only because this integration's
-# ticker resolution doesn't yet handle date-based tickers, not because
-# Kalshi has no market for them.
+
+# R4 (docs/fundamental-analysis-swot-2026-08-14.md): the 6 series below
+# ticket a specific RELEASE DATE (`-{yy}{MON}{DD}`, e.g.
+# "KXUSRETAIL-26AUG14"), not a month — live-verified 2026-08-14 against
+# Kalshi's real /events response for each series. Resolved via
+# data_layer.kalshi_feed.get_market_read_by_date() /
+# _resolve_event_ticker_by_date(), a separate path from the month-suffix
+# matching KALSHI_SERIES_BY_EVENT_TITLE above uses. All six already have
+# an EVENT_SURPRISE_DIRECTION entry — no new direction-mapping needed.
+KALSHI_DATE_TICKETED_SERIES_BY_EVENT_TITLE = {
+    "Unemployment Claims": "KXJOBLESSCLAIMS",
+    "Advance GDP q/q": "KXGDP",
+    "Prelim UoM Consumer Sentiment": "KXUSMICHCSP",
+    "Challenger Job Cuts": "KXCHCUTS",
+    "PPI m/m": "KXUSPPI",
+    "Retail Sales m/m": "KXUSRETAIL",
+}
 
 # FOMC/Federal Funds Rate is a discrete cut/hold/hike DECISION, not a
 # continuous forecast-vs-actual number — it can't reuse
 # EVENT_SURPRISE_DIRECTION's convention, so it gets its own small,
 # parallel mapping. Mutually exclusive with KALSHI_SERIES_BY_EVENT_TITLE
-# per title — an event title matches at most one of the two dicts.
+# and KALSHI_DATE_TICKETED_SERIES_BY_EVENT_TITLE per title — an event
+# title matches at most one of the three dicts.
 RATE_DECISION_DIRECTION = {
     "hike": "bullish",
     "hold": "neutral",
     "cut": "bearish",
 }
-# Deliberately emptied (was {"Federal Funds Rate": "KXFED"}) — KXFED is
-# ticketed to a specific FOMC MEETING DATE (e.g. "-26mar19"), not a
-# month, same date-based-ticker problem as the 3 removed entries above.
-# _read_kalshi_signal()'s FOMC branch is left in place (see
-# scoring/backtest_accumulator.py) so re-adding correct coverage later,
-# once date-based ticket resolution exists, is a one-line change here.
-KALSHI_RATE_DECISION_SERIES = {}
+# R4: RE-ENABLED, correcting a real classification bug. This was
+# previously emptied on the belief that KXFED is ticketed to a specific
+# FOMC MEETING DATE (e.g. "-26mar19") — live-verified 2026-08-14 against
+# Kalshi's real /events?series_ticker=KXFED response and that's WRONG:
+# real tickers are month-only (e.g. "KXFED-26SEP", "KXFED-26JUL",
+# "KXFED-26JUN"), the exact same shape _resolve_event_ticker() (the
+# MONTH-ticketed path) already handles — no new date-ticket resolution
+# was actually needed for FOMC. scoring/backtest_accumulator.py's
+# _read_kalshi_signal() resolves this via the month-ticketed path, using
+# event.previous as a target_strike fallback when event.forecast doesn't
+# parse (Forex Factory's Federal Funds Rate row doesn't reliably carry a
+# numeric forecast for a hold-expected meeting).
+KALSHI_RATE_DECISION_SERIES = {"Federal Funds Rate": "KXFED"}
 
 # A Kalshi market whose open_interest is below this floor is treated as
 # NO signal at all — same "contribute nothing, not a diluted nudge"
