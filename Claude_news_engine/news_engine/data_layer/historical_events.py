@@ -82,17 +82,20 @@ HISTORICAL_EVENTS: list[HistoricalEventFact] = [
     HistoricalEventFact(
         title="Non-Farm Employment Change",
         event_time_utc=dt.datetime(2026, 6, 5, 12, 30, tzinfo=UTC_TZ),
-        forecast="88K", previous="179K", actual="172K",
-        source_note="May NFP, released Jun 5 2026 — actual +172K vs +88K "
-                     "consensus forecast (Bloomberg: '172,000... beating all "
-                     "economists' estimates'), April revised up to +179K. "
-                     "Verified via WebSearch (Bloomberg "
-                     "bloomberg.com/news/articles/2026-06-05/us-adds-172-000-"
-                     "jobs-in-may-beating-all-economists-estimates); "
-                     "corresponds to tests/run_historical_backtest.py case "
-                     "e3 (that file used an 85K/'80K-96K' approximation for "
-                     "the forecast — this entry uses the confirmed Bloomberg "
-                     "consensus figure instead).",
+        forecast="80K", previous="179K", actual="172K",
+        source_note="May NFP, released Jun 5 2026 — actual +172K vs the Dow "
+                     "Jones consensus estimate of +80K (CNBC: 'payrolls rose "
+                     "by 172,000... much more than expected... far above the "
+                     "Dow Jones consensus estimate for 80,000'), April "
+                     "revised up to +179K. Corrected during ledger spot-check "
+                     "(2026-08-13): the prior '88K' figure in this entry had "
+                     "no traceable source — re-verified via WebSearch (CNBC "
+                     "cnbc.com/2026/06/05/jobs-report-may-2026.html, "
+                     "corroborated by Bloomberg's beating-all-estimates "
+                     "framing); corresponds to tests/run_historical_backtest.py "
+                     "case e3 (that file used an 85K/'80K-96K' approximation "
+                     "for the forecast — this entry uses the specific, "
+                     "sourced Dow Jones consensus figure instead).",
     ),
     # ============================================================
     # Non-Farm Employment Change -- remaining Jan-Aug 2026 occurrences
