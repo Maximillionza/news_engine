@@ -27,6 +27,7 @@ from data_layer.news_feed import AlphaVantageNewsSource, NewsArticle
 import webapp.store as dash_store
 import scoring.backtest_store as bt_store
 from scoring.probability_engine import score_bundle
+from scoring.print_direction import score_print_direction
 
 
 @dataclass
@@ -34,6 +35,8 @@ class SeedReport:
     calendar_writes: int = 0
     predictions_written: int = 0
     predictions_skipped: int = 0
+    print_predictions_written: int = 0
+    print_predictions_skipped: int = 0
     outcomes_written: int = 0
     outcomes_skipped: int = 0
     skip_reasons: list[str] = field(default_factory=list)
@@ -61,16 +64,18 @@ def _fetch_real_articles(event: EconomicEvent) -> list[NewsArticle]:
         return []
 
 
-def _attempt_article_prediction(event: EconomicEvent, instrument: str, articles: list[NewsArticle]):
+def _attempt_article_prediction(bundle: EventNewsBundle | None, instrument: str):
     """
-    Runs the ACTUAL score_bundle() against genuinely-retrieved articles —
-    never a hand-typed reconstruction. Returns None if there were no real
-    articles (nothing to score) or if score_bundle() itself found nothing
-    scoreable (e.g. all articles too far from the event to carry weight).
+    Runs the ACTUAL score_bundle() against a bundle built from genuinely-
+    retrieved articles — never a hand-typed reconstruction. Returns None
+    if there was no bundle (no real articles, nothing to score) or if
+    score_bundle() itself found nothing scoreable (e.g. all articles too
+    far from the event to carry weight). Takes the bundle directly (built
+    once per fact by run_seed(), not per instrument) rather than raw
+    articles, so it never reconstructs its own EventNewsBundle.
     """
-    if not articles:
+    if bundle is None:
         return None
-    bundle = EventNewsBundle(event=event, articles=articles, as_of_utc=event.event_time_utc)
     result = score_bundle(bundle, instrument)
     if not result.contributions and not result.precursor_contributions:
         return None
@@ -124,6 +129,66 @@ def run_seed(
         dash_store.upsert_event_history(dashboard_conn, event, surprise_direction, now, source="seeded")
         report.calendar_writes += 1
 
+        # Per-instrument idempotency checks for `predictions` (independent
+        # of the per-fact `print_predictions` check below — see the outer
+        # comment on the outcomes gate for why each table is checked on its
+        # own terms) — computed up front so we know whether any instrument
+        # still needs a scored prediction, and whether the per-fact
+        # print-direction call still needs to run, BEFORE deciding whether
+        # to spend an Alpha Vantage request at all.
+        instruments_needing_prediction = [
+            instrument for instrument in instruments
+            if not backtest_conn.execute(
+                "SELECT 1 FROM predictions WHERE event_title = ? AND instrument = ? AND event_time_utc = ? AND source = 'seeded'",
+                (fact.title, instrument, fact.event_time_utc.isoformat()),
+            ).fetchone()
+        ]
+        already_print_predicted = backtest_conn.execute(
+            "SELECT 1 FROM print_predictions WHERE event_title = ? AND event_time_utc = ? AND source = 'seeded'",
+            (fact.title, fact.event_time_utc.isoformat()),
+        ).fetchone()
+
+        # Fetch real articles (and build the ONE bundle used by every
+        # downstream scorer) at most once per FACT, not once per
+        # instrument — score_bundle() is the only thing that varies by
+        # instrument; the underlying articles and event context do not.
+        # With INSTRUMENTS = {XAUUSD, US30} this halves Alpha Vantage
+        # request usage against its 25-req/day free-tier budget versus
+        # fetching inside the instrument loop. Also skipped entirely once
+        # every consumer of it (both the per-instrument predictions and
+        # the per-fact print_predictions call) is already idempotently
+        # satisfied for this occurrence.
+        bundle: EventNewsBundle | None = None
+        if instruments_needing_prediction or not already_print_predicted:
+            articles = _fetch_real_articles(event)
+            if articles:
+                bundle = EventNewsBundle(event=event, articles=articles, as_of_utc=event.event_time_utc)
+
+        # Print-direction prediction ("will THIS release beat/miss
+        # forecast") is scored once PER EVENT/FACT, not per instrument —
+        # score_print_direction() reasons about the release itself, not
+        # about any particular instrument's reaction to it. Gated
+        # idempotently the same way `predictions` is: a pre-insert
+        # existence check for source='seeded' on this exact occurrence
+        # (already_print_predicted, computed above). This is a DIFFERENT
+        # idempotency concern than record_print_prediction_if_changed()'s
+        # own diff-aware "only write if direction changed" behavior — that
+        # governs whether an already-attempted seed write is redundant;
+        # this governs whether the seed script has already ATTEMPTED this
+        # occurrence at all, so a rerun with different (mocked/live)
+        # article data doesn't re-attempt and potentially re-diff.
+        if not already_print_predicted:
+            print_call = score_print_direction(bundle) if bundle is not None else None
+            if print_call is None:
+                report.print_predictions_skipped += 1
+                report.skip_reasons.append(f"{fact.title}@{fact.event_time_utc.isoformat()}: no real print-direction call")
+            else:
+                bt_store.record_print_prediction_if_changed(
+                    backtest_conn, fact.title, fact.event_time_utc, print_call,
+                    now=now, source="seeded",
+                )
+                report.print_predictions_written += 1
+
         for instrument in instruments:
             # Idempotency: predictions and outcomes are gated INDEPENDENTLY,
             # each against its own table — not one combined check. A prior
@@ -133,13 +198,8 @@ def run_seed(
             # crash on outcomes' UNIQUE(event_title, instrument,
             # event_time_utc) constraint — no ON CONFLICT clause on that
             # insert) or wrongly skip a layer that never actually ran yet.
-            already_predicted = backtest_conn.execute(
-                "SELECT 1 FROM predictions WHERE event_title = ? AND instrument = ? AND event_time_utc = ? AND source = 'seeded'",
-                (fact.title, instrument, fact.event_time_utc.isoformat()),
-            ).fetchone()
-            if not already_predicted:
-                articles = _fetch_real_articles(event)
-                result = _attempt_article_prediction(event, instrument, articles)
+            if instrument in instruments_needing_prediction:
+                result = _attempt_article_prediction(bundle, instrument)
                 if result is None:
                     report.predictions_skipped += 1
                     report.skip_reasons.append(f"{fact.title}/{instrument}@{fact.event_time_utc.isoformat()}: no real article-based prediction")
@@ -148,6 +208,12 @@ def run_seed(
                         backtest_conn, fact.title, instrument, fact.event_time_utc,
                         result.probability, result.direction.value, result.confidence,
                         result.article_count, result.contradiction_flag,
+                        # A seeded row's timestamp is the event's own time,
+                        # not "now" (the time the seed script happened to
+                        # run) — so a seeded historical row never
+                        # out-ranks a genuine live row's actual scoring
+                        # time in latest-lookup functions like
+                        # get_latest_prediction() (MAX(scored_at_utc)).
                         scored_at_utc=fact.event_time_utc, source="seeded",
                     )
                     report.predictions_written += 1
@@ -173,6 +239,8 @@ def run_seed(
             classification = _attempt_outcome_confirmation(instrument, fact.event_time_utc)
             if classification is None or classification.direction is None:
                 report.outcomes_skipped += 1
+                note = classification.note if classification is not None else "no real outcome data"
+                report.skip_reasons.append(f"{fact.title}/{instrument}@{fact.event_time_utc.isoformat()}: ambiguous/absent outcome ({note})")
                 continue
             bt_store.record_outcome(
                 backtest_conn, fact.title, instrument, fact.event_time_utc,
@@ -194,6 +262,7 @@ if __name__ == "__main__":
         report = run_seed(HISTORICAL_EVENTS, dashboard_conn, backtest_conn, list(INSTRUMENTS.keys()))
         print(f"[seed_historical_data] calendar_writes={report.calendar_writes} "
               f"predictions_written={report.predictions_written} predictions_skipped={report.predictions_skipped} "
+              f"print_predictions_written={report.print_predictions_written} print_predictions_skipped={report.print_predictions_skipped} "
               f"outcomes_written={report.outcomes_written} outcomes_skipped={report.outcomes_skipped}")
         for reason in report.skip_reasons:
             print(f"[seed_historical_data] skipped: {reason}")

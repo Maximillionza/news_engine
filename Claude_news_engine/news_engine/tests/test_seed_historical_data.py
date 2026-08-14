@@ -84,6 +84,25 @@ def test_real_article_result_produces_a_real_scored_prediction():
         assert preds[0]["source"] == "seeded"
         assert preds[0]["article_count"] == 1  # the real article, not fabricated
         assert report.predictions_written == 1
+
+        # Finding 3 (anti-reconstruction): the row written by run_seed() must
+        # match, value-for-value, what score_bundle() alone computes against
+        # the SAME bundle/articles — proving run_seed() has no separate
+        # reconstruction path, it just persists score_bundle()'s real output.
+        from data_layer.calendar_feed import EconomicEvent
+        from data_layer.event_context import EventNewsBundle
+        from scoring.probability_engine import score_bundle
+
+        event = EconomicEvent(fact.title, "USD", "High", fact.event_time_utc)
+        event.forecast = fact.forecast
+        event.previous = fact.previous
+        event.actual = fact.actual
+        direct_bundle = EventNewsBundle(event=event, articles=[real_article], as_of_utc=fact.event_time_utc)
+        direct_result = score_bundle(direct_bundle, "XAUUSD")
+
+        assert preds[0]["probability"] == direct_result.probability
+        assert preds[0]["direction"] == direct_result.direction.value
+        assert preds[0]["confidence"] == direct_result.confidence
         dash_conn.close()
         bt_conn.close()
     print("PASS\n")
@@ -154,6 +173,97 @@ def test_ambiguous_outcome_writes_nothing():
     print("PASS\n")
 
 
+def test_print_prediction_written_from_real_articles():
+    print("=== seed_historical_data: a genuine print-direction call is written to print_predictions, once per FACT not per instrument ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_conn = dash_store.get_connection(Path(tmp) / "dash.db")
+        bt_conn = bt_store.get_connection(Path(tmp) / "bt.db")
+        # "Non-Farm Employment Change" has a real config.settings.PRINT_SURPRISE_LEXICON
+        # entry (unlike "CPI m/m", whose lexicon key uses a literal backslash and
+        # would never match this fixture's forward-slash title).
+        fact = _fact(title="Non-Farm Employment Change")
+        real_article = NewsArticle(
+            title="Blowout jobs report stuns markets", summary="Payrolls beat estimates by a wide margin, hot jobs report",
+            source="Test Wire", source_type="rss_reuters_business",
+            published_utc=fact.event_time_utc - dt.timedelta(hours=2),
+            url="https://example.test/nfp-article",
+        )
+
+        fetch_calls = []
+
+        def _fake_fetch(event):
+            fetch_calls.append(event)
+            return [real_article]
+
+        with patch.object(seed, "_fetch_real_articles", side_effect=_fake_fetch), \
+             patch.object(seed, "_attempt_outcome_confirmation", return_value=None):
+            report = seed.run_seed([fact], dash_conn, bt_conn, ["XAUUSD", "US30"], now=fact.event_time_utc + dt.timedelta(hours=1))
+
+        # Finding 2: one fetch for the fact, reused across both instruments —
+        # not one fetch per instrument.
+        assert len(fetch_calls) == 1
+
+        rows = bt_conn.execute(
+            "SELECT * FROM print_predictions WHERE event_title = ?", ("Non-Farm Employment Change",)
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["source"] == "seeded"
+        assert rows[0]["predicted_vs_forecast"] == "higher"
+        assert report.print_predictions_written == 1
+        # both instruments' predictions row also got written from the ONE fetch
+        preds = bt_conn.execute("SELECT * FROM predictions WHERE event_title = ?", ("Non-Farm Employment Change",)).fetchall()
+        assert len(preds) == 2
+        dash_conn.close()
+        bt_conn.close()
+    print("PASS\n")
+
+
+def test_empty_article_result_writes_no_print_prediction():
+    print("=== seed_historical_data: no real articles -> zero print_predictions rows, no reconstruction fallback ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_conn = dash_store.get_connection(Path(tmp) / "dash.db")
+        bt_conn = bt_store.get_connection(Path(tmp) / "bt.db")
+        fact = _fact(title="Non-Farm Employment Change")
+
+        with patch.object(seed, "_fetch_real_articles", return_value=[]), \
+             patch.object(seed, "_attempt_outcome_confirmation", return_value=None):
+            report = seed.run_seed([fact], dash_conn, bt_conn, ["XAUUSD"], now=fact.event_time_utc + dt.timedelta(hours=1))
+
+        rows = bt_conn.execute(
+            "SELECT * FROM print_predictions WHERE event_title = ?", ("Non-Farm Employment Change",)
+        ).fetchall()
+        assert len(rows) == 0
+        assert report.print_predictions_written == 0
+        assert report.print_predictions_skipped == 1
+        dash_conn.close()
+        bt_conn.close()
+    print("PASS\n")
+
+
+def test_outcomes_idempotency_survives_rerun_without_source_filter():
+    print("=== seed_historical_data: rerunning against outcomes' UNIQUE(event_title, instrument, event_time_utc) constraint does not raise, and does not duplicate ===")
+    from scoring.outcome_classifier import ClassificationResult
+    from scoring.probability_engine import Direction
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_conn = dash_store.get_connection(Path(tmp) / "dash.db")
+        bt_conn = bt_store.get_connection(Path(tmp) / "bt.db")
+        fact = _fact()
+        clear_result = ClassificationResult(direction=Direction.BULLISH, move_pct=0.35, note="Dukascopy: +0.35% in 30min (auto)")
+
+        with patch.object(seed, "_fetch_real_articles", return_value=[]), \
+             patch.object(seed, "_classify_outcome", return_value=clear_result):
+            seed.run_seed([fact], dash_conn, bt_conn, ["XAUUSD"], now=fact.event_time_utc + dt.timedelta(hours=1))
+            # Second run must NOT raise on outcomes' UNIQUE constraint even
+            # though no `source` filter is applied to the existence check.
+            seed.run_seed([fact], dash_conn, bt_conn, ["XAUUSD"], now=fact.event_time_utc + dt.timedelta(hours=1))
+
+        outcomes = bt_conn.execute("SELECT * FROM outcomes WHERE event_title = ?", ("CPI m/m",)).fetchall()
+        assert len(outcomes) == 1  # not 2
+        dash_conn.close()
+        bt_conn.close()
+    print("PASS\n")
+
+
 def test_idempotent_rerun_does_not_duplicate_predictions():
     print("=== seed_historical_data: running twice does not duplicate a seeded predictions row for the same occurrence ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -184,5 +294,8 @@ if __name__ == "__main__":
     test_empty_article_result_writes_nothing_not_a_fallback()
     test_real_outcome_classification_writes_outcome()
     test_ambiguous_outcome_writes_nothing()
+    test_print_prediction_written_from_real_articles()
+    test_empty_article_result_writes_no_print_prediction()
+    test_outcomes_idempotency_survives_rerun_without_source_filter()
     test_idempotent_rerun_does_not_duplicate_predictions()
     print("All seed_historical_data tests passed.")
