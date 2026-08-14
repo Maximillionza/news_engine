@@ -250,10 +250,16 @@ def upsert_event_history(
     harmless to re-write identically every time since they don't change
     after an event first appears on the calendar).
 
-    source is deliberately NOT part of the ON CONFLICT DO UPDATE SET clause —
-    a row's provenance is fixed at first insert and never flips; a later
-    live re-fetch touching a seeded occurrence updates actual/surprise_direction
-    per the guard but must not silently relabel a seeded row as live, which
+    source updates ONLY when the row's actual was still NULL before this
+    call — i.e. this call is the one genuinely filling it in for the
+    first time (the CASE below reads event_history.actual, the PRE-update
+    value, not excluded.actual). That lets scripts/fill_missing_actuals.py
+    correctly stamp source='live_web_fallback' onto a row a live fetch
+    created (actual=None, source='live' by default) but never resolved.
+    It also preserves the original guarantee for a seeded occurrence: a
+    seeded row is seeded WITH its actual already populated, so a later
+    live re-fetch touching it (actual already non-NULL) leaves source
+    untouched — never silently relabeled as live or web-fallback, which
     would misrepresent how the original forecast/previous were captured.
     """
     conn.execute(
@@ -264,7 +270,8 @@ def upsert_event_history(
         ON CONFLICT(event_title, event_time_utc) DO UPDATE SET
             actual = excluded.actual,
             surprise_direction = excluded.surprise_direction,
-            updated_at_utc = excluded.updated_at_utc
+            updated_at_utc = excluded.updated_at_utc,
+            source = CASE WHEN event_history.actual IS NULL THEN excluded.source ELSE event_history.source END
         WHERE excluded.actual IS NOT NULL
         """,
         (
@@ -297,6 +304,27 @@ def get_resolved_event_history(conn: sqlite3.Connection, limit: int = 200) -> li
         "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source "
         "FROM event_history WHERE actual IS NOT NULL ORDER BY event_time_utc DESC LIMIT ?",
         (limit,),
+    ).fetchall()
+    return [EventHistoryRow(**dict(row)) for row in rows]
+
+
+def get_events_with_stale_missing_actual(
+    conn: sqlite3.Connection, now: dt.datetime, grace_period_hours: float = 6.0,
+) -> list[EventHistoryRow]:
+    """
+    Every event_history row whose actual is still NULL and whose
+    event_time_utc is more than grace_period_hours in the past — a real
+    candidate for the actuals-fallback enrichment pass. The grace period
+    exists because Forex Factory's feed genuinely takes some time to
+    publish an actual after release; searching too early would find
+    nothing real and waste an agent's WebSearch budget.
+    """
+    cutoff = (now - dt.timedelta(hours=grace_period_hours)).isoformat()
+    rows = conn.execute(
+        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source "
+        "FROM event_history WHERE actual IS NULL AND event_time_utc < ? "
+        "ORDER BY event_time_utc DESC",
+        (cutoff,),
     ).fetchall()
     return [EventHistoryRow(**dict(row)) for row in rows]
 

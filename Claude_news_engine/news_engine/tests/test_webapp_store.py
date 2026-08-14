@@ -471,6 +471,29 @@ def test_get_connection_fresh_db_has_source_column_no_error():
     print("PASS\n")
 
 
+def test_get_events_with_stale_missing_actual_respects_grace_period():
+    print("=== webapp/store: get_events_with_stale_missing_actual only returns events past the grace period with actual still None ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        now = dt.datetime(2026, 8, 14, 12, 0, tzinfo=UTC_TZ)
+
+        recent_event = _fake_event(title="CPI m/m", event_time_utc=now - dt.timedelta(hours=2))  # too recent
+        stale_event = _fake_event(title="PPI m/m", event_time_utc=now - dt.timedelta(hours=48))  # past grace period
+        resolved_event = _fake_event(title="Retail Sales m/m", event_time_utc=now - dt.timedelta(hours=48))
+        resolved_event.actual = "0.3%"
+
+        store.upsert_event_history(conn, recent_event, None, now)
+        store.upsert_event_history(conn, stale_event, None, now)
+        store.upsert_event_history(conn, resolved_event, "higher_bullish", now)
+
+        stale = store.get_events_with_stale_missing_actual(conn, now, grace_period_hours=6)
+        titles = {r.event_title for r in stale}
+        assert titles == {"PPI m/m"}  # recent_event too fresh, resolved_event already has an actual
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_round_trip_and_diff()
     test_fewer_than_two_runs()
@@ -493,4 +516,5 @@ if __name__ == "__main__":
     test_upsert_event_history_accepts_explicit_seeded_source()
     test_get_connection_migrates_preexisting_db_missing_source_column()
     test_get_connection_fresh_db_has_source_column_no_error()
+    test_get_events_with_stale_missing_actual_respects_grace_period()
     print("All store tests passed.")
