@@ -15,9 +15,24 @@ from config.settings import UTC_TZ
 from data_layer.calendar_feed import EconomicEvent, find_precursor_events
 from data_layer.event_context import EventNewsBundle
 from data_layer.news_feed import NewsArticle, deduplicate_articles
+import scoring.probability_engine as probability_engine
 from scoring.probability_engine import score_bundle, Direction
 from scoring.history import EventScoreTracker
 from scoring.sentiment import score_article_text
+
+# This file's whole contract (see module docstring) is "no network
+# required," testing pipeline AGGREGATION logic (weighting, mapping,
+# contradiction detection) with hand-built, deterministic lexicon scores.
+# R2 (docs/fundamental-analysis-swot-2026-08-14.md) made FinBERT the
+# default contextual-sentiment tier, which loads a local model (and
+# contacts the HF Hub on first load) the first time scoring runs in a
+# process — forcing it off here keeps this file testing what it always
+# tested; tests/test_contextual_sentiment.py is where FinBERT's own
+# scoring behavior gets validated. A plain reassignment, not
+# unittest.mock.patch, is enough — this file's own process never needs
+# the original value restored.
+probability_engine.ENABLE_FINBERT_SENTIMENT = False
+probability_engine.ENABLE_LLM_SENTIMENT = False
 
 
 def make_article(title, summary, hours_before_event, source_type="alpha_vantage_news", native_sentiment=None):

@@ -26,14 +26,24 @@ ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY", "")
 APITUBE_API_KEY = os.environ.get("APITUBE_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
-# --- Contextual sentiment scoring (optional upgrade over the naive lexicon) ---
-# Explicit opt-in — NOT just "is the package importable." Installing
-# torch/transformers for an unrelated check (e.g. verifying FinBERT works
-# at all) must not silently change production scoring behavior, and it
-# must not silently break every existing test that was written assuming
-# deterministic lexicon-only scores. Set these to "1" in the environment
-# to actually turn the contextual tiers on.
-ENABLE_FINBERT_SENTIMENT = os.environ.get("ENABLE_FINBERT_SENTIMENT", "") == "1"
+# --- Contextual sentiment scoring (upgrade over the naive lexicon) ---
+# R2 (docs/fundamental-analysis-swot-2026-08-14.md): ENABLE_FINBERT_SENTIMENT
+# now defaults ON. The lexicon's one documented failure (BACKTEST_REPORT.md
+# case #2 — "rate hike risk IF data surprises" scored as a flat +1.0
+# declarative hawkish read) is a structural blind spot, not a fluke, and
+# leaving the fix opt-in meant production ran with that blind spot active
+# by default. FinBERT is local/free (no network per call, no API cost) and
+# already gracefully falls back to the lexicon if torch/transformers
+# aren't installed (scoring/finbert_sentiment.py's is_available() check) —
+# defaulting it on costs nothing on a machine without the extra deps, and
+# fixes a proven failure mode on one that has them. Still overridable via
+# ENABLE_FINBERT_SENTIMENT=0 in the environment.
+#
+# ENABLE_LLM_SENTIMENT stays OPT-IN — unlike FinBERT it's a real per-call
+# cost against a paid API, and this environment has no ANTHROPIC_API_KEY
+# configured; defaulting a paid, keyless tier on would just silently no-op
+# at best and isn't a decision to make without the user's consent either way.
+ENABLE_FINBERT_SENTIMENT = os.environ.get("ENABLE_FINBERT_SENTIMENT", "1") != "0"
 ENABLE_LLM_SENTIMENT = os.environ.get("ENABLE_LLM_SENTIMENT", "") == "1"
 
 # Tiered fallback, cheapest/most-deterministic first:
