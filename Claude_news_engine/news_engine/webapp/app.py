@@ -19,12 +19,12 @@ from webapp.store import (
     add_tracked_symbol, remove_tracked_symbol, list_tracked_symbols,
     get_calendar_snapshot, get_event_history,
 )
-from webapp.trend import summarize_trend
+from webapp.trend import summarize_trend, compute_trend_signal
 from webapp.history import build_print_call_history
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 from scoring.backtest_store import (
     get_connection as get_backtest_connection, get_latest_two_predictions,
-    get_latest_print_prediction,
+    get_latest_print_prediction, get_latest_kalshi_read,
 )
 
 app = Flask(__name__, static_folder="static")
@@ -194,11 +194,40 @@ def get_predictions():
             if print_call is not None:
                 print_prediction = {"direction": print_call.predicted_vs_forecast, "confidence": print_call.confidence}
 
+            # Two more independently-computed signals, same read-only
+            # pattern as article_prediction/print_prediction above.
+            # compute_trend_signal() requires its input pre-filtered to
+            # confirmed (non-None surprise_direction) rows and non-empty
+            # (see webapp/trend.py's docstring) — unlike
+            # scoring/backtest_accumulator.py's live-scoring caller, this
+            # is a mere display, so no MIN_OCCURRENCES_FOR_TREND_PRIOR
+            # gate is applied here.
+            event_time = dt.datetime.fromisoformat(event["event_time_utc"])
+            prior_occurrences = get_event_history(conn, event["title"])
+            confirmed_occurrences = [r for r in prior_occurrences if r.surprise_direction is not None]
+            trend = compute_trend_signal(confirmed_occurrences) if confirmed_occurrences else None
+            trend_signal = None
+            if trend is not None:
+                trend_signal = {"direction": trend.direction, "strength": trend.strength}
+
+            kalshi_row = get_latest_kalshi_read(backtest_conn, event["title"], event_time)
+            kalshi_read = None
+            if kalshi_row is not None:
+                kalshi_read = {
+                    "implied_direction": kalshi_row.implied_direction,
+                    "implied_probability": kalshi_row.implied_probability,
+                    "open_interest": kalshi_row.open_interest,
+                }
+
             # An event is only worth including in this symbol's list at
             # all if SOME layer has something to say about it — an event
-            # with zero essence score AND zero article prediction AND
-            # zero print call is genuinely nothing-yet, same as before.
-            if latest is None and article_prediction is None and print_prediction is None:
+            # with zero essence score AND zero article prediction AND zero
+            # print call AND zero trend signal AND zero Kalshi read is
+            # genuinely nothing-yet, same as before (extended here so
+            # Task 9's two new signals can't be silently dropped by a
+            # guard that never learned about them).
+            if (latest is None and article_prediction is None and print_prediction is None
+                    and trend_signal is None and kalshi_read is None):
                 continue
 
             entry["events"].append({
@@ -212,6 +241,8 @@ def get_predictions():
                 "article_prediction": article_prediction,
                 "previous_article_prediction": previous_article_prediction,
                 "print_prediction": print_prediction,
+                "trend_signal": trend_signal,
+                "kalshi_read": kalshi_read,
             })
 
         # A resolved score always outranks a still-pending one, regardless

@@ -619,6 +619,86 @@ def test_predictions_print_prediction_is_none_when_never_scored():
     print("PASS\n")
 
 
+def test_predictions_includes_trend_signal_and_kalshi_read_when_present():
+    print("=== app: /api/predictions includes trend_signal and kalshi_read when real data exists for them ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dashboard.db"
+        backtest_db_path = Path(tmp) / "backtest.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            events = _fake_events()
+            _seed_calendar(db_path, events)
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+
+            # Two prior CONFIRMED occurrences of the same title, same
+            # surprise_direction, at earlier event_time_utc values — a
+            # streak of length 2 (MIN_STREAK_LENGTH), enough for
+            # compute_trend_signal() to return a real TrendSignal.
+            prior_event_1 = EconomicEvent(
+                title=events[0].title, country="USD", impact="High",
+                event_time_utc=dt.datetime(2026, 7, 7, 12, 30, tzinfo=UTC_TZ),
+                forecast="70K", actual="80K",
+            )
+            prior_event_2 = EconomicEvent(
+                title=events[0].title, country="USD", impact="High",
+                event_time_utc=dt.datetime(2026, 6, 5, 12, 30, tzinfo=UTC_TZ),
+                forecast="65K", actual="72K",
+            )
+            store.upsert_event_history(conn, prior_event_1, "higher", now=prior_event_1.event_time_utc)
+            store.upsert_event_history(conn, prior_event_2, "higher", now=prior_event_2.event_time_utc)
+            conn.close()
+
+            from dataclasses import dataclass
+
+            @dataclass
+            class _FakeKalshiRead:
+                strike: float
+                implied_direction: str
+                implied_probability: float
+                open_interest: float
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            read = _FakeKalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.62, open_interest=100.0)
+            backtest_store.record_kalshi_read_if_changed(
+                bconn, events[0].title, events[0].event_time_utc, read, now=events[0].event_time_utc,
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            data = resp.get_json()
+            event = data["predictions"][0]["events"][0]
+            assert event["trend_signal"] is not None
+            assert event["trend_signal"]["direction"] == "higher"
+            assert event["kalshi_read"] is not None
+            assert event["kalshi_read"]["implied_direction"] in ("higher", "lower", "in_line")
+    print("PASS\n")
+
+
+def test_predictions_trend_signal_and_kalshi_read_absent_when_nothing_recorded():
+    print("=== app: /api/predictions leaves trend_signal and kalshi_read as None, not fabricated, when nothing real exists for them ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dashboard.db"
+        backtest_db_path = Path(tmp) / "backtest.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            events = _fake_events()
+            _seed_calendar(db_path, events)
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            store.record_run(conn, "XAUUSD", events[0].title, events[0].event_time_utc, 0.6, "bullish", 0.4)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            data = resp.get_json()
+            event = data["predictions"][0]["events"][0]
+            assert event["trend_signal"] is None
+            assert event["kalshi_read"] is None
+    print("PASS\n")
+
+
 def test_history_endpoint_returns_numeric_and_text_rows():
     print("=== app: /api/history returns build_print_call_history()'s rows as JSON, including the instrument field ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -695,6 +775,8 @@ if __name__ == "__main__":
     test_event_history_endpoint_unknown_title_returns_empty()
     test_predictions_includes_print_prediction_when_accumulator_scored_it()
     test_predictions_print_prediction_is_none_when_never_scored()
+    test_predictions_includes_trend_signal_and_kalshi_read_when_present()
+    test_predictions_trend_signal_and_kalshi_read_absent_when_nothing_recorded()
     test_history_endpoint_returns_numeric_and_text_rows()
     test_history_endpoint_empty_when_nothing_resolved()
     print("All webapp.app tests passed.")
