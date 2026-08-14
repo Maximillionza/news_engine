@@ -302,6 +302,65 @@ def test_kalshi_trust_weight_above_precursor_trust_weight():
     print("PASS\n")
 
 
+def test_thin_sample_caps_extreme_probability():
+    print("=== R3: score_bundle: a thin (2-article) strongly-agreeing sample has probability capped, not near-certain ===")
+    from data_layer.news_feed import NewsArticle
+    from config.settings import THIN_SAMPLE_PROBABILITY_CAP
+    event = _cpi_event()  # "CPI m/m", higher_bullish
+    # Two strongly bullish-USD articles, reproducing BACKTEST_REPORT.md's
+    # documented failure shape: a thin (2-3 article) sample that agrees
+    # unanimously used to reach 98%+/1%- probability with 100% confidence.
+    articles = [
+        NewsArticle(
+            title="Fed seen hawkish, rate hike bets surge", summary="Dollar strength widely expected.",
+            source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+            url="https://example.test/thin-1",
+        ),
+        NewsArticle(
+            title="Hawkish tilt firms as data looms", summary="Traders raising rate hike bets.",
+            source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+            url="https://example.test/thin-2",
+        ),
+    ]
+    bundle = EventNewsBundle(event=event, articles=articles, as_of_utc=EVENT_TIME)
+    result = score_bundle(bundle, "XAUUSD")  # inverse mapping — bullish USD -> bearish gold
+    assert result.thin_sample is True
+    lower_bound = 1.0 - THIN_SAMPLE_PROBABILITY_CAP
+    assert lower_bound <= result.probability <= THIN_SAMPLE_PROBABILITY_CAP, (
+        f"expected probability capped within [{lower_bound}, {THIN_SAMPLE_PROBABILITY_CAP}], got {result.probability}"
+    )
+    print("PASS\n")
+
+
+def test_sufficient_signal_count_is_not_capped():
+    print("=== R3: score_bundle: 3+ signal-bearing contributions are NOT capped by the thin-sample ceiling ===")
+    from data_layer.news_feed import NewsArticle
+    from config.settings import THIN_SAMPLE_PROBABILITY_CAP
+    event = _cpi_event()
+    articles = [
+        NewsArticle(
+            title="Fed seen hawkish, rate hike bets surge", summary="Dollar strength widely expected.",
+            source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+            url="https://example.test/sufficient-1",
+        ),
+        NewsArticle(
+            title="Hawkish tilt firms as data looms", summary="Traders raising rate hike bets.",
+            source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+            url="https://example.test/sufficient-2",
+        ),
+    ]
+    bundle = EventNewsBundle(event=event, articles=articles, as_of_utc=EVENT_TIME)
+    # A third, strongly agreeing structured signal (Kalshi) pushes the
+    # signal-bearing count to 3, clearing THIN_SAMPLE_SIGNAL_THRESHOLD.
+    kalshi_read = _FakeKalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.95, open_interest=100.0)
+    result = score_bundle(bundle, "XAUUSD", kalshi_read=kalshi_read)
+    assert result.thin_sample is False
+    assert result.probability < (1.0 - THIN_SAMPLE_PROBABILITY_CAP), (
+        f"expected an uncapped, near-extreme probability, got {result.probability}"
+    )
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_bundle_without_new_params_is_unchanged()
     test_print_call_higher_on_bullish_indicator_is_bullish_for_direct_instrument()
@@ -320,4 +379,6 @@ if __name__ == "__main__":
     test_kalshi_read_decays_with_age()
     test_kalshi_and_print_call_and_trend_signal_all_present_all_contribute()
     test_kalshi_trust_weight_above_precursor_trust_weight()
+    test_thin_sample_caps_extreme_probability()
+    test_sufficient_signal_count_is_not_capped()
     print("All probability_engine tests passed.")

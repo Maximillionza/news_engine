@@ -413,6 +413,23 @@ KALSHI_TRUST_WEIGHT = 0.95
 # constant in this file: needs real backtest data to calibrate.
 SURPRISE_SENSITIVITY = 3.0
 
+# --- Sample-size-aware probability ceiling (R3, docs/fundamental-analysis-swot-2026-08-14.md) ---
+# BACKTEST_REPORT.md's own conclusion flagged this: several "correct"
+# calls only reached 1%/88%/98% probability from 2-3 signal-bearing
+# articles — the sigmoid's k=2.5 saturates toward near-certainty from a
+# thin sample regardless of whether that sample is representative.
+# scoring/probability_engine.py's agreement x coverage math (see
+# _agreement_and_coverage()) already discounts CONFIDENCE for a thin or
+# disagreeing sample, but nothing discounted the raw PROBABILITY itself —
+# a thin-but-UNANIMOUS sample still produced a 99% probability with 100%
+# confidence. This caps how far probability can move from 50% until
+# enough signal-bearing weight (articles + structured contributions
+# combined) has accumulated, independent of the confidence discount.
+# Untuned starting values, same honesty as every other constant in this
+# file — needs revisiting once real backtest data exists (see R8).
+THIN_SAMPLE_SIGNAL_THRESHOLD = 3     # fewer than this many signal-bearing contributions is "thin"
+THIN_SAMPLE_PROBABILITY_CAP = 0.80   # max/min probability allowed on a thin sample — still directional, never near-certain
+
 # Below this relative (or, when forecast≈0, absolute) delta between actual
 # and forecast, classify_surprise() below calls it 'in_line' rather than
 # 'higher'/'lower' — a literal actual-vs-forecast comparison for event

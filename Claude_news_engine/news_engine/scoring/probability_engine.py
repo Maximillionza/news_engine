@@ -42,6 +42,8 @@ from config.settings import (
     RECENT_WINDOW_HOURS,
     RISK_SENTIMENT_DAMPENING,
     SOURCE_TRUST_WEIGHTS,
+    THIN_SAMPLE_PROBABILITY_CAP,
+    THIN_SAMPLE_SIGNAL_THRESHOLD,
     TIME_DECAY_HALF_LIFE_MINUTES,
     TREND_STREAK_TRUST_WEIGHT,
     UTC_TZ,
@@ -148,6 +150,7 @@ class ProbabilityResult:
     article_count: int
     contradiction_flag: bool
     contradiction_note: str | None
+    thin_sample: bool = False           # True if probability was pulled toward 50% by THIN_SAMPLE_PROBABILITY_CAP (see R3)
     contributions: list[ArticleContribution] = field(default_factory=list, repr=False)
     precursor_contributions: list[PrecursorContribution] = field(default_factory=list, repr=False)
 
@@ -432,6 +435,39 @@ def _agreement_and_coverage(
     return agreement, coverage
 
 
+def _signal_bearing_count(contributions: list[ArticleContribution]) -> int:
+    """
+    How many contributions (articles + structured precursor/print/trend/
+    Kalshi signals combined) actually carried a real directional
+    opinion — same epsilon and "silent contribution" concept
+    _agreement_and_coverage() already uses, just counted rather than
+    weighted. Feeds _apply_thin_sample_cap() below (R3): a small count
+    here means the probability read is riding on very little evidence,
+    regardless of how strongly that little evidence agrees.
+    """
+    return sum(1 for c in contributions if abs(c.usd_sentiment) >= 1e-6)
+
+
+def _apply_thin_sample_cap(probability: float, signal_count: int) -> tuple[float, bool]:
+    """
+    Returns (possibly-capped probability, whether it was actually thin).
+    Below THIN_SAMPLE_SIGNAL_THRESHOLD signal-bearing contributions, caps
+    probability's distance from 50% at THIN_SAMPLE_PROBABILITY_CAP - 0.5 —
+    see the constants' comments in config.settings for the BACKTEST_REPORT
+    finding this targets (near-certain probabilities from 2-3 articles).
+    Deliberately independent of the agreement x coverage confidence
+    discount already applied upstream: a thin sample that unanimously
+    agrees still passes THAT discount untouched (agreement=1.0), so
+    without this cap it can still reach 99% probability from 2 articles.
+    """
+    if signal_count >= THIN_SAMPLE_SIGNAL_THRESHOLD:
+        return probability, False
+    max_distance = THIN_SAMPLE_PROBABILITY_CAP - 0.5
+    distance = probability - 0.5
+    clamped_distance = max(-max_distance, min(max_distance, distance))
+    return 0.5 + clamped_distance, True
+
+
 def _map_to_instrument_score(usd_sentiment: float, instrument: str) -> float:
     relationship = INSTRUMENTS[instrument]["usd_relationship"]
     if relationship == "inverse":
@@ -604,6 +640,13 @@ def score_bundle(
     # average built from disagreeing sources shouldn't read as high-confidence.
     adjusted_probability = 0.5 + (raw_probability - 0.5) * agreement
 
+    # R3: separately, cap how far a THIN sample can push probability from
+    # 50% regardless of how well that thin sample agrees with itself — see
+    # _apply_thin_sample_cap()'s docstring for why this is independent of
+    # the agreement-based discount just above.
+    signal_count = _signal_bearing_count(all_contributions)
+    adjusted_probability, thin_sample = _apply_thin_sample_cap(adjusted_probability, signal_count)
+
     # Confidence must reflect BOTH agreement (do the sources that spoke
     # agree?) AND coverage (did enough of the bundle actually speak?).
     # agreement alone lets a single signal-bearing article among a dozen
@@ -633,6 +676,7 @@ def score_bundle(
         article_count=len(article_contributions),
         contradiction_flag=contradiction_flag,
         contradiction_note=contradiction_note,
+        thin_sample=thin_sample,
         contributions=article_contributions,
         precursor_contributions=precursor_contributions,
     )
