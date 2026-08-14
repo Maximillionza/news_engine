@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from config.settings import EVENT_SURPRISE_DIRECTION, INSTRUMENTS
+from config.settings import EVENT_SURPRISE_DIRECTION
 from webapp.scheduler import start_scheduler
 from webapp.store import (
     get_connection, get_latest_two, get_history,
@@ -34,14 +34,16 @@ app = Flask(__name__, static_folder="static")
 DEFAULT_SYMBOLS = ["XAUUSD", "US30"]
 
 
-def _trend_instrument_lean(event_title: str, trend_direction: str, instrument: str) -> Optional[str]:
+def _trend_instrument_lean(event_title: str, trend_direction: str, usd_relationship: Optional[str]) -> Optional[str]:
     """
     Translates a trend streak's raw forecast-relative direction ('higher'/
     'lower') into a USD-bullish/bearish/neutral lean for THIS instrument —
     same EVENT_SURPRISE_DIRECTION + usd_relationship mapping score_bundle()
     uses internally, reimplemented here at display-only granularity (no
     score_bundle() call, no scoring-math change). Returns None — never
-    fabricated — when event_title has no EVENT_SURPRISE_DIRECTION entry.
+    fabricated — when event_title has no EVENT_SURPRISE_DIRECTION entry, or
+    when usd_relationship is None (classify_symbol()'s fx_cross case — no
+    USD exposure to derive a lean from).
     """
     surprise_mapping = EVENT_SURPRISE_DIRECTION.get(event_title)
     if surprise_mapping is None:
@@ -51,12 +53,11 @@ def _trend_instrument_lean(event_title: str, trend_direction: str, instrument: s
     higher_is_usd_bullish = surprise_mapping == "higher_bullish"
     usd_bullish = higher_is_usd_bullish if trend_direction == "higher" else not higher_is_usd_bullish
 
-    relationship = INSTRUMENTS[instrument]["usd_relationship"]
-    if relationship == "inverse":
+    if usd_relationship == "inverse":
         instrument_bullish = not usd_bullish
-    elif relationship == "direct":
+    elif usd_relationship == "direct":
         instrument_bullish = usd_bullish
-    elif relationship == "risk_sentiment":
+    elif usd_relationship == "risk_sentiment":
         instrument_bullish = not usd_bullish  # dovish/USD-bearish -> risk-on -> equity-bullish, same simplification score_bundle() uses
     else:
         return None
@@ -251,7 +252,7 @@ def get_predictions():
             if trend is not None:
                 trend_signal = {
                     "direction": trend.direction, "strength": trend.strength,
-                    "instrument_lean": _trend_instrument_lean(event["title"], trend.direction, ticker),
+                    "instrument_lean": _trend_instrument_lean(event["title"], trend.direction, symbol_class.usd_relationship),
                 }
 
             kalshi_row = get_latest_kalshi_read(backtest_conn, event["title"], event_time)

@@ -542,6 +542,30 @@ def test_get_events_with_stale_missing_actual_excludes_text_only_events():
     print("PASS\n")
 
 
+def test_get_events_with_stale_missing_actual_excludes_titles_outside_event_surprise_direction():
+    print("=== webapp/store: get_events_with_stale_missing_actual excludes titles absent from EVENT_SURPRISE_DIRECTION even when otherwise a genuine numeric stale-missing-actual candidate ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        now = dt.datetime(2026, 8, 14, 12, 0, tzinfo=UTC_TZ)
+
+        from config.settings import EVENT_SURPRISE_DIRECTION
+        assert "PPI m/m" in EVENT_SURPRISE_DIRECTION
+        assert "German 10-y Bond Auction" not in EVENT_SURPRISE_DIRECTION
+
+        covered_stale = _fake_event(title="PPI m/m", event_time_utc=now - dt.timedelta(hours=48), forecast="0.2%")
+        uncovered_stale = _fake_event(title="German 10-y Bond Auction", event_time_utc=now - dt.timedelta(hours=48), forecast="1.9%")
+
+        store.upsert_event_history(conn, covered_stale, None, now)
+        store.upsert_event_history(conn, uncovered_stale, None, now)
+
+        stale = store.get_events_with_stale_missing_actual(conn, now, grace_period_hours=6)
+        titles = {r.event_title for r in stale}
+        assert titles == {"PPI m/m"}  # uncovered_stale is numeric and past grace period, but classify_surprise() can never resolve it — must be excluded
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_round_trip_and_diff()
     test_fewer_than_two_runs()
@@ -567,4 +591,5 @@ if __name__ == "__main__":
     test_get_events_with_stale_missing_actual_respects_grace_period()
     test_upsert_event_history_seeded_source_survives_a_later_live_upsert_with_real_actual()
     test_get_events_with_stale_missing_actual_excludes_text_only_events()
+    test_get_events_with_stale_missing_actual_excludes_titles_outside_event_surprise_direction()
     print("All store tests passed.")

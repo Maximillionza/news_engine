@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from config.settings import EVENT_SURPRISE_DIRECTION
+
 DB_PATH = Path(__file__).parent / "dashboard.db"
 
 _SCHEMA = """
@@ -328,14 +330,29 @@ def get_events_with_stale_missing_actual(
     perpetually re-qualify as a "stale missing actual" candidate — pure
     noise for the enrichment pass, since it will never have a number to go
     find.
+
+    Also excludes titles absent from config.settings.EVENT_SURPRISE_DIRECTION.
+    The scheduler stores every calendar row unfiltered, including foreign-
+    market events (German bond auctions, BRC Retail Sales Monitor, Cash
+    Rate, ...) classify_surprise() has no mapping for — even if an agent
+    researched and filled one of those in, it would land with
+    surprise_direction still NULL (classify_surprise() returns None for
+    any title outside EVENT_SURPRISE_DIRECTION), so it can never count
+    toward a trend or the History tab. Without this filter those titles
+    are guaranteed-wasted WebSearch budget for the enrichment pass.
     """
     cutoff = (now - dt.timedelta(hours=grace_period_hours)).isoformat()
+    known_titles = list(EVENT_SURPRISE_DIRECTION.keys())
+    if not known_titles:
+        return []
+    placeholders = ",".join("?" for _ in known_titles)
     rows = conn.execute(
         "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source "
         "FROM event_history WHERE actual IS NULL AND event_time_utc < ? "
         "AND NOT (forecast IS NULL AND previous IS NULL) "
+        f"AND event_title IN ({placeholders}) "
         "ORDER BY event_time_utc DESC",
-        (cutoff,),
+        (cutoff, *known_titles),
     ).fetchall()
     return [EventHistoryRow(**dict(row)) for row in rows]
 

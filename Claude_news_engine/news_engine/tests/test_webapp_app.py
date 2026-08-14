@@ -788,6 +788,58 @@ def test_trend_signal_instrument_lean_none_for_unmapped_title():
     print("PASS\n")
 
 
+def test_predictions_does_not_500_for_fx_cross_symbol_outside_instruments():
+    print("=== /api/predictions: a tracked fx_cross symbol (not in the 2-entry INSTRUMENTS dict) with a real trend_signal returns 200, instrument_lean=None, instead of crashing the whole endpoint ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dashboard.db"
+        backtest_db_path = Path(tmp) / "backtest.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            # GBPAUD is 6-letter FX-shaped but neither USDxxx nor xxxUSD ->
+            # classify_symbol() resolves it to symbol_class="fx_cross",
+            # usd_relationship=None — it is NOT a key in config.settings.
+            # INSTRUMENTS (only XAUUSD/US30 are), so the old
+            # INSTRUMENTS[instrument] lookup in _trend_instrument_lean()
+            # raised an unhandled KeyError for exactly this symbol.
+            events = [
+                EconomicEvent(
+                    title="CPI m/m", country="USD", impact="High",
+                    event_time_utc=dt.datetime(2026, 8, 7, 12, 30, tzinfo=UTC_TZ),
+                    forecast="0.2%", actual="0.4%",
+                )
+            ]
+            _seed_calendar(db_path, events)
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "GBPAUD")
+
+            # Two prior CONFIRMED "higher" occurrences of CPI m/m — enough
+            # for compute_trend_signal() to return a real TrendSignal.
+            prior_event_1 = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High",
+                event_time_utc=dt.datetime(2026, 7, 7, 12, 30, tzinfo=UTC_TZ),
+                forecast="0.2%", actual="0.4%",
+            )
+            prior_event_2 = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High",
+                event_time_utc=dt.datetime(2026, 6, 5, 12, 30, tzinfo=UTC_TZ),
+                forecast="0.2%", actual="0.3%",
+            )
+            store.upsert_event_history(conn, prior_event_1, "higher", now=prior_event_1.event_time_utc)
+            store.upsert_event_history(conn, prior_event_2, "higher", now=prior_event_2.event_time_utc)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            symbol_entry = next(s for s in data["predictions"] if s["symbol"] == "GBPAUD")
+            event = next(e for e in symbol_entry["events"] if e["event_title"] == "CPI m/m")
+            assert event["trend_signal"] is not None
+            assert event["trend_signal"]["direction"] == "higher"
+            assert event["trend_signal"]["instrument_lean"] is None
+    print("PASS\n")
+
+
 def test_history_endpoint_returns_numeric_and_text_rows():
     print("=== app: /api/history returns build_print_call_history()'s rows as JSON, including the instrument field ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -935,6 +987,7 @@ if __name__ == "__main__":
     test_predictions_trend_signal_and_kalshi_read_absent_when_nothing_recorded()
     test_trend_signal_includes_instrument_relative_lean()
     test_trend_signal_instrument_lean_none_for_unmapped_title()
+    test_predictions_does_not_500_for_fx_cross_symbol_outside_instruments()
     test_calendar_date_route_returns_events_and_calls_for_that_date_only()
     test_calendar_date_route_empty_date_returns_empty_list_not_error()
     test_calendar_date_route_invalid_date_returns_400()
