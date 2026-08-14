@@ -5,3 +5,4 @@ __pycache__/
 .superpowers/
 .~lock.*
 webapp/dashboard.db
+data_layer/.last_ff_fetch_at

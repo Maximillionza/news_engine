@@ -32,6 +32,7 @@ from __future__ import annotations
 import datetime as dt
 import math
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 import requests
@@ -47,6 +48,55 @@ from config.settings import (
 )
 
 FF_BASE_URL = "https://nfs.faireconomy.media/ff_calendar_{period}.json"
+
+# Real, self-enforced cooldown between live fetch_calendar() calls, shared
+# across EVERY caller and EVERY process (webapp/scheduler.py AND
+# scoring/backtest_accumulator.py both call this function independently —
+# scheduler.py's own comment claiming to be the "ONLY" live caller is
+# stale). Backed by a file, not an in-memory timestamp, specifically
+# because a process restart (which happens routinely during development)
+# would otherwise reset an in-memory guard to zero and defeat the whole
+# point — this project has been rate-limited (429) three separate times
+# this session, the last time from repeated restarts within a single day
+# each triggering two near-simultaneous fetches. FF's hard limit is 2
+# downloads per 5 minutes across all formats combined, with an explicit
+# recommendation to fetch once a week; 600s (10 minutes) is a conservative
+# floor well under the hard limit while still keeping the dashboard
+# reasonably fresh multiple times an hour.
+MIN_FETCH_INTERVAL_SECONDS = 600
+_LAST_FETCH_TIMESTAMP_FILE = Path(__file__).parent / ".last_ff_fetch_at"
+
+
+class FetchCooldownError(Exception):
+    """
+    Raised instead of making a live request when the last fetch (from ANY
+    caller/process) was too recent. Callers that already wrap fetch_calendar()
+    in a broad `except Exception` (webapp/scheduler.py, scoring/backtest_accumulator.py)
+    catch this the same way they catch a real network failure — fail open,
+    keep existing data — but the log message here says WHY, distinguishing
+    a self-imposed cooldown from an actual outage.
+    """
+
+
+def _seconds_since_last_fetch() -> Optional[float]:
+    """None if no prior fetch has been recorded (fresh install / file never written)."""
+    if not _LAST_FETCH_TIMESTAMP_FILE.exists():
+        return None
+    try:
+        last = dt.datetime.fromisoformat(_LAST_FETCH_TIMESTAMP_FILE.read_text().strip())
+    except (ValueError, OSError):
+        return None  # corrupt/unreadable timestamp file — fail open to "no recent fetch known", not a crash
+    return (dt.datetime.now(dt.timezone.utc) - last).total_seconds()
+
+
+def _record_fetch_attempt(now: dt.datetime) -> None:
+    """
+    Records the attempt BEFORE the network call (not just on success) —
+    a failed/errored request still counted against FF's rate limit on
+    their end, so a caller that retries immediately after a failure must
+    still respect the cooldown, not treat a failure as a free retry.
+    """
+    _LAST_FETCH_TIMESTAMP_FILE.write_text(now.isoformat())
 
 # Impact levels FF uses in the feed
 IMPACT_LEVELS = {"Low", "Medium", "High", "Holiday"}
@@ -209,6 +259,18 @@ def fetch_calendar(period: str = "thisweek", timeout: int = 15) -> list[Economic
             "there is no historical/future-week endpoint to fetch from. "
             "See this module's docstring for the reconstruction workaround."
         )
+
+    elapsed = _seconds_since_last_fetch()
+    if elapsed is not None and elapsed < MIN_FETCH_INTERVAL_SECONDS:
+        raise FetchCooldownError(
+            f"skipping live fetch — last fetch (any caller/process) was {elapsed:.0f}s ago, "
+            f"under the {MIN_FETCH_INTERVAL_SECONDS}s self-imposed cooldown. This is not a "
+            "network failure — it's this project respecting FF's own stated rate limit "
+            "(2 downloads/5min) across every process that calls fetch_calendar()."
+        )
+
+    now = dt.datetime.now(dt.timezone.utc)
+    _record_fetch_attempt(now)  # before the network call — a failed request still counts against FF's limit
 
     url = FF_BASE_URL.format(period=period)
     resp = requests.get(url, timeout=timeout, headers={"User-Agent": "news-fundamental-engine/0.1"})
