@@ -152,13 +152,16 @@ HISTORICAL_EVENTS: list[HistoricalEventFact] = [
     HistoricalEventFact(
         title="Non-Farm Employment Change",
         event_time_utc=dt.datetime(2026, 8, 7, 12, 30, tzinfo=UTC_TZ),
-        forecast="95K", previous="20K", actual="-23K",
+        forecast="83K", previous="20K", actual="-23K",
         source_note="July 2026 NFP, released Aug 7 2026 -- actual -23K vs "
-                     "consensus +95K, June revised down to +20K (from "
-                     "+57K). NBC News 'July jobs report: US economy shed "
-                     "23,000 jobs' (nbcnews.com/business/economy/july-2026-"
-                     "jobs-report-rcna591138) and CNBC Aug 7 2026 'U.S. "
-                     "economy unexpectedly lost 23,000 jobs in July'.",
+                     "Dow Jones consensus +83K (FactSet's separate estimate "
+                     "was +97.5K), June revised down to +20K (from +57K). "
+                     "CNBC 'The July jobs numbers are due out Friday. "
+                     "Here's what to expect' (cnbc.com/2026/08/06/the-july-"
+                     "jobs-numbers-are-due-out-friday-heres-what-to-expect."
+                     "html) and NBC News 'July jobs report: US economy "
+                     "shed 23,000 jobs' (nbcnews.com/business/economy/"
+                     "july-2026-jobs-report-rcna591138).",
     ),
 
     # ============================================================

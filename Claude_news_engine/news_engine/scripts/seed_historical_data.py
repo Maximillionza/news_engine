@@ -109,6 +109,23 @@ def run_seed(
     instruments: list[str],
     now: dt.datetime | None = None,
 ) -> SeedReport:
+    # Title-validation gate: a typo'd HistoricalEventFact.title would
+    # otherwise silently fail to classify (classify_surprise() returns
+    # None for any title not in EVENT_SURPRISE_DIRECTION, with no error)
+    # — catch that here, before any write, so a direct (non-dry-run)
+    # invocation can't silently write bad-title data. Duplicated by the
+    # --dry-run path below on purpose, so --dry-run still reports this
+    # without needing DB connections.
+    unrecognized = sorted({
+        fact.title for fact in facts
+        if fact.title not in EVENT_SURPRISE_DIRECTION
+    })
+    if unrecognized:
+        raise ValueError(
+            f"[seed_historical_data] {len(unrecognized)} HistoricalEventFact title(s) "
+            f"do not match any config.settings.EVENT_SURPRISE_DIRECTION key: {unrecognized}"
+        )
+
     report = SeedReport()
     now = now or dt.datetime.now(UTC_TZ)
 
