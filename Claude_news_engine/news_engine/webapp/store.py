@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS event_history (
     surprise_direction TEXT,
     recorded_at_utc TEXT NOT NULL,
     updated_at_utc TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'live',
     UNIQUE(event_title, event_time_utc)
 );
 """
@@ -85,6 +86,24 @@ class EventHistoryRow:
     previous: Optional[str]
     actual: Optional[str]
     surprise_direction: Optional[str]
+    source: str
+
+
+def _migrate_add_source_column(conn: sqlite3.Connection) -> None:
+    """
+    CREATE TABLE IF NOT EXISTS does not retroactively add a column to an
+    already-created DB file — every DB created before this change lacks
+    `source` on event_history. Adds it, defaulting existing (pre-backfill)
+    rows to 'live' (their implicit meaning before this column existed).
+    Safe to call on a fresh DB where the column already exists via
+    CREATE TABLE — PRAGMA table_info is checked first, not a bare ALTER
+    wrapped in try/except, so a genuine unrelated OperationalError isn't
+    silently swallowed.
+    """
+    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(event_history)").fetchall()}
+    if "source" not in existing_columns:
+        conn.execute("ALTER TABLE event_history ADD COLUMN source TEXT NOT NULL DEFAULT 'live'")
+        conn.commit()
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
@@ -94,6 +113,7 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
+    _migrate_add_source_column(conn)
     return conn
 
 
@@ -217,6 +237,7 @@ def upsert_event_history(
     event,  # EconomicEvent — duck-typed, same reasoning as _event_to_dict()
     surprise_direction: Optional[str],
     now: dt.datetime,
+    source: str = "live",
 ) -> None:
     """
     Records this event occurrence's forecast/previous, filling in
@@ -228,12 +249,18 @@ def upsert_event_history(
     surprise_direction pair updates at all; forecast/previous are
     harmless to re-write identically every time since they don't change
     after an event first appears on the calendar).
+
+    source is deliberately NOT part of the ON CONFLICT DO UPDATE SET clause —
+    a row's provenance is fixed at first insert and never flips; a later
+    live re-fetch touching a seeded occurrence updates actual/surprise_direction
+    per the guard but must not silently relabel a seeded row as live, which
+    would misrepresent how the original forecast/previous were captured.
     """
     conn.execute(
         """
         INSERT INTO event_history
-            (event_title, event_time_utc, forecast, previous, actual, surprise_direction, recorded_at_utc, updated_at_utc)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (event_title, event_time_utc, forecast, previous, actual, surprise_direction, recorded_at_utc, updated_at_utc, source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(event_title, event_time_utc) DO UPDATE SET
             actual = excluded.actual,
             surprise_direction = excluded.surprise_direction,
@@ -242,7 +269,7 @@ def upsert_event_history(
         """,
         (
             event.title, event.event_time_utc.isoformat(), event.forecast, event.previous,
-            event.actual, surprise_direction, now.isoformat(), now.isoformat(),
+            event.actual, surprise_direction, now.isoformat(), now.isoformat(), source,
         ),
     )
     conn.commit()
@@ -251,7 +278,7 @@ def upsert_event_history(
 def get_event_history(conn: sqlite3.Connection, event_title: str, limit: int = 6) -> list[EventHistoryRow]:
     """Past occurrences of this event title, most recent first, capped at `limit`. Empty list if none recorded yet."""
     rows = conn.execute(
-        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction "
+        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source "
         "FROM event_history WHERE event_title = ? ORDER BY event_time_utc DESC LIMIT ?",
         (event_title, limit),
     ).fetchall()
@@ -267,7 +294,7 @@ def get_resolved_event_history(conn: sqlite3.Connection, limit: int = 200) -> li
     for its numeric-forecast rows.
     """
     rows = conn.execute(
-        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction "
+        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source "
         "FROM event_history WHERE actual IS NOT NULL ORDER BY event_time_utc DESC LIMIT ?",
         (limit,),
     ).fetchall()
@@ -291,7 +318,7 @@ def get_text_only_resolved_events(conn: sqlite3.Connection, now: Optional[dt.dat
     """
     now = now or dt.datetime.now(dt.timezone.utc)
     rows = conn.execute(
-        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction "
+        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source "
         "FROM event_history WHERE forecast IS NULL AND actual IS NULL AND event_time_utc <= ? "
         "ORDER BY event_time_utc DESC LIMIT ?",
         (now.isoformat(), limit),

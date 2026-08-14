@@ -5,6 +5,7 @@ import sys
 import os
 import tempfile
 import datetime as dt
+import sqlite3
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -126,6 +127,15 @@ def _fake_calendar_event(title="CPI m/m", forecast="0.2%", actual=None):
     return EconomicEvent(
         title=title, country="USD", impact="High",
         event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
+        forecast=forecast, actual=actual,
+    )
+
+
+def _fake_event(title="CPI m/m", event_time_utc=None, forecast="0.2%", actual=None):
+    """Helper for creating fake EconomicEvent with customizable title and time."""
+    return EconomicEvent(
+        title=title, country="USD", impact="High",
+        event_time_utc=event_time_utc or dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
         forecast=forecast, actual=actual,
     )
 
@@ -394,6 +404,73 @@ def test_get_text_only_resolved_events_excludes_event_missing_only_one_field():
     print("PASS\n")
 
 
+def test_upsert_event_history_defaults_to_live_source():
+    print("=== webapp/store: upsert_event_history defaults source='live' when not passed ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event = _fake_event(title="CPI m/m", event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ))
+        store.upsert_event_history(conn, event, "higher_bullish", dt.datetime(2026, 8, 12, 13, 0, tzinfo=UTC_TZ))
+        rows = store.get_event_history(conn, "CPI m/m")
+        assert rows[0].source == "live"
+        conn.close()
+    print("PASS\n")
+
+
+def test_upsert_event_history_accepts_explicit_seeded_source():
+    print("=== webapp/store: upsert_event_history(source='seeded') is stored and read back ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event = _fake_event(title="CPI m/m", event_time_utc=dt.datetime(2026, 1, 13, 12, 30, tzinfo=UTC_TZ))
+        store.upsert_event_history(conn, event, "higher_bullish", dt.datetime(2026, 1, 13, 13, 0, tzinfo=UTC_TZ), source="seeded")
+        rows = store.get_event_history(conn, "CPI m/m")
+        assert rows[0].source == "seeded"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_connection_migrates_preexisting_db_missing_source_column():
+    print("=== webapp/store: get_connection() adds the source column to a pre-existing DB file that predates it ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        # Simulate a pre-migration DB: create event_history WITHOUT the source column.
+        raw_conn = sqlite3.connect(db_path)
+        raw_conn.execute("""
+            CREATE TABLE event_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_title TEXT NOT NULL,
+                event_time_utc TEXT NOT NULL,
+                forecast TEXT, previous TEXT, actual TEXT, surprise_direction TEXT,
+                recorded_at_utc TEXT NOT NULL, updated_at_utc TEXT NOT NULL,
+                UNIQUE(event_title, event_time_utc)
+            )
+        """)
+        raw_conn.execute(
+            "INSERT INTO event_history (event_title, event_time_utc, recorded_at_utc, updated_at_utc) "
+            "VALUES ('Old Event', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')"
+        )
+        raw_conn.commit()
+        raw_conn.close()
+
+        conn = store.get_connection(db_path)  # must not raise, must add the column
+        rows = store.get_event_history(conn, "Old Event")
+        assert rows[0].source == "live"  # pre-existing row backfilled to 'live' via the column's DEFAULT
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_connection_fresh_db_has_source_column_no_error():
+    print("=== webapp/store: get_connection() on a brand-new DB (source already in CREATE TABLE) does not error on the migration step ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)  # fresh DB, schema already has source — migration must be a safe no-op
+        conn2 = store.get_connection(db_path)  # second open — must also be a safe no-op
+        conn.close()
+        conn2.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_round_trip_and_diff()
     test_fewer_than_two_runs()
@@ -412,4 +489,8 @@ if __name__ == "__main__":
     test_get_resolved_event_history_most_recent_first_and_limit()
     test_get_text_only_resolved_events_requires_both_forecast_and_actual_null()
     test_get_text_only_resolved_events_excludes_event_missing_only_one_field()
+    test_upsert_event_history_defaults_to_live_source()
+    test_upsert_event_history_accepts_explicit_seeded_source()
+    test_get_connection_migrates_preexisting_db_missing_source_column()
+    test_get_connection_fresh_db_has_source_column_no_error()
     print("All store tests passed.")
