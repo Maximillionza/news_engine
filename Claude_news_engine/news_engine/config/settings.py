@@ -240,6 +240,26 @@ PRINT_SURPRISE_LEXICON = {
         "higher": ["producer prices surge", "hotter than expected", "upside surprise", "wholesale prices rise"],
         "lower": ["producer prices cool", "softer than expected", "downside surprise", "wholesale prices fall"],
     },
+    # Added so CPI y/y, Core CPI y/y, and Unemployment Claims get a
+    # print-direction call at all — without a lexicon entry here,
+    # score_print_direction() never fires for a title, which means no
+    # print_predictions row ever gets written for it and it can never
+    # appear as a numeric row in the History tab, regardless of whether
+    # event_history has a real resolved actual (surfaced 2026-08-14: real
+    # CPI y/y/Core CPI y/y/Unemployment Claims actuals existed but were
+    # invisible in the History tab for exactly this reason).
+    "CPI y/y": {
+        "higher": ["annual inflation accelerat", "yearly inflation hotter", "y/y inflation surprise to the upside", "inflation rate climbs"],
+        "lower": ["annual inflation cools", "yearly inflation eases", "y/y inflation surprise to the downside", "disinflation continues"],
+    },
+    "Core CPI y/y": {
+        "higher": ["annual core inflation accelerat", "yearly core inflation hotter", "sticky annual core inflation"],
+        "lower": ["annual core inflation cools", "yearly core inflation eases", "core disinflation continues"],
+    },
+    "Unemployment Claims": {
+        "higher": ["claims rise unexpectedly", "jobless claims jump", "layoffs increase", "claims surprise to the upside"],
+        "lower": ["claims fall", "jobless claims decline", "layoffs ease", "claims surprise to the downside"],
+    },
 }
 
 # Trust weight for a precursor's structured surprise contribution — high,
