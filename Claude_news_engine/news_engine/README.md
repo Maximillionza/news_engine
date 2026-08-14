@@ -456,6 +456,24 @@ historical CPI print is exactly as real as a live-captured one.
 No Kalshi historical backfill — a real-money market price from the
 past cannot be reconstructed with any integrity.
 
+### Dashboard/Calendar UI redesign
+
+Fixed a real bug: `/api/predictions` used to require an essence-only
+score to exist for a symbol before showing that symbol's real
+article-based prediction or print-direction call — a newly-added
+symbol looked fully blank until the essence-only scheduler caught up,
+even when the accumulator already had a genuine opinion. The three
+layers (essence score, article prediction, print call) — plus two more
+that were already computed/persisted but never surfaced (trend streak,
+Kalshi read) — now render independently on each dashboard card, with a
+collapsible "Why this call" breakdown panel showing which structured
+signals actually fired.
+
+The Calendar tab now color-codes events by impact tier, highlights the
+nearest upcoming event by default, and lets you click any date to see
+that date's events plus every tracked symbol's current call for them
+(`GET /api/calendar/date/<date>`).
+
 ### History tab
 
 A third dashboard tab ("History", alongside Dashboard/Calendar) shows a
