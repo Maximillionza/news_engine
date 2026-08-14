@@ -431,6 +431,31 @@ full design and its explicit out-of-scope list (no trading, no
 multi-strike probability-distribution blending, no calibration of the
 trust weight against real outcomes yet).
 
+### Historical data backfill (Jan 2026 → live start)
+
+`scripts/seed_historical_data.py` backfills real event/prediction/
+outcome data for every High-impact USD event from 2026-01-01 through
+the live system's actual tracking start (2026-08-09T23:50:00+00:00) —
+see `data_layer/historical_events.py` for the researched, cited event
+facts and `docs/superpowers/specs/2026-08-13-historical-backfill-and-ui-redesign-design.md`
+for the full design.
+
+**Real data or absent — never reconstructed.** Event facts (forecast/
+previous/actual) are researched and cited. Article-based predictions
+and price outcomes are recorded ONLY when the actual scoring/
+classification functions (`score_bundle()`, `outcome_classifier.classify()`)
+return real, genuinely-retrieved data (Alpha Vantage historical
+articles, Dukascopy historical prices) — no fallback, no
+confidence-capped guess standing in for a real signal. A `source`
+column (`'live'`/`'seeded'`) on `event_history`/`predictions`/
+`print_predictions`/`outcomes` marks provenance; the History tab shows
+a small "(seeded)" badge on backfilled rows. Trend-streak scoring
+treats seeded and live `event_history` rows identically — a real
+historical CPI print is exactly as real as a live-captured one.
+
+No Kalshi historical backfill — a real-money market price from the
+past cannot be reconstructed with any integrity.
+
 ### History tab
 
 A third dashboard tab ("History", alongside Dashboard/Calendar) shows a
