@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.settings import INSTRUMENTS, UTC_TZ
+from config.settings import INSTRUMENTS, UTC_TZ, EVENT_SURPRISE_DIRECTION
 from data_layer.calendar_feed import EconomicEvent, classify_surprise
 from data_layer.historical_events import HISTORICAL_EVENTS, HistoricalEventFact
 from data_layer.event_context import build_event_news_bundle, EventNewsBundle
@@ -257,7 +257,22 @@ if __name__ == "__main__":
     dashboard_conn = dash_store.get_connection()
     backtest_conn = bt_store.get_connection()
     if dry_run:
-        print(f"[seed_historical_data] DRY RUN — would process {len(HISTORICAL_EVENTS)} event facts, no writes.")
+        # Title-validation gate: a typo'd HistoricalEventFact.title would
+        # otherwise silently fail to classify (classify_surprise() returns
+        # None for any title not in EVENT_SURPRISE_DIRECTION, with no
+        # error) — catch that here, before any write, rather than let it
+        # pass through unnoticed.
+        unrecognized = sorted({
+            fact.title for fact in HISTORICAL_EVENTS
+            if fact.title not in EVENT_SURPRISE_DIRECTION
+        })
+        if unrecognized:
+            raise ValueError(
+                f"[seed_historical_data] {len(unrecognized)} HistoricalEventFact title(s) "
+                f"do not match any config.settings.EVENT_SURPRISE_DIRECTION key: {unrecognized}"
+            )
+        print(f"[seed_historical_data] DRY RUN — would process {len(HISTORICAL_EVENTS)} event facts, "
+              f"all titles validated against EVENT_SURPRISE_DIRECTION, no writes.")
     else:
         report = run_seed(HISTORICAL_EVENTS, dashboard_conn, backtest_conn, list(INSTRUMENTS.keys()))
         print(f"[seed_historical_data] calendar_writes={report.calendar_writes} "
