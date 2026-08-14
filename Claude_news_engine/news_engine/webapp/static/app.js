@@ -257,17 +257,56 @@ function renderCard(symbolEntry) {
   }
   const printPredictionLine = printPredictionHtml(next.print_prediction);
 
+  // kalshi_read is the highest-trust signal in the system (real money
+  // priced on the exact event) -- absent (null) whenever no Kalshi
+  // market covers this event or the read hasn't landed yet, rendered as
+  // nothing, never a fabricated placeholder, same convention as every
+  // other optional signal on this card.
+  function kalshiReadHtml(kalshi) {
+    if (!kalshi) return '';
+    const label = kalshi.implied_direction === 'higher' ? 'HIGHER than forecast'
+      : kalshi.implied_direction === 'lower' ? 'LOWER than forecast' : 'IN LINE with forecast';
+    const pct = Math.round(kalshi.implied_probability * 100);
+    return `<div class="kalshi-read">
+      💰 Kalshi market: likely <b>${label}</b> <span style="font-size:12px;color:#888">(${pct}% implied, ${Math.round(kalshi.open_interest)} open interest)</span>
+    </div>`;
+  }
+  const kalshiReadLine = kalshiReadHtml(next.kalshi_read);
+
+  // "Why this call" breakdown: every structured signal that fed the card,
+  // pulled from the already-fetched `next` object -- no new network
+  // request. Honest empty state when nothing fired, never silence.
+  function breakdownPanelHtml(next) {
+    const rows = [];
+    if (next.article_prediction) {
+      rows.push(`<div>📰 Article sentiment: ${directionLabel(next.article_prediction.direction)} (${next.article_prediction.article_count} articles)</div>`);
+    }
+    if (next.print_prediction) {
+      rows.push(`<div>📊 Print-direction lexicon: ${next.print_prediction.direction} (${Math.round(next.print_prediction.confidence * 100)}% conf.)</div>`);
+    }
+    if (next.trend_signal) {
+      rows.push(`<div>📈 Trend streak: ${next.trend_signal.direction} (strength ${next.trend_signal.strength.toFixed(2)})</div>`);
+    }
+    if (next.kalshi_read) {
+      rows.push(`<div>💰 Kalshi market: ${next.kalshi_read.implied_direction} (${Math.round(next.kalshi_read.implied_probability * 100)}% implied)</div>`);
+    }
+    if (rows.length === 0) {
+      return '<div style="font-size:12px;color:#888">No structured signals fired for this event yet.</div>';
+    }
+    return rows.join('');
+  }
+
   if (next.direction === "pending") {
     // The event/when data is already in the response — showing it here
     // instead of a generic placeholder tells the user WHAT they're
     // actually waiting on, not just that something is pending.
-    const hasAnySignal = articlePredictionLine || printPredictionLine;
+    const hasAnySignal = articlePredictionLine || printPredictionLine || kalshiReadLine;
     const heading = hasAnySignal
       ? `Awaiting essence score: ${escapeHtml(next.event_title)}`
       : `Awaiting: ${escapeHtml(next.event_title)}`;
     body += `<div class="pending">${heading}<br>
       <span style="font-size:12px;color:#888">${formatEventDateTime(next.event_time_utc)}</span></div>
-      ${articlePredictionLine}${printPredictionLine}`;
+      ${articlePredictionLine}${printPredictionLine}${kalshiReadLine}`;
     el.innerHTML = body;
     el.querySelector(".remove-btn").addEventListener("click", () => removeSymbol(symbol));
     return el;
@@ -299,7 +338,7 @@ function renderCard(symbolEntry) {
   body += `<div class="gauge-row">${gaugeSvg(pct, next.direction)}
     <div><div class="gauge-label ${dirClass}">${directionLabel(next.direction)} ${pct}%</div>
     <div style="font-size:12px;color:#888">${escapeHtml(next.event_title)}</div>
-    ${articlePredictionLine}${printPredictionLine}</div></div>
+    ${articlePredictionLine}${printPredictionLine}${kalshiReadLine}</div></div>
     <div class="bull-bear-scale">${bullBearScaleSvg(next.probability)}</div>`;
   body += dayStripHtml(next.event_time_utc);
   const historyToggleId = `history-${symbol}-${next.event_title.replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -308,8 +347,30 @@ function renderCard(symbolEntry) {
     <div class="history-panel" id="${historyToggleId}" style="display:none"></div>
   </div>`;
 
+  // "Why this call" breakdown panel: a SEPARATE toggle class
+  // (`.breakdown-toggle-btn`, not `.history-toggle-btn`) is deliberate --
+  // el.querySelector(".history-toggle-btn") below only ever grabs the
+  // FIRST match, and the History click-handler always fetches
+  // /api/event_history on first expand. This panel's content is already
+  // inline in `next`, so it gets its own, simpler handler that just
+  // toggles display, wired independently so neither toggle can shadow or
+  // misfire the other's fetch/no-fetch behavior.
+  const breakdownToggleId = `breakdown-${symbol}-${next.event_title.replace(/[^a-zA-Z0-9]/g, '')}`;
+  body += `<div class="history-toggle">
+    <button class="breakdown-toggle-btn" data-target="${breakdownToggleId}">Why this call ▾</button>
+    <div class="history-panel" id="${breakdownToggleId}" style="display:none">${breakdownPanelHtml(next)}</div>
+  </div>`;
+
   el.innerHTML = body;
   el.querySelector(".remove-btn").addEventListener("click", () => removeSymbol(symbol));
+
+  const breakdownBtn = el.querySelector(".breakdown-toggle-btn");
+  if (breakdownBtn) {
+    breakdownBtn.addEventListener("click", () => {
+      const panel = document.getElementById(breakdownBtn.dataset.target);
+      panel.style.display = panel.style.display !== "none" ? "none" : "";
+    });
+  }
 
   const historyBtn = el.querySelector(".history-toggle-btn");
   if (historyBtn) {
