@@ -458,6 +458,13 @@ async function refreshCalendar() {
     calendarStaleNoticeEl.style.display = "none";
   }
 
+  const now = new Date();
+  const upcoming = events
+    .map((e) => new Date(e.event_time_utc))
+    .filter((d) => d >= now)
+    .sort((a, b) => a - b);
+  const nearestUpcomingDateStr = upcoming.length > 0 ? upcoming[0].toDateString() : null;
+
   const today = new Date();
   const year = today.getFullYear();
   const month = today.getMonth();
@@ -476,9 +483,16 @@ async function refreshCalendar() {
   for (let day = 1; day <= daysInMonth; day++) {
     const cellDate = new Date(year, month, day);
     const isToday = cellDate.toDateString() === today.toDateString();
+    const isNearestUpcoming = cellDate.toDateString() === nearestUpcomingDateStr;
     const dayEvents = eventsByDate[cellDate.toDateString()] || [];
-    const dots = dayEvents.map(() => `<span class="cal-dot"></span>`).join("");
-    cells += `<div class="cal-cell ${isToday ? "today" : ""}">${day}<br>${dots}</div>`;
+    const dots = dayEvents.map((e) => {
+      const impactClass = e.impact === 'High' ? 'impact-high' : e.impact === 'Medium' ? 'impact-medium' : 'impact-low';
+      return `<span class="cal-dot ${impactClass}" title="${escapeHtml(e.title)} (${escapeHtml(e.impact)})"></span>`;
+    }).join("");
+    const classes = ["cal-cell"];
+    if (isToday) classes.push("today");
+    if (isNearestUpcoming) classes.push("nearest-upcoming");
+    cells += `<div class="${classes.join(" ")}">${day}<br>${dots}</div>`;
   }
   calendarGridEl.innerHTML = cells;
 
