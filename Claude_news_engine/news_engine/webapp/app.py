@@ -277,6 +277,75 @@ def get_predictions():
     return jsonify({"predictions": predictions, "error": error})
 
 
+@app.route("/api/calendar/date/<date_str>", methods=["GET"])
+def get_calendar_for_date(date_str: str):
+    """
+    Every event on this exact calendar date, each with every tracked
+    symbol's CURRENT call for it — the essence-only score plus the
+    article- and print-based accumulator calls, same three read-only
+    sources /api/predictions already reads, filtered down to this one
+    date (not a new scoring path). date_str is YYYY-MM-DD.
+    """
+    try:
+        target_date = dt.date.fromisoformat(date_str)
+    except ValueError:
+        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
+
+    conn = get_connection()
+    backtest_conn = get_backtest_connection()
+    snapshot = get_calendar_snapshot(conn)
+    all_events = snapshot.events if snapshot is not None else []
+    day_events = [e for e in all_events if dt.datetime.fromisoformat(e["event_time_utc"]).date() == target_date]
+
+    symbols = list_tracked_symbols(conn)
+    result_events = []
+    for event in day_events:
+        event_time = dt.datetime.fromisoformat(event["event_time_utc"])
+        calls = {}
+        for ticker in symbols:
+            runs = get_latest_two(conn, ticker, event["title"])
+            latest = runs[0] if runs else None
+
+            # Same accumulator read as /api/predictions (Task 7's pattern)
+            # — a real, independently-made article-based call, not derived
+            # from the essence-only score above.
+            accumulator_runs = get_latest_two_predictions(backtest_conn, event["title"], ticker)
+            accumulator_prediction = accumulator_runs[0] if accumulator_runs else None
+            article_prediction = None
+            if accumulator_prediction is not None:
+                article_prediction = {
+                    "direction": accumulator_prediction.direction,
+                    "probability": accumulator_prediction.probability,
+                    "article_count": accumulator_prediction.article_count,
+                }
+
+            print_call = get_latest_print_prediction(backtest_conn, event["title"], event_time)
+            print_prediction = None
+            if print_call is not None:
+                print_prediction = {"direction": print_call.predicted_vs_forecast, "confidence": print_call.confidence}
+
+            if latest is None and article_prediction is None and print_prediction is None:
+                calls[ticker] = None
+            else:
+                calls[ticker] = {
+                    "direction": latest.direction if latest else None,
+                    "probability": latest.probability if latest else None,
+                    "article_prediction": article_prediction,
+                    "print_prediction": print_prediction,
+                }
+
+        result_events.append({
+            "title": event["title"], "event_time_utc": event["event_time_utc"],
+            "impact": event.get("impact"), "forecast": event.get("forecast"),
+            "previous": event.get("previous"), "actual": event.get("actual"),
+            "calls": calls,
+        })
+
+    conn.close()
+    backtest_conn.close()
+    return jsonify({"events": result_events})
+
+
 @app.route("/api/predictions/<symbol>/history", methods=["GET"])
 def get_prediction_history(symbol: str):
     event_title = request.args.get("event_title", "")

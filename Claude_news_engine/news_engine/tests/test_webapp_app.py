@@ -751,6 +751,73 @@ def test_history_endpoint_empty_when_nothing_resolved():
     print("PASS\n")
 
 
+def test_calendar_date_route_returns_events_and_calls_for_that_date_only():
+    print("=== GET /api/calendar/date/<date>: returns only that date's events, with each tracked symbol's call ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            events = [
+                EconomicEvent(
+                    title="Non-Farm Employment Change", country="USD", impact="High",
+                    event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
+                    forecast="75K", actual="44K",
+                ),
+                EconomicEvent(
+                    title="CPI m/m", country="USD", impact="High",
+                    event_time_utc=dt.datetime(2026, 8, 13, 12, 30, tzinfo=UTC_TZ),
+                    forecast="0.2%", actual=None,
+                ),
+            ]
+            _seed_calendar(db_path, events)
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            nfp_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=dt.timezone.utc)
+            store.record_run(conn, "XAUUSD", "Non-Farm Employment Change", nfp_time, 0.66, "bullish", 0.35)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/calendar/date/2026-08-12")
+            data = resp.get_json()
+            assert len(data["events"]) == 1  # only the one event actually on 2026-08-12
+            assert data["events"][0]["title"] == "Non-Farm Employment Change"
+            assert data["events"][0]["calls"]["XAUUSD"] is not None
+            assert data["events"][0]["calls"]["XAUUSD"]["direction"] == "bullish"
+            assert data["events"][0]["calls"]["XAUUSD"]["probability"] == 0.66
+    print("PASS\n")
+
+
+def test_calendar_date_route_empty_date_returns_empty_list_not_error():
+    print("=== GET /api/calendar/date/<date>: a date with no events returns {events: []}, not a 404/500 ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            _seed_calendar(db_path, _fake_events())
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/calendar/date/2026-12-25")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["events"] == []
+    print("PASS\n")
+
+
+def test_calendar_date_route_invalid_date_returns_400():
+    print("=== GET /api/calendar/date/<date>: a malformed date returns 400, not a 500 ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/calendar/date/not-a-date")
+            assert resp.status_code == 400
+            assert "error" in resp.get_json()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
@@ -777,6 +844,9 @@ if __name__ == "__main__":
     test_predictions_print_prediction_is_none_when_never_scored()
     test_predictions_includes_trend_signal_and_kalshi_read_when_present()
     test_predictions_trend_signal_and_kalshi_read_absent_when_nothing_recorded()
+    test_calendar_date_route_returns_events_and_calls_for_that_date_only()
+    test_calendar_date_route_empty_date_returns_empty_list_not_error()
+    test_calendar_date_route_invalid_date_returns_400()
     test_history_endpoint_returns_numeric_and_text_rows()
     test_history_endpoint_empty_when_nothing_resolved()
     print("All webapp.app tests passed.")
