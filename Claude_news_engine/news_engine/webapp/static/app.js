@@ -295,8 +295,10 @@ function renderCard(symbolEntry) {
   // "absent, not fabricated" convention as every other optional signal.
   function trendSignalHtml(trend) {
     if (!trend) return '';
+    const lean = trend.instrument_lean;
+    const leanLabel = lean ? ` — lean: <b>${lean === 'bullish' ? 'BUY' : 'SELL'}</b>` : '';
     return `<div class="trend-signal">
-      📈 Trend streak: <b>${escapeHtml(trend.direction)}</b> <span style="font-size:12px;color:#888">(strength ${trend.strength.toFixed(2)})</span>
+      📈 Trend streak: <b>${escapeHtml(trend.direction)}</b> <span style="font-size:12px;color:#888">(strength ${trend.strength.toFixed(2)})</span>${leanLabel}
     </div>`;
   }
   const trendSignalLine = trendSignalHtml(next.trend_signal);
@@ -313,7 +315,9 @@ function renderCard(symbolEntry) {
       rows.push(`<div>📊 Print-direction lexicon: ${next.print_prediction.direction} (${Math.round(next.print_prediction.confidence * 100)}% conf.)</div>`);
     }
     if (next.trend_signal) {
-      rows.push(`<div>📈 Trend streak: ${next.trend_signal.direction} (strength ${next.trend_signal.strength.toFixed(2)})</div>`);
+      const lean = next.trend_signal.instrument_lean;
+      const leanLabel = lean ? ` — lean: <b>${lean === 'bullish' ? 'BUY' : 'SELL'}</b>` : '';
+      rows.push(`<div>📈 Trend streak: ${next.trend_signal.direction} (strength ${next.trend_signal.strength.toFixed(2)})${leanLabel}</div>`);
     }
     if (next.kalshi_read) {
       rows.push(`<div>💰 Kalshi market: ${next.kalshi_read.implied_direction} (${Math.round(next.kalshi_read.implied_probability * 100)}% implied)</div>`);

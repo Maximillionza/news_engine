@@ -699,6 +699,95 @@ def test_predictions_trend_signal_and_kalshi_read_absent_when_nothing_recorded()
     print("PASS\n")
 
 
+def test_trend_signal_includes_instrument_relative_lean():
+    print("=== /api/predictions: trend_signal gains instrument_lean, translating raw higher/lower into a BUY/SELL-style lean ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dashboard.db"
+        backtest_db_path = Path(tmp) / "backtest.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            events = [
+                EconomicEvent(
+                    title="CPI m/m", country="USD", impact="High",
+                    event_time_utc=dt.datetime(2026, 8, 7, 12, 30, tzinfo=UTC_TZ),
+                    forecast="0.2%", actual="0.4%",
+                )
+            ]
+            _seed_calendar(db_path, events)
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+
+            # Two prior CONFIRMED "higher" occurrences of CPI m/m — a streak
+            # of length 2 (MIN_STREAK_LENGTH), enough for compute_trend_signal()
+            # to return a real TrendSignal with direction="higher".
+            prior_event_1 = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High",
+                event_time_utc=dt.datetime(2026, 7, 7, 12, 30, tzinfo=UTC_TZ),
+                forecast="0.2%", actual="0.4%",
+            )
+            prior_event_2 = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High",
+                event_time_utc=dt.datetime(2026, 6, 5, 12, 30, tzinfo=UTC_TZ),
+                forecast="0.2%", actual="0.3%",
+            )
+            store.upsert_event_history(conn, prior_event_1, "higher", now=prior_event_1.event_time_utc)
+            store.upsert_event_history(conn, prior_event_2, "higher", now=prior_event_2.event_time_utc)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            data = resp.get_json()
+            event = next(e for e in data["predictions"][0]["events"] if e["event_title"] == "CPI m/m")
+            assert event["trend_signal"]["direction"] == "higher"
+            # CPI m/m is higher_bullish -> a 'higher' trend is USD-bullish ->
+            # XAUUSD (inverse) -> bearish for gold
+            assert event["trend_signal"]["instrument_lean"] == "bearish"
+    print("PASS\n")
+
+
+def test_trend_signal_instrument_lean_none_for_unmapped_title():
+    print("=== /api/predictions: instrument_lean is None (not fabricated) when the event title has no EVENT_SURPRISE_DIRECTION entry ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dashboard.db"
+        backtest_db_path = Path(tmp) / "backtest.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            unmapped_title = "Building Permits"  # not present in EVENT_SURPRISE_DIRECTION
+            events = [
+                EconomicEvent(
+                    title=unmapped_title, country="USD", impact="High",
+                    event_time_utc=dt.datetime(2026, 8, 7, 12, 30, tzinfo=UTC_TZ),
+                    forecast="1.4M", actual="1.5M",
+                )
+            ]
+            _seed_calendar(db_path, events)
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+
+            prior_event_1 = EconomicEvent(
+                title=unmapped_title, country="USD", impact="High",
+                event_time_utc=dt.datetime(2026, 7, 7, 12, 30, tzinfo=UTC_TZ),
+                forecast="1.4M", actual="1.5M",
+            )
+            prior_event_2 = EconomicEvent(
+                title=unmapped_title, country="USD", impact="High",
+                event_time_utc=dt.datetime(2026, 6, 5, 12, 30, tzinfo=UTC_TZ),
+                forecast="1.4M", actual="1.5M",
+            )
+            store.upsert_event_history(conn, prior_event_1, "higher", now=prior_event_1.event_time_utc)
+            store.upsert_event_history(conn, prior_event_2, "higher", now=prior_event_2.event_time_utc)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            data = resp.get_json()
+            event = next(e for e in data["predictions"][0]["events"] if e["event_title"] == unmapped_title)
+            assert event["trend_signal"] is not None
+            assert event["trend_signal"]["direction"] == "higher"
+            assert event["trend_signal"]["instrument_lean"] is None
+    print("PASS\n")
+
+
 def test_history_endpoint_returns_numeric_and_text_rows():
     print("=== app: /api/history returns build_print_call_history()'s rows as JSON, including the instrument field ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -844,6 +933,8 @@ if __name__ == "__main__":
     test_predictions_print_prediction_is_none_when_never_scored()
     test_predictions_includes_trend_signal_and_kalshi_read_when_present()
     test_predictions_trend_signal_and_kalshi_read_absent_when_nothing_recorded()
+    test_trend_signal_includes_instrument_relative_lean()
+    test_trend_signal_instrument_lean_none_for_unmapped_title()
     test_calendar_date_route_returns_events_and_calls_for_that_date_only()
     test_calendar_date_route_empty_date_returns_empty_list_not_error()
     test_calendar_date_route_invalid_date_returns_400()

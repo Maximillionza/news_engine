@@ -9,10 +9,12 @@ from __future__ import annotations
 import sys
 import os
 import datetime as dt
+from typing import Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, jsonify, request, send_from_directory
 
+from config.settings import EVENT_SURPRISE_DIRECTION, INSTRUMENTS
 from webapp.scheduler import start_scheduler
 from webapp.store import (
     get_connection, get_latest_two, get_history,
@@ -30,6 +32,35 @@ from scoring.backtest_store import (
 app = Flask(__name__, static_folder="static")
 
 DEFAULT_SYMBOLS = ["XAUUSD", "US30"]
+
+
+def _trend_instrument_lean(event_title: str, trend_direction: str, instrument: str) -> Optional[str]:
+    """
+    Translates a trend streak's raw forecast-relative direction ('higher'/
+    'lower') into a USD-bullish/bearish/neutral lean for THIS instrument —
+    same EVENT_SURPRISE_DIRECTION + usd_relationship mapping score_bundle()
+    uses internally, reimplemented here at display-only granularity (no
+    score_bundle() call, no scoring-math change). Returns None — never
+    fabricated — when event_title has no EVENT_SURPRISE_DIRECTION entry.
+    """
+    surprise_mapping = EVENT_SURPRISE_DIRECTION.get(event_title)
+    if surprise_mapping is None:
+        return None
+    # surprise_mapping is 'higher_bullish' or 'higher_bearish' — the sign
+    # this event's "higher than forecast" carries for USD.
+    higher_is_usd_bullish = surprise_mapping == "higher_bullish"
+    usd_bullish = higher_is_usd_bullish if trend_direction == "higher" else not higher_is_usd_bullish
+
+    relationship = INSTRUMENTS[instrument]["usd_relationship"]
+    if relationship == "inverse":
+        instrument_bullish = not usd_bullish
+    elif relationship == "direct":
+        instrument_bullish = usd_bullish
+    elif relationship == "risk_sentiment":
+        instrument_bullish = not usd_bullish  # dovish/USD-bearish -> risk-on -> equity-bullish, same simplification score_bundle() uses
+    else:
+        return None
+    return "bullish" if instrument_bullish else "bearish"
 
 
 def _ensure_defaults() -> None:
@@ -218,7 +249,10 @@ def get_predictions():
             )
             trend_signal = None
             if trend is not None:
-                trend_signal = {"direction": trend.direction, "strength": trend.strength}
+                trend_signal = {
+                    "direction": trend.direction, "strength": trend.strength,
+                    "instrument_lean": _trend_instrument_lean(event["title"], trend.direction, ticker),
+                }
 
             kalshi_row = get_latest_kalshi_read(backtest_conn, event["title"], event_time)
             kalshi_read = None
