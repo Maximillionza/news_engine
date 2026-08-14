@@ -63,6 +63,7 @@ class HistoryRow:
     ne_confidence: float
     outcome: Optional[str]          # 'Confirmed' | 'Missed' | None
     unjudged_reason: Optional[str]  # None when outcome is a real verdict; else 'shrug' | 'unknown_surprise' | 'pending'
+    source: str                     # 'live' | 'seeded' — for numeric rows, 'seeded' wins if either side of the join disagrees
 
 
 def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[dt.datetime] = None) -> list[HistoryRow]:
@@ -137,6 +138,12 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                 ne_confidence=call.confidence,
                 outcome=outcome,
                 unjudged_reason=unjudged_reason,
+                # A numeric row's provenance normally agrees on both sides of
+                # the join (event_history + print_predictions); if it ever
+                # doesn't, 'seeded' wins — a partially-reconstructed row is
+                # more honestly labeled by its most-uncertain component, not
+                # its most-certain one.
+                source="seeded" if "seeded" in (event.source, call.source) else "live",
             ))
 
         for event in text_only_resolved:
@@ -177,6 +184,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                     ne_confidence=prediction.confidence,
                     outcome=text_outcome,
                     unjudged_reason=text_unjudged_reason,
+                    source=prediction.source,
                 ))
     finally:
         bt_conn.close()

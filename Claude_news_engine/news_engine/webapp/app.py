@@ -264,6 +264,7 @@ def get_print_call_history():
                 "unchanged_vs_previous": r.unchanged_vs_previous,
                 "ne_prediction": r.ne_prediction, "ne_confidence": r.ne_confidence,
                 "outcome": r.outcome, "unjudged_reason": r.unjudged_reason,
+                "source": r.source,
             }
             for r in rows
         ],

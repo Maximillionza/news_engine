@@ -458,6 +458,9 @@ function renderHistoryTable(rows) {
     const actualCell = r.unchanged_vs_previous
       ? `${escapeHtml(r.actual ?? "—")} <span style="color:#888;font-size:11px">(= prev)</span>`
       : escapeHtml(r.actual ?? "—");
+    const sourceBadge = r.source === "seeded"
+      ? ' <span style="color:#888;font-size:11px;font-weight:normal">(seeded)</span>'
+      : "";
     // Numeric rows use higher/lower/in_line; text-event fallback rows use bullish/bearish/neutral.
     const predictionLabel = { higher: "Higher", lower: "Lower", in_line: "In-line", bullish: "Bullish", bearish: "Bearish", neutral: "Neutral" }[r.ne_prediction] || escapeHtml(r.ne_prediction);
     const outcomeLabel = r.outcome === null
@@ -470,7 +473,7 @@ function renderHistoryTable(rows) {
         ? '<span style="color:#2e7d32;font-weight:bold">Confirmed</span>'
         : '<span style="color:#c62828;font-weight:bold">Missed</span>';
     return `<tr>
-      <td>${escapeHtml(r.event_title)}<br><span style="font-size:11px;color:#888">${dateLabel}</span></td>
+      <td>${escapeHtml(r.event_title)}${sourceBadge}<br><span style="font-size:11px;color:#888">${dateLabel}</span></td>
       <td>${escapeHtml(r.instrument ?? "")}</td>
       <td>${escapeHtml(r.previous ?? "—")}</td>
       <td>${escapeHtml(r.forecast ?? "—")}</td>
