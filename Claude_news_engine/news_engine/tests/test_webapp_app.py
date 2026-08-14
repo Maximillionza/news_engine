@@ -959,6 +959,83 @@ def test_calendar_date_route_invalid_date_returns_400():
     print("PASS\n")
 
 
+def test_predictions_recomputes_stale_pending_direction_from_event_history():
+    print("=== app: R1 fix — a stale 'pending' essence direction is recomputed from event_history's real actual ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path):
+            event_time = dt.datetime(2026, 8, 13, 12, 30, tzinfo=dt.timezone.utc)
+            # Calendar snapshot still shows actual=None — exactly what the
+            # scheduler saw when it wrote the "pending" prediction_runs row.
+            calendar_event = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High",
+                event_time_utc=event_time, forecast="0.2%", previous="0.2%", actual=None,
+            )
+            _seed_calendar(db_path, [calendar_event])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            store.record_run(conn, "XAUUSD", "CPI m/m", event_time, None, "pending", None)
+
+            # A fallback script (scripts/fill_missing_actuals.py) later
+            # resolved the real actual into event_history — WITHOUT a
+            # fresh scheduler cycle ever following it (the bug this fix
+            # targets).
+            resolved_event = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High",
+                event_time_utc=event_time, forecast="0.2%", previous="0.2%", actual="0.5%",
+            )
+            store.upsert_event_history(conn, resolved_event, "higher", dt.datetime.now(dt.timezone.utc), source="live_web_fallback")
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            assert len(events) == 1
+            assert events[0]["direction"] != "pending", f"expected a recomputed direction, still 'pending': {events[0]}"
+            assert events[0]["direction"] == "bearish"  # CPI beat (higher_bullish for USD) -> XAUUSD inverse -> bearish
+            assert events[0]["probability"] is not None
+            assert events[0]["recomputed_from_event_history"] is True
+    print("PASS\n")
+
+
+def test_predictions_stale_pending_without_resolved_history_stays_pending():
+    print("=== app: no matching resolved event_history row -> direction stays 'pending', not fabricated ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path):
+            event_time = dt.datetime(2026, 8, 13, 12, 30, tzinfo=dt.timezone.utc)
+            calendar_event = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High",
+                event_time_utc=event_time, forecast="0.2%", previous="0.2%", actual=None,
+            )
+            _seed_calendar(db_path, [calendar_event])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            store.record_run(conn, "XAUUSD", "CPI m/m", event_time, None, "pending", None)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            assert len(events) == 1
+            assert events[0]["direction"] == "pending"
+            assert events[0]["recomputed_from_event_history"] is False
+    print("PASS\n")
+
+
+def test_calendar_route_includes_feed_staleness_seconds():
+    print("=== GET /api/calendar: response includes feed_staleness_seconds ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path):
+            _seed_calendar(db_path, _fake_events())
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/calendar")
+            data = resp.get_json()
+            assert "feed_staleness_seconds" in data
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
@@ -993,4 +1070,7 @@ if __name__ == "__main__":
     test_calendar_date_route_invalid_date_returns_400()
     test_history_endpoint_returns_numeric_and_text_rows()
     test_history_endpoint_empty_when_nothing_resolved()
+    test_predictions_recomputes_stale_pending_direction_from_event_history()
+    test_predictions_stale_pending_without_resolved_history_stays_pending()
+    test_calendar_route_includes_feed_staleness_seconds()
     print("All webapp.app tests passed.")

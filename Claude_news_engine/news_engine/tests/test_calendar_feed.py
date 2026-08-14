@@ -9,13 +9,18 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import datetime as dt
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
 from data_layer.calendar_feed import (
     EconomicEvent,
     classify_surprise,
     fetch_calendar,
     filter_relevant_events,
+    get_last_successful_fetch_age_seconds,
 )
+import data_layer.calendar_feed as calendar_feed
 from config.settings import UTC_TZ
 
 
@@ -153,6 +158,28 @@ def test_filter_relevant_events_extra_titles_defaults_to_empty():
     print("PASS\n")
 
 
+def test_get_last_successful_fetch_age_seconds_none_when_never_fetched():
+    print("=== R6: get_last_successful_fetch_age_seconds returns None when the cooldown file has never been written ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        fake_path = Path(tmp) / ".last_ff_fetch_at"
+        with patch.object(calendar_feed, "_LAST_FETCH_TIMESTAMP_FILE", fake_path):
+            assert get_last_successful_fetch_age_seconds() is None
+    print("PASS\n")
+
+
+def test_get_last_successful_fetch_age_seconds_reads_the_cooldown_file():
+    print("=== R6: get_last_successful_fetch_age_seconds reflects a real recorded fetch attempt ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        fake_path = Path(tmp) / ".last_ff_fetch_at"
+        with patch.object(calendar_feed, "_LAST_FETCH_TIMESTAMP_FILE", fake_path):
+            ten_minutes_ago = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=10)
+            calendar_feed._record_fetch_attempt(ten_minutes_ago)
+            age = get_last_successful_fetch_age_seconds()
+            assert age is not None
+            assert 590 <= age <= 610, f"expected ~600s, got {age}"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_lastweek_rejected_with_informative_error()
     test_nextweek_rejected_with_informative_error()
@@ -165,4 +192,6 @@ if __name__ == "__main__":
     test_classify_surprise_is_literal_not_bullish_bearish()
     test_filter_relevant_events_extra_titles_admits_medium_regardless_of_threshold()
     test_filter_relevant_events_extra_titles_defaults_to_empty()
+    test_get_last_successful_fetch_age_seconds_none_when_never_fetched()
+    test_get_last_successful_fetch_age_seconds_reads_the_cooldown_file()
     print("All calendar_feed tests passed.")

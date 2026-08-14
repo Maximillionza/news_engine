@@ -15,11 +15,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from flask import Flask, jsonify, request, send_from_directory
 
 from config.settings import EVENT_SURPRISE_DIRECTION
+from data_layer.calendar_feed import EconomicEvent, get_last_successful_fetch_age_seconds
 from webapp.scheduler import start_scheduler
+from webapp.scoring_service import score_event_for_symbol
 from webapp.store import (
     get_connection, get_latest_two, get_history,
     add_tracked_symbol, remove_tracked_symbol, list_tracked_symbols,
-    get_calendar_snapshot, get_event_history,
+    get_calendar_snapshot, get_event_history, EventHistoryRow,
 )
 from webapp.trend import summarize_trend, compute_trend_signal, MIN_CONFIRMED_ROWS_FOR_A_TREND
 from webapp.history import build_print_call_history
@@ -62,6 +64,50 @@ def _trend_instrument_lean(event_title: str, trend_direction: str, usd_relations
     else:
         return None
     return "bullish" if instrument_bullish else "bearish"
+
+
+def _recompute_stale_pending(
+    event: dict, symbol_class, history_rows: list[EventHistoryRow],
+):
+    """
+    R1 fix (docs/fundamental-analysis-swot-2026-08-14.md): webapp/store.py's
+    prediction_runs is written once per webapp/scheduler.py cycle, against
+    whatever the live calendar fetch showed AT THAT TIME. If the scheduler
+    saw actual=None and persisted direction="pending", and a LATER process
+    (scripts/fill_missing_actuals.py, or a scheduler cycle blocked by
+    data_layer.calendar_feed's FF rate-limit cooldown) resolves the real
+    actual into event_history without a fresh scheduler write ever
+    following it, the dashboard's primary gauge is stuck showing a stale
+    "pending" for an event that has genuinely resolved — a live,
+    user-facing correctness bug, not a modeling limitation.
+
+    Read-time merge, per the approach agreed with the user: when this
+    happens, recompute the essence-only score on the fly from
+    event_history's real actual — WITHOUT writing prediction_runs (that
+    stays the scheduler's job/pattern; recomputing on every request read
+    is cheap local arithmetic, not a live fetch).
+
+    Returns None — never a fabricated score — if no matching resolved
+    event_history row exists for this exact occurrence, or the recompute
+    itself still comes back pending/inapplicable (e.g. the title has no
+    EVENT_SURPRISE_DIRECTION entry). The caller then falls through to the
+    existing "pending" display, unchanged.
+    """
+    match = next(
+        (r for r in history_rows if r.event_time_utc == event["event_time_utc"] and r.actual is not None),
+        None,
+    )
+    if match is None:
+        return None
+    enriched_event = EconomicEvent(
+        title=event["title"], country="USD", impact=event.get("impact") or "High",
+        event_time_utc=dt.datetime.fromisoformat(event["event_time_utc"]),
+        forecast=match.forecast, previous=match.previous, actual=match.actual,
+    )
+    result = score_event_for_symbol(enriched_event, symbol_class)
+    if not result.applicable or result.pending:
+        return None
+    return result
 
 
 def _ensure_defaults() -> None:
@@ -139,9 +185,19 @@ def get_calendar():
     conn = get_connection()
     snapshot = get_calendar_snapshot(conn)
     conn.close()
+    # R6 (docs/calendar-feed-staleness-policy.md): how long since anything
+    # last talked to FF, regardless of tracked-symbol/prediction state —
+    # None if no fetch attempt has ever been recorded on this machine.
+    feed_staleness_seconds = get_last_successful_fetch_age_seconds()
     if snapshot is None:
-        return jsonify({"error": "Calendar data not yet available — waiting for the first background fetch.", "events": [], "fetched_at_utc": None})
-    return jsonify({"events": snapshot.events, "fetched_at_utc": snapshot.fetched_at_utc})
+        return jsonify({
+            "error": "Calendar data not yet available — waiting for the first background fetch.",
+            "events": [], "fetched_at_utc": None, "feed_staleness_seconds": feed_staleness_seconds,
+        })
+    return jsonify({
+        "events": snapshot.events, "fetched_at_utc": snapshot.fetched_at_utc,
+        "feed_staleness_seconds": feed_staleness_seconds,
+    })
 
 
 @app.route("/api/event_history", methods=["GET"])
@@ -187,6 +243,17 @@ def get_predictions():
             runs = get_latest_two(conn, ticker, event["title"])
             latest = runs[0] if runs else None
             previous = runs[1] if len(runs) > 1 else None
+
+            # R1 fix (docs/fundamental-analysis-swot-2026-08-14.md): fetched
+            # here (moved up from its old position further below, where it
+            # only fed the trend signal) so it can ALSO drive the
+            # stale-pending recompute immediately below — one query serves
+            # both, removing what used to be a duplicate fetch.
+            prior_occurrences = get_event_history(conn, event["title"])
+            recomputed = None
+            if latest is None or latest.direction == "pending":
+                recomputed = _recompute_stale_pending(event, symbol_class, prior_occurrences)
+
             # The accumulator's own blind, article-based call — direction
             # and probability, not just how many articles backed it. This
             # is a REAL prediction the accumulator already made independently,
@@ -241,7 +308,6 @@ def get_predictions():
             # (maximum conviction from a single data point), same failure
             # summarize_trend() already guards against.
             event_time = dt.datetime.fromisoformat(event["event_time_utc"])
-            prior_occurrences = get_event_history(conn, event["title"])
             confirmed_occurrences = [r for r in prior_occurrences if r.surprise_direction is not None]
             trend = (
                 compute_trend_signal(confirmed_occurrences)
@@ -270,16 +336,26 @@ def get_predictions():
             # print call AND zero trend signal AND zero Kalshi read is
             # genuinely nothing-yet, same as before (extended here so
             # Task 9's two new signals can't be silently dropped by a
-            # guard that never learned about them).
-            if (latest is None and article_prediction is None and print_prediction is None
+            # guard that never learned about them, and R1's read-time
+            # recompute counts as "something to say" even when `latest`
+            # itself is still the stale pending row).
+            if (latest is None and recomputed is None and article_prediction is None and print_prediction is None
                     and trend_signal is None and kalshi_read is None):
                 continue
+
+            if recomputed is not None:
+                direction_value = recomputed.direction.value
+                probability_value = recomputed.probability
+            else:
+                direction_value = latest.direction if latest else "pending"
+                probability_value = latest.probability if latest else None
 
             entry["events"].append({
                 "event_title": event["title"],
                 "event_time_utc": event["event_time_utc"],
-                "probability": latest.probability if latest else None,
-                "direction": latest.direction if latest else "pending",
+                "probability": probability_value,
+                "direction": direction_value,
+                "recomputed_from_event_history": recomputed is not None,
                 "previous_probability": previous.probability if previous else None,
                 "previous_direction": previous.direction if previous else None,
                 "article_count": accumulator_prediction.article_count if accumulator_prediction else None,

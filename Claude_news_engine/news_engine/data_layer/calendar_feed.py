@@ -98,6 +98,26 @@ def _record_fetch_attempt(now: dt.datetime) -> None:
     """
     _LAST_FETCH_TIMESTAMP_FILE.write_text(now.isoformat())
 
+
+def get_last_successful_fetch_age_seconds() -> Optional[float]:
+    """
+    R6 (docs/fundamental-analysis-swot-2026-08-14.md — single-source
+    calendar-feed risk): public wrapper over _seconds_since_last_fetch()
+    for callers outside this module (currently webapp/app.py's
+    /api/calendar route) that want to surface how stale the current
+    calendar data is, without reaching into a private function. Same
+    "None means no fetch attempt recorded yet, not zero staleness"
+    contract — see docs/calendar-feed-staleness-policy.md for what a
+    caller should do with a large value.
+
+    Note: this reads the cooldown timestamp, which is stamped on every
+    fetch ATTEMPT (see _record_fetch_attempt() above), not only successful
+    ones — a good enough proxy for "how recently did anything talk to FF"
+    for display purposes; it is not claiming the last attempt necessarily
+    returned fresh data.
+    """
+    return _seconds_since_last_fetch()
+
 # Impact levels FF uses in the feed
 IMPACT_LEVELS = {"Low", "Medium", "High", "Holiday"}
 
