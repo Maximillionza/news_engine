@@ -8,7 +8,6 @@ function escapeHtml(str) {
 
 const cardsEl = document.getElementById("cards");
 const calendarGridEl = document.getElementById("calendar-grid");
-const calendarListEl = document.getElementById("calendar-list");
 const addForm = document.getElementById("add-symbol-form");
 const addInput = document.getElementById("add-symbol-input");
 const calendarStaleNoticeEl = document.getElementById("calendar-stale-notice");
@@ -16,6 +15,18 @@ const predictionsStaleNoticeEl = document.getElementById("predictions-stale-noti
 
 function formatEventDateTime(eventTimeUtc) {
   return new Date(eventTimeUtc).toLocaleString();
+}
+
+// Local-calendar-date ISO string (YYYY-MM-DD). NOT Date.toISOString() —
+// that converts to UTC first, which would shift the date for any
+// non-UTC+0 local timezone (e.g. SAST/UTC+2 local midnight becomes the
+// previous day at 22:00 UTC) and desync the cell's data-date from the
+// cell's own displayed day number.
+function toIsoDateLocal(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 document.getElementById("tab-dashboard").addEventListener("click", () => showView("dashboard"));
@@ -492,14 +503,86 @@ async function refreshCalendar() {
     const classes = ["cal-cell"];
     if (isToday) classes.push("today");
     if (isNearestUpcoming) classes.push("nearest-upcoming");
-    cells += `<div class="${classes.join(" ")}">${day}<br>${dots}</div>`;
+    cells += `<div class="${classes.join(" ")}" data-date="${toIsoDateLocal(cellDate)}">${day}<br>${dots}</div>`;
   }
   calendarGridEl.innerHTML = cells;
+  calendarGridEl.querySelectorAll(".cal-cell[data-date]").forEach((cellEl) => {
+    cellEl.addEventListener("click", () => showDatePanel(cellEl.dataset.date));
+  });
 
-  calendarListEl.innerHTML = events
-    .map((e) => `<li>${new Date(e.event_time_utc).toLocaleString()} — ${escapeHtml(e.title)} (${escapeHtml(e.impact)})</li>`)
-    .join("");
+  // Default view: nearest-upcoming date's own events + tracked-symbol
+  // calls, via the same click-to-inspect panel (richer than a flat dump —
+  // per-symbol essence/article/print calls, not just title+impact). Falls
+  // back to today when nothing is upcoming, so the panel is never left
+  // blank on initial load. Click any other cell to inspect it instead.
+  //
+  // refreshCalendar() re-runs every POLL_INTERVAL_MS — without this, each
+  // poll would silently snap the panel back to the default date, discarding
+  // whatever the user clicked, and would also re-open a panel the user just
+  // closed. selectedCalendarDateStr/calendarPanelClosed make the choice
+  // sticky across polls, same idea as expandedHistoryIds for dashboard cards.
+  if (!calendarPanelClosed) {
+    const defaultDateStr = upcoming.length > 0 ? toIsoDateLocal(upcoming[0]) : toIsoDateLocal(today);
+    await showDatePanel(selectedCalendarDateStr || defaultDateStr);
+  }
 }
+
+let selectedCalendarDateStr = null;
+let calendarPanelClosed = false;
+
+async function showDatePanel(dateStr) {
+  selectedCalendarDateStr = dateStr;
+  calendarPanelClosed = false;
+  const panel = document.getElementById("calendar-date-panel");
+  const title = document.getElementById("calendar-date-panel-title");
+  const body = document.getElementById("calendar-date-panel-body");
+  title.textContent = new Date(`${dateStr}T00:00:00`).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  body.innerHTML = "Loading…";
+  panel.style.display = "";
+
+  const resp = await fetch(`/api/calendar/date/${dateStr}`);
+  const data = await resp.json();
+  if (!data.events || data.events.length === 0) {
+    body.innerHTML = "<div style=\"color:#888\">No tracked events on this date.</div>";
+    return;
+  }
+  body.innerHTML = data.events.map((e) => {
+    const callsHtml = Object.entries(e.calls || {}).map(([symbol, call]) => {
+      if (!call) return `<div class="date-panel-call">${escapeHtml(symbol)}: <span style="color:#888">no call recorded</span></div>`;
+      // `call.direction`/`call.probability` is the essence-only score
+      // (same as the dashboard card's gauge). `article_prediction` and
+      // `print_prediction` are independent real calls from the other two
+      // pipelines (Task 12's route) — surfaced as sub-lines rather than
+      // dropped, same emoji convention as the dashboard cards, so this
+      // panel doesn't hide detail the API already computed.
+      // "pending" is a real PredictionRun row (scored, but not yet
+      // bullish/bearish) — not the same as call.direction being absent.
+      // Treated as "no essence score yet" here too, same as the dashboard
+      // card's explicit `next.direction === "pending"` branch, so this
+      // doesn't mislabel it "INDECISIVE 0%" as if it were a real neutral call.
+      const essenceLine = call.direction != null && call.direction !== "pending"
+        ? `<b>${directionLabel(call.direction)} ${directionPct(call.probability, call.direction)}%</b>`
+        : `<span style="color:#888">no essence score yet</span>`;
+      const articleLine = call.article_prediction
+        ? `<div style="font-size:12px;color:#666">📰 ${directionLabel(call.article_prediction.direction)} ${directionPct(call.article_prediction.probability, call.article_prediction.direction)}% (${call.article_prediction.article_count} articles)</div>`
+        : "";
+      const printLine = call.print_prediction
+        ? `<div style="font-size:12px;color:#666">📊 ${escapeHtml(call.print_prediction.direction)} (${Math.round(call.print_prediction.confidence * 100)}% conf.)</div>`
+        : "";
+      return `<div class="date-panel-call">${escapeHtml(symbol)}: ${essenceLine}${articleLine}${printLine}</div>`;
+    }).join("");
+    return `<div class="date-panel-event">
+      <b>${escapeHtml(e.title)}</b> (${escapeHtml(e.impact ?? "")})<br>
+      <span style="font-size:12px;color:#888">forecast ${escapeHtml(e.forecast ?? "—")}, previous ${escapeHtml(e.previous ?? "—")}, actual ${escapeHtml(e.actual ?? "—")}</span>
+      ${callsHtml}
+    </div>`;
+  }).join("");
+}
+
+document.getElementById("calendar-date-panel-close").addEventListener("click", () => {
+  calendarPanelClosed = true;
+  document.getElementById("calendar-date-panel").style.display = "none";
+});
 
 async function refreshAll() {
   await refreshDashboard();
