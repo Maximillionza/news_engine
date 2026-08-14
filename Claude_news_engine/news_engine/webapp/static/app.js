@@ -284,6 +284,23 @@ function renderCard(symbolEntry) {
   }
   const kalshiReadLine = kalshiReadHtml(next.kalshi_read);
 
+  // trend_signal is a REAL structured signal (historical streak on this
+  // exact event, computed by webapp/trend.py) that can — by itself, with
+  // no essence score, article prediction, print call, or Kalshi read —
+  // be the entire reason an event was admitted into the response (see
+  // the Task-9 inclusion guard in webapp/app.py's /api/predictions
+  // route). It must therefore be visible wherever a card can be shown
+  // for that reason alone, not just in the resolved-score breakdown
+  // panel. Absent (null) whenever too few confirmed rows exist, same
+  // "absent, not fabricated" convention as every other optional signal.
+  function trendSignalHtml(trend) {
+    if (!trend) return '';
+    return `<div class="trend-signal">
+      📈 Trend streak: <b>${escapeHtml(trend.direction)}</b> <span style="font-size:12px;color:#888">(strength ${trend.strength.toFixed(2)})</span>
+    </div>`;
+  }
+  const trendSignalLine = trendSignalHtml(next.trend_signal);
+
   // "Why this call" breakdown: every structured signal that fed the card,
   // pulled from the already-fetched `next` object -- no new network
   // request. Honest empty state when nothing fired, never silence.
@@ -311,13 +328,13 @@ function renderCard(symbolEntry) {
     // The event/when data is already in the response — showing it here
     // instead of a generic placeholder tells the user WHAT they're
     // actually waiting on, not just that something is pending.
-    const hasAnySignal = articlePredictionLine || printPredictionLine || kalshiReadLine;
+    const hasAnySignal = articlePredictionLine || printPredictionLine || kalshiReadLine || trendSignalLine;
     const heading = hasAnySignal
       ? `Awaiting essence score: ${escapeHtml(next.event_title)}`
       : `Awaiting: ${escapeHtml(next.event_title)}`;
     body += `<div class="pending">${heading}<br>
       <span style="font-size:12px;color:#888">${formatEventDateTime(next.event_time_utc)}</span></div>
-      ${articlePredictionLine}${printPredictionLine}${kalshiReadLine}`;
+      ${articlePredictionLine}${printPredictionLine}${kalshiReadLine}${trendSignalLine}`;
     el.innerHTML = body;
     el.querySelector(".remove-btn").addEventListener("click", () => removeSymbol(symbol));
     return el;

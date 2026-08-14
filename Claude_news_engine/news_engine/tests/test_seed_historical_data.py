@@ -46,7 +46,8 @@ def test_calendar_side_write_always_happens():
         bt_conn = bt_store.get_connection(Path(tmp) / "bt.db")
         fact = _fact()
 
-        with patch.object(seed, "_attempt_article_prediction", return_value=None), \
+        with patch.object(seed, "_fetch_real_articles", return_value=[]), \
+             patch.object(seed, "_attempt_article_prediction", return_value=None), \
              patch.object(seed, "_attempt_outcome_confirmation", return_value=None):
             report = seed.run_seed([fact], dash_conn, bt_conn, ["XAUUSD"], now=fact.event_time_utc + dt.timedelta(hours=1))
 

@@ -19,7 +19,7 @@ from webapp.store import (
     add_tracked_symbol, remove_tracked_symbol, list_tracked_symbols,
     get_calendar_snapshot, get_event_history,
 )
-from webapp.trend import summarize_trend, compute_trend_signal
+from webapp.trend import summarize_trend, compute_trend_signal, MIN_CONFIRMED_ROWS_FOR_A_TREND
 from webapp.history import build_print_call_history
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 from scoring.backtest_store import (
@@ -201,11 +201,21 @@ def get_predictions():
             # (see webapp/trend.py's docstring) — unlike
             # scoring/backtest_accumulator.py's live-scoring caller, this
             # is a mere display, so no MIN_OCCURRENCES_FOR_TREND_PRIOR
-            # gate is applied here.
+            # gate is applied here. It DOES apply the same
+            # MIN_CONFIRMED_ROWS_FOR_A_TREND floor summarize_trend() uses,
+            # though — this is the one place a user actually sees the
+            # numeric strength, and with exactly 1 confirmed row
+            # _analyze_trend()'s tally branch saturates strength at 1.0
+            # (maximum conviction from a single data point), same failure
+            # summarize_trend() already guards against.
             event_time = dt.datetime.fromisoformat(event["event_time_utc"])
             prior_occurrences = get_event_history(conn, event["title"])
             confirmed_occurrences = [r for r in prior_occurrences if r.surprise_direction is not None]
-            trend = compute_trend_signal(confirmed_occurrences) if confirmed_occurrences else None
+            trend = (
+                compute_trend_signal(confirmed_occurrences)
+                if len(confirmed_occurrences) >= MIN_CONFIRMED_ROWS_FOR_A_TREND
+                else None
+            )
             trend_signal = None
             if trend is not None:
                 trend_signal = {"direction": trend.direction, "strength": trend.strength}
