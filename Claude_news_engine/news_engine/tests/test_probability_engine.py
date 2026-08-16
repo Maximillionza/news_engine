@@ -437,6 +437,102 @@ def test_macro_backdrop_no_lean_is_treated_as_no_data_not_disagreement():
     print("PASS\n")
 
 
+def test_redundancy_discount_applies_to_near_duplicate_articles():
+    print("=== Correlation/redundancy: two near-duplicate articles close in time — the later one is discounted, not double-counted ===")
+    from data_layer.news_feed import NewsArticle
+    from config.settings import REDUNDANCY_DISCOUNT_MULTIPLIER
+    event = _cpi_event()
+    earlier = NewsArticle(
+        title="Fed seen hawkish as rate hike bets surge", summary="Dollar strength widely expected across markets today.",
+        source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1, minutes=10),
+        url="https://example.test/redundant-earlier",
+    )
+    later_duplicate = NewsArticle(
+        title="Fed hawkish, rate hike bets surge", summary="Dollar strength expected across markets today.",
+        source="Test Wire 2", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+        url="https://example.test/redundant-later",
+    )
+    bundle = EventNewsBundle(event=event, articles=[earlier, later_duplicate], as_of_utc=EVENT_TIME)
+    result = score_bundle(bundle, "XAUUSD")
+    assert result.redundant_contributions_discounted == 1
+
+    # Cross-check: the SAME two articles, scored alone (no redundancy
+    # partner), should each carry their full, undiscounted weight — proves
+    # the discount is real, not an artifact of some other difference.
+    solo_bundle = EventNewsBundle(event=event, articles=[later_duplicate], as_of_utc=EVENT_TIME)
+    solo_result = score_bundle(bundle=solo_bundle, instrument="XAUUSD")
+    assert solo_result.redundant_contributions_discounted == 0
+    print("PASS\n")
+
+
+def test_redundancy_discount_does_not_apply_to_distinct_articles():
+    print("=== Correlation/redundancy: two genuinely distinct articles are NOT discounted, even if close in time ===")
+    from data_layer.news_feed import NewsArticle
+    event = _cpi_event()
+    fed_article = NewsArticle(
+        title="Fed hawkish, rate hike bets surge", summary="Dollar strength expected across markets today.",
+        source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+        url="https://example.test/distinct-1",
+    )
+    unrelated_article = NewsArticle(
+        title="Gold miners report record quarterly earnings", summary="Production costs fell as output rose in the quarter.",
+        source="Test Wire 2", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1, minutes=5),
+        url="https://example.test/distinct-2",
+    )
+    bundle = EventNewsBundle(event=event, articles=[fed_article, unrelated_article], as_of_utc=EVENT_TIME)
+    result = score_bundle(bundle, "XAUUSD")
+    assert result.redundant_contributions_discounted == 0
+    print("PASS\n")
+
+
+def test_redundancy_discount_does_not_apply_when_far_apart_in_time():
+    print("=== Correlation/redundancy: near-identical text is NOT discounted when published far apart in time ===")
+    from data_layer.news_feed import NewsArticle
+    event = _cpi_event()
+    earlier = NewsArticle(
+        title="Fed hawkish, rate hike bets surge", summary="Dollar strength expected across markets today.",
+        source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=40),
+        url="https://example.test/time-far-1",
+    )
+    later = NewsArticle(
+        title="Fed seen hawkish as rate hike bets surge", summary="Dollar strength widely expected across markets today.",
+        source="Test Wire 2", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+        url="https://example.test/time-far-2",
+    )
+    bundle = EventNewsBundle(event=event, articles=[earlier, later], as_of_utc=EVENT_TIME)
+    result = score_bundle(bundle, "XAUUSD")
+    assert result.redundant_contributions_discounted == 0
+    print("PASS\n")
+
+
+def test_redundancy_discount_works_across_sentiment_tiers_not_just_lexicon():
+    print("=== Correlation/redundancy: detection compares article TEXT, so it still fires when FinBERT (not the lexicon) scored the articles ===")
+    from data_layer.news_feed import NewsArticle
+    event = _cpi_event()
+    earlier = NewsArticle(
+        title="Fed seen hawkish as rate hike bets surge", summary="Dollar strength widely expected across markets today.",
+        source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1, minutes=10),
+        url="https://example.test/finbert-tier-1",
+    )
+    later_duplicate = NewsArticle(
+        title="Fed hawkish, rate hike bets surge", summary="Dollar strength expected across markets today.",
+        source="Test Wire 2", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+        url="https://example.test/finbert-tier-2",
+    )
+    bundle = EventNewsBundle(event=event, articles=[earlier, later_duplicate], as_of_utc=EVENT_TIME)
+    # ENABLE_FINBERT_SENTIMENT defaults on (R2) and this environment has
+    # torch/transformers installed — score_bundle() is called with no
+    # override, exercising the REAL default tiering, not a forced-lexicon
+    # path, unlike test_scoring_smoke.py's deliberate no-network contract.
+    result = score_bundle(bundle, "XAUUSD")
+    assert result.contributions[0].matched_terms[0].startswith("<"), (
+        "expected the FinBERT tier to have actually scored these — if this fails, "
+        "the test environment lost its torch/transformers install and this test can't prove what it claims"
+    )
+    assert result.redundant_contributions_discounted == 1
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_bundle_without_new_params_is_unchanged()
     test_print_call_higher_on_bullish_indicator_is_bullish_for_direct_instrument()
@@ -461,4 +557,8 @@ if __name__ == "__main__":
     test_macro_backdrop_disagreement_discounts_confidence_not_probability_or_direction()
     test_macro_backdrop_none_contributes_nothing()
     test_macro_backdrop_no_lean_is_treated_as_no_data_not_disagreement()
+    test_redundancy_discount_applies_to_near_duplicate_articles()
+    test_redundancy_discount_does_not_apply_to_distinct_articles()
+    test_redundancy_discount_does_not_apply_when_far_apart_in_time()
+    test_redundancy_discount_works_across_sentiment_tiers_not_just_lexicon()
     print("All probability_engine tests passed.")

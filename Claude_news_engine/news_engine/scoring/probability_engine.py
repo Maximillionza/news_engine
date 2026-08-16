@@ -25,7 +25,8 @@ from __future__ import annotations
 
 import datetime as dt
 import math
-from dataclasses import dataclass, field
+import re
+from dataclasses import dataclass, field, replace
 from enum import Enum
 
 from config.settings import (
@@ -41,6 +42,9 @@ from config.settings import (
     PRECURSOR_TRUST_WEIGHT,
     PRINT_CALL_TRUST_WEIGHT,
     RECENT_WINDOW_HOURS,
+    REDUNDANCY_DISCOUNT_MULTIPLIER,
+    REDUNDANCY_TERM_OVERLAP_THRESHOLD,
+    REDUNDANCY_TIME_PROXIMITY_MINUTES,
     RISK_SENTIMENT_DAMPENING,
     SOURCE_TRUST_WEIGHTS,
     THIN_SAMPLE_PROBABILITY_CAP,
@@ -154,6 +158,7 @@ class ProbabilityResult:
     thin_sample: bool = False           # True if probability was pulled toward 50% by THIN_SAMPLE_PROBABILITY_CAP (see R3)
     macro_backdrop_agrees: bool | None = None   # None = no macro backdrop data available; True/False = did the dollar/rates backdrop agree with this read? (see R5)
     macro_backdrop_note: str | None = None
+    redundant_contributions_discounted: int = 0   # how many article contributions were discounted as likely-redundant with an earlier one (see _apply_redundancy_discounts)
     contributions: list[ArticleContribution] = field(default_factory=list, repr=False)
     precursor_contributions: list[PrecursorContribution] = field(default_factory=list, repr=False)
 
@@ -250,6 +255,77 @@ def _build_contributions(
             )
         )
     return contributions
+
+
+_REDUNDANCY_STOPWORDS = {
+    "a", "an", "the", "of", "in", "on", "for", "to", "and", "or", "is", "are",
+    "as", "at", "by", "with", "from", "its", "it's", "that", "this", "after",
+    "before", "amid", "over", "says", "said", "will", "has", "have", "had",
+    "be", "been", "was", "were", "than", "into", "but", "not", "no",
+}
+
+
+def _significant_words(text: str) -> set[str]:
+    """Lowercased, stopword- and short-word-filtered word set — the shared basis _is_likely_redundant() compares two articles' actual text on."""
+    words = re.findall(r"[a-z0-9']+", text.lower())
+    return {w for w in words if w not in _REDUNDANCY_STOPWORDS and len(w) > 2}
+
+
+def _is_likely_redundant(a: ArticleContribution, b: ArticleContribution) -> bool:
+    """
+    True if `b` looks like the same underlying story as `a` — close in
+    time AND its title+summary text substantially overlaps `a`'s. Both
+    conditions are required (see REDUNDANCY_TIME_PROXIMITY_MINUTES /
+    REDUNDANCY_TERM_OVERLAP_THRESHOLD's comments in config.settings for
+    why one alone isn't enough).
+
+    Compares the articles' own TEXT (title+summary), not `matched_terms` —
+    deliberately, so this works regardless of which sentiment tier scored
+    the article. `matched_terms` only holds real lexicon phrases for the
+    lexicon fallback tier; native_sentiment/FinBERT/LLM-scored articles
+    (the common case now that ENABLE_FINBERT_SENTIMENT defaults on, R2)
+    carry a tag like "<finbert:positive:0.78>" instead, which isn't a
+    phrase list at all — comparing THAT would make this check silently
+    inert for most real articles. Text-based comparison has no such gap.
+    """
+    time_gap_minutes = abs((a.article.published_utc - b.article.published_utc).total_seconds()) / 60.0
+    if time_gap_minutes > REDUNDANCY_TIME_PROXIMITY_MINUTES:
+        return False
+
+    words_a = _significant_words(f"{a.article.title} {a.article.summary}")
+    words_b = _significant_words(f"{b.article.title} {b.article.summary}")
+    if not words_a or not words_b:
+        return False  # nothing meaningful to compare — never guess redundancy from an empty/trivial text
+
+    overlap = len(words_a & words_b) / len(words_a | words_b)
+    return overlap >= REDUNDANCY_TERM_OVERLAP_THRESHOLD
+
+
+def _apply_redundancy_discounts(contributions: list[ArticleContribution]) -> tuple[list[ArticleContribution], int]:
+    """
+    Returns (adjusted_contributions, discounted_count). Processes
+    contributions earliest-published first; any contribution found
+    likely-redundant (_is_likely_redundant()) with an EARLIER,
+    already-processed contribution has its combined_weight discounted by
+    REDUNDANCY_DISCOUNT_MULTIPLIER — a later syndicated repeat of the
+    same story is still weak corroborating evidence, not zero evidence,
+    so it's discounted rather than dropped entirely.
+
+    Comparing only against earlier contributions (not all pairs) means a
+    chain of 3+ near-identical articles doesn't let the 2nd and 3rd each
+    independently "not count" the 1st while still fully counting each
+    other — every one after the first genuine telling gets discounted.
+    """
+    ordered = sorted(contributions, key=lambda c: c.article.published_utc)
+    kept: list[ArticleContribution] = []
+    discounted_count = 0
+    for c in ordered:
+        if any(_is_likely_redundant(earlier, c) for earlier in kept):
+            kept.append(replace(c, combined_weight=c.combined_weight * REDUNDANCY_DISCOUNT_MULTIPLIER))
+            discounted_count += 1
+        else:
+            kept.append(c)
+    return kept, discounted_count
 
 
 def _build_precursor_contributions(
@@ -650,6 +726,13 @@ def score_bundle(
 
     as_of = bundle.as_of_utc
     article_contributions = _build_contributions(bundle.articles, as_of, TIME_DECAY_HALF_LIFE_MINUTES)
+    # Correlation/redundancy discount (2026-08-16 follow-up to R5): applied
+    # here, before article_contributions feeds into aggregation, agreement,
+    # contradiction detection, or the thin-sample count — every one of
+    # those benefits from not treating a syndicated repeat of the same
+    # story as independent confirmation. See _apply_redundancy_discounts()'s
+    # docstring.
+    article_contributions, redundant_contributions_discounted = _apply_redundancy_discounts(article_contributions)
     precursor_contributions = _build_precursor_contributions(precursor_events or [], as_of)
     print_call_contribution = _build_print_call_contribution(print_call, bundle.event, as_of)
     trend_streak_contribution = _build_trend_streak_contribution(trend_signal, bundle.event)
@@ -744,6 +827,7 @@ def score_bundle(
         thin_sample=thin_sample,
         macro_backdrop_agrees=macro_backdrop_agrees,
         macro_backdrop_note=macro_backdrop_note,
+        redundant_contributions_discounted=redundant_contributions_discounted,
         contributions=article_contributions,
         precursor_contributions=precursor_contributions,
     )

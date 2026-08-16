@@ -497,6 +497,27 @@ THIN_SAMPLE_PROBABILITY_CAP = 0.80   # max/min probability allowed on a thin sam
 # exists.
 MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER = 0.7
 
+# --- Correlation/redundancy discount (2026-08-16 follow-up to the R5 review) ---
+# _weighted_aggregate()/_agreement_and_coverage() previously treated every
+# article contribution as independent evidence — the same standard
+# critique the dynamic-factor-model / Bayesian-model-averaging /
+# Superforecasting literature all make of naive weighted averaging: a
+# wire story and its syndicated rewrite on a second outlet aren't two
+# confirmations, they're one fact counted twice. This is a discount on
+# the EXISTING weighted-aggregate math, not a new model — right-sized for
+# this engine's small per-event contribution count (typically well under
+# 10), not a full PCA/factor-model (that's the right tool for hundreds of
+# correlated series, not this).
+#
+# Both conditions are required together — time proximity alone (two
+# genuinely different stories breaking the same hour) isn't enough, and
+# matched-term overlap alone (two different stories that both happen to
+# say "inflation") isn't enough either. Untuned starting values, same
+# honesty as every other threshold constant in this file.
+REDUNDANCY_TIME_PROXIMITY_MINUTES = 90     # articles further apart than this are never compared for redundancy
+REDUNDANCY_TERM_OVERLAP_THRESHOLD = 0.6    # fraction of matched lexicon terms that must overlap (Jaccard) to count as the same underlying story
+REDUNDANCY_DISCOUNT_MULTIPLIER = 0.3       # a redundant contribution is still WEAK corroborating evidence, not zero — discounted, not dropped
+
 # Below this relative (or, when forecast≈0, absolute) delta between actual
 # and forecast, classify_surprise() below calls it 'in_line' rather than
 # 'higher'/'lower' — a literal actual-vs-forecast comparison for event
