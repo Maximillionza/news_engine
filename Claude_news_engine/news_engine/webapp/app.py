@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from config.settings import EVENT_SURPRISE_DIRECTION
+from config.settings import EVENT_SURPRISE_DIRECTION, PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS
 from data_layer.calendar_feed import EconomicEvent, get_last_successful_fetch_age_seconds
 from webapp.scheduler import start_scheduler
 from webapp.scoring_service import score_event_for_symbol
@@ -22,7 +22,7 @@ from webapp.store import (
     get_connection, get_latest_two, get_history,
     add_tracked_symbol, remove_tracked_symbol, list_tracked_symbols,
     get_calendar_snapshot, get_event_history, EventHistoryRow,
-    get_macro_calendar_events,
+    get_macro_calendar_events, get_resolved_event_history,
 )
 from webapp.trend import summarize_trend, compute_trend_signal, MIN_CONFIRMED_ROWS_FOR_A_TREND
 from webapp.history import build_print_call_history
@@ -235,6 +235,32 @@ def get_predictions():
     snapshot = get_calendar_snapshot(conn)
     events = snapshot.events if snapshot is not None else []
     error = None if snapshot is not None else "Calendar data not yet available — waiting for the first background fetch."
+
+    # Merge recently-resolved events back in even after FF's own live feed
+    # has moved past them (config.settings.PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS,
+    # 7 days) — investigated live 2026-08-16: CPI m/m and PPI m/m both had
+    # real, resolved prediction_runs/event_history/accumulator rows that
+    # were never lost, only stopped being SHOWN, the moment their dates
+    # scrolled out of FF's current "thisweek" window — this route used to
+    # build its event list ONLY from that live snapshot. Only events not
+    # already present via FF's own snapshot are added; FF stays the
+    # higher-trust, more complete source whenever it still has the
+    # occurrence (same "FF always wins on a match" rule the macro-calendar
+    # merge already uses).
+    now = dt.datetime.now(dt.timezone.utc)
+    retention_cutoff = now - dt.timedelta(days=PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS)
+    existing_keys = {(e["title"], e["event_time_utc"]) for e in events}
+    recently_resolved = [
+        {
+            "title": row.event_title, "country": "USD", "impact": None,
+            "event_time_utc": row.event_time_utc,
+            "forecast": row.forecast, "previous": row.previous, "actual": row.actual,
+        }
+        for row in get_resolved_event_history(conn)
+        if dt.datetime.fromisoformat(row.event_time_utc) >= retention_cutoff
+        and (row.event_title, row.event_time_utc) not in existing_keys
+    ]
+    events = events + recently_resolved
 
     predictions = []
     for ticker in symbols:

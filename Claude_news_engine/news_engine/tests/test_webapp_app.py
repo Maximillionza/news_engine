@@ -1141,6 +1141,101 @@ def test_monthahead_confirmed_macro_row_reports_estimated_false():
     print("PASS\n")
 
 
+def test_predictions_keeps_a_recently_resolved_event_after_it_scrolls_out_of_ff_snapshot():
+    print("=== app: /api/predictions still shows a recently-resolved event (e.g. CPI) even after FF's live snapshot moves past it ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path):
+            now = dt.datetime.now(dt.timezone.utc)
+            # FF's CURRENT snapshot only has a later, unrelated event —
+            # simulating the real live symptom: CPI's date has already
+            # scrolled out of FF's "thisweek" window.
+            future_event = EconomicEvent(
+                title="FOMC Meeting Minutes", country="USD", impact="High",
+                event_time_utc=now + dt.timedelta(days=2),
+            )
+            _seed_calendar(db_path, [future_event])
+
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            cpi_time = now - dt.timedelta(days=3)
+            store.record_run(conn, "XAUUSD", "CPI m/m", cpi_time, 0.71, "bullish", 0.6)
+            resolved_event = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High", event_time_utc=cpi_time,
+                forecast="0.2%", previous="0.2%", actual="0.1%",
+            )
+            store.upsert_event_history(conn, resolved_event, "lower", now)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            titles = {e["event_title"] for e in events}
+            assert "CPI m/m" in titles, f"expected CPI m/m to still appear, got {titles}"
+            cpi_entry = next(e for e in events if e["event_title"] == "CPI m/m")
+            assert cpi_entry["direction"] == "bullish"
+            assert cpi_entry["probability"] == 0.71
+    print("PASS\n")
+
+
+def test_predictions_excludes_a_resolved_event_older_than_the_retention_window():
+    print("=== app: /api/predictions does NOT resurrect an event resolved long before the retention window (that's the History tab's job) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path):
+            now = dt.datetime.now(dt.timezone.utc)
+            future_event = EconomicEvent(
+                title="FOMC Meeting Minutes", country="USD", impact="High",
+                event_time_utc=now + dt.timedelta(days=2),
+            )
+            _seed_calendar(db_path, [future_event])
+
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            old_cpi_time = now - dt.timedelta(days=30)  # well outside PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS (7)
+            store.record_run(conn, "XAUUSD", "CPI m/m", old_cpi_time, 0.71, "bullish", 0.6)
+            old_resolved_event = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High", event_time_utc=old_cpi_time,
+                forecast="0.2%", previous="0.2%", actual="0.1%",
+            )
+            store.upsert_event_history(conn, old_resolved_event, "lower", now)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            titles = {e["event_title"] for e in events}
+            assert "CPI m/m" not in titles, f"a 30-day-old resolved event should not resurface here, got {titles}"
+    print("PASS\n")
+
+
+def test_predictions_does_not_duplicate_a_recently_resolved_event_ff_still_has():
+    print("=== app: a recently-resolved event still present in FF's OWN snapshot is not duplicated by the retention merge ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path):
+            now = dt.datetime.now(dt.timezone.utc)
+            cpi_time = now - dt.timedelta(days=2)
+            ff_event = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High", event_time_utc=cpi_time,
+                forecast="0.2%", previous="0.2%", actual="0.1%",
+            )
+            _seed_calendar(db_path, [ff_event])  # FF STILL has it this cycle
+
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            store.record_run(conn, "XAUUSD", "CPI m/m", cpi_time, 0.71, "bullish", 0.6)
+            store.upsert_event_history(conn, ff_event, "lower", now)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            matching = [e for e in events if e["event_title"] == "CPI m/m"]
+            assert len(matching) == 1, f"expected exactly one CPI m/m entry, got {len(matching)}"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
@@ -1182,4 +1277,7 @@ if __name__ == "__main__":
     test_calendar_date_route_prefers_ff_over_macro_duplicate()
     test_monthahead_merges_ff_and_macro_events()
     test_monthahead_confirmed_macro_row_reports_estimated_false()
+    test_predictions_keeps_a_recently_resolved_event_after_it_scrolls_out_of_ff_snapshot()
+    test_predictions_excludes_a_resolved_event_older_than_the_retention_window()
+    test_predictions_does_not_duplicate_a_recently_resolved_event_ff_still_has()
     print("All webapp.app tests passed.")

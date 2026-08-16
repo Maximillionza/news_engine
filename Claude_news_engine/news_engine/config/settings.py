@@ -518,6 +518,22 @@ REDUNDANCY_TIME_PROXIMITY_MINUTES = 90     # articles further apart than this ar
 REDUNDANCY_TERM_OVERLAP_THRESHOLD = 0.6    # fraction of matched lexicon terms that must overlap (Jaccard) to count as the same underlying story
 REDUNDANCY_DISCOUNT_MULTIPLIER = 0.3       # a redundant contribution is still WEAK corroborating evidence, not zero — discounted, not dropped
 
+# --- Predictions display retention (2026-08-16) ---
+# webapp/app.py's /api/predictions previously built its event list ONLY
+# from whatever Forex Factory's currently-fetched calendar_snapshot
+# contains — once an event's date scrolls out of FF's "thisweek" window,
+# the dashboard's PRIMARY predictions view stopped showing it entirely,
+# even though every real prediction_runs/event_history/accumulator row
+# for it was (and still is) safely persisted. Investigated live
+# 2026-08-16: CPI m/m and PPI m/m both had real, resolved calls on
+# record — the data was never lost, only no longer displayed, because
+# nothing merged "recently resolved" events back into the primary view
+# (unlike webapp/history.py's History tab, which already reads
+# event_history independent of the current snapshot). This constant
+# closes that display gap — see get_predictions()'s recently-resolved
+# merge in webapp/app.py.
+PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS = 7
+
 # Below this relative (or, when forecast≈0, absolute) delta between actual
 # and forecast, classify_surprise() below calls it 'in_line' rather than
 # 'higher'/'lower' — a literal actual-vs-forecast comparison for event
