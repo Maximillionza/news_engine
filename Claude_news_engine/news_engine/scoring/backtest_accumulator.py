@@ -71,6 +71,7 @@ from data_layer.calendar_feed import (
 from data_layer.event_context import build_event_news_bundle
 from data_layer.rss_sources import build_all_preview_sources
 from data_layer.kalshi_feed import KalshiRead, get_market_read, get_market_read_by_date
+from data_layer.macro_backdrop import get_macro_backdrop_read
 from scoring.probability_engine import score_bundle
 from scoring.print_direction import score_print_direction
 from scoring.backtest_store import (
@@ -319,25 +320,30 @@ def score_and_record_event(
     instruments: list[str],
     sources,
     now: Optional[dt.datetime] = None,
+    macro_backdrop=None,  # MacroBackdropRead | None — duck-typed, see scoring/probability_engine.py's _check_macro_backdrop()
 ) -> dict:
     """
     Runs the FULL article-based scoring pipeline for ONE event, across
     every instrument in `instruments` — real article fetch, precursors,
-    print call, trend signal, Kalshi read, score_bundle() per instrument
-    — recording a new scoring/backtest_store row ONLY on a material
-    change (_is_material_change()), same "current sentiment is the truth
-    until articles are found to contradict or change it" rule the normal
-    windowed cycle already follows. This is the shared body extracted
-    from run_accumulator_cycle()'s per-event loop (2026-08-16) so a
-    manual once-off check (scripts/run_manual_sentiment_check.py) for an
-    event NOT yet in its automatic pre-event window can reuse the exact
-    same real pipeline and persistence semantics, rather than a
-    parallel/duplicated implementation.
+    print call, trend signal, Kalshi read, macro-backdrop cross-check,
+    score_bundle() per instrument — recording a new scoring/backtest_store
+    row ONLY on a material change (_is_material_change()), same "current
+    sentiment is the truth until articles are found to contradict or
+    change it" rule the normal windowed cycle already follows. This is
+    the shared body extracted from run_accumulator_cycle()'s per-event
+    loop (2026-08-16) so a manual once-off check
+    (scripts/run_manual_sentiment_check.py) for an event NOT yet in its
+    automatic pre-event window can reuse the exact same real pipeline and
+    persistence semantics, rather than a parallel/duplicated
+    implementation.
 
     `sources` is passed in (not built here) so a caller scoring multiple
     events in one process only builds the RSS/API source list once — same
     reasoning run_accumulator_cycle()'s own lazy `sources` build already
-    used.
+    used. `macro_backdrop` is passed in for the same reason (R5,
+    docs/fundamental-analysis-swot-2026-08-14.md) — it's a USD-level read,
+    not event-specific, so a caller scoring multiple events in one cycle
+    should fetch it once, not once per event.
 
     Returns {instrument: ProbabilityResult} for instruments that were
     actually scored (a failed article fetch for the whole event, or a
@@ -387,6 +393,7 @@ def score_and_record_event(
                 bundle, instrument, precursor_events=precursors,
                 print_call=print_call, trend_signal=trend_signal,
                 kalshi_read=kalshi_read, kalshi_direction_override=kalshi_direction_value,
+                macro_backdrop=macro_backdrop,
             )
         except Exception as exc:  # noqa: BLE001 — one pair's failure must not stop the others
             print(f"[backtest_accumulator] WARNING: scoring failed for {instrument}/{event.title}: {exc}")
@@ -441,6 +448,8 @@ def run_accumulator_cycle(
         active = events_in_pre_window(events, now_utc=now)
 
         sources = None  # lazily built, only if at least one event is actually active this cycle
+        macro_backdrop = None
+        macro_backdrop_fetched = False
         for event in active:
             # Every tracked instrument is checked for every active event on
             # every cycle — no per-pair check budget (see module docstring
@@ -449,7 +458,16 @@ def run_accumulator_cycle(
             # instrument — identical across instruments for a given event.
             if sources is None:
                 sources = build_all_preview_sources()
-            score_and_record_event(conn, event, all_events, instruments, sources, now=now)
+            # R5: fetched once per CYCLE, not once per event — it's a
+            # USD-level read (dollar index / real yields), not specific to
+            # any one event, same "build once, reuse" reasoning as `sources`
+            # above. macro_backdrop_fetched (not `macro_backdrop is None`)
+            # is the actual gate — a real fetch that legitimately returns
+            # None (e.g. FRED_API_KEY unset) must not retry every event.
+            if not macro_backdrop_fetched:
+                macro_backdrop = get_macro_backdrop_read()
+                macro_backdrop_fetched = True
+            score_and_record_event(conn, event, all_events, instruments, sources, now=now, macro_backdrop=macro_backdrop)
 
         return events
     finally:

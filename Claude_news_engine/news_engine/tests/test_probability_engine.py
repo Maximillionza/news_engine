@@ -361,6 +361,82 @@ def test_sufficient_signal_count_is_not_capped():
     print("PASS\n")
 
 
+@dataclass
+class _FakeMacroBackdrop:
+    """Duck-typed stand-in for data_layer.macro_backdrop.MacroBackdropRead — probability_engine.py never imports that module, tests exercise the duck-typed .lean contract directly."""
+    lean: int | None
+
+
+def test_macro_backdrop_agrees_when_lean_matches_aggregate_sign():
+    print("=== R5: score_bundle: macro_backdrop_agrees=True and confidence UNCHANGED when the backdrop's lean matches the read ===")
+    from data_layer.news_feed import NewsArticle
+    event = _cpi_event()  # higher_bullish
+    bullish_article = NewsArticle(
+        title="Hawkish tilt firms, rate hike bets rise", summary="Dollar strength widely expected.",
+        source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+        url="https://example.test/macro-agree",
+    )
+    bundle = EventNewsBundle(event=event, articles=[bullish_article], as_of_utc=EVENT_TIME)
+    no_macro_result = score_bundle(bundle, "XAUUSD")
+    macro_backdrop = _FakeMacroBackdrop(lean=1)  # backdrop leans USD-bullish, matching the article's own bullish-USD read
+    with_macro_result = score_bundle(bundle, "XAUUSD", macro_backdrop=macro_backdrop)
+    assert with_macro_result.macro_backdrop_agrees is True
+    assert with_macro_result.macro_backdrop_note is None
+    assert abs(with_macro_result.confidence - no_macro_result.confidence) < 1e-9  # unchanged
+    print("PASS\n")
+
+
+def test_macro_backdrop_disagreement_discounts_confidence_not_probability_or_direction():
+    print("=== R5: score_bundle: a disagreeing macro backdrop discounts CONFIDENCE only — probability and direction untouched ===")
+    from data_layer.news_feed import NewsArticle
+    from config.settings import MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER
+    event = _cpi_event()
+    bullish_article = NewsArticle(
+        title="Hawkish tilt firms, rate hike bets rise", summary="Dollar strength widely expected.",
+        source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+        url="https://example.test/macro-disagree",
+    )
+    bundle = EventNewsBundle(event=event, articles=[bullish_article], as_of_utc=EVENT_TIME)
+    no_macro_result = score_bundle(bundle, "XAUUSD")
+    macro_backdrop = _FakeMacroBackdrop(lean=-1)  # backdrop leans USD-bearish — opposite the article's bullish-USD read
+    with_macro_result = score_bundle(bundle, "XAUUSD", macro_backdrop=macro_backdrop)
+    assert with_macro_result.macro_backdrop_agrees is False
+    assert with_macro_result.macro_backdrop_note is not None
+    assert abs(with_macro_result.confidence - no_macro_result.confidence * MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER) < 1e-9
+    # Never flips direction or probability — same discipline as agreement/coverage and the thin-sample cap.
+    assert with_macro_result.direction == no_macro_result.direction
+    assert with_macro_result.probability == no_macro_result.probability
+    print("PASS\n")
+
+
+def test_macro_backdrop_none_contributes_nothing():
+    print("=== R5: score_bundle: macro_backdrop=None leaves macro_backdrop_agrees=None and confidence unchanged ===")
+    event = _cpi_event()
+    bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
+    result = score_bundle(bundle, "XAUUSD", macro_backdrop=None)
+    assert result.macro_backdrop_agrees is None
+    assert result.macro_backdrop_note is None
+    print("PASS\n")
+
+
+def test_macro_backdrop_no_lean_is_treated_as_no_data_not_disagreement():
+    print("=== R5: score_bundle: a macro backdrop with NO clear lean (.lean=None) doesn't discount confidence ===")
+    from data_layer.news_feed import NewsArticle
+    event = _cpi_event()
+    bullish_article = NewsArticle(
+        title="Hawkish tilt firms, rate hike bets rise", summary="Dollar strength widely expected.",
+        source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+        url="https://example.test/macro-flat",
+    )
+    bundle = EventNewsBundle(event=event, articles=[bullish_article], as_of_utc=EVENT_TIME)
+    no_macro_result = score_bundle(bundle, "XAUUSD")
+    flat_backdrop = _FakeMacroBackdrop(lean=None)
+    with_macro_result = score_bundle(bundle, "XAUUSD", macro_backdrop=flat_backdrop)
+    assert with_macro_result.macro_backdrop_agrees is None
+    assert abs(with_macro_result.confidence - no_macro_result.confidence) < 1e-9
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_bundle_without_new_params_is_unchanged()
     test_print_call_higher_on_bullish_indicator_is_bullish_for_direct_instrument()
@@ -381,4 +457,8 @@ if __name__ == "__main__":
     test_kalshi_trust_weight_above_precursor_trust_weight()
     test_thin_sample_caps_extreme_probability()
     test_sufficient_signal_count_is_not_capped()
+    test_macro_backdrop_agrees_when_lean_matches_aggregate_sign()
+    test_macro_backdrop_disagreement_discounts_confidence_not_probability_or_direction()
+    test_macro_backdrop_none_contributes_nothing()
+    test_macro_backdrop_no_lean_is_treated_as_no_data_not_disagreement()
     print("All probability_engine tests passed.")

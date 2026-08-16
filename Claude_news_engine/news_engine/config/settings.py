@@ -477,6 +477,26 @@ SURPRISE_SENSITIVITY = 3.0
 THIN_SAMPLE_SIGNAL_THRESHOLD = 3     # fewer than this many signal-bearing contributions is "thin"
 THIN_SAMPLE_PROBABILITY_CAP = 0.80   # max/min probability allowed on a thin sample — still directional, never near-certain
 
+# --- Macro-backdrop cross-check (R5, docs/fundamental-analysis-swot-2026-08-14.md) ---
+# The engine's single biggest identified design gap: every prior signal
+# derived from either headline text or a tracked event's own
+# forecast-vs-actual surprise — nothing independently checked where the
+# dollar/rates market was already positioned. data_layer/macro_backdrop.py
+# (DTWEXBGS trade-weighted dollar index + DFII10 10yr real yield, both
+# live-verified 2026-08-16) supplies that independent read.
+#
+# Deliberately a CONFIDENCE modifier only, never a direction override —
+# same discipline THIN_SAMPLE_PROBABILITY_CAP already established: no
+# real backtested trust weight exists for this signal yet (unlike
+# Kalshi/precursor weights, which at least have this project's own
+# backtest history behind them), so it's not blended into
+# aggregate_usd_sentiment as a weighted vote — it can only pull
+# confidence DOWN on a clear disagreement, exactly like a weak
+# agreement/coverage read already does, never invent a wrong-direction
+# call. Untuned starting value, needs revisiting once real backtest data
+# exists.
+MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER = 0.7
+
 # Below this relative (or, when forecast≈0, absolute) delta between actual
 # and forecast, classify_surprise() below calls it 'in_line' rather than
 # 'higher'/'lower' — a literal actual-vs-forecast comparison for event

@@ -21,6 +21,19 @@ import scoring.print_direction as accumulator_print_direction
 import data_layer.kalshi_feed as accumulator_kalshi_feed
 import webapp.store as webapp_store
 
+# This whole file exercises the accumulator's OWN logic (calendar
+# filtering, precursor lookup, Kalshi resolution, material-change
+# gating, etc.) — none of it tests the R5 macro-backdrop cross-check
+# itself (that's covered directly in tests/test_macro_backdrop.py and
+# tests/test_probability_engine.py). Patched module-wide, unscoped, so
+# every one of this file's ~30 run_accumulator_cycle() call sites never
+# makes a real live FRED call, regardless of whether FRED_API_KEY
+# happens to be set in the environment this suite runs in. Deliberately
+# not stopped — this file runs standalone (its own process, `python
+# tests/test_backtest_accumulator.py`), never inside a shared pytest
+# session where a leaked patch could bleed into another file's tests.
+patch.object(accumulator, "get_macro_backdrop_read", return_value=None).start()
+
 
 def _fake_event(hours_from_now, now, title="Test Event", impact="High"):
     return EconomicEvent(
@@ -395,7 +408,7 @@ def test_trend_signal_passed_to_score_bundle_when_gate_met():
         dash_conn.close()
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None):
             captured_kwargs["trend_signal"] = trend_signal
             return _fake_result()
 
@@ -437,7 +450,7 @@ def test_trend_signal_is_none_when_gate_not_met():
         dash_conn.close()
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None):
             captured_kwargs["trend_signal"] = trend_signal
             return _fake_result()
 
@@ -466,7 +479,7 @@ def test_trend_signal_is_none_when_dashboard_db_unreachable():
         bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None):
             captured_kwargs["trend_signal"] = trend_signal
             return _fake_result()
 
@@ -505,7 +518,7 @@ def test_trend_signal_is_none_when_read_itself_fails():
         webapp_store.get_connection(dashboard_db_path).close()
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None):
             captured_kwargs["trend_signal"] = trend_signal
             return _fake_result()
 
@@ -537,7 +550,7 @@ def test_print_call_passed_to_score_bundle():
         fake_call = accumulator_print_direction.PrintCall(direction="higher", confidence=0.6, article_count=2)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None):
             captured_kwargs["print_call"] = print_call
             return _fake_result()
 
@@ -683,7 +696,7 @@ def test_failed_scoring_for_one_pair_does_not_stop_others():
         now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
         event = _fake_event(hours_from_now=20, now=now)
 
-        def flaky_score_bundle(bundle, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+        def flaky_score_bundle(bundle, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None):
             if instrument == "XAUUSD":
                 raise Exception("scoring blew up")
             return _fake_result()
@@ -766,7 +779,7 @@ def test_kalshi_read_passed_to_score_bundle_for_numeric_event():
         fake_read = accumulator_kalshi_feed.KalshiRead(strike=0.1, implied_direction="higher", implied_probability=0.65, open_interest=100.0)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None):
             captured_kwargs["kalshi_read"] = kalshi_read
             captured_kwargs["kalshi_direction_override"] = kalshi_direction_override
             return _fake_result()
@@ -865,7 +878,7 @@ def test_kalshi_fetch_failure_fails_open_without_crashing_cycle():
         bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None):
             captured_kwargs["kalshi_read"] = kalshi_read
             return _fake_result()
 
@@ -897,7 +910,7 @@ def test_kalshi_fetch_returning_none_fails_open_without_crashing_cycle():
         bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None):
             captured_kwargs["kalshi_read"] = kalshi_read
             return _fake_result()
 
@@ -936,7 +949,7 @@ def test_read_kalshi_signal_resolves_fomc_via_month_ticker():
         fake_read = accumulator_kalshi_feed.KalshiRead(strike=4.25, implied_direction="in_line", implied_probability=0.5, open_interest=100.0)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None):
             captured_kwargs["kalshi_read"] = kalshi_read
             captured_kwargs["kalshi_direction_override"] = kalshi_direction_override
             return _fake_result()
@@ -977,7 +990,7 @@ def test_read_kalshi_signal_resolves_date_ticketed_event():
         fake_read = accumulator_kalshi_feed.KalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.6, open_interest=100.0)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None):
             captured_kwargs["kalshi_read"] = kalshi_read
             captured_kwargs["kalshi_direction_override"] = kalshi_direction_override
             return _fake_result()

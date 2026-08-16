@@ -36,6 +36,7 @@ from config.settings import (
     EVENT_SURPRISE_DIRECTION,
     INSTRUMENTS,
     KALSHI_TRUST_WEIGHT,
+    MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER,
     PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES,
     PRECURSOR_TRUST_WEIGHT,
     PRINT_CALL_TRUST_WEIGHT,
@@ -151,6 +152,8 @@ class ProbabilityResult:
     contradiction_flag: bool
     contradiction_note: str | None
     thin_sample: bool = False           # True if probability was pulled toward 50% by THIN_SAMPLE_PROBABILITY_CAP (see R3)
+    macro_backdrop_agrees: bool | None = None   # None = no macro backdrop data available; True/False = did the dollar/rates backdrop agree with this read? (see R5)
+    macro_backdrop_note: str | None = None
     contributions: list[ArticleContribution] = field(default_factory=list, repr=False)
     precursor_contributions: list[PrecursorContribution] = field(default_factory=list, repr=False)
 
@@ -165,6 +168,8 @@ class ProbabilityResult:
         base += ")"
         if self.contradiction_flag:
             base += f" — ⚠ {self.contradiction_note}"
+        if self.macro_backdrop_agrees is False:
+            base += f" — ⚠ {self.macro_backdrop_note}"
         return base
 
 
@@ -468,6 +473,45 @@ def _apply_thin_sample_cap(probability: float, signal_count: int) -> tuple[float
     return 0.5 + clamped_distance, True
 
 
+def _check_macro_backdrop(
+    aggregate_usd: float,
+    macro_backdrop,  # MacroBackdropRead | None — duck-typed (.lean, .dollar_index_trend_pct, .real_yield_trend_bps), no data_layer.macro_backdrop import needed
+) -> tuple[bool | None, str | None]:
+    """
+    Compares this bundle's aggregate USD-directional read against the
+    independent dollar/rates backdrop (R5). Returns (agrees, note):
+
+    - (None, None) if no macro backdrop data is available at all, or the
+      backdrop itself has no clear lean (too small a move on both
+      measures to call) — "no data"/"no lean" is never treated as
+      agreement OR disagreement, same "absent, not fabricated" contract
+      every other optional signal in this pipeline uses.
+    - (True, None) if the backdrop's lean matches the aggregate's sign.
+    - (False, a human-readable note) if they clearly disagree — this
+      never flips direction or probability, only feeds into a confidence
+      discount (see score_bundle()) — a real signal shouldn't be able to
+      silently overrule the rest of the pipeline on the strength of two
+      macro series alone.
+    """
+    if macro_backdrop is None:
+        return None, None
+    lean = macro_backdrop.lean
+    if lean is None:
+        return None, None
+
+    usd_sign = 1 if aggregate_usd >= 0 else -1
+    if lean == usd_sign:
+        return True, None
+
+    backdrop_dir = "USD-bullish" if lean > 0 else "USD-bearish"
+    read_dir = "USD-bullish" if usd_sign > 0 else "USD-bearish"
+    note = (
+        f"Macro backdrop (dollar index/real yields) leans {backdrop_dir}, "
+        f"but this read is {read_dir} — treat with extra caution until they align."
+    )
+    return False, note
+
+
 def _map_to_instrument_score(usd_sentiment: float, instrument: str) -> float:
     relationship = INSTRUMENTS[instrument]["usd_relationship"]
     if relationship == "inverse":
@@ -545,6 +589,7 @@ def score_bundle(
     trend_signal=None,  # TrendSignal | None — duck-typed
     kalshi_read=None,   # KalshiRead | None — duck-typed
     kalshi_direction_override=None,  # str | None — 'higher_bullish'/'higher_bearish', see below
+    macro_backdrop=None,  # MacroBackdropRead | None — duck-typed, see _check_macro_backdrop()
 ) -> ProbabilityResult:
     """
     Main entry point: score an EventNewsBundle for a given instrument
@@ -587,6 +632,18 @@ def score_bundle(
     score_bundle() stays free of any FOMC-specific special-casing or a
     dependency on config.settings.KALSHI_RATE_DECISION_SERIES. Ignored
     when kalshi_read is None.
+
+    macro_backdrop: optional — an independent dollar-index/real-yield
+    read (data_layer.macro_backdrop.MacroBackdropRead), R5's
+    macro-backdrop cross-check. NEVER blended into aggregate_usd_sentiment
+    as a weighted vote (no real backtested trust weight exists for it) —
+    it can only discount CONFIDENCE via
+    MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER when it clearly
+    disagrees with this bundle's own read, same "pull toward uncertain,
+    never invent a wrong-direction call" discipline agreement/coverage
+    and the thin-sample cap already follow. See _check_macro_backdrop().
+    None contributes nothing (confidence unchanged, macro_backdrop_agrees
+    stays None).
     """
     if instrument not in INSTRUMENTS:
         raise ValueError(f"Unknown instrument {instrument!r} — add it to config.settings.INSTRUMENTS first")
@@ -653,6 +710,14 @@ def score_bundle(
     # silent ones report 100% confidence — it trivially agrees with itself.
     confidence = agreement * coverage
 
+    # R5: independent dollar/rates backdrop check — measured on aggregate_usd
+    # (the raw USD-directional axis), same reasoning as agreement/coverage
+    # above. A clear disagreement discounts confidence; it never touches
+    # probability or direction.
+    macro_backdrop_agrees, macro_backdrop_note = _check_macro_backdrop(aggregate_usd, macro_backdrop)
+    if macro_backdrop_agrees is False:
+        confidence *= MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER
+
     if instrument_score > 0.02:
         direction = Direction.BULLISH
     elif instrument_score < -0.02:
@@ -677,6 +742,8 @@ def score_bundle(
         contradiction_flag=contradiction_flag,
         contradiction_note=contradiction_note,
         thin_sample=thin_sample,
+        macro_backdrop_agrees=macro_backdrop_agrees,
+        macro_backdrop_note=macro_backdrop_note,
         contributions=article_contributions,
         precursor_contributions=precursor_contributions,
     )
