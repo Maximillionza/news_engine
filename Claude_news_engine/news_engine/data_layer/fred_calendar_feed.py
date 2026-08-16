@@ -62,13 +62,27 @@ def get_upcoming_release_dates(release_id: int, days_ahead: int = 35, today: Opt
     today = today or dt.date.today()
     end = today + dt.timedelta(days=days_ahead)
     try:
+        # Singular "release/dates", NOT plural "releases/dates" — the
+        # plural endpoint lists dates across EVERY release on FRED and
+        # silently ignores release_id entirely (confirmed live 2026-08-16:
+        # it returned Cass Freight Index, Coinbase, FOMC Press Release,
+        # etc. all mixed together for a release_id=10-only request). The
+        # singular endpoint is the one that actually filters by release_id.
         resp = requests.get(
-            f"{FRED_BASE_URL}/releases/dates",
+            f"{FRED_BASE_URL}/release/dates",
             params={
                 "release_id": release_id,
                 "realtime_start": today.isoformat(),
                 "realtime_end": end.isoformat(),
-                "include_release_dates_with_no_data": "false",
+                # MUST be "true" — live-verified 2026-08-16: "false" (this
+                # project's original setting) silently excludes exactly the
+                # future-scheduled dates this function exists to fetch. A
+                # date that hasn't happened yet obviously has no data
+                # attached, so "no data" -> excluded meant every future
+                # date vanished and only already-occurred dates came back
+                # (a real bug that made this function return nothing but
+                # the past for all 9 release IDs it was tested against).
+                "include_release_dates_with_no_data": "true",
                 "file_type": "json",
                 "api_key": FRED_API_KEY,
             },
@@ -119,13 +133,15 @@ def compare_fred_to_ff(
     fred_dates_by_title: dict[str, list[FredReleaseDate]],
     ff_events: list[dict],
     tolerance_days: int = 1,
+    today: Optional[dt.date] = None,
 ) -> list[LookaheadComparisonRow]:
     """
     Pure comparison — no I/O, no network, same "arithmetic core, testable
     without a live call" pattern webapp/trend.py already uses.
 
     `fred_dates_by_title`: event title -> get_upcoming_release_dates()'s
-    result for that title's mapped release_id.
+    result for that title's mapped release_id (forward-only by
+    construction — see that function's own `today`/`days_ahead` params).
     `ff_events`: plain dicts from webapp.store.get_calendar_snapshot()'s
     CalendarSnapshot.events (title, event_time_utc as an ISO string, ...).
     `tolerance_days`: how close a FF date must be to a FRED date to count
@@ -133,7 +149,15 @@ def compare_fred_to_ff(
     (FRED's dates are calendar dates with no time-of-day; FF's
     event_time_utc can fall on either side of midnight UTC relative to
     the "real" US release date).
+    `today`: excludes already-PAST FF occurrences from 'ff_only' — live-
+    verified 2026-08-16: fred_dates_by_title is forward-only, so an
+    already-occurred FF event (still sitting in the persisted snapshot
+    until the next week's fetch replaces it) would otherwise ALWAYS show
+    as a spurious 'ff_only' "worth reviewing," which is noise, not a real
+    disagreement — FRED was never even asked about a date before today.
+    Defaults to the real current date if omitted.
     """
+    today = today or dt.date.today()
     rows: list[LookaheadComparisonRow] = []
 
     for title, fred_dates in fred_dates_by_title.items():
@@ -155,7 +179,7 @@ def compare_fred_to_ff(
                 rows.append(LookaheadComparisonRow(event_title=title, fred_date=fred_entry.release_date, ff_date=None, status="fred_only"))
 
         for ff_date in ff_dates_for_title:
-            if ff_date not in matched_ff_dates:
+            if ff_date not in matched_ff_dates and ff_date >= today:
                 rows.append(LookaheadComparisonRow(event_title=title, fred_date=None, ff_date=ff_date, status="ff_only"))
 
     return rows

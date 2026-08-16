@@ -26,6 +26,7 @@ from __future__ import annotations
 import sys
 import os
 import argparse
+import datetime as dt
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -54,7 +55,7 @@ def run(days_ahead: int = 35) -> None:
     for title, release_id in FRED_RELEASE_ID_BY_EVENT_TITLE.items():
         fred_dates_by_title[title] = get_upcoming_release_dates(release_id, days_ahead=days_ahead)
 
-    rows = compare_fred_to_ff(fred_dates_by_title, snapshot.events)
+    rows = compare_fred_to_ff(fred_dates_by_title, snapshot.events, today=dt.date.today())
     rows.sort(key=lambda r: (r.event_title, r.fred_date or r.ff_date))
 
     matches = [r for r in rows if r.status == "match"]
