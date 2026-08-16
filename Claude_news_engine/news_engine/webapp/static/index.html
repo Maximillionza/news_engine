@@ -26,7 +26,12 @@
 
 <section id="view-calendar" style="display:none">
   <div id="calendar-stale-notice" class="stale-notice" style="display:none"></div>
+  <div id="feed-staleness-indicator" class="feed-staleness"></div>
   <div id="calendar-grid"></div>
+  <div id="calendar-legend" class="calendar-legend">
+    <span><span class="cal-dot impact-high"></span> Confirmed (Forex Factory)</span>
+    <span><span class="cal-dot cal-dot-estimated"></span> Estimated (FRED month-ahead, not yet confirmed by FF)</span>
+  </div>
   <div id="calendar-date-panel" style="display:none">
     <button id="calendar-date-panel-close">✕</button>
     <h3 id="calendar-date-panel-title"></h3>

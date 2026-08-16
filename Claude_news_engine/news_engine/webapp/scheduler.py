@@ -18,6 +18,7 @@ from data_layer.calendar_feed import EconomicEvent, classify_surprise, fetch_cal
 from webapp.scoring_service import score_event_for_symbol
 from webapp.store import (
     get_connection, record_run, get_latest_two, save_calendar_snapshot_if_changed, upsert_event_history,
+    confirm_macro_calendar_event,
 )
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 
@@ -138,6 +139,13 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
     now_for_history = dt.datetime.now(dt.timezone.utc)
     for event in all_events:
         upsert_event_history(conn, event, classify_surprise(event), now_for_history)
+        # "Micro lens" reconciliation (docs/macro-calendar-design-2026-08-16.md):
+        # every real event FF's feed returns gets a chance to confirm a
+        # macro_calendar row (scripts/refresh_macro_calendar.py's FRED-sourced
+        # month-ahead estimate) with FF's real exact time. No-ops (returns
+        # False) if no macro row exists for this occurrence — normal, not
+        # every FF event necessarily has a prior FRED-sourced entry.
+        confirm_macro_calendar_event(conn, event.title, event.event_time_utc, now_for_history)
 
     try:
         for ticker in tracked_symbols:

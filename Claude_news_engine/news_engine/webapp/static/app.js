@@ -12,6 +12,26 @@ const addForm = document.getElementById("add-symbol-form");
 const addInput = document.getElementById("add-symbol-input");
 const calendarStaleNoticeEl = document.getElementById("calendar-stale-notice");
 const predictionsStaleNoticeEl = document.getElementById("predictions-stale-notice");
+const feedStalenessEl = document.getElementById("feed-staleness-indicator");
+
+// Thresholds from docs/calendar-feed-staleness-policy.md's operational
+// policy table — display-only, no scoring impact.
+const FEED_STALENESS_FRESH_SECONDS = 3 * 60 * 60;
+const FEED_STALENESS_AGING_SECONDS = 24 * 60 * 60;
+
+function renderFeedStaleness(seconds) {
+  if (feedStalenessEl == null) return;
+  if (seconds == null) {
+    feedStalenessEl.textContent = "Calendar feed: never fetched yet";
+    feedStalenessEl.className = "feed-staleness stale";
+    return;
+  }
+  const minutes = Math.round(seconds / 60);
+  const label = minutes < 60 ? `${minutes}m ago` : `${(seconds / 3600).toFixed(1)}h ago`;
+  const level = seconds < FEED_STALENESS_FRESH_SECONDS ? "fresh" : seconds < FEED_STALENESS_AGING_SECONDS ? "aging" : "stale";
+  feedStalenessEl.textContent = `Forex Factory feed last checked: ${label}`;
+  feedStalenessEl.className = `feed-staleness ${level}`;
+}
 
 function formatEventDateTime(eventTimeUtc) {
   return new Date(eventTimeUtc).toLocaleString();
@@ -481,6 +501,7 @@ async function refreshCalendar() {
   const resp = await fetch("/api/calendar");
   const data = await resp.json();
   const events = data.events || [];
+  renderFeedStaleness(data.feed_staleness_seconds);
 
   if (data.error) {
     calendarStaleNoticeEl.textContent = data.error;
@@ -488,6 +509,22 @@ async function refreshCalendar() {
   } else {
     calendarStaleNoticeEl.textContent = "";
     calendarStaleNoticeEl.style.display = "none";
+  }
+
+  // Macro view (docs/macro-calendar-design-2026-08-16.md): FRED-sourced
+  // month-ahead dates for whatever FF's own "thisweek" feed hasn't
+  // populated yet — fetched separately so a failure here never blocks
+  // the FF-backed grid above from rendering. Only entries with
+  // estimated===true are actually NEW information (a false one is
+  // already a duplicate of something `events` already has, per
+  // /api/calendar/monthahead's own dedup rule).
+  let estimatedOnlyEvents = [];
+  try {
+    const monthAheadResp = await fetch("/api/calendar/monthahead");
+    const monthAheadData = await monthAheadResp.json();
+    estimatedOnlyEvents = (monthAheadData.events || []).filter((e) => e.estimated);
+  } catch {
+    estimatedOnlyEvents = [];  // macro view is a nice-to-have overlay — a fetch failure here must not break the calendar tab
   }
 
   const now = new Date();
@@ -509,6 +546,11 @@ async function refreshCalendar() {
     const d = new Date(e.event_time_utc).toDateString();
     (eventsByDate[d] = eventsByDate[d] || []).push(e);
   });
+  const estimatedByDate = {};
+  estimatedOnlyEvents.forEach((e) => {
+    const d = new Date(e.event_time_utc).toDateString();
+    (estimatedByDate[d] = estimatedByDate[d] || []).push(e);
+  });
 
   let cells = "";
   for (let i = 0; i < startWeekday; i++) cells += `<div class="cal-cell"></div>`;
@@ -517,14 +559,23 @@ async function refreshCalendar() {
     const isToday = cellDate.toDateString() === today.toDateString();
     const isNearestUpcoming = cellDate.toDateString() === nearestUpcomingDateStr;
     const dayEvents = eventsByDate[cellDate.toDateString()] || [];
+    const dayEstimated = estimatedByDate[cellDate.toDateString()] || [];
     const dots = dayEvents.map((e) => {
       const impactClass = e.impact === 'High' ? 'impact-high' : e.impact === 'Medium' ? 'impact-medium' : 'impact-low';
       return `<span class="cal-dot ${impactClass}" title="${escapeHtml(e.title)} (${escapeHtml(e.impact)})"></span>`;
     }).join("");
+    // Estimated (FRED month-ahead, not FF-confirmed) dots — hollow style,
+    // see .cal-dot-estimated in style.css. Rendered even when the day
+    // already has real FF dots, in case a DIFFERENT title on the same
+    // date is still macro-only (e.g. CPI confirmed by FF, PPI not yet).
+    const estimatedDots = dayEstimated.map((e) =>
+      `<span class="cal-dot cal-dot-estimated" title="${escapeHtml(e.title)} (estimated — not yet confirmed by Forex Factory)"></span>`
+    ).join("");
     const classes = ["cal-cell"];
     if (isToday) classes.push("today");
     if (isNearestUpcoming) classes.push("nearest-upcoming");
-    cells += `<div class="${classes.join(" ")}" data-date="${toIsoDateLocal(cellDate)}">${day}<br>${dots}</div>`;
+    if (dayEvents.length === 0 && dayEstimated.length > 0) classes.push("has-estimated-only");
+    cells += `<div class="${classes.join(" ")}" data-date="${toIsoDateLocal(cellDate)}">${day}<br>${dots}${estimatedDots}</div>`;
   }
   calendarGridEl.innerHTML = cells;
   calendarGridEl.querySelectorAll(".cal-cell[data-date]").forEach((cellEl) => {
@@ -592,6 +643,17 @@ async function showDatePanel(dateStr) {
         : "";
       return `<div class="date-panel-call">${escapeHtml(symbol)}: ${essenceLine}${articleLine}${printLine}</div>`;
     }).join("");
+    // Macro-only rows (docs/macro-calendar-design-2026-08-16.md) carry no
+    // impact/forecast/previous/actual and no per-symbol calls — they're a
+    // FRED-sourced date estimate, not a scored occurrence. estimated===true
+    // also covers a confirmed-but-not-yet-FF-superseded macro row (rare —
+    // FF normally supersedes it in the SAME cycle that confirms it).
+    if (e.estimated) {
+      return `<div class="date-panel-event">
+        <b>${escapeHtml(e.title)}</b> <span class="estimated-badge" title="FRED month-ahead estimate — not yet confirmed by Forex Factory's own feed">ESTIMATED</span><br>
+        <span style="font-size:12px;color:#888">Exact time not yet confirmed — Forex Factory hasn't reached this occurrence's week yet.</span>
+      </div>`;
+    }
     return `<div class="date-panel-event">
       <b>${escapeHtml(e.title)}</b> (${escapeHtml(e.impact ?? "")})<br>
       <span style="font-size:12px;color:#888">forecast ${escapeHtml(e.forecast ?? "—")}, previous ${escapeHtml(e.previous ?? "—")}, actual ${escapeHtml(e.actual ?? "—")}</span>

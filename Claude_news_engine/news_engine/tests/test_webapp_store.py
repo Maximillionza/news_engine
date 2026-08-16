@@ -566,6 +566,123 @@ def test_get_events_with_stale_missing_actual_excludes_titles_outside_event_surp
     print("PASS\n")
 
 
+def test_infer_event_time_of_day_returns_none_without_resolved_history():
+    print("=== store: infer_event_time_of_day returns None (not fabricated) with no resolved history ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "test.db")
+        assert store.infer_event_time_of_day(conn, "CPI m/m") is None
+        conn.close()
+    print("PASS\n")
+
+
+def test_infer_event_time_of_day_uses_most_recent_resolved_occurrence():
+    print("=== store: infer_event_time_of_day derives the time-of-day from the most recent RESOLVED occurrence ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "test.db")
+        older = EconomicEvent(title="CPI m/m", country="USD", impact="High",
+                               event_time_utc=dt.datetime(2026, 7, 14, 12, 30, tzinfo=UTC_TZ), forecast="0.2%", actual="0.3%")
+        newer = EconomicEvent(title="CPI m/m", country="USD", impact="High",
+                               event_time_utc=dt.datetime(2026, 8, 13, 13, 0, tzinfo=UTC_TZ), forecast="0.2%", actual="0.4%")
+        now = dt.datetime.now(dt.timezone.utc)
+        store.upsert_event_history(conn, older, "higher", now)
+        store.upsert_event_history(conn, newer, "higher", now)
+        result = store.infer_event_time_of_day(conn, "CPI m/m")
+        assert result == dt.time(13, 0)  # the NEWER occurrence's time, not the older one's 12:30
+        conn.close()
+    print("PASS\n")
+
+
+def test_upsert_macro_calendar_event_round_trips():
+    print("=== store: upsert_macro_calendar_event round-trips through get_macro_calendar_events ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "test.db")
+        now = dt.datetime.now(dt.timezone.utc)
+        store.upsert_macro_calendar_event(conn, "CPI m/m", "2026-09-11", "2026-09-11T12:30:00+00:00", "history_derived", now)
+        rows = store.get_macro_calendar_events(conn, "2026-09-01", "2026-09-30")
+        assert len(rows) == 1
+        assert rows[0].event_title == "CPI m/m"
+        assert rows[0].event_date == "2026-09-11"
+        assert rows[0].estimated_time_utc == "2026-09-11T12:30:00+00:00"
+        assert rows[0].time_source == "history_derived"
+        assert rows[0].confirmed is False
+        assert rows[0].confirmed_event_time_utc is None
+        assert rows[0].display_time_utc == "2026-09-11T12:30:00+00:00"
+        conn.close()
+    print("PASS\n")
+
+
+def test_upsert_macro_calendar_event_refreshes_estimate_on_conflict():
+    print("=== store: a second upsert for the same (title, date) refreshes the estimate, not a duplicate row ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "test.db")
+        now = dt.datetime.now(dt.timezone.utc)
+        store.upsert_macro_calendar_event(conn, "CPI m/m", "2026-09-11", None, "unconfirmed", now)
+        store.upsert_macro_calendar_event(conn, "CPI m/m", "2026-09-11", "2026-09-11T12:30:00+00:00", "history_derived", now)
+        rows = store.get_macro_calendar_events(conn, "2026-09-01", "2026-09-30")
+        assert len(rows) == 1
+        assert rows[0].estimated_time_utc == "2026-09-11T12:30:00+00:00"
+        assert rows[0].time_source == "history_derived"
+        conn.close()
+    print("PASS\n")
+
+
+def test_confirm_macro_calendar_event_sets_confirmed_time_within_tolerance():
+    print("=== store: confirm_macro_calendar_event marks a macro row confirmed with FF's exact time ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "test.db")
+        now = dt.datetime.now(dt.timezone.utc)
+        store.upsert_macro_calendar_event(conn, "CPI m/m", "2026-09-11", None, "unconfirmed", now)
+        ff_time = dt.datetime(2026, 9, 11, 12, 30, tzinfo=dt.timezone.utc)
+        confirmed = store.confirm_macro_calendar_event(conn, "CPI m/m", ff_time, now)
+        assert confirmed is True
+        rows = store.get_macro_calendar_events(conn, "2026-09-01", "2026-09-30")
+        assert rows[0].confirmed is True
+        assert rows[0].confirmed_event_time_utc == ff_time.isoformat()
+        assert rows[0].display_time_utc == ff_time.isoformat()  # confirmed time wins over the estimate
+        conn.close()
+    print("PASS\n")
+
+
+def test_confirm_macro_calendar_event_returns_false_when_no_matching_row():
+    print("=== store: confirm_macro_calendar_event returns False (no crash) when no macro row exists for this occurrence ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "test.db")
+        now = dt.datetime.now(dt.timezone.utc)
+        confirmed = store.confirm_macro_calendar_event(conn, "CPI m/m", now, now)
+        assert confirmed is False
+        conn.close()
+    print("PASS\n")
+
+
+def test_confirm_macro_calendar_event_outside_tolerance_does_not_match():
+    print("=== store: confirm_macro_calendar_event does not match a FF date far outside tolerance_days ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "test.db")
+        now = dt.datetime.now(dt.timezone.utc)
+        store.upsert_macro_calendar_event(conn, "CPI m/m", "2026-09-11", None, "unconfirmed", now)
+        far_ff_time = dt.datetime(2026, 10, 15, 12, 30, tzinfo=dt.timezone.utc)
+        confirmed = store.confirm_macro_calendar_event(conn, "CPI m/m", far_ff_time, now, tolerance_days=2)
+        assert confirmed is False
+        rows = store.get_macro_calendar_events(conn, "2026-09-01", "2026-09-30")
+        assert rows[0].confirmed is False
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_macro_calendar_events_filters_by_date_range():
+    print("=== store: get_macro_calendar_events only returns rows within [start_date, end_date] ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "test.db")
+        now = dt.datetime.now(dt.timezone.utc)
+        store.upsert_macro_calendar_event(conn, "CPI m/m", "2026-08-20", None, "unconfirmed", now)
+        store.upsert_macro_calendar_event(conn, "PPI m/m", "2026-09-15", None, "unconfirmed", now)
+        rows = store.get_macro_calendar_events(conn, "2026-09-01", "2026-09-30")
+        assert len(rows) == 1
+        assert rows[0].event_title == "PPI m/m"
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_round_trip_and_diff()
     test_fewer_than_two_runs()
@@ -592,4 +709,12 @@ if __name__ == "__main__":
     test_upsert_event_history_seeded_source_survives_a_later_live_upsert_with_real_actual()
     test_get_events_with_stale_missing_actual_excludes_text_only_events()
     test_get_events_with_stale_missing_actual_excludes_titles_outside_event_surprise_direction()
+    test_infer_event_time_of_day_returns_none_without_resolved_history()
+    test_infer_event_time_of_day_uses_most_recent_resolved_occurrence()
+    test_upsert_macro_calendar_event_round_trips()
+    test_upsert_macro_calendar_event_refreshes_estimate_on_conflict()
+    test_confirm_macro_calendar_event_sets_confirmed_time_within_tolerance()
+    test_confirm_macro_calendar_event_returns_false_when_no_matching_row()
+    test_confirm_macro_calendar_event_outside_tolerance_does_not_match()
+    test_get_macro_calendar_events_filters_by_date_range()
     print("All store tests passed.")

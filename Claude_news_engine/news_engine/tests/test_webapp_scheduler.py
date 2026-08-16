@@ -305,6 +305,33 @@ def test_run_scoring_cycle_records_event_history_for_every_event():
     print("PASS\n")
 
 
+def test_run_scoring_cycle_confirms_a_matching_macro_calendar_row():
+    print("=== scheduler: run_scoring_cycle confirms a macro_calendar row with FF's real exact time (the 'micro lens') ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        event = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High",
+            event_time_utc=dt.datetime(2026, 9, 11, 12, 30, tzinfo=UTC_TZ),
+            forecast="0.3%", previous="0.4%", actual=None,
+        )
+        with patch.object(store, "DB_PATH", db_path):
+            conn = store.get_connection(db_path)
+            now = dt.datetime.now(dt.timezone.utc)
+            store.upsert_macro_calendar_event(conn, "CPI m/m", "2026-09-11", None, "unconfirmed", now)
+            conn.close()
+
+            with patch.object(scheduler, "fetch_calendar", return_value=[event]):
+                scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
+
+        conn = store.get_connection(db_path)
+        rows = store.get_macro_calendar_events(conn, "2026-09-01", "2026-09-30")
+        assert len(rows) == 1
+        assert rows[0].confirmed is True
+        assert rows[0].confirmed_event_time_utc == event.event_time_utc.isoformat()
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_scoring_cycle_writes_new_rows_and_skips_duplicates()
     test_scoring_cycle_persists_calendar_snapshot_on_success()
@@ -321,4 +348,5 @@ if __name__ == "__main__":
     test_adaptive_interval_no_sense_check_without_a_reschedule()
     test_adaptive_interval_reschedule_detection_is_optional()
     test_run_scoring_cycle_records_event_history_for_every_event()
+    test_run_scoring_cycle_confirms_a_matching_macro_calendar_row()
     print("All scheduler tests passed.")

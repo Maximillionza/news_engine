@@ -22,6 +22,7 @@ from webapp.store import (
     get_connection, get_latest_two, get_history,
     add_tracked_symbol, remove_tracked_symbol, list_tracked_symbols,
     get_calendar_snapshot, get_event_history, EventHistoryRow,
+    get_macro_calendar_events,
 )
 from webapp.trend import summarize_trend, compute_trend_signal, MIN_CONFIRMED_ROWS_FOR_A_TREND
 from webapp.history import build_print_call_history
@@ -398,6 +399,52 @@ def get_predictions():
     return jsonify({"predictions": predictions, "error": error})
 
 
+@app.route("/api/calendar/monthahead", methods=["GET"])
+def get_calendar_month_ahead():
+    """
+    Macro/micro merged calendar view (docs/macro-calendar-design-2026-08-16.md):
+    Forex Factory's persisted calendar_snapshot ("micro lens" — exact,
+    near-term) plus webapp.store's macro_calendar table ("macro view" —
+    FRED-sourced, month-ahead, estimated) for any (title, date) FF
+    doesn't have yet. Display-only — this route computes nothing that
+    feeds scoring; it exists purely so the Calendar tab can show the rest
+    of the month FF's own "thisweek" feed hasn't populated.
+
+    Every returned event carries "estimated": true/false so the frontend
+    can render macro-only entries distinctly (e.g. a hollow/dashed dot)
+    from FF-confirmed ones. A macro row already covered by a real FF
+    event at the same (title, date) is skipped — FF is always the
+    higher-trust source once it has the occurrence.
+    """
+    conn = get_connection()
+    snapshot = get_calendar_snapshot(conn)
+    ff_events = snapshot.events if snapshot is not None else []
+    ff_keys = {(e["title"], e["event_time_utc"][:10]) for e in ff_events}
+
+    today = dt.date.today()
+    horizon = today + dt.timedelta(days=35)
+    macro_rows = get_macro_calendar_events(conn, today.isoformat(), horizon.isoformat())
+    conn.close()
+
+    merged = [{**e, "estimated": False} for e in ff_events]
+    for row in macro_rows:
+        if (row.event_title, row.event_date) in ff_keys:
+            continue  # FF already has this occurrence — it's the higher-trust source, skip the macro duplicate
+        display_time = row.display_time_utc or f"{row.event_date}T00:00:00+00:00"
+        merged.append({
+            "title": row.event_title,
+            "country": "USD",
+            "impact": None,  # macro rows don't carry FF's impact tag — never fabricated
+            "event_time_utc": display_time,
+            "forecast": None, "previous": None, "actual": None,
+            "estimated": row.confirmed_event_time_utc is None,
+            "source": "fred_macro",
+        })
+
+    merged.sort(key=lambda e: e["event_time_utc"])
+    return jsonify({"events": merged, "ff_fetched_at_utc": snapshot.fetched_at_utc if snapshot is not None else None})
+
+
 @app.route("/api/calendar/date/<date_str>", methods=["GET"])
 def get_calendar_for_date(date_str: str):
     """
@@ -417,6 +464,18 @@ def get_calendar_for_date(date_str: str):
     snapshot = get_calendar_snapshot(conn)
     all_events = snapshot.events if snapshot is not None else []
     day_events = [e for e in all_events if dt.datetime.fromisoformat(e["event_time_utc"]).date() == target_date]
+
+    # Macro-view (FRED) rows for this exact date not already covered by a
+    # real FF event — same "FF always wins once it has the occurrence"
+    # rule /api/calendar/monthahead uses. These carry no `calls` (macro
+    # rows aren't instrument-scored — see docs/macro-calendar-design-2026-08-16.md,
+    # scoring stays untouched) so the frontend can render them as a
+    # simple "estimated" entry rather than a full prediction panel.
+    ff_titles_this_date = {e["title"] for e in day_events}
+    macro_rows = [
+        r for r in get_macro_calendar_events(conn, date_str, date_str)
+        if r.event_title not in ff_titles_this_date
+    ]
 
     symbols = list_tracked_symbols(conn)
     result_events = []
@@ -459,7 +518,15 @@ def get_calendar_for_date(date_str: str):
             "title": event["title"], "event_time_utc": event["event_time_utc"],
             "impact": event.get("impact"), "forecast": event.get("forecast"),
             "previous": event.get("previous"), "actual": event.get("actual"),
-            "calls": calls,
+            "calls": calls, "estimated": False,
+        })
+
+    for row in macro_rows:
+        result_events.append({
+            "title": row.event_title,
+            "event_time_utc": row.display_time_utc or f"{row.event_date}T00:00:00+00:00",
+            "impact": None, "forecast": None, "previous": None, "actual": None,
+            "calls": {}, "estimated": row.confirmed_event_time_utc is None,
         })
 
     conn.close()

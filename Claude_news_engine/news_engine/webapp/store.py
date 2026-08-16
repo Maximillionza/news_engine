@@ -1,5 +1,5 @@
 """
-SQLite persistence for the dashboard — three concerns in one file since
+SQLite persistence for the dashboard — four concerns in one file since
 they share the same DB and open/close lifecycle:
   1. prediction_runs — one row per (symbol, event, scoring run), powers
      the before/after diff strip surviving server restarts.
@@ -13,6 +13,14 @@ they share the same DB and open/close lifecycle:
      explicit product decision, a fetch that returns unchanged data does
      NOT touch the stored row — "store and use as current until new
      information supersedes this" — see save_calendar_snapshot_if_changed().
+  4. macro_calendar — the month-ahead "macro view" seeded from FRED
+     (scripts/refresh_macro_calendar.py), display-only, NOT wired into
+     scoring. FF's own calendar_snapshot is the "micro lens" that
+     confirms/corrects a macro row's exact time once FF's near-term feed
+     actually reaches that occurrence — see
+     confirm_macro_calendar_event(), called from webapp/scheduler.py's
+     run_scoring_cycle() on every real FF fetch, and
+     docs/macro-calendar-design-2026-08-16.md for the full design.
 """
 from __future__ import annotations
 
@@ -59,6 +67,19 @@ CREATE TABLE IF NOT EXISTS event_history (
     source TEXT NOT NULL DEFAULT 'live',
     UNIQUE(event_title, event_time_utc)
 );
+CREATE TABLE IF NOT EXISTS macro_calendar (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_title TEXT NOT NULL,
+    event_date TEXT NOT NULL,             -- YYYY-MM-DD, FRED's date-only granularity
+    estimated_time_utc TEXT,              -- full ISO datetime, best-guess from event_history's most recent time-of-day for this title; NULL if no history exists yet
+    time_source TEXT NOT NULL,            -- 'history_derived' | 'unconfirmed'
+    confirmed INTEGER NOT NULL DEFAULT 0, -- 1 once FF's own feed has reached this exact occurrence
+    confirmed_event_time_utc TEXT,        -- FF's real exact time, set only once confirmed
+    source TEXT NOT NULL DEFAULT 'fred',
+    recorded_at_utc TEXT NOT NULL,
+    updated_at_utc TEXT NOT NULL,
+    UNIQUE(event_title, event_date)
+);
 """
 
 
@@ -89,6 +110,27 @@ class EventHistoryRow:
     actual: Optional[str]
     surprise_direction: Optional[str]
     source: str
+
+
+@dataclass
+class MacroCalendarRow:
+    event_title: str
+    event_date: str                        # YYYY-MM-DD
+    estimated_time_utc: Optional[str]
+    time_source: str                       # 'history_derived' | 'unconfirmed'
+    confirmed: bool
+    confirmed_event_time_utc: Optional[str]
+    source: str
+
+    @property
+    def display_time_utc(self) -> Optional[str]:
+        """
+        The best time to actually show for this macro row — FF's
+        confirmed exact time if the micro lens has reached it,
+        otherwise the history-derived estimate, otherwise None (date
+        known, time genuinely unconfirmed — never fabricated).
+        """
+        return self.confirmed_event_time_utc or self.estimated_time_utc
 
 
 def _migrate_add_source_column(conn: sqlite3.Connection) -> None:
@@ -380,3 +422,117 @@ def get_text_only_resolved_events(conn: sqlite3.Connection, now: Optional[dt.dat
         (now.isoformat(), limit),
     ).fetchall()
     return [EventHistoryRow(**dict(row)) for row in rows]
+
+
+def infer_event_time_of_day(conn: sqlite3.Connection, event_title: str) -> Optional[dt.time]:
+    """
+    Real-data basis for a macro-calendar row's time estimate: the
+    time-of-day of this title's most recent RESOLVED (actual IS NOT NULL)
+    event_history occurrence. Most scheduled US releases keep a stable
+    time-of-day release slot (e.g. CPI/NFP at 12:30 UTC / 8:30am ET), so
+    reusing the last real observed time is a genuine inference, not a
+    fabrication — same "real data or absent" standard as every other
+    inference in this project. Returns None if no resolved occurrence
+    exists yet for this title (a title tracked for the first time, or
+    never yet resolved) — callers must treat that as "time genuinely
+    unknown," never defaulting to midnight or any other guessed value.
+    """
+    row = conn.execute(
+        "SELECT event_time_utc FROM event_history WHERE event_title = ? AND actual IS NOT NULL "
+        "ORDER BY event_time_utc DESC LIMIT 1",
+        (event_title,),
+    ).fetchone()
+    if row is None:
+        return None
+    return dt.datetime.fromisoformat(row["event_time_utc"]).time()
+
+
+def upsert_macro_calendar_event(
+    conn: sqlite3.Connection,
+    event_title: str,
+    event_date: str,
+    estimated_time_utc: Optional[str],
+    time_source: str,
+    now: dt.datetime,
+    source: str = "fred",
+) -> None:
+    """
+    Records/refreshes a macro-calendar row for this (title, date) pair.
+    Never touches `confirmed`/`confirmed_event_time_utc` — those are
+    owned exclusively by confirm_macro_calendar_event() (the FF "micro
+    lens" reconciliation step), so a later macro refresh can never
+    downgrade or overwrite a real FF-confirmed time.
+    """
+    conn.execute(
+        """
+        INSERT INTO macro_calendar
+            (event_title, event_date, estimated_time_utc, time_source, confirmed, source, recorded_at_utc, updated_at_utc)
+        VALUES (?, ?, ?, ?, 0, ?, ?, ?)
+        ON CONFLICT(event_title, event_date) DO UPDATE SET
+            estimated_time_utc = excluded.estimated_time_utc,
+            time_source = excluded.time_source,
+            updated_at_utc = excluded.updated_at_utc
+        """,
+        (event_title, event_date, estimated_time_utc, time_source, source, now.isoformat(), now.isoformat()),
+    )
+    conn.commit()
+
+
+def confirm_macro_calendar_event(
+    conn: sqlite3.Connection,
+    event_title: str,
+    event_time_utc: dt.datetime,
+    now: dt.datetime,
+    tolerance_days: int = 2,
+) -> bool:
+    """
+    The FF "micro lens" reconciliation step — called from
+    webapp/scheduler.py's run_scoring_cycle() for every real event FF's
+    feed returns. Finds the macro_calendar row for `event_title` whose
+    event_date is within `tolerance_days` of event_time_utc's date and
+    marks it confirmed with FF's real exact time — the macro row's
+    date-only, history-derived estimate is superseded by real,
+    FF-sourced ground truth the moment FF's own near-term feed actually
+    reaches that occurrence. Returns True if a row was matched and
+    confirmed, False if no macro row exists for this occurrence yet
+    (normal — not every FF event necessarily has a prior FRED-sourced
+    macro entry, e.g. Low-impact/foreign events FRED was never asked
+    about). Idempotent: re-confirming an already-confirmed row with the
+    same or a corrected time is harmless.
+    """
+    event_date = event_time_utc.date()
+    rows = conn.execute(
+        "SELECT event_date FROM macro_calendar WHERE event_title = ?",
+        (event_title,),
+    ).fetchall()
+    match = next(
+        (r["event_date"] for r in rows if abs((dt.date.fromisoformat(r["event_date"]) - event_date).days) <= tolerance_days),
+        None,
+    )
+    if match is None:
+        return False
+    conn.execute(
+        "UPDATE macro_calendar SET confirmed = 1, confirmed_event_time_utc = ?, updated_at_utc = ? "
+        "WHERE event_title = ? AND event_date = ?",
+        (event_time_utc.isoformat(), now.isoformat(), event_title, match),
+    )
+    conn.commit()
+    return True
+
+
+def get_macro_calendar_events(conn: sqlite3.Connection, start_date: str, end_date: str) -> list[MacroCalendarRow]:
+    """Macro-calendar rows whose event_date falls within [start_date, end_date] (inclusive, both YYYY-MM-DD), ordered earliest first."""
+    rows = conn.execute(
+        "SELECT event_title, event_date, estimated_time_utc, time_source, confirmed, confirmed_event_time_utc, source "
+        "FROM macro_calendar WHERE event_date BETWEEN ? AND ? ORDER BY event_date ASC",
+        (start_date, end_date),
+    ).fetchall()
+    return [
+        MacroCalendarRow(
+            event_title=r["event_title"], event_date=r["event_date"],
+            estimated_time_utc=r["estimated_time_utc"], time_source=r["time_source"],
+            confirmed=bool(r["confirmed"]), confirmed_event_time_utc=r["confirmed_event_time_utc"],
+            source=r["source"],
+        )
+        for r in rows
+    ]

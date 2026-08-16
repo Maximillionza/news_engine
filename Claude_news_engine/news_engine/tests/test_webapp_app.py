@@ -1036,6 +1036,111 @@ def test_calendar_route_includes_feed_staleness_seconds():
     print("PASS\n")
 
 
+def test_calendar_date_route_includes_estimated_macro_event_for_that_date():
+    print("=== GET /api/calendar/date/<date>: includes a macro-only event for that date, marked estimated ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            _seed_calendar(db_path, [])  # FF has nothing on this date yet
+            conn = store.get_connection(db_path)
+            now = dt.datetime.now(dt.timezone.utc)
+            store.upsert_macro_calendar_event(conn, "Core PCE Price Index m/m", "2026-08-26", None, "unconfirmed", now)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/calendar/date/2026-08-26")
+            data = resp.get_json()
+            assert len(data["events"]) == 1
+            assert data["events"][0]["title"] == "Core PCE Price Index m/m"
+            assert data["events"][0]["estimated"] is True
+            assert data["events"][0]["calls"] == {}
+    print("PASS\n")
+
+
+def test_calendar_date_route_prefers_ff_over_macro_duplicate():
+    print("=== GET /api/calendar/date/<date>: a macro row already covered by a real FF event is NOT duplicated ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            ff_event = EconomicEvent(
+                title="CPI m/m", country="USD", impact="High",
+                event_time_utc=dt.datetime(2026, 8, 26, 12, 30, tzinfo=UTC_TZ),
+                forecast="0.2%", actual=None,
+            )
+            _seed_calendar(db_path, [ff_event])
+            conn = store.get_connection(db_path)
+            now = dt.datetime.now(dt.timezone.utc)
+            store.upsert_macro_calendar_event(conn, "CPI m/m", "2026-08-26", None, "unconfirmed", now)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/calendar/date/2026-08-26")
+            data = resp.get_json()
+            assert len(data["events"]) == 1
+            assert data["events"][0]["estimated"] is False
+    print("PASS\n")
+
+
+def test_monthahead_merges_ff_and_macro_events():
+    print("=== GET /api/calendar/monthahead: merges FF (exact) and macro_calendar (estimated) events, no duplicates ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path):
+            today = dt.date.today()
+            ff_event_date = today + dt.timedelta(days=3)
+            ff_event = EconomicEvent(
+                title="Unemployment Claims", country="USD", impact="Medium",
+                event_time_utc=dt.datetime.combine(ff_event_date, dt.time(12, 30), tzinfo=dt.timezone.utc),
+            )
+            _seed_calendar(db_path, [ff_event])
+
+            conn = store.get_connection(db_path)
+            now = dt.datetime.now(dt.timezone.utc)
+            # A macro row for a title/date FF does NOT have yet — should surface as estimated.
+            macro_only_date = (today + dt.timedelta(days=20)).isoformat()
+            store.upsert_macro_calendar_event(conn, "CPI m/m", macro_only_date, None, "unconfirmed", now)
+            # A macro row for the SAME (title, date) FF already has — must be skipped, not duplicated.
+            store.upsert_macro_calendar_event(conn, "Unemployment Claims", ff_event_date.isoformat(), None, "unconfirmed", now)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/calendar/monthahead")
+            data = resp.get_json()
+            titles_and_estimated = {(e["title"], e["estimated"]) for e in data["events"]}
+
+            assert ("Unemployment Claims", False) in titles_and_estimated  # FF's exact entry, not the macro duplicate
+            assert ("CPI m/m", True) in titles_and_estimated               # macro-only, estimated
+            assert len(data["events"]) == 2  # the duplicate macro row for Unemployment Claims must NOT appear separately
+    print("PASS\n")
+
+
+def test_monthahead_confirmed_macro_row_reports_estimated_false():
+    print("=== GET /api/calendar/monthahead: a CONFIRMED macro row (no FF duplicate present) reports estimated=false ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path):
+            _seed_calendar(db_path, [])  # no FF events at all this cycle
+            conn = store.get_connection(db_path)
+            now = dt.datetime.now(dt.timezone.utc)
+            confirm_date = (dt.date.today() + dt.timedelta(days=15)).isoformat()
+            confirmed_time = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=15)
+            store.upsert_macro_calendar_event(conn, "PPI m/m", confirm_date, None, "unconfirmed", now)
+            store.confirm_macro_calendar_event(conn, "PPI m/m", confirmed_time, now)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/calendar/monthahead")
+            data = resp.get_json()
+            ppi_events = [e for e in data["events"] if e["title"] == "PPI m/m"]
+            assert len(ppi_events) == 1
+            assert ppi_events[0]["estimated"] is False
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
@@ -1073,4 +1178,8 @@ if __name__ == "__main__":
     test_predictions_recomputes_stale_pending_direction_from_event_history()
     test_predictions_stale_pending_without_resolved_history_stays_pending()
     test_calendar_route_includes_feed_staleness_seconds()
+    test_calendar_date_route_includes_estimated_macro_event_for_that_date()
+    test_calendar_date_route_prefers_ff_over_macro_duplicate()
+    test_monthahead_merges_ff_and_macro_events()
+    test_monthahead_confirmed_macro_row_reports_estimated_false()
     print("All webapp.app tests passed.")
