@@ -25,6 +25,50 @@ UTC_TZ = ZoneInfo("UTC")
 ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY", "")
 APITUBE_API_KEY = os.environ.get("APITUBE_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
+
+# --- FRED (St. Louis Fed) month-lookahead calendar source — READ-ONLY,
+# comparison/logging use only, NOT wired into scoring or the live
+# dashboard/accumulator pipelines (see docs/calendar-lookahead-source-research-2026-08-15.md
+# and scripts/compare_fred_lookahead.py). Forex Factory's feed only ever
+# shows "thisweek" (data_layer/calendar_feed.py's docstring) — FRED's
+# /fred/releases/dates endpoint is a genuinely free, official-source
+# alternative for forward-looking RELEASE DATES (not forecast/consensus
+# values — FRED doesn't have those, same gap every free source this
+# project has checked has).
+#
+# Every rid below was live-verified 2026-08-15 by loading the actual FRED
+# release page and confirming its title — not assumed from documentation.
+# One release commonly covers several of this project's event titles
+# (e.g. rid=10 "Consumer Price Index" covers CPI m/m, CPI y/y, Core CPI
+# m/m, and Core CPI y/y all at once — FRED schedules the whole release,
+# not each sub-series separately).
+FRED_RELEASE_ID_BY_EVENT_TITLE = {
+    "CPI m/m": 10, "CPI y/y": 10, "Core CPI m/m": 10, "Core CPI y/y": 10,          # Consumer Price Index
+    "PPI m/m": 46, "Core PPI m/m": 46,                                             # Producer Price Index
+    "Non-Farm Employment Change": 50, "Unemployment Rate": 50,                     # Employment Situation
+    "Average Hourly Earnings m/m": 50,
+    "ADP Nonfarm Employment Change": 194,                                          # ADP National Employment Report
+    "Retail Sales m/m": 9,                                                         # Advance Monthly Sales for Retail and Food Services
+    "Advance GDP q/q": 53,                                                         # Gross Domestic Product
+    "Core PCE Price Index m/m": 54,                                                # Personal Income and Outlays
+    "Prelim UoM Consumer Sentiment": 91,                                           # Surveys of Consumers (Univ. of Michigan)
+    "Unemployment Claims": 180,                                                    # Unemployment Insurance Weekly Claims Report
+    "Import Prices m/m": 188,                                                      # U.S. Import and Export Price Indexes
+    # "Federal Funds Rate" deliberately NOT mapped here — the Federal
+    # Reserve's own FOMC calendar page (federalreserve.gov/monetarypolicy/
+    # fomccalendars.htm, live-verified reachable, meeting dates published
+    # a year+ ahead) is the more authoritative primary source for that
+    # one event specifically; not worth a second, weaker path through FRED.
+    #
+    # Confirmed with NO FRED coverage (live-verified 2026-08-15, not left
+    # unchecked): "ISM Manufacturing PMI" / "ISM Services PMI" — FRED is
+    # actively REMOVING Institute for Supply Management data entirely
+    # (confirmed via fred.stlouisfed.org/series/NAPM redirecting to a
+    # "Data To Be Removed from FRED" notice). "Challenger Job Cuts" —
+    # zero search results on FRED; it's private-source data (Challenger,
+    # Gray & Christmas) FRED has never carried.
+}
 
 # --- Contextual sentiment scoring (upgrade over the naive lexicon) ---
 # R2 (docs/fundamental-analysis-swot-2026-08-14.md): ENABLE_FINBERT_SENTIMENT
