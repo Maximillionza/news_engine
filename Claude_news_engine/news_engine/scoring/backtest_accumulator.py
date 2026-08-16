@@ -312,6 +312,107 @@ def compute_accumulator_interval_seconds(
     return tightest
 
 
+def score_and_record_event(
+    conn,
+    event: EconomicEvent,
+    all_events: list[EconomicEvent],
+    instruments: list[str],
+    sources,
+    now: Optional[dt.datetime] = None,
+) -> dict:
+    """
+    Runs the FULL article-based scoring pipeline for ONE event, across
+    every instrument in `instruments` — real article fetch, precursors,
+    print call, trend signal, Kalshi read, score_bundle() per instrument
+    — recording a new scoring/backtest_store row ONLY on a material
+    change (_is_material_change()), same "current sentiment is the truth
+    until articles are found to contradict or change it" rule the normal
+    windowed cycle already follows. This is the shared body extracted
+    from run_accumulator_cycle()'s per-event loop (2026-08-16) so a
+    manual once-off check (scripts/run_manual_sentiment_check.py) for an
+    event NOT yet in its automatic pre-event window can reuse the exact
+    same real pipeline and persistence semantics, rather than a
+    parallel/duplicated implementation.
+
+    `sources` is passed in (not built here) so a caller scoring multiple
+    events in one process only builds the RSS/API source list once — same
+    reasoning run_accumulator_cycle()'s own lazy `sources` build already
+    used.
+
+    Returns {instrument: ProbabilityResult} for instruments that were
+    actually scored (a failed article fetch for the whole event, or a
+    per-instrument scoring exception, is logged and simply absent from
+    the returned dict — never crashes the caller).
+    """
+    now = now or dt.datetime.now(dt.timezone.utc)
+    results: dict = {}
+
+    try:
+        bundle = build_event_news_bundle(event, sources, query="", mode="live")
+    except Exception as exc:  # noqa: BLE001 — a failed fetch must not crash the caller
+        print(f"[backtest_accumulator] WARNING: article fetch failed for {event.title}: {exc}")
+        return results
+
+    # Logged on a successful fetch only — roughly one Alpha Vantage
+    # credit spent, in the worst case. Feeds compute_accumulator_interval_seconds()'s
+    # budget-fallback check on the NEXT cycle (see module docstring).
+    record_check(conn, now)
+
+    # Against the FULL unfiltered calendar (all_events), not a
+    # High-impact-only filtered list — precursors like ADP, PPI m/m are
+    # typically Medium impact and would be silently excluded if this
+    # searched a filtered list instead.
+    precursors = find_precursor_events(event, all_events)
+    if precursors:
+        print(f"[backtest_accumulator] precursors for {event.title}: {[p.title for p in precursors]}")
+
+    print_call = score_print_direction(bundle)
+    if print_call is not None:
+        written = record_print_prediction_if_changed(conn, event.title, event.event_time_utc, print_call, now=now)
+        if written:
+            print(f"[backtest_accumulator] print call for {event.title}: {print_call.direction} ({print_call.confidence:.0%} confidence, {print_call.article_count} articles)")
+
+    trend_signal = _read_trend_signal(event.title)
+    if trend_signal is not None:
+        print(f"[backtest_accumulator] trend signal for {event.title}: {trend_signal.direction} (strength {trend_signal.strength:.2f})")
+
+    kalshi_read, kalshi_direction_value = _read_kalshi_signal(event)
+    if kalshi_read is not None:
+        record_kalshi_read_if_changed(conn, event.title, event.event_time_utc, kalshi_read, now=now)
+        print(f"[backtest_accumulator] Kalshi read for {event.title}: {kalshi_read.implied_direction} ({kalshi_read.implied_probability:.0%} implied, {kalshi_read.open_interest:.0f} open interest)")
+
+    for instrument in instruments:
+        try:
+            result = score_bundle(
+                bundle, instrument, precursor_events=precursors,
+                print_call=print_call, trend_signal=trend_signal,
+                kalshi_read=kalshi_read, kalshi_direction_override=kalshi_direction_value,
+            )
+        except Exception as exc:  # noqa: BLE001 — one pair's failure must not stop the others
+            print(f"[backtest_accumulator] WARNING: scoring failed for {instrument}/{event.title}: {exc}")
+            continue
+
+        results[instrument] = result
+        latest = get_latest_prediction(conn, event.title, instrument)
+        if latest is not None and not _is_material_change(
+            result.direction.value, result.probability, latest.direction, latest.probability,
+        ):
+            print(
+                f"[backtest_accumulator] checked {instrument} / {event.title}: "
+                f"{result.summary()} — unchanged from current, not recorded"
+            )
+            continue
+
+        record_prediction(
+            conn, event.title, instrument, event.event_time_utc,
+            result.probability, result.direction.value, result.confidence,
+            result.article_count, result.contradiction_flag,
+        )
+        print(f"[backtest_accumulator] recorded {instrument} / {event.title}: {result.summary()}")
+
+    return results
+
+
 def run_accumulator_cycle(
     instruments: list[str],
     db_path: Optional[Path] = None,
@@ -348,71 +449,7 @@ def run_accumulator_cycle(
             # instrument — identical across instruments for a given event.
             if sources is None:
                 sources = build_all_preview_sources()
-
-            try:
-                bundle = build_event_news_bundle(event, sources, query="", mode="live")
-            except Exception as exc:  # noqa: BLE001 — a failed fetch must not crash the loop
-                print(f"[backtest_accumulator] WARNING: article fetch failed for {event.title}: {exc}")
-                continue
-
-            # Logged on a successful fetch only — roughly one Alpha Vantage
-            # credit spent, in the worst case. Feeds compute_accumulator_interval_seconds()'s
-            # budget-fallback check on the NEXT cycle (see module docstring).
-            record_check(conn, now)
-
-            # Against the FULL unfiltered calendar (all_events), not the
-            # High-impact-only `events` list above — precursors like ADP,
-            # PPI m/m are typically Medium impact and would be silently
-            # excluded if this searched the filtered list instead. Same
-            # per-event, once-not-per-instrument reasoning as the article
-            # bundle above: precursor relationships are about the EVENT,
-            # not which instrument is being scored.
-            precursors = find_precursor_events(event, all_events)
-            if precursors:
-                print(f"[backtest_accumulator] precursors for {event.title}: {[p.title for p in precursors]}")
-
-            print_call = score_print_direction(bundle)
-            if print_call is not None:
-                written = record_print_prediction_if_changed(conn, event.title, event.event_time_utc, print_call, now=now)
-                if written:
-                    print(f"[backtest_accumulator] print call for {event.title}: {print_call.direction} ({print_call.confidence:.0%} confidence, {print_call.article_count} articles)")
-
-            trend_signal = _read_trend_signal(event.title)
-            if trend_signal is not None:
-                print(f"[backtest_accumulator] trend signal for {event.title}: {trend_signal.direction} (strength {trend_signal.strength:.2f})")
-
-            kalshi_read, kalshi_direction_value = _read_kalshi_signal(event)
-            if kalshi_read is not None:
-                record_kalshi_read_if_changed(conn, event.title, event.event_time_utc, kalshi_read, now=now)
-                print(f"[backtest_accumulator] Kalshi read for {event.title}: {kalshi_read.implied_direction} ({kalshi_read.implied_probability:.0%} implied, {kalshi_read.open_interest:.0f} open interest)")
-
-            for instrument in instruments:
-                try:
-                    result = score_bundle(
-                        bundle, instrument, precursor_events=precursors,
-                        print_call=print_call, trend_signal=trend_signal,
-                        kalshi_read=kalshi_read, kalshi_direction_override=kalshi_direction_value,
-                    )
-                except Exception as exc:  # noqa: BLE001 — one pair's failure must not stop the others
-                    print(f"[backtest_accumulator] WARNING: scoring failed for {instrument}/{event.title}: {exc}")
-                    continue
-
-                latest = get_latest_prediction(conn, event.title, instrument)
-                if latest is not None and not _is_material_change(
-                    result.direction.value, result.probability, latest.direction, latest.probability,
-                ):
-                    print(
-                        f"[backtest_accumulator] checked {instrument} / {event.title}: "
-                        f"{result.summary()} — unchanged from current, not recorded"
-                    )
-                    continue
-
-                record_prediction(
-                    conn, event.title, instrument, event.event_time_utc,
-                    result.probability, result.direction.value, result.confidence,
-                    result.article_count, result.contradiction_flag,
-                )
-                print(f"[backtest_accumulator] recorded {instrument} / {event.title}: {result.summary()}")
+            score_and_record_event(conn, event, all_events, instruments, sources, now=now)
 
         return events
     finally:
