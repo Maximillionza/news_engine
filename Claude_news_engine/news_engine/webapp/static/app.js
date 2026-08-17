@@ -224,7 +224,13 @@ function renderCard(symbolEntry) {
   const el = document.createElement("div");
   el.className = "card";
 
-  let body = `<div class="card-header"><h3>${symbol}</h3><button class="remove-btn" data-symbol="${symbol}">Remove</button></div>`;
+  // Click-the-symbol-to-flip context feature (2026-08-17): "why did this
+  // call change" — the back face shows the article-based prediction's
+  // recorded progression (e.g. 51% indecisive -> 52% Sell) with the
+  // top-3 articles that drove each step. Only meaningful once real
+  // `events` exist with a `next` article_prediction to explain — the
+  // fx_cross/no-events early returns below stay simple, unflippable.
+  let body = `<div class="card-header"><h3 class="symbol-flip-trigger" data-symbol="${symbol}" title="Click for why this call changed">${symbol}</h3><button class="remove-btn" data-symbol="${symbol}">Remove</button></div>`;
 
   if (symbol_class === "fx_cross") {
     body += `<div class="not-applicable">No USD exposure for tracked events</div>`;
@@ -359,8 +365,16 @@ function renderCard(symbolEntry) {
     body += `<div class="pending">${heading}<br>
       <span style="font-size:12px;color:#888">${formatEventDateTime(next.event_time_utc)}</span></div>
       ${articlePredictionLine}${printPredictionLine}${kalshiReadLine}${trendSignalLine}`;
-    el.innerHTML = body;
-    el.querySelector(".remove-btn").addEventListener("click", () => removeSymbol(symbol));
+    // Real, live-observed case this branch must NOT skip (2026-08-17):
+    // FOMC-style events whose essence-only score can never resolve
+    // (title has no EVENT_SURPRISE_DIRECTION entry — see
+    // webapp/scheduler.py) stay "pending" forever, yet the article-based
+    // pipeline scores them independently and CAN flip (e.g. 51%
+    // indecisive -> 52% Sell). Without the flip wrapper here too, the
+    // "why did this change" feature would be unreachable for exactly the
+    // events it matters most for. Same finalizeCardFlip() the resolved
+    // branch below uses.
+    finalizeCardFlip(el, body, symbol, next);
     return el;
   }
 
@@ -413,8 +427,7 @@ function renderCard(symbolEntry) {
     <div class="history-panel" id="${breakdownToggleId}" style="display:none">${breakdownPanelHtml(next)}</div>
   </div>`;
 
-  el.innerHTML = body;
-  el.querySelector(".remove-btn").addEventListener("click", () => removeSymbol(symbol));
+  finalizeCardFlip(el, body, symbol, next);
 
   const breakdownBtn = el.querySelector(".breakdown-toggle-btn");
   if (breakdownBtn) {
@@ -458,6 +471,95 @@ function renderCard(symbolEntry) {
   return el;
 }
 
+// Renders one progression entry — a recorded article-based snapshot plus
+// (if any) the top-3 articles that drove it. Weight_pct/usd_sentiment
+// come straight from scoring/backtest_accumulator.py's
+// _build_top_contributions(), computed once at scoring time and stored
+// alongside that exact prediction — never recomputed here.
+function articleProgressionEntryHtml(entry, isLatest) {
+  const dClass = directionClass(entry.direction);
+  const pct = directionPct(entry.probability, entry.direction);
+  const when = new Date(entry.scored_at_utc).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const contribsHtml = (entry.top_contributions || []).map((c) => {
+    const leanClass = c.usd_sentiment > 0 ? "bullish" : c.usd_sentiment < 0 ? "bearish" : "neutral";
+    return `<div class="progression-article">
+      <a href="${escapeHtml(c.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(c.title)}</a>
+      <span class="progression-article-meta ${leanClass}">${escapeHtml(c.source)} · ${c.weight_pct}% weight</span>
+    </div>`;
+  }).join("");
+  return `<div class="progression-entry ${isLatest ? "progression-entry-latest" : ""}">
+    <div class="progression-entry-head">
+      <span class="gauge-label ${dClass}">${directionLabel(entry.direction)} ${pct}%</span>
+      <span class="progression-entry-when">${when} · ${entry.article_count} articles</span>
+    </div>
+    ${contribsHtml || '<div style="font-size:11px;color:#888">No individual article stood out — this read came from broad, low-signal coverage.</div>'}
+  </div>`;
+}
+
+// Wraps `body` (whatever this card's front-face content is — resolved
+// score OR the "pending" branch, both call this) in the flip structure
+// and wires the click-to-flip interaction. Extracted as its own function
+// (2026-08-17) specifically because the "pending" branch used to return
+// early WITHOUT this wrapper — meaning FOMC-style events, whose
+// essence-only score can never resolve, could never be flipped even
+// though their article-based read is real and does change over time.
+// Every branch that reaches a `next` event must call this, not just the
+// resolved-score path.
+function finalizeCardFlip(el, body, symbol, next) {
+  const backBodyId = `card-back-${symbol}-${next.event_title.replace(/[^a-zA-Z0-9]/g, '')}`;
+  const backBody = `<div class="card-header">
+      <h3>${symbol} — why this changed</h3>
+      <button class="flip-back-btn" data-symbol="${symbol}">✕ Back</button>
+    </div>
+    <div class="article-progression" id="${backBodyId}" data-event-title="${escapeHtml(next.event_title)}" data-loaded="false">Loading…</div>`;
+
+  el.classList.add("card-has-flip");
+  el.innerHTML = `<div class="card-flip-inner">
+    <div class="card-flip-front">${body}</div>
+    <div class="card-flip-back">${backBody}</div>
+  </div>`;
+  el.querySelector(".remove-btn").addEventListener("click", () => removeSymbol(symbol));
+  wireCardFlip(el, symbol);
+}
+
+// Click-the-symbol flip interaction. Lazily fetches the article-based
+// progression on first flip only (data-loaded guard, same pattern as the
+// History ▾ toggle above) — flipping back and forth afterward is free.
+function wireCardFlip(el, symbol) {
+  const trigger = el.querySelector(".symbol-flip-trigger");
+  const backBtn = el.querySelector(".flip-back-btn");
+  if (!trigger) return;
+
+  async function flipTo(show) {
+    if (show) {
+      el.classList.add("flipped");
+    } else {
+      el.classList.remove("flipped");
+      return;
+    }
+    const panel = el.querySelector(".article-progression");
+    if (!panel || panel.dataset.loaded === "true") return;
+    const eventTitle = panel.dataset.eventTitle;
+    const resp = await fetch(`/api/predictions/${symbol}/article_history?event_title=${encodeURIComponent(eventTitle)}`);
+    const data = await resp.json();
+    panel.dataset.loaded = "true";
+    const progression = data.progression || [];
+    if (progression.length === 0) {
+      panel.innerHTML = "<div style=\"font-size:12px;color:#888\">No article-based read recorded for this event yet.</div>";
+      return;
+    }
+    panel.innerHTML = progression.map((entry, i) => articleProgressionEntryHtml(entry, i === 0)).join("");
+  }
+
+  trigger.addEventListener("click", () => flipTo(!el.classList.contains("flipped")));
+  if (backBtn) {
+    backBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      flipTo(false);
+    });
+  }
+}
+
 async function refreshDashboard() {
   const resp = await fetch("/api/predictions");
   const data = await resp.json();
@@ -484,6 +586,14 @@ async function refreshDashboard() {
     .filter((p) => p.style.display !== 'none')
     .map((p) => p.id);
 
+  // Same idea for the flip-card feature — which symbols are currently
+  // flipped, so a fresh re-render (which rebuilds every card, wiping
+  // .flipped and the article_history fetch cache) can restore them
+  // instead of silently flipping everything back to front every 60s.
+  const flippedSymbols = Array.from(cardsEl.querySelectorAll('.card.flipped'))
+    .map((c) => c.querySelector('.symbol-flip-trigger')?.dataset.symbol)
+    .filter(Boolean);
+
   cardsEl.innerHTML = "";
   (data.predictions || []).forEach((entry) => cardsEl.appendChild(renderCard(entry)));
 
@@ -494,6 +604,11 @@ async function refreshDashboard() {
     if (!document.getElementById(id)) return;  // that event is no longer this card's `next` — nothing to restore
     const btn = document.querySelector(`[data-target="${id}"]`);
     if (btn) btn.click();
+  });
+
+  flippedSymbols.forEach((symbol) => {
+    const trigger = document.querySelector(`.symbol-flip-trigger[data-symbol="${symbol}"]`);
+    if (trigger) trigger.click();  // re-fetches article_history fresh — a material change while flipped should show up
   });
 }
 

@@ -14,7 +14,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.settings import UTC_TZ, PRE_EVENT_WINDOW_HOURS, ACCUMULATOR_MEDIUM_ALLOWLIST
 from data_layer.calendar_feed import EconomicEvent
 from data_layer.event_context import EventNewsBundle
-from scoring.probability_engine import Direction, ProbabilityResult
+from scoring.probability_engine import Direction, ProbabilityResult, ArticleContribution
+from data_layer.news_feed import NewsArticle
 import scoring.backtest_accumulator as accumulator
 import scoring.backtest_store as store
 import scoring.print_direction as accumulator_print_direction
@@ -272,6 +273,59 @@ def test_direction_flip_is_always_recorded_regardless_of_magnitude():
             latest = store.get_latest_prediction(conn, "Test Event", "XAUUSD")
             assert latest.direction == "bearish"
             conn.close()
+    print("PASS\n")
+
+
+def _fake_article_contribution(title, combined_weight, usd_sentiment=0.5, published_utc=None, source="Reuters"):
+    article = NewsArticle(
+        title=title, summary="summary", source=source, source_type="rss_reuters_business",
+        published_utc=published_utc or dt.datetime(2026, 8, 17, 12, 0, tzinfo=UTC_TZ),
+        url=f"https://example.test/{title.replace(' ', '-')}",
+    )
+    return ArticleContribution(
+        article=article, usd_sentiment=usd_sentiment, trust_weight=0.85, time_weight=1.0,
+        combined_weight=combined_weight, matched_terms=["hawkish"],
+    )
+
+
+def test_build_top_contributions_ranks_by_weight_and_caps_at_limit():
+    print("=== accumulator: _build_top_contributions ranks by combined_weight descending, capped at TOP_CONTRIBUTIONS_LIMIT (3) ===")
+    contributions = [
+        _fake_article_contribution("Low weight story", 0.1),
+        _fake_article_contribution("Highest weight story", 0.9),
+        _fake_article_contribution("Second weight story", 0.6),
+        _fake_article_contribution("Third weight story", 0.4),
+        _fake_article_contribution("Fifth, excluded story", 0.05),
+    ]
+    result = accumulator._build_top_contributions(contributions)
+    assert len(result) == 3
+    assert [r["title"] for r in result] == ["Highest weight story", "Second weight story", "Third weight story"]
+    total = sum(c.combined_weight for c in contributions)
+    assert abs(result[0]["weight_pct"] - (0.9 / total * 100)) < 0.05
+    print("PASS\n")
+
+
+def test_build_top_contributions_includes_usd_sentiment_and_url():
+    print("=== accumulator: _build_top_contributions includes usd_sentiment and a real article url, not just title ===")
+    contributions = [_fake_article_contribution("Only story", 0.7, usd_sentiment=-0.6)]
+    result = accumulator._build_top_contributions(contributions)
+    assert len(result) == 1
+    assert result[0]["usd_sentiment"] == -0.6
+    assert result[0]["url"] == "https://example.test/Only-story"
+    assert result[0]["weight_pct"] == 100.0
+    print("PASS\n")
+
+
+def test_build_top_contributions_returns_empty_list_for_no_contributions():
+    print("=== accumulator: _build_top_contributions returns [] (not fabricated) for an empty contribution list ===")
+    assert accumulator._build_top_contributions([]) == []
+    print("PASS\n")
+
+
+def test_build_top_contributions_returns_empty_list_when_total_weight_is_zero():
+    print("=== accumulator: _build_top_contributions returns [] when total weight is zero (e.g. every combined_weight is 0) ===")
+    contributions = [_fake_article_contribution("Zero weight story", 0.0)]
+    assert accumulator._build_top_contributions(contributions) == []
     print("PASS\n")
 
 
@@ -1066,6 +1120,10 @@ if __name__ == "__main__":
     test_no_cap_on_recorded_snapshots_multiple_material_changes_all_recorded()
     test_unchanged_score_is_checked_but_not_recorded()
     test_direction_flip_is_always_recorded_regardless_of_magnitude()
+    test_build_top_contributions_ranks_by_weight_and_caps_at_limit()
+    test_build_top_contributions_includes_usd_sentiment_and_url()
+    test_build_top_contributions_returns_empty_list_for_no_contributions()
+    test_build_top_contributions_returns_empty_list_when_total_weight_is_zero()
     test_is_material_change_threshold_boundary()
     test_is_material_change_crossing_thin_sample_threshold_is_material()
     test_precursor_events_found_and_passed_to_score_bundle()

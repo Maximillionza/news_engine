@@ -9,6 +9,7 @@ distinct concern from the dashboard's article-free scoring.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,7 +31,8 @@ CREATE TABLE IF NOT EXISTS predictions (
     confidence REAL NOT NULL,
     article_count INTEGER NOT NULL,
     contradiction_flag INTEGER NOT NULL,
-    source TEXT NOT NULL DEFAULT 'live'
+    source TEXT NOT NULL DEFAULT 'live',
+    top_contributions_json TEXT
 );
 CREATE TABLE IF NOT EXISTS outcomes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,6 +94,25 @@ class Prediction:
     article_count: int
     contradiction_flag: bool
     source: str
+    top_contributions_json: Optional[str] = None
+
+    @property
+    def top_contributions(self) -> list[dict]:
+        """
+        Parsed top_contributions_json — the "why did this call change"
+        context (2026-08-17): each entry is one article's
+        {title, url, source, published_utc, usd_sentiment, weight_pct},
+        ranked by weight_pct descending, capped at
+        TOP_CONTRIBUTIONS_LIMIT. [] — never fabricated — for any row
+        written before this feature existed (top_contributions_json is
+        NULL) or with an empty/malformed value.
+        """
+        if not self.top_contributions_json:
+            return []
+        try:
+            return json.loads(self.top_contributions_json)
+        except (ValueError, TypeError):
+            return []
 
 
 @dataclass
@@ -145,6 +166,14 @@ def _migrate_add_source_columns(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_add_top_contributions_column(conn: sqlite3.Connection) -> None:
+    """Same reasoning as _migrate_add_source_columns() — a pre-existing DB file from before this feature (2026-08-17) needs the column added, not just declared in _SCHEMA."""
+    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(predictions)").fetchall()}
+    if "top_contributions_json" not in existing_columns:
+        conn.execute("ALTER TABLE predictions ADD COLUMN top_contributions_json TEXT")
+        conn.commit()
+
+
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     # db_path resolved inside the body (not as a default arg value) so
     # tests can patch module-level DB_PATH and have it take effect.
@@ -153,6 +182,7 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
     _migrate_add_source_columns(conn)
+    _migrate_add_top_contributions_column(conn)
     return conn
 
 
@@ -168,14 +198,29 @@ def record_prediction(
     contradiction_flag: bool,
     scored_at_utc: Optional[dt.datetime] = None,
     source: str = "live",
+    top_contributions: Optional[list[dict]] = None,
 ) -> int:
+    """
+    top_contributions (2026-08-17): the "why did this call change"
+    context — up to TOP_CONTRIBUTIONS_LIMIT article contributions ranked
+    by weight share, built by
+    scoring.backtest_accumulator._build_top_contributions() from the same
+    ProbabilityResult.contributions this row's probability/direction came
+    from. Stored as JSON since it's a small, bounded, write-once-read-
+    together-with-the-row structure — same "JSON blob column" precedent
+    webapp/store.py's calendar_snapshot already uses, not a new relational
+    child table for what's always exactly one row's own detail. None/[]
+    (never fabricated) when the caller has nothing to attach — e.g. no
+    articles carried any real signal this round.
+    """
     scored_at = scored_at_utc or dt.datetime.now(dt.timezone.utc)
+    top_contributions_json = json.dumps(top_contributions) if top_contributions else None
     cursor = conn.execute(
         "INSERT INTO predictions (event_title, instrument, event_time_utc, scored_at_utc, "
-        "probability, direction, confidence, article_count, contradiction_flag, source) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "probability, direction, confidence, article_count, contradiction_flag, source, top_contributions_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (event_title, instrument, event_time_utc.isoformat(), scored_at.isoformat(),
-         probability, direction, confidence, article_count, int(contradiction_flag), source),
+         probability, direction, confidence, article_count, int(contradiction_flag), source, top_contributions_json),
     )
     conn.commit()
     return cursor.lastrowid
@@ -286,9 +331,30 @@ def get_latest_two_predictions(
             event_time_utc=d["event_time_utc"], scored_at_utc=d["scored_at_utc"],
             probability=d["probability"], direction=d["direction"], confidence=d["confidence"],
             article_count=d["article_count"], contradiction_flag=bool(d["contradiction_flag"]),
-            source=d["source"],
+            source=d["source"], top_contributions_json=d.get("top_contributions_json"),
         ))
     return predictions
+
+
+def get_prediction_history(
+    conn: sqlite3.Connection, event_title: str, instrument: str, limit: int = 10,
+) -> list[Prediction]:
+    """
+    The full recorded progression for this (event_title, instrument) pair,
+    most recent first, capped at `limit` — every material-change snapshot
+    scoring/backtest_accumulator.py ever wrote, each carrying its own
+    top_contributions (2026-08-17's "why did this call change" feature).
+    Unlike get_latest_two_predictions() (exactly 0-2 rows, for the
+    dashboard's diff strip), this is the full timeline a user can inspect
+    to see how a call evolved — e.g. "51% indecisive -> 52% Sell" plus
+    whatever came before or after.
+    """
+    rows = conn.execute(
+        "SELECT * FROM predictions WHERE event_title = ? AND instrument = ? "
+        "ORDER BY scored_at_utc DESC, id DESC LIMIT ?",
+        (event_title, instrument, limit),
+    ).fetchall()
+    return [Prediction(**dict(row)) for row in rows]
 
 
 def record_outcome(

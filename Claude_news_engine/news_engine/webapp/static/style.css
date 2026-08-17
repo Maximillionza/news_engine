@@ -25,6 +25,38 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .card-header h3 { margin: 0; font-size: 15px; }
 .remove-btn { background: none; border: none; color: #999; cursor: pointer; font-size: 14px; }
 
+/* Click-the-symbol flip: "why did this call change" (2026-08-17). Front
+   and back faces are stacked in the same grid cell (grid-row/column:1) so
+   the card's height is always the taller of the two — no absolute-
+   positioning height-collapse issues. .card-has-flip strips the plain
+   .card's own box styling since card-flip-front/back each carry their
+   own — avoids double borders/padding/shadow. */
+.card.card-has-flip { padding: 0; border: none; background: transparent; box-shadow: none; perspective: 1500px; }
+.card-flip-inner { display: grid; transform-style: preserve-3d; transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1); }
+.card.flipped .card-flip-inner { transform: rotateY(180deg); }
+.card-flip-front, .card-flip-back {
+  grid-row: 1; grid-column: 1;
+  backface-visibility: hidden;
+  background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.card-flip-back { transform: rotateY(180deg); max-height: 480px; overflow-y: auto; }
+
+.symbol-flip-trigger { cursor: pointer; }
+.symbol-flip-trigger:hover { text-decoration: underline; text-decoration-style: dotted; }
+.flip-back-btn { background: none; border: 1px solid var(--border); border-radius: 6px; color: #666; cursor: pointer; font-size: 12px; padding: 3px 8px; }
+
+.progression-entry { padding: 8px 0; border-bottom: 1px solid #eee; }
+.progression-entry:last-child { border-bottom: none; }
+.progression-entry-latest { background: #fafafa; margin: 0 -8px; padding: 8px; border-radius: 6px; border-bottom: none; }
+.progression-entry-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+.progression-entry-when { font-size: 11px; color: #888; }
+.progression-article { font-size: 12px; margin: 3px 0 3px 4px; padding-left: 8px; border-left: 2px solid #ddd; }
+.progression-article a { color: inherit; }
+.progression-article-meta { display: block; font-size: 11px; }
+.progression-article-meta.bullish { color: var(--bullish); }
+.progression-article-meta.bearish { color: var(--bearish); }
+.progression-article-meta.neutral { color: var(--neutral); }
+
 .diff-strip { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 8px; background: #f5f5f5; border-radius: 8px; font-size: 12px; }
 .diff-strip .delta-up { color: var(--bullish); font-weight: bold; }
 .diff-strip .delta-down { color: var(--bearish); font-weight: bold; }

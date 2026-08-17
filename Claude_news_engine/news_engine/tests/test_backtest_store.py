@@ -18,7 +18,7 @@ from scoring.backtest_store import (
     get_connection, record_prediction, count_predictions,
     get_predictions_awaiting_outcome, record_outcome, get_all_confirmed_cases,
     record_dismissal, get_latest_prediction, get_latest_two_predictions,
-    record_check, count_recent_checks,
+    record_check, count_recent_checks, get_prediction_history,
 )
 
 
@@ -604,6 +604,83 @@ def test_get_connection_migrates_all_four_source_columns():
     print("PASS\n")
 
 
+def test_record_prediction_stores_and_round_trips_top_contributions():
+    print("=== backtest_store: record_prediction stores top_contributions, round-trips via .top_contributions ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 19, 18, 0, tzinfo=UTC_TZ)
+        contributions = [
+            {"title": "Fed hawkish, rate hike bets surge", "url": "https://example.test/1",
+             "source": "Reuters", "published_utc": "2026-08-17T12:00:00+00:00",
+             "usd_sentiment": 0.8, "weight_pct": 64.2},
+            {"title": "Dollar firms ahead of minutes", "url": "https://example.test/2",
+             "source": "CNBC", "published_utc": "2026-08-17T10:00:00+00:00",
+             "usd_sentiment": 0.5, "weight_pct": 35.8},
+        ]
+        record_prediction(
+            conn, "FOMC Meeting Minutes", "XAUUSD", event_time,
+            0.52, "bearish", 0.4, 130, False, top_contributions=contributions,
+        )
+        latest = get_latest_prediction(conn, "FOMC Meeting Minutes", "XAUUSD")
+        assert latest.top_contributions == contributions
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_prediction_without_top_contributions_round_trips_empty_list():
+    print("=== backtest_store: record_prediction without top_contributions -> .top_contributions is [] (not None, not a crash) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 19, 18, 0, tzinfo=UTC_TZ)
+        record_prediction(conn, "FOMC Meeting Minutes", "XAUUSD", event_time, 0.5, "neutral", 0.3, 0, False)
+        latest = get_latest_prediction(conn, "FOMC Meeting Minutes", "XAUUSD")
+        assert latest.top_contributions == []
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_prediction_history_returns_full_progression_most_recent_first():
+    print("=== backtest_store: get_prediction_history returns every recorded snapshot, most recent first ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 19, 18, 0, tzinfo=UTC_TZ)
+        t1 = dt.datetime(2026, 8, 16, 10, 0, tzinfo=UTC_TZ)
+        t2 = dt.datetime(2026, 8, 17, 10, 0, tzinfo=UTC_TZ)
+        t3 = dt.datetime(2026, 8, 17, 20, 0, tzinfo=UTC_TZ)
+        record_prediction(conn, "FOMC Meeting Minutes", "XAUUSD", event_time, 0.50, "neutral", 0.0, 0, False, scored_at_utc=t1)
+        record_prediction(conn, "FOMC Meeting Minutes", "XAUUSD", event_time, 0.51, "neutral", 0.3, 130, False, scored_at_utc=t2)
+        record_prediction(conn, "FOMC Meeting Minutes", "XAUUSD", event_time, 0.52, "bearish", 0.4, 140, False, scored_at_utc=t3)
+
+        history = get_prediction_history(conn, "FOMC Meeting Minutes", "XAUUSD")
+        assert len(history) == 3
+        assert [h.direction for h in history] == ["bearish", "neutral", "neutral"]  # most recent first
+        assert [h.probability for h in history] == [0.52, 0.51, 0.50]
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_prediction_history_respects_limit():
+    print("=== backtest_store: get_prediction_history caps at `limit`, still most recent first ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 19, 18, 0, tzinfo=UTC_TZ)
+        for i in range(5):
+            record_prediction(
+                conn, "FOMC Meeting Minutes", "XAUUSD", event_time, 0.5 + i * 0.01, "neutral", 0.3, i, False,
+                scored_at_utc=dt.datetime(2026, 8, 16, i, 0, tzinfo=UTC_TZ),
+            )
+        history = get_prediction_history(conn, "FOMC Meeting Minutes", "XAUUSD", limit=2)
+        assert len(history) == 2
+        assert history[0].article_count == 4  # the most recent of the 5
+        assert history[1].article_count == 3
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_record_and_count_predictions()
     test_count_predictions_scoped_to_event_occurrence_not_just_title()
@@ -637,4 +714,8 @@ if __name__ == "__main__":
     test_record_print_prediction_if_changed_source_param()
     test_record_outcome_source_param()
     test_get_connection_migrates_all_four_source_columns()
+    test_record_prediction_stores_and_round_trips_top_contributions()
+    test_record_prediction_without_top_contributions_round_trips_empty_list()
+    test_get_prediction_history_returns_full_progression_most_recent_first()
+    test_get_prediction_history_respects_limit()
     print("All backtest_store tests passed.")

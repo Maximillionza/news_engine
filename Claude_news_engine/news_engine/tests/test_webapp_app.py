@@ -318,7 +318,7 @@ def test_predictions_includes_article_count_from_accumulator_db():
             # just the article count. This is the real prediction the
             # article-based pipeline exists to produce.
             assert events[0]["article_prediction"] == {
-                "direction": "bullish", "probability": 0.66, "article_count": 12,
+                "direction": "bullish", "probability": 0.66, "article_count": 12, "top_contributions": [],
             }
             assert events[0]["previous_article_prediction"] is None, "only one snapshot recorded — no previous to diff against"
     print("PASS\n")
@@ -356,10 +356,10 @@ def test_predictions_includes_previous_article_prediction_when_two_snapshots_exi
             resp = client.get("/api/predictions")
             events = resp.get_json()["predictions"][0]["events"]
             assert events[0]["article_prediction"] == {
-                "direction": "bearish", "probability": 0.30, "article_count": 45,
+                "direction": "bearish", "probability": 0.30, "article_count": 45, "top_contributions": [],
             }, "the CURRENT article prediction must be the most recent recorded snapshot"
             assert events[0]["previous_article_prediction"] == {
-                "direction": "bullish", "probability": 0.65, "article_count": 20,
+                "direction": "bullish", "probability": 0.65, "article_count": 20, "top_contributions": [],
             }, "the PREVIOUS article prediction must be the second-most-recent recorded snapshot"
     print("PASS\n")
 
@@ -439,7 +439,7 @@ def test_predictions_shows_article_prediction_even_when_essence_score_missing():
             event = entry["events"][0]
             assert event["article_prediction"] is not None  # THE bug fix — this was previously unreachable without an essence score
             assert event["article_prediction"] == {
-                "direction": "bullish", "probability": 0.66, "article_count": 12,
+                "direction": "bullish", "probability": 0.66, "article_count": 12, "top_contributions": [],
             }
             assert event["direction"] == "pending", "no essence-only run recorded — direction must default to 'pending', not crash or None"
             assert event["probability"] is None
@@ -1283,6 +1283,60 @@ def test_predictions_does_not_duplicate_a_recently_resolved_event_ff_still_has()
     print("PASS\n")
 
 
+def test_article_history_route_returns_full_progression_with_top_contributions():
+    print("=== GET /api/predictions/<symbol>/article_history: returns the full progression, most recent first, with top_contributions ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            bconn = backtest_store.get_connection(backtest_db_path)
+            event_time = dt.datetime(2026, 8, 19, 18, 0, tzinfo=dt.timezone.utc)
+            t1 = dt.datetime(2026, 8, 16, 10, 0, tzinfo=dt.timezone.utc)
+            t2 = dt.datetime(2026, 8, 17, 20, 0, tzinfo=dt.timezone.utc)
+            top_contribs = [{"title": "Fed hawkish", "url": "https://example.test/a", "source": "Reuters",
+                              "published_utc": "2026-08-17T12:00:00+00:00", "usd_sentiment": 0.8, "weight_pct": 70.0}]
+            backtest_store.record_prediction(
+                bconn, "FOMC Meeting Minutes", "XAUUSD", event_time, 0.51, "neutral", 0.3, 130, False,
+                scored_at_utc=t1,
+            )
+            backtest_store.record_prediction(
+                bconn, "FOMC Meeting Minutes", "XAUUSD", event_time, 0.52, "bearish", 0.4, 140, False,
+                scored_at_utc=t2, top_contributions=top_contribs,
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions/XAUUSD/article_history?event_title=FOMC%20Meeting%20Minutes")
+            data = resp.get_json()
+            progression = data["progression"]
+            assert len(progression) == 2
+            assert progression[0]["direction"] == "bearish"  # most recent first
+            assert progression[0]["top_contributions"] == top_contribs
+            assert progression[1]["direction"] == "neutral"
+            assert progression[1]["top_contributions"] == []
+    print("PASS\n")
+
+
+def test_article_history_route_requires_event_title():
+    print("=== GET /api/predictions/<symbol>/article_history: missing event_title returns 400, not a 500 ===")
+    client = webapp_app.app.test_client()
+    resp = client.get("/api/predictions/XAUUSD/article_history")
+    assert resp.status_code == 400
+    print("PASS\n")
+
+
+def test_article_history_route_empty_for_unknown_event():
+    print("=== GET /api/predictions/<symbol>/article_history: an event never scored by the accumulator returns an empty progression, not a 500 ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            backtest_store.get_connection(backtest_db_path).close()
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions/XAUUSD/article_history?event_title=Nonexistent%20Event")
+            assert resp.status_code == 200
+            assert resp.get_json()["progression"] == []
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
@@ -1292,6 +1346,9 @@ if __name__ == "__main__":
     test_predictions_prefers_resolved_event_over_pending_sibling_at_same_timestamp()
     test_predictions_prefers_future_pending_event_over_a_past_stuck_pending_one()
     test_predictions_stale_resolved_no_longer_masks_a_nearer_pending_event()
+    test_article_history_route_returns_full_progression_with_top_contributions()
+    test_article_history_route_requires_event_title()
+    test_article_history_route_empty_for_unknown_event()
     test_predictions_includes_article_count_from_accumulator_db()
     test_predictions_includes_previous_article_prediction_when_two_snapshots_exist()
     test_predictions_article_prediction_is_none_when_accumulator_never_scored_it()

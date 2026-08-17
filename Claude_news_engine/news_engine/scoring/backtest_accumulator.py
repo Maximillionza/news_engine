@@ -119,6 +119,50 @@ POST_RELEASE_GRACE_MINUTES = 30
 DAILY_CHECK_BUDGET_THRESHOLD = 20
 BUDGET_FALLBACK_INTERVAL_SECONDS = 3 * 60 * 60
 
+# How many article contributions get attached to a recorded prediction as
+# "why did this call change" context (2026-08-17) — see
+# _build_top_contributions() and scoring.backtest_store.record_prediction()'s
+# top_contributions param. Requested as "top 3 only".
+TOP_CONTRIBUTIONS_LIMIT = 3
+
+
+def _build_top_contributions(contributions: list, limit: int = TOP_CONTRIBUTIONS_LIMIT) -> list[dict]:
+    """
+    The `limit` article contributions with the largest weight share, for
+    display context alongside a recorded prediction — "which articles
+    actually drove this call." Ranked by combined_weight (trust x time
+    decay), which is each article's real, already-computed share of the
+    weighted vote — not re-derived or guessed here. weight_pct is that
+    article's share of the TOTAL ARTICLE weight specifically (not the
+    full aggregate including precursor/Kalshi/trend/macro-backdrop
+    contributions — those are structured signals, not "articles", and
+    this feature is scoped to "which article changed this call").
+
+    Returns [] — never fabricated — when there are no article
+    contributions at all, or their total weight is zero (e.g. every
+    article scored exactly neutral, contributing nothing to weigh).
+    `contributions` is expected to be ProbabilityResult.contributions
+    (scoring/probability_engine.py's ArticleContribution list — already
+    post redundancy-discount, R 2026-08-16), passed in rather than
+    recomputed, so this stays a pure display-formatting step with no
+    scoring logic of its own.
+    """
+    total_weight = sum(c.combined_weight for c in contributions)
+    if total_weight <= 0:
+        return []
+    ranked = sorted(contributions, key=lambda c: c.combined_weight, reverse=True)[:limit]
+    return [
+        {
+            "title": c.article.title,
+            "url": c.article.url,
+            "source": c.article.source,
+            "published_utc": c.article.published_utc.isoformat(),
+            "usd_sentiment": c.usd_sentiment,
+            "weight_pct": round(c.combined_weight / total_weight * 100, 1),
+        }
+        for c in ranked
+    ]
+
 
 def _is_material_change(
     new_direction: str, new_probability: float, new_article_count: int,
@@ -434,6 +478,7 @@ def score_and_record_event(
             conn, event.title, instrument, event.event_time_utc,
             result.probability, result.direction.value, result.confidence,
             result.article_count, result.contradiction_flag,
+            top_contributions=_build_top_contributions(result.contributions),
         )
         print(f"[backtest_accumulator] recorded {instrument} / {event.title}: {result.summary()}")
 

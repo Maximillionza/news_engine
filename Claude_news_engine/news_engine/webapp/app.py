@@ -30,6 +30,10 @@ from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 from scoring.backtest_store import (
     get_connection as get_backtest_connection, get_latest_two_predictions,
     get_latest_print_prediction, get_latest_kalshi_read,
+    # Aliased — webapp/app.py already has its own route handler FUNCTION
+    # named get_prediction_history() (the essence-only one, further down
+    # this file) which would otherwise shadow this import at module scope.
+    get_prediction_history as get_article_prediction_history,
 )
 
 app = Flask(__name__, static_folder="static")
@@ -305,6 +309,13 @@ def get_predictions():
                     "direction": accumulator_prediction.direction,
                     "probability": accumulator_prediction.probability,
                     "article_count": accumulator_prediction.article_count,
+                    # "Why did this call change" context (2026-08-17) — up
+                    # to TOP_CONTRIBUTIONS_LIMIT article contributions
+                    # ranked by weight share, computed and persisted
+                    # alongside this exact prediction row at scoring time
+                    # (scoring/backtest_accumulator.py's
+                    # _build_top_contributions()) — never recomputed here.
+                    "top_contributions": accumulator_prediction.top_contributions,
                 }
             previous_article_prediction = None
             if accumulator_previous is not None:
@@ -312,6 +323,7 @@ def get_predictions():
                     "direction": accumulator_previous.direction,
                     "probability": accumulator_previous.probability,
                     "article_count": accumulator_previous.article_count,
+                    "top_contributions": accumulator_previous.top_contributions,
                 }
             print_call = get_latest_print_prediction(
                 backtest_conn, event["title"], dt.datetime.fromisoformat(event["event_time_utc"]),
@@ -589,6 +601,35 @@ def get_prediction_history(symbol: str):
         {"scored_at_utc": r.scored_at_utc, "probability": r.probability, "direction": r.direction}
         for r in runs
     ])
+
+
+@app.route("/api/predictions/<symbol>/article_history", methods=["GET"])
+def get_article_prediction_history_route(symbol: str):
+    """
+    The full recorded progression of the ARTICLE-based accumulator's calls
+    for this (symbol, event_title) pair (2026-08-17's "why did this call
+    change" feature) — every material-change snapshot, most recent first,
+    each carrying its own top_contributions. This is the "flip the card
+    over" data: e.g. 51% indecisive -> 52% Sell, with the top-3 articles
+    that drove each step. Distinct from /history above, which is the
+    essence-only (no-articles) score's progression — a different pipeline
+    entirely (see webapp/scheduler.py's module docstring).
+    """
+    event_title = request.args.get("event_title", "")
+    if not event_title:
+        return jsonify({"error": "event_title is required"}), 400
+    backtest_conn = get_backtest_connection()
+    runs = get_article_prediction_history(backtest_conn, event_title, symbol.strip().upper())
+    backtest_conn.close()
+    return jsonify({
+        "progression": [
+            {
+                "scored_at_utc": r.scored_at_utc, "probability": r.probability, "direction": r.direction,
+                "article_count": r.article_count, "top_contributions": r.top_contributions,
+            }
+            for r in runs
+        ],
+    })
 
 
 @app.route("/api/history", methods=["GET"])
