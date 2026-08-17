@@ -63,6 +63,7 @@ from config.settings import (
     KALSHI_SERIES_BY_EVENT_TITLE,
     MIN_OCCURRENCES_FOR_TREND_PRIOR, PRE_EVENT_WINDOW_HOURS,
     EVENT_SURPRISE_DIRECTION, ACCUMULATOR_MEDIUM_ALLOWLIST,
+    THIN_SAMPLE_SIGNAL_THRESHOLD,
 )
 from data_layer.calendar_feed import (
     EconomicEvent, fetch_calendar, filter_relevant_events, events_in_pre_window,
@@ -119,7 +120,10 @@ DAILY_CHECK_BUDGET_THRESHOLD = 20
 BUDGET_FALLBACK_INTERVAL_SECONDS = 3 * 60 * 60
 
 
-def _is_material_change(new_direction: str, new_probability: float, current_direction: str, current_probability: float) -> bool:
+def _is_material_change(
+    new_direction: str, new_probability: float, new_article_count: int,
+    current_direction: str, current_probability: float, current_article_count: int,
+) -> bool:
     """
     True if a freshly-scored read is different ENOUGH from the current
     latest recorded prediction to be worth writing a new snapshot for —
@@ -130,8 +134,23 @@ def _is_material_change(new_direction: str, new_probability: float, current_dire
     only a move of at least MATERIAL_CHANGE_THRESHOLD_PROBABILITY counts —
     supporting articles that just reinforce the existing call add to its
     validity without triggering a rewrite.
+
+    Also material: crossing THIN_SAMPLE_SIGNAL_THRESHOLD in article_count,
+    regardless of direction/probability. Real, live-observed case
+    (2026-08-17): "FOMC Meeting Minutes" read NEUTRAL 50% on 0 articles,
+    then NEUTRAL 51% on 130 articles roughly a day later — the point
+    estimate barely moved, but the evidentiary basis for that call went
+    from "no real basis at all" to "genuinely covered," and the Dashboard
+    kept showing "0 articles" long after real coverage existed because
+    article_count alone was never part of this comparison. A read's
+    confidence basis changing qualitatively is itself worth a new
+    snapshot, even when the direction/probability stayed put.
     """
     if new_direction != current_direction:
+        return True
+    was_thin = current_article_count < THIN_SAMPLE_SIGNAL_THRESHOLD
+    is_thin = new_article_count < THIN_SAMPLE_SIGNAL_THRESHOLD
+    if was_thin != is_thin:
         return True
     # 1e-9 tolerance for float imprecision — e.g. 0.75 - 0.65 == 0.09999999999999998
     # in IEEE754, which would otherwise fail an exact-boundary >= comparison
@@ -402,7 +421,8 @@ def score_and_record_event(
         results[instrument] = result
         latest = get_latest_prediction(conn, event.title, instrument)
         if latest is not None and not _is_material_change(
-            result.direction.value, result.probability, latest.direction, latest.probability,
+            result.direction.value, result.probability, result.article_count,
+            latest.direction, latest.probability, latest.article_count,
         ):
             print(
                 f"[backtest_accumulator] checked {instrument} / {event.title}: "

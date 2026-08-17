@@ -277,14 +277,51 @@ def test_direction_flip_is_always_recorded_regardless_of_magnitude():
 
 def test_is_material_change_threshold_boundary():
     print("=== accumulator: _is_material_change — same-direction moves at/above 10pp are material, below are not ===")
+    # Article counts held equal and well above THIN_SAMPLE_SIGNAL_THRESHOLD
+    # on both sides throughout this test — isolates the probability-boundary
+    # behavior from the separate thin-crossing behavior (its own test below).
     # Exactly at the threshold — material (>= , not strictly >).
-    assert accumulator._is_material_change("bullish", 0.75, "bullish", 0.65) is True
+    assert accumulator._is_material_change("bullish", 0.75, 10, "bullish", 0.65, 10) is True
     # Just under the threshold — not material.
-    assert accumulator._is_material_change("bullish", 0.7499, "bullish", 0.65) is False
+    assert accumulator._is_material_change("bullish", 0.7499, 10, "bullish", 0.65, 10) is False
     # A direction flip is material regardless of magnitude, even a near-zero move.
-    assert accumulator._is_material_change("bearish", 0.6501, "bullish", 0.65) is True
+    assert accumulator._is_material_change("bearish", 0.6501, 10, "bullish", 0.65, 10) is True
     # Identical direction and probability — not material.
-    assert accumulator._is_material_change("bullish", 0.65, "bullish", 0.65) is False
+    assert accumulator._is_material_change("bullish", 0.65, 10, "bullish", 0.65, 10) is False
+    print("PASS\n")
+
+
+def test_is_material_change_crossing_thin_sample_threshold_is_material():
+    print("=== accumulator: _is_material_change — crossing THIN_SAMPLE_SIGNAL_THRESHOLD in article_count is material even with direction/probability unchanged ===")
+    from config.settings import THIN_SAMPLE_SIGNAL_THRESHOLD
+    # Real, live-observed case (2026-08-17): FOMC Meeting Minutes read
+    # NEUTRAL 50% on 0 articles, then NEUTRAL 51% (a sub-threshold
+    # probability move) on 130 articles — same call, went from no real
+    # evidentiary basis to genuinely covered. That crossing must be
+    # material on its own.
+    assert accumulator._is_material_change(
+        "neutral", 0.51, 130,
+        "neutral", 0.50, 0,
+    ) is True
+    # The reverse direction (article coverage DROPS below the thin
+    # threshold) is material too — the call's basis got weaker, not just stronger.
+    assert accumulator._is_material_change(
+        "neutral", 0.50, 1,
+        "neutral", 0.51, 130,
+    ) is True
+    # Moving WITHIN the thin tier (both below threshold) is NOT material on
+    # article-count grounds alone — still gated by the normal probability rule.
+    assert accumulator._is_material_change(
+        "neutral", 0.50, 1,
+        "neutral", 0.50, 0,
+    ) is False
+    # Moving WITHIN the non-thin tier (both comfortably above threshold) is
+    # NOT material on article-count grounds alone, regardless of how much
+    # the count itself grew — still gated by the normal probability rule.
+    assert accumulator._is_material_change(
+        "neutral", 0.50, 500,
+        "neutral", 0.50, THIN_SAMPLE_SIGNAL_THRESHOLD,
+    ) is False
     print("PASS\n")
 
 
@@ -1030,6 +1067,7 @@ if __name__ == "__main__":
     test_unchanged_score_is_checked_but_not_recorded()
     test_direction_flip_is_always_recorded_regardless_of_magnitude()
     test_is_material_change_threshold_boundary()
+    test_is_material_change_crossing_thin_sample_threshold_is_material()
     test_precursor_events_found_and_passed_to_score_bundle()
     test_print_direction_call_recorded_once_per_event()
     test_print_direction_none_call_writes_nothing()
