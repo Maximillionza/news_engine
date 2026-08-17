@@ -132,18 +132,24 @@ def test_predictions_sorts_resolved_events_by_proximity_to_now():
 
 
 def test_predictions_prefers_resolved_over_pending_regardless_of_distance():
-    print("=== app: a resolved score always outranks a nearer-but-pending event — confirmed product choice ===")
+    print("=== app: a FRESHLY resolved score outranks a nearer-but-pending event — confirmed product choice ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         now = dt.datetime.now(dt.timezone.utc)
-        # The event that scored is CHRONOLOGICALLY FARTHER than the one
-        # that's still pending — a pure-proximity sort would pick the
-        # pending one, which is exactly the bug this test locks in the fix
-        # for (confirmed live: a resolved call is more useful to show than
-        # an "awaiting" placeholder for a nearer event).
+        # The event that scored is CHRONOLOGICALLY FARTHER from now than the
+        # one that's still pending (2h away vs. 1h away) — a pure-proximity
+        # sort would pick the pending one, which is exactly the bug this
+        # test locks in the fix for (confirmed live: a resolved call is
+        # more useful to show than an "awaiting" placeholder for a nearer
+        # event). Both timestamps are realistic (resolved events always
+        # have a PAST event_time_utc — an event can't resolve before it
+        # happens) and within RESOLVED_PRIORITY_WINDOW_HOURS (24h), so
+        # "resolved wins" still applies per the 2026-08-17 freshness fix —
+        # see test_predictions_stale_resolved_no_longer_masks_a_nearer_pending_event
+        # for the case where it doesn't.
         far_resolved = EconomicEvent(
             title="PPI m/m", country="USD", impact="High",
-            event_time_utc=now + dt.timedelta(days=3), forecast="0.2%", actual="0.5%",
+            event_time_utc=now - dt.timedelta(hours=2), forecast="0.2%", actual="0.5%",
         )
         near_pending = EconomicEvent(
             title="CPI m/m", country="USD", impact="High",
@@ -236,6 +242,47 @@ def test_predictions_prefers_future_pending_event_over_a_past_stuck_pending_one(
             events = resp.get_json()["predictions"][0]["events"]
             assert events[0]["event_title"] == "PPI m/m", (
                 f"expected the genuinely upcoming pending event first, not the past one still stuck pending, "
+                f"got {events[0]['event_title']!r}"
+            )
+    print("PASS\n")
+
+
+def test_predictions_stale_resolved_no_longer_masks_a_nearer_pending_event():
+    print("=== app: a STALE resolved event (older than RESOLVED_PRIORITY_WINDOW_HOURS) no longer masks a genuinely imminent pending one ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime.now(dt.timezone.utc)
+        # Real, live-observed regression (2026-08-17): once resolved events
+        # started staying visible for PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS
+        # (7 days), a days-old resolved Medium-impact event (here modeled on
+        # the real Prelim UoM Consumer Sentiment case) permanently outranked
+        # a genuinely imminent, High-impact PENDING event (here modeled on
+        # FOMC) purely because the old "resolved always wins" rule had no
+        # time bound. This test locks in the fix: beyond
+        # RESOLVED_PRIORITY_WINDOW_HOURS, a resolved event falls back into
+        # the same proximity-sorted tier as pending ones.
+        stale_resolved = EconomicEvent(
+            title="Prelim UoM Consumer Sentiment", country="USD", impact="Medium",
+            event_time_utc=now - dt.timedelta(days=3), forecast="65.0", actual="66.5",
+        )
+        imminent_pending = EconomicEvent(
+            title="FOMC Meeting Minutes", country="USD", impact="High",
+            event_time_utc=now + dt.timedelta(hours=6), forecast=None, actual=None,
+        )
+        with patch.object(store, "DB_PATH", db_path):
+            _seed_calendar(db_path, [imminent_pending])  # FF's own live snapshot has ONLY the imminent event now
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            store.record_run(conn, "XAUUSD", "Prelim UoM Consumer Sentiment", stale_resolved.event_time_utc, 0.70, "bullish", 0.6)
+            store.record_run(conn, "XAUUSD", "FOMC Meeting Minutes", imminent_pending.event_time_utc, None, "pending", None)
+            store.upsert_event_history(conn, stale_resolved, "higher", now)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            assert events[0]["event_title"] == "FOMC Meeting Minutes", (
+                f"expected the imminent pending FOMC event first, not the 3-day-old resolved one, "
                 f"got {events[0]['event_title']!r}"
             )
     print("PASS\n")
@@ -1244,6 +1291,7 @@ if __name__ == "__main__":
     test_predictions_prefers_resolved_over_pending_regardless_of_distance()
     test_predictions_prefers_resolved_event_over_pending_sibling_at_same_timestamp()
     test_predictions_prefers_future_pending_event_over_a_past_stuck_pending_one()
+    test_predictions_stale_resolved_no_longer_masks_a_nearer_pending_event()
     test_predictions_includes_article_count_from_accumulator_db()
     test_predictions_includes_previous_article_prediction_when_two_snapshots_exist()
     test_predictions_article_prediction_is_none_when_accumulator_never_scored_it()

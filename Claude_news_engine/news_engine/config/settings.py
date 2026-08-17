@@ -534,6 +534,19 @@ REDUNDANCY_DISCOUNT_MULTIPLIER = 0.3       # a redundant contribution is still W
 # merge in webapp/app.py.
 PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS = 7
 
+# (2026-08-17 follow-up) How long a resolved event's real call gets
+# absolute display priority over ANY pending event, regardless of
+# distance — see get_predictions()'s sort key in webapp/app.py. Beyond
+# this window a resolved event is no longer "current news" and falls
+# back into the same proximity-sorted tier as pending events, so a
+# genuinely imminent pending event (e.g. FOMC) isn't permanently masked
+# by a days-old resolved one now that resolved events stay visible for
+# up to PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS. 24h matches this
+# project's own existing "fresh" staleness band (see
+# docs/calendar-feed-staleness-policy.md) — reused for consistency, not
+# independently derived.
+RESOLVED_PRIORITY_WINDOW_HOURS = 24
+
 # Below this relative (or, when forecast≈0, absolute) delta between actual
 # and forecast, classify_surprise() below calls it 'in_line' rather than
 # 'higher'/'lower' — a literal actual-vs-forecast comparison for event

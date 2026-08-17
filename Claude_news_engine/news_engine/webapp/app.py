@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from config.settings import EVENT_SURPRISE_DIRECTION, PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS
+from config.settings import EVENT_SURPRISE_DIRECTION, PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS, RESOLVED_PRIORITY_WINDOW_HOURS
 from data_layer.calendar_feed import EconomicEvent, get_last_successful_fetch_age_seconds
 from webapp.scheduler import start_scheduler
 from webapp.scoring_service import score_event_for_symbol
@@ -393,17 +393,30 @@ def get_predictions():
                 "kalshi_read": kalshi_read,
             })
 
-        # A resolved score always outranks a still-pending one, regardless
+        # A FRESHLY resolved score outranks a still-pending one, regardless
         # of which is chronologically closer — a real BUY/SELL/HOLD call is
         # more useful to show than an "awaiting" placeholder for a nearer
         # event (confirmed: this is a deliberate product choice, not just a
         # same-timestamp tie-break — release days routinely publish several
         # sub-metrics at the IDENTICAL time, e.g. Core CPI m/m, Core CPI y/y,
         # CPI m/m, CPI y/y all at 12:30 UTC, and a naive proximity-only sort
-        # would let a still-pending sibling, or even a pending event on an
-        # entirely different day, mask one that has actually scored).
+        # would let a still-pending sibling mask one that has actually scored).
         #
-        # Within the pending group specifically, a genuinely UPCOMING event
+        # "Freshly" is the key correction (2026-08-17): once
+        # PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS started keeping resolved
+        # events visible for up to 7 days (so real calls for CPI/PPI weren't
+        # lost from view the moment FF's own feed moved past them), the
+        # ORIGINAL unconditional "resolved always wins" rule started
+        # backfiring: a days-old resolved Low/Medium-impact event (e.g.
+        # Prelim UoM Consumer Sentiment) could permanently outrank a
+        # genuinely imminent, high-impact PENDING event (e.g. FOMC) that
+        # simply hasn't printed yet — observed live. A resolved event only
+        # gets that absolute priority within RESOLVED_PRIORITY_WINDOW_HOURS
+        # of its own release time; beyond that it's no longer "current
+        # news" and falls back into the same proximity-sorted tier as
+        # pending events, so a truly upcoming event can win as expected.
+        #
+        # Within the non-fresh tier, a genuinely UPCOMING pending event still
         # outranks one whose release time already passed but is still stuck
         # "pending" (observed live: the calendar feed can lag publishing an
         # actual for hours after the scheduled time) — abs(distance) alone
@@ -411,13 +424,19 @@ def get_predictions():
         # and would keep showing the stale event long after a real next
         # event exists to show instead.
         now = dt.datetime.now(dt.timezone.utc)
-        entry["events"].sort(
-            key=lambda ev: (
-                ev["direction"] == "pending",
-                ev["direction"] == "pending" and dt.datetime.fromisoformat(ev["event_time_utc"]) < now,
-                abs((dt.datetime.fromisoformat(ev["event_time_utc"]) - now).total_seconds()),
+
+        def _sort_key(ev):
+            event_time = dt.datetime.fromisoformat(ev["event_time_utc"])
+            is_pending = ev["direction"] == "pending"
+            age_hours = (now - event_time).total_seconds() / 3600.0
+            is_fresh_resolved = (not is_pending) and 0 <= age_hours <= RESOLVED_PRIORITY_WINDOW_HOURS
+            return (
+                0 if is_fresh_resolved else 1,
+                is_pending and event_time < now,
+                abs((event_time - now).total_seconds()),
             )
-        )
+
+        entry["events"].sort(key=_sort_key)
         predictions.append(entry)
 
     conn.close()
