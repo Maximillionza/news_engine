@@ -41,6 +41,7 @@ from config.settings import (
     EVENT_HISTORY_IN_LINE_TOLERANCE,
     EVENT_SURPRISE_DIRECTION,
     LOCAL_TZ,
+    POST_RELEASE_GRACE_MINUTES,
     PRE_EVENT_WINDOW_HOURS,
     PRECURSOR_EVENTS,
     SURPRISE_SENSITIVITY,
@@ -346,14 +347,25 @@ def filter_relevant_events(
 def events_in_pre_window(events: list[EconomicEvent], now_utc: Optional[dt.datetime] = None) -> list[EconomicEvent]:
     """
     Of the given events, return those whose pre-event probability window
-    (event_time - PRE_EVENT_WINDOW_HOURS) has already started but the event
-    itself hasn't passed yet — i.e. events we should currently be tracking.
+    (event_time - PRE_EVENT_WINDOW_HOURS) has already started and whose
+    POST_RELEASE_GRACE_MINUTES post-release grace period hasn't fully
+    elapsed yet — i.e. events we should currently be tracking.
+
+    The grace period (not just event_time_utc as the hard cutoff) exists
+    because a release's ACTUAL forecast-vs-actual figure and any real
+    reaction coverage aren't available AT the event timestamp — only
+    afterward. Without it, this function excluded an event the instant
+    now_utc passed its timestamp, so the article-based accumulator could
+    never capture real post-release coverage, only the pre-release run-up
+    — a real gap, live-found 2026-08-26 (see POST_RELEASE_GRACE_MINUTES's
+    comment in config/settings.py for the concrete case).
     """
     now_utc = now_utc or dt.datetime.now(UTC_TZ)
     active = []
     for e in events:
         window_start = e.event_time_utc - dt.timedelta(hours=PRE_EVENT_WINDOW_HOURS)
-        if window_start <= now_utc <= e.event_time_utc:
+        window_end = e.event_time_utc + dt.timedelta(minutes=POST_RELEASE_GRACE_MINUTES)
+        if window_start <= now_utc <= window_end:
             active.append(e)
     return active
 

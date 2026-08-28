@@ -16,12 +16,13 @@ from unittest.mock import patch
 from data_layer.calendar_feed import (
     EconomicEvent,
     classify_surprise,
+    events_in_pre_window,
     fetch_calendar,
     filter_relevant_events,
     get_last_successful_fetch_age_seconds,
 )
 import data_layer.calendar_feed as calendar_feed
-from config.settings import UTC_TZ
+from config.settings import POST_RELEASE_GRACE_MINUTES, PRE_EVENT_WINDOW_HOURS, UTC_TZ
 
 
 def _fake_event(title="CPI m/m", impact="High"):
@@ -180,6 +181,49 @@ def test_get_last_successful_fetch_age_seconds_reads_the_cooldown_file():
     print("PASS\n")
 
 
+def test_events_in_pre_window_includes_an_event_still_ahead():
+    print("=== calendar_feed: events_in_pre_window includes an event inside its pre-event window, not yet released ===")
+    event = _fake_event()  # 2026-08-12 12:30 UTC
+    now = event.event_time_utc - dt.timedelta(hours=1)
+    assert events_in_pre_window([event], now_utc=now) == [event]
+    print("PASS\n")
+
+
+def test_events_in_pre_window_excludes_an_event_still_far_out():
+    print("=== calendar_feed: events_in_pre_window excludes an event whose pre-event window hasn't started yet ===")
+    event = _fake_event()
+    now = event.event_time_utc - dt.timedelta(hours=PRE_EVENT_WINDOW_HOURS + 1)
+    assert events_in_pre_window([event], now_utc=now) == []
+    print("PASS\n")
+
+
+def test_events_in_pre_window_includes_an_event_within_the_post_release_grace_period():
+    print("=== calendar_feed: events_in_pre_window still includes an event just AFTER its release — real bug, live-found 2026-08-26 ===")
+    # Root cause of a live-observed gap: Core PCE Price Index m/m released
+    # 12:30 UTC, but the accumulator's last recorded article-based read was
+    # from 09:53 UTC — 2h41m EARLIER. No new check ever ran after the
+    # release because this function excluded the event the instant
+    # now_utc passed event_time_utc, with zero grace period — so real
+    # post-release reaction coverage could never be captured, only the
+    # pre-release run-up. This is the fix: a POST_RELEASE_GRACE_MINUTES
+    # window after release, mirroring the grace period
+    # compute_accumulator_interval_seconds() already uses to keep polling
+    # tight post-release — the two mechanisms previously disagreed with
+    # each other (one assumed a grace period existed, the other didn't).
+    event = _fake_event()
+    now = event.event_time_utc + dt.timedelta(minutes=POST_RELEASE_GRACE_MINUTES - 1)
+    assert events_in_pre_window([event], now_utc=now) == [event]
+    print("PASS\n")
+
+
+def test_events_in_pre_window_excludes_an_event_past_the_post_release_grace_period():
+    print("=== calendar_feed: events_in_pre_window excludes an event once the post-release grace period has fully elapsed ===")
+    event = _fake_event()
+    now = event.event_time_utc + dt.timedelta(minutes=POST_RELEASE_GRACE_MINUTES + 1)
+    assert events_in_pre_window([event], now_utc=now) == []
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_lastweek_rejected_with_informative_error()
     test_nextweek_rejected_with_informative_error()
@@ -194,4 +238,8 @@ if __name__ == "__main__":
     test_filter_relevant_events_extra_titles_defaults_to_empty()
     test_get_last_successful_fetch_age_seconds_none_when_never_fetched()
     test_get_last_successful_fetch_age_seconds_reads_the_cooldown_file()
+    test_events_in_pre_window_includes_an_event_still_ahead()
+    test_events_in_pre_window_excludes_an_event_still_far_out()
+    test_events_in_pre_window_includes_an_event_within_the_post_release_grace_period()
+    test_events_in_pre_window_excludes_an_event_past_the_post_release_grace_period()
     print("All calendar_feed tests passed.")

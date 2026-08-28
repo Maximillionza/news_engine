@@ -120,6 +120,31 @@ def test_no_articles_returns_none():
     print("PASS\n")
 
 
+def test_core_pce_lexicon_coverage_higher_and_lower():
+    print("=== score_print_direction: Core PCE Price Index m/m has real lexicon coverage ===")
+    # Real bug this fixes, live-found 2026-08-26: Core PCE Price Index m/m
+    # had a real, confirmed actual (0.2%, matched forecast) but NEVER got a
+    # print_predictions row, ever — because it had no PRINT_SURPRISE_LEXICON
+    # entry, so score_print_direction() always returned None for it. Same
+    # "invisible in the History tab" bug class already fixed once (2026-08-14,
+    # for CPI y/y/Core CPI y/y/Unemployment Claims — see that entry's comment
+    # above) but never extended to cover this title.
+    higher_bundle = _bundle("Core PCE Price Index m/m", [
+        _article("Sticky core inflation keeps pressure on the Fed, hotter than expected"),
+    ])
+    higher_call = score_print_direction(higher_bundle)
+    assert higher_call is not None
+    assert higher_call.direction == "higher"
+
+    lower_bundle = _bundle("Core PCE Price Index m/m", [
+        _article("Cooling core inflation eases pressure, downside surprise for the Fed's preferred gauge"),
+    ])
+    lower_call = score_print_direction(lower_bundle)
+    assert lower_call is not None
+    assert lower_call.direction == "lower"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_no_lexicon_entry_returns_none()
     test_unanimous_higher_hits_high_confidence()
@@ -128,4 +153,5 @@ if __name__ == "__main__":
     test_mixed_hits_lower_confidence_correct_majority()
     test_zero_hits_returns_in_line_low_confidence()
     test_no_articles_returns_none()
+    test_core_pce_lexicon_coverage_higher_and_lower()
     print("All print_direction tests passed.")

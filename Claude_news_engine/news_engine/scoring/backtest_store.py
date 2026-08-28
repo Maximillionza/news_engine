@@ -459,6 +459,22 @@ def count_recent_checks(conn: sqlite3.Connection, since: dt.datetime) -> int:
     return row["n"]
 
 
+def get_last_check_utc(conn: sqlite3.Connection) -> Optional[dt.datetime]:
+    """
+    The most recent record_check() timestamp across everything the
+    accumulator has done — a proxy for "is the accumulator process alive
+    and actually completing cycles," same role
+    data_layer.calendar_feed.get_last_successful_fetch_age_seconds() plays
+    for the calendar fetch. Returns None if no check has ever been logged
+    (fresh install, or the accumulator process has never run) — never a
+    fabricated "just now."
+    """
+    row = conn.execute("SELECT MAX(checked_at_utc) AS latest FROM check_log").fetchone()
+    if row is None or row["latest"] is None:
+        return None
+    return dt.datetime.fromisoformat(row["latest"])
+
+
 def get_all_confirmed_cases(conn: sqlite3.Connection) -> list[tuple[Prediction, Outcome]]:
     """
     Joins each (event, instrument) pair's LATEST prediction snapshot with

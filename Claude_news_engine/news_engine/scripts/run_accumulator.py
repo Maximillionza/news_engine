@@ -46,4 +46,12 @@ def main():
 
 
 if __name__ == "__main__":
+    # See webapp/app.py's identical reconfigure() call for why: this
+    # process's background thread logs non-ASCII characters (e.g. the ⚠
+    # in ProbabilityResult.summary), which crashed a live cycle on
+    # Windows' default cp1252 console codepage (confirmed 2026-08-19 —
+    # "'charmap' codec can't encode character '⚠'"). Forcing real
+    # UTF-8 here removes that crash at its source.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     main()

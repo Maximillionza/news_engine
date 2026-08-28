@@ -131,22 +131,23 @@ def test_predictions_sorts_resolved_events_by_proximity_to_now():
     print("PASS\n")
 
 
-def test_predictions_prefers_resolved_over_pending_regardless_of_distance():
-    print("=== app: a FRESHLY resolved score outranks a nearer-but-pending event — confirmed product choice ===")
+def test_predictions_prefers_pending_over_resolved_regardless_of_distance():
+    print("=== app: a still-PENDING event outranks a nearer-in-time resolved one — 2026-08-26 revision, see module note below ===")
+    # Was the reverse until 2026-08-26 ("a freshly resolved score outranks a
+    # nearer pending event" — confirmed product choice at the time). Reversed
+    # after a live incident: a resolved event's essence score can be
+    # recomputed from event_history at ANY time (e.g. scripts/fill_missing_actuals.py
+    # patching in a real actual hours after release, independent of the
+    # scheduler's own cadence) — that made "resolved" an unreliable signal
+    # for "this is what's current," and it was burying a genuinely upcoming
+    # pending event (e.g. Unemployment Claims) under an already-resolved one
+    # (Core PCE Price Index m/m) purely because the resolved one happened to
+    # be recomputed more recently. Pending — i.e. "what should I be watching
+    # next" — now always wins, full stop; RESOLVED_PRIORITY_WINDOW_HOURS's
+    # graduated freshness window is gone, not just widened/narrowed.
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         now = dt.datetime.now(dt.timezone.utc)
-        # The event that scored is CHRONOLOGICALLY FARTHER from now than the
-        # one that's still pending (2h away vs. 1h away) — a pure-proximity
-        # sort would pick the pending one, which is exactly the bug this
-        # test locks in the fix for (confirmed live: a resolved call is
-        # more useful to show than an "awaiting" placeholder for a nearer
-        # event). Both timestamps are realistic (resolved events always
-        # have a PAST event_time_utc — an event can't resolve before it
-        # happens) and within RESOLVED_PRIORITY_WINDOW_HOURS (24h), so
-        # "resolved wins" still applies per the 2026-08-17 freshness fix —
-        # see test_predictions_stale_resolved_no_longer_masks_a_nearer_pending_event
-        # for the case where it doesn't.
         far_resolved = EconomicEvent(
             title="PPI m/m", country="USD", impact="High",
             event_time_utc=now - dt.timedelta(hours=2), forecast="0.2%", actual="0.5%",
@@ -166,21 +167,21 @@ def test_predictions_prefers_resolved_over_pending_regardless_of_distance():
             client = webapp_app.app.test_client()
             resp = client.get("/api/predictions")
             events = resp.get_json()["predictions"][0]["events"]
-            assert events[0]["event_title"] == "PPI m/m", (
-                f"expected the resolved-but-farther event first, got {events[0]['event_title']!r}"
+            assert events[0]["event_title"] == "CPI m/m", (
+                f"expected the pending event first regardless of the resolved one being nearer, got {events[0]['event_title']!r}"
             )
-            assert events[0]["direction"] == "bullish"
+            assert events[0]["direction"] == "pending"
     print("PASS\n")
 
 
-def test_predictions_prefers_resolved_event_over_pending_sibling_at_same_timestamp():
-    print("=== app: among events tied on timestamp, a resolved one beats a still-pending sibling ===")
+def test_predictions_prefers_pending_sibling_over_resolved_at_same_timestamp():
+    print("=== app: among events tied on timestamp, the still-pending one now leads over its resolved sibling ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         # Real-world shape: a release day publishes several sub-metrics at the
-        # IDENTICAL timestamp. Feed order deliberately puts the still-pending
+        # IDENTICAL timestamp. Feed order deliberately puts the resolved
         # sibling first, so a naive time-only sort would keep it at events[0]
-        # even though the other one has an actual real score.
+        # even though the pending one is what should currently be watched.
         shared_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=dt.timezone.utc)
         pending_sibling = EconomicEvent(
             title="Core CPI m/m", country="USD", impact="High",
@@ -191,7 +192,7 @@ def test_predictions_prefers_resolved_event_over_pending_sibling_at_same_timesta
             event_time_utc=shared_time, forecast="0.1%", actual="0.3%",
         )
         with patch.object(store, "DB_PATH", db_path):
-            _seed_calendar(db_path, [pending_sibling, resolved_sibling])
+            _seed_calendar(db_path, [resolved_sibling, pending_sibling])
             conn = store.get_connection(db_path)
             store.add_tracked_symbol(conn, "XAUUSD")
             store.record_run(conn, "XAUUSD", "Core CPI m/m", shared_time, None, "pending", None)
@@ -201,11 +202,11 @@ def test_predictions_prefers_resolved_event_over_pending_sibling_at_same_timesta
             client = webapp_app.app.test_client()
             resp = client.get("/api/predictions")
             events = resp.get_json()["predictions"][0]["events"]
-            assert events[0]["event_title"] == "CPI m/m", (
-                f"expected the resolved sibling first despite feed order and identical timestamp, "
+            assert events[0]["event_title"] == "Core CPI m/m", (
+                f"expected the pending sibling first despite feed order and identical timestamp, "
                 f"got {events[0]['event_title']!r}"
             )
-            assert events[0]["direction"] == "bullish"
+            assert events[0]["direction"] == "pending"
     print("PASS\n")
 
 
@@ -248,7 +249,7 @@ def test_predictions_prefers_future_pending_event_over_a_past_stuck_pending_one(
 
 
 def test_predictions_stale_resolved_no_longer_masks_a_nearer_pending_event():
-    print("=== app: a STALE resolved event (older than RESOLVED_PRIORITY_WINDOW_HOURS) no longer masks a genuinely imminent pending one ===")
+    print("=== app: a STALE resolved event no longer masks a genuinely imminent pending one ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         now = dt.datetime.now(dt.timezone.utc)
@@ -258,9 +259,12 @@ def test_predictions_stale_resolved_no_longer_masks_a_nearer_pending_event():
         # the real Prelim UoM Consumer Sentiment case) permanently outranked
         # a genuinely imminent, High-impact PENDING event (here modeled on
         # FOMC) purely because the old "resolved always wins" rule had no
-        # time bound. This test locks in the fix: beyond
-        # RESOLVED_PRIORITY_WINDOW_HOURS, a resolved event falls back into
-        # the same proximity-sorted tier as pending ones.
+        # time bound. Originally fixed with a RESOLVED_PRIORITY_WINDOW_HOURS
+        # freshness cutoff; superseded 2026-08-26 by the simpler "pending
+        # always leads" rule (see test_predictions_prefers_pending_over_resolved_regardless_of_distance) —
+        # this now passes as a trivial case of that general rule rather than
+        # needing its own staleness threshold, but the scenario is still
+        # worth locking in directly.
         stale_resolved = EconomicEvent(
             title="Prelim UoM Consumer Sentiment", country="USD", impact="Medium",
             event_time_utc=now - dt.timedelta(days=3), forecast="65.0", actual="66.5",
@@ -321,6 +325,42 @@ def test_predictions_includes_article_count_from_accumulator_db():
                 "direction": "bullish", "probability": 0.66, "article_count": 12, "top_contributions": [],
             }
             assert events[0]["previous_article_prediction"] is None, "only one snapshot recorded — no previous to diff against"
+    print("PASS\n")
+
+
+def test_predictions_includes_accumulator_staleness_seconds():
+    print("=== app: /api/predictions includes accumulator_staleness_seconds, computed from the accumulator's last logged check ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            _seed_calendar(db_path, _fake_events())
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            checked_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=5)
+            backtest_store.record_check(bconn, checked_at)
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            staleness = resp.get_json()["accumulator_staleness_seconds"]
+            assert staleness is not None
+            assert 290 <= staleness <= 310, f"expected ~300s (5 minutes), got {staleness}"
+    print("PASS\n")
+
+
+def test_predictions_accumulator_staleness_is_none_when_accumulator_never_ran():
+    print("=== app: /api/predictions' accumulator_staleness_seconds is None (not fabricated) when the accumulator has never logged a check ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            _seed_calendar(db_path, _fake_events())
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            assert resp.get_json()["accumulator_staleness_seconds"] is None
     print("PASS\n")
 
 
@@ -1342,14 +1382,16 @@ if __name__ == "__main__":
     test_add_unrecognized_symbol_rejected()
     test_predictions_endpoint_reflects_stored_runs()
     test_predictions_sorts_resolved_events_by_proximity_to_now()
-    test_predictions_prefers_resolved_over_pending_regardless_of_distance()
-    test_predictions_prefers_resolved_event_over_pending_sibling_at_same_timestamp()
+    test_predictions_prefers_pending_over_resolved_regardless_of_distance()
+    test_predictions_prefers_pending_sibling_over_resolved_at_same_timestamp()
     test_predictions_prefers_future_pending_event_over_a_past_stuck_pending_one()
     test_predictions_stale_resolved_no_longer_masks_a_nearer_pending_event()
     test_article_history_route_returns_full_progression_with_top_contributions()
     test_article_history_route_requires_event_title()
     test_article_history_route_empty_for_unknown_event()
     test_predictions_includes_article_count_from_accumulator_db()
+    test_predictions_includes_accumulator_staleness_seconds()
+    test_predictions_accumulator_staleness_is_none_when_accumulator_never_ran()
     test_predictions_includes_previous_article_prediction_when_two_snapshots_exist()
     test_predictions_article_prediction_is_none_when_accumulator_never_scored_it()
     test_predictions_article_count_is_none_when_accumulator_never_scored_it()

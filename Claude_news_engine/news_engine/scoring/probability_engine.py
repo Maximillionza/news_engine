@@ -32,6 +32,8 @@ from enum import Enum
 from config.settings import (
     CONTEXTUAL_CONFIDENCE_THRESHOLD,
     CONTRADICTION_MIN_MAGNITUDE,
+    DIRECTION_FLIP_HYSTERESIS_MARGIN,
+    DIRECTION_NEUTRAL_BAND,
     ENABLE_FINBERT_SENTIMENT,
     ENABLE_LLM_SENTIMENT,
     EVENT_SURPRISE_DIRECTION,
@@ -582,7 +584,7 @@ def _check_macro_backdrop(
     backdrop_dir = "USD-bullish" if lean > 0 else "USD-bearish"
     read_dir = "USD-bullish" if usd_sign > 0 else "USD-bearish"
     note = (
-        f"Macro backdrop (dollar index/real yields) leans {backdrop_dir}, "
+        f"Macro backdrop (dollar index/real yields/oil) leans {backdrop_dir}, "
         f"but this read is {read_dir} — treat with extra caution until they align."
     )
     return False, note
@@ -657,6 +659,45 @@ def _detect_contradiction(
     return False, None
 
 
+def _direction_for_score(instrument_score: float, current_direction: str | None) -> Direction:
+    """
+    Maps instrument_score to BULLISH/BEARISH/NEUTRAL, applying hysteresis
+    when current_direction is known — see DIRECTION_FLIP_HYSTERESIS_MARGIN's
+    comment in config/settings.py for the real bug this fixes (21 direction
+    flips within 72h on pure time-decay noise, no hysteresis to hold the
+    read steady).
+
+    current_direction=None (no known prior state, e.g. this event's
+    first-ever score): plain DIRECTION_NEUTRAL_BAND threshold, no
+    hysteresis — there's nothing to be "sticky" relative to yet.
+
+    current_direction known: if the plain (non-hysteresis) read already
+    matches current_direction, nothing changed — return it as-is,
+    hysteresis is a no-op. If the plain read DIFFERS from
+    current_direction, only accept that different read if instrument_score
+    clears the WIDER band (DIRECTION_NEUTRAL_BAND + DIRECTION_FLIP_HYSTERESIS_MARGIN);
+    otherwise current_direction is "sticky" and is returned unchanged —
+    this uniformly covers every transition (bullish->neutral, neutral->
+    bearish, a direct bullish->bearish jump, etc.) with one rule.
+    """
+    if instrument_score > DIRECTION_NEUTRAL_BAND:
+        plain = Direction.BULLISH
+    elif instrument_score < -DIRECTION_NEUTRAL_BAND:
+        plain = Direction.BEARISH
+    else:
+        plain = Direction.NEUTRAL
+
+    if current_direction is None or plain.value == current_direction:
+        return plain
+
+    wide = DIRECTION_NEUTRAL_BAND + DIRECTION_FLIP_HYSTERESIS_MARGIN
+    if instrument_score > wide:
+        return Direction.BULLISH
+    if instrument_score < -wide:
+        return Direction.BEARISH
+    return Direction(current_direction)  # move is real but hasn't cleared the wider band — stay put
+
+
 def score_bundle(
     bundle: EventNewsBundle,
     instrument: str,
@@ -666,6 +707,7 @@ def score_bundle(
     kalshi_read=None,   # KalshiRead | None — duck-typed
     kalshi_direction_override=None,  # str | None — 'higher_bullish'/'higher_bearish', see below
     macro_backdrop=None,  # MacroBackdropRead | None — duck-typed, see _check_macro_backdrop()
+    current_direction: str | None = None,  # 'bullish'/'bearish'/'neutral' | None — see _direction_for_score()
 ) -> ProbabilityResult:
     """
     Main entry point: score an EventNewsBundle for a given instrument
@@ -720,6 +762,12 @@ def score_bundle(
     and the thin-sample cap already follow. See _check_macro_backdrop().
     None contributes nothing (confidence unchanged, macro_backdrop_agrees
     stays None).
+
+    current_direction: optional — the currently-recorded direction for
+    this (event, instrument) pair ('bullish'/'bearish'/'neutral'), if
+    known. Enables hysteresis on direction flips — see
+    _direction_for_score(). None (the default) reproduces the old,
+    non-hysteresis, "first-ever score" behavior exactly.
     """
     if instrument not in INSTRUMENTS:
         raise ValueError(f"Unknown instrument {instrument!r} — add it to config.settings.INSTRUMENTS first")
@@ -801,12 +849,7 @@ def score_bundle(
     if macro_backdrop_agrees is False:
         confidence *= MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER
 
-    if instrument_score > 0.02:
-        direction = Direction.BULLISH
-    elif instrument_score < -0.02:
-        direction = Direction.BEARISH
-    else:
-        direction = Direction.NEUTRAL
+    direction = _direction_for_score(instrument_score, current_direction)
 
     # Contradiction detection stays article-only — it's designed to catch
     # a narrative shifting over time (recent vs older text), which isn't

@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from config.settings import EVENT_SURPRISE_DIRECTION, PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS, RESOLVED_PRIORITY_WINDOW_HOURS
+from config.settings import EVENT_SURPRISE_DIRECTION, PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS
 from data_layer.calendar_feed import EconomicEvent, get_last_successful_fetch_age_seconds
 from webapp.scheduler import start_scheduler
 from webapp.scoring_service import score_event_for_symbol
@@ -29,7 +29,7 @@ from webapp.history import build_print_call_history
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 from scoring.backtest_store import (
     get_connection as get_backtest_connection, get_latest_two_predictions,
-    get_latest_print_prediction, get_latest_kalshi_read,
+    get_latest_print_prediction, get_latest_kalshi_read, get_last_check_utc,
     # Aliased — webapp/app.py already has its own route handler FUNCTION
     # named get_prediction_history() (the essence-only one, further down
     # this file) which would otherwise shadow this import at module scope.
@@ -415,20 +415,24 @@ def get_predictions():
         # would let a still-pending sibling mask one that has actually scored).
         #
         # "Freshly" is the key correction (2026-08-17): once
-        # PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS started keeping resolved
-        # events visible for up to 7 days (so real calls for CPI/PPI weren't
-        # lost from view the moment FF's own feed moved past them), the
-        # ORIGINAL unconditional "resolved always wins" rule started
-        # backfiring: a days-old resolved Low/Medium-impact event (e.g.
-        # Prelim UoM Consumer Sentiment) could permanently outrank a
-        # genuinely imminent, high-impact PENDING event (e.g. FOMC) that
-        # simply hasn't printed yet — observed live. A resolved event only
-        # gets that absolute priority within RESOLVED_PRIORITY_WINDOW_HOURS
-        # of its own release time; beyond that it's no longer "current
-        # news" and falls back into the same proximity-sorted tier as
-        # pending events, so a truly upcoming event can win as expected.
+        # Pending events (what's still worth watching) always sort ahead of
+        # resolved ones, full stop — not just within a freshness window.
         #
-        # Within the non-fresh tier, a genuinely UPCOMING pending event still
+        # This is a 2026-08-26 reversal of the original rule ("a freshly
+        # resolved score outranks a nearer pending event," bounded by
+        # RESOLVED_PRIORITY_WINDOW_HOURS so a STALE resolved event wouldn't
+        # permanently mask a genuinely imminent one — see git history for
+        # that fix's own reasoning). Reversed after a live incident: a
+        # resolved event's essence score can get recomputed from
+        # event_history at ANY time — independent of the scheduler's own
+        # cadence — e.g. scripts/fill_missing_actuals.py patching in a real
+        # actual hours after release. That made "resolved" an unreliable
+        # signal for "this is current" and it was burying a genuinely
+        # upcoming pending event (Unemployment Claims) under an
+        # already-resolved one (Core PCE Price Index m/m) purely because
+        # the resolved one happened to get recomputed more recently.
+        #
+        # Within the pending tier, a genuinely UPCOMING pending event still
         # outranks one whose release time already passed but is still stuck
         # "pending" (observed live: the calendar feed can lag publishing an
         # actual for hours after the scheduled time) — abs(distance) alone
@@ -440,10 +444,8 @@ def get_predictions():
         def _sort_key(ev):
             event_time = dt.datetime.fromisoformat(ev["event_time_utc"])
             is_pending = ev["direction"] == "pending"
-            age_hours = (now - event_time).total_seconds() / 3600.0
-            is_fresh_resolved = (not is_pending) and 0 <= age_hours <= RESOLVED_PRIORITY_WINDOW_HOURS
             return (
-                0 if is_fresh_resolved else 1,
+                0 if is_pending else 1,
                 is_pending and event_time < now,
                 abs((event_time - now).total_seconds()),
             )
@@ -451,9 +453,28 @@ def get_predictions():
         entry["events"].sort(key=_sort_key)
         predictions.append(entry)
 
+    # How long since the article-based accumulator (scripts/run_accumulator.py
+    # — a SEPARATE process from this Flask app, see its module docstring)
+    # last actually completed a check. Same "None means no data yet, not
+    # zero staleness" contract as /api/calendar's feed_staleness_seconds.
+    # Exists because that separation is easy to get wrong operationally —
+    # confirmed live 2026-08-19: the accumulator process was simply not
+    # running for most of a session while this dashboard kept serving
+    # stale article_prediction data with no visible sign anything was
+    # wrong, discoverable only by noticing identical numbers across
+    # requests. This field makes that visible instead of requiring that.
+    last_check_utc = get_last_check_utc(backtest_conn)
+    accumulator_staleness_seconds = (
+        (dt.datetime.now(dt.timezone.utc) - last_check_utc).total_seconds()
+        if last_check_utc is not None else None
+    )
+
     conn.close()
     backtest_conn.close()
-    return jsonify({"predictions": predictions, "error": error})
+    return jsonify({
+        "predictions": predictions, "error": error,
+        "accumulator_staleness_seconds": accumulator_staleness_seconds,
+    })
 
 
 @app.route("/api/calendar/monthahead", methods=["GET"])
@@ -660,6 +681,17 @@ def _get_tracked_symbols() -> list[str]:
 
 
 if __name__ == "__main__":
+    # webapp/scheduler.py's background thread (started below) logs
+    # non-ASCII characters (e.g. the ⚠ in ProbabilityResult.summary) —
+    # Windows' default console codepage (cp1252) can't encode those and
+    # raises UnicodeEncodeError on print(), which reached this app once
+    # this session (confirmed live 2026-08-19, same root cause as
+    # scripts/run_accumulator.py's identical crash). reconfigure() (3.7+)
+    # forces real UTF-8 on stdout/stderr regardless of the console's
+    # codepage; errors="replace" so a still-unencodable character prints
+    # a placeholder instead of crashing the process outright.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     _ensure_defaults()
     start_scheduler(_get_tracked_symbols)
     app.run(port=5001, debug=False)

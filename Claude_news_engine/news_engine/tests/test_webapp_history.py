@@ -380,14 +380,14 @@ def test_partially_numeric_event_not_misclassified_as_text_only():
 
         dash_conn = store.get_connection(dash_db)
         store.upsert_event_history(
-            dash_conn, _resolved_event("Advance GDP q/q", event_time, "2.1%", "2.0%", None),
+            dash_conn, _resolved_event("Prelim GDP q/q", event_time, "2.1%", "2.0%", None),
             None, now=now,
         )
         dash_conn.close()
 
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_prediction(
-            bt_conn, "Advance GDP q/q", "XAUUSD", event_time,
+            bt_conn, "Prelim GDP q/q", "XAUUSD", event_time,
             0.55, "bullish", 0.4, 30, False, scored_at_utc=now,
         )
         bt_conn.close()

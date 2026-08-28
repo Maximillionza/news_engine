@@ -21,6 +21,22 @@ Both series publish with a real lag (DTWEXBGS ~1 week, DFII10 a few
 days) — get_macro_backdrop_read() reads whatever's the latest available,
 never fabricates a "today" value.
 
+A third FRED series was added 2026-08-19:
+  - DCOILWTICO — WTI crude, USD-denominated (not Brent — WTI is the
+    benchmark that actually feeds US CPI/PCE energy components). This is
+    NOT the "oil -> gasoline -> cost of living -> inflation -> hike"
+    causal chain that was explicitly flagged as unproven when R5 was
+    first scoped — that chain stays out. What's encoded here is the one
+    step of it with textbook standing: rising oil is a standard leading
+    indicator for CPI energy-component forecasts, i.e. an
+    inflation-expectations proxy, which feeds the same hawkish-lean/
+    USD-bullish axis as the other two series. A supply-shock oil move
+    (OPEC cut) reads identically to a demand-driven one here — price
+    alone can't tell them apart, and no further data-layer fix removes
+    that ambiguity, so oil is deliberately the lowest-priority fallback
+    in .lean: it only fills a gap when both direct USD measures (dollar
+    index, real yield) are silent, and it never overrides them.
+
 READ-ONLY, same fail-open contract as every other data_layer module:
 returns None on a missing key, a failed request, or too few
 observations to compute a trend — never raises, never invents a value.
@@ -39,6 +55,7 @@ FRED_BASE_URL = "https://api.stlouisfed.org/fred"
 
 DOLLAR_INDEX_SERIES_ID = "DTWEXBGS"
 REAL_YIELD_SERIES_ID = "DFII10"
+OIL_SERIES_ID = "DCOILWTICO"
 
 # Minimum real move before a trend counts as a genuine lean rather than
 # noise — untuned starting values, same honesty as every other threshold
@@ -49,6 +66,21 @@ REAL_YIELD_SERIES_ID = "DFII10"
 # rate.
 DOLLAR_INDEX_LEAN_THRESHOLD_PCT = 0.3
 REAL_YIELD_LEAN_THRESHOLD_BPS = 5.0
+
+# Oil (WTI) is a raw commodity price, far more volatile than a broad
+# trade-weighted index — single-session moves of 2-5% on inventory data
+# or OPEC headlines alone are routine. Copying the dollar index's
+# 0.3%-scale threshold would make oil fire a "lean" on pure noise most
+# days. This is itself an untuned starting value, same honesty as the
+# other two thresholds — wide enough to filter routine noise, needs
+# revisiting once real backtest data exists.
+OIL_LEAN_THRESHOLD_PCT = 5.0
+
+# Series reported as a raw price level, where "trend" is a % change
+# (dollar index, oil) — vs. a series already in percentage-point units,
+# where "trend" is a change measured in basis points (real yield).
+# _fetch_trend uses this to pick the right unit of change.
+PERCENT_CHANGE_SERIES_IDS = {DOLLAR_INDEX_SERIES_ID, OIL_SERIES_ID}
 
 # How far back to look for the trend — a pre-event-window-scale lookback
 # (roughly matches PRE_EVENT_WINDOW_HOURS' 48h in spirit, widened because
@@ -63,23 +95,31 @@ class MacroBackdropRead:
     dollar_index_latest_date: Optional[dt.date]
     real_yield_trend_bps: Optional[float]      # change in basis points over the window; positive = yields rising
     real_yield_latest_date: Optional[dt.date]
+    oil_trend_pct: Optional[float]             # % change over the window; positive = WTI strengthening (inflation-expectations proxy)
+    oil_latest_date: Optional[dt.date]
     lookback_days: int
 
     @property
     def lean(self) -> Optional[int]:
         """
         +1 = macro backdrop leans USD-bullish, -1 = USD-bearish, None =
-        no clear lean (below threshold on both measures, or no data at
+        no clear lean (below threshold on every measure, or no data at
         all). Dollar index is the primary read (it's the more direct
-        USD-strength measure); real yield is the fallback when the
+        USD-strength measure); real yield is the first fallback when the
         dollar index itself shows no clear move — real yields moving
         while the index is flat is still a genuine, if secondary,
-        USD-supportive/undermining signal.
+        USD-supportive/undermining signal. Oil is the lowest-priority
+        fallback: it's one causal step further removed (a leading
+        inflation-expectations proxy, not a direct USD measure — see
+        module docstring), so it only fills a gap when BOTH direct USD
+        measures are silent, and never overrides them.
         """
         if self.dollar_index_trend_pct is not None and abs(self.dollar_index_trend_pct) >= DOLLAR_INDEX_LEAN_THRESHOLD_PCT:
             return 1 if self.dollar_index_trend_pct > 0 else -1
         if self.real_yield_trend_bps is not None and abs(self.real_yield_trend_bps) >= REAL_YIELD_LEAN_THRESHOLD_BPS:
             return 1 if self.real_yield_trend_bps > 0 else -1
+        if self.oil_trend_pct is not None and abs(self.oil_trend_pct) >= OIL_LEAN_THRESHOLD_PCT:
+            return 1 if self.oil_trend_pct > 0 else -1
         return None
 
 
@@ -118,7 +158,7 @@ def _fetch_trend(series_id: str, days_back: int) -> tuple[Optional[float], Optio
     newest_value, oldest_value = float(newest["value"]), float(oldest["value"])
     latest_date = dt.date.fromisoformat(newest["date"])
 
-    if series_id == DOLLAR_INDEX_SERIES_ID:
+    if series_id in PERCENT_CHANGE_SERIES_IDS:
         if oldest_value == 0:
             return None, latest_date  # avoid a division by zero on a degenerate value
         change = (newest_value - oldest_value) / oldest_value * 100.0
@@ -130,19 +170,22 @@ def _fetch_trend(series_id: str, days_back: int) -> tuple[Optional[float], Optio
 
 def get_macro_backdrop_read(days_back: int = DEFAULT_LOOKBACK_DAYS) -> Optional[MacroBackdropRead]:
     """
-    Returns None only if BOTH series are entirely unavailable (no key,
-    or both fetches failed) — a partial read (one series available, the
-    other not) still returns a real MacroBackdropRead with one field
-    None, since .lean already handles a partial read via its fallback.
+    Returns None only if ALL THREE series are entirely unavailable (no
+    key, or all three fetches failed) — a partial read (some series
+    available, others not) still returns a real MacroBackdropRead with
+    the missing fields None, since .lean already handles a partial read
+    via its fallback chain.
     """
     dollar_trend, dollar_date = _fetch_trend(DOLLAR_INDEX_SERIES_ID, days_back)
     yield_trend, yield_date = _fetch_trend(REAL_YIELD_SERIES_ID, days_back)
+    oil_trend, oil_date = _fetch_trend(OIL_SERIES_ID, days_back)
 
-    if dollar_trend is None and yield_trend is None:
+    if dollar_trend is None and yield_trend is None and oil_trend is None:
         return None
 
     return MacroBackdropRead(
         dollar_index_trend_pct=dollar_trend, dollar_index_latest_date=dollar_date,
         real_yield_trend_bps=yield_trend, real_yield_latest_date=yield_date,
+        oil_trend_pct=oil_trend, oil_latest_date=oil_date,
         lookback_days=days_back,
     )

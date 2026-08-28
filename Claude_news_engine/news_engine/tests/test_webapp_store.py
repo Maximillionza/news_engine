@@ -392,7 +392,7 @@ def test_get_text_only_resolved_events_excludes_event_missing_only_one_field():
         conn = store.get_connection(db_path)
         now = dt.datetime(2026, 8, 12, 15, 0, tzinfo=UTC_TZ)
         partial = EconomicEvent(
-            title="Advance GDP q/q", country="USD", impact="High",
+            title="Prelim GDP q/q", country="USD", impact="High",
             event_time_utc=now - dt.timedelta(hours=2),
             forecast="2.1%", previous="2.0%", actual=None,
         )

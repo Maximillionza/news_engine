@@ -50,7 +50,7 @@ FRED_RELEASE_ID_BY_EVENT_TITLE = {
     "Average Hourly Earnings m/m": 50,
     "ADP Nonfarm Employment Change": 194,                                          # ADP National Employment Report
     "Retail Sales m/m": 9,                                                         # Advance Monthly Sales for Retail and Food Services
-    "Advance GDP q/q": 53,                                                         # Gross Domestic Product
+    "Prelim GDP q/q": 53,                                                         # Gross Domestic Product
     "Core PCE Price Index m/m": 54,                                                # Personal Income and Outlays
     "Prelim UoM Consumer Sentiment": 91,                                           # Surveys of Consumers (Univ. of Michigan)
     "Unemployment Claims": 180,                                                    # Unemployment Insurance Weekly Claims Report
@@ -181,6 +181,23 @@ RISK_SENTIMENT_DAMPENING = 0.7
 PRE_EVENT_WINDOW_HOURS = 72   # start forming probability 3 days before a scheduled event
 POST_EVENT_REFRESH_MINUTES = 15  # how often to refresh sentiment after release, to catch indecision
 
+# How long AFTER an event's release it stays eligible for article-based
+# scoring (data_layer.calendar_feed.events_in_pre_window()'s upper bound)
+# — real bug this fixes, live-found 2026-08-26: that function previously
+# cut an event off the INSTANT now_utc passed event_time_utc, zero grace
+# period, so the accumulator could never capture real post-release
+# reaction coverage — only the pre-release run-up. Core PCE Price Index
+# m/m released 12:30 UTC that day; the last article-based read on record
+# was from 09:53 UTC, 2h41m EARLIER, and nothing updated afterward.
+# scoring/backtest_accumulator.py's compute_accumulator_interval_seconds()
+# already had its OWN post-release grace constant (used only to keep the
+# polling INTERVAL tight after a release) — the two mechanisms disagreed
+# with each other (one assumed continued scoring during this window, the
+# other silently prevented it). Moved here, shared by both, so they can't
+# drift apart again. Untuned starting value, same honesty as every other
+# threshold in this codebase.
+POST_RELEASE_GRACE_MINUTES = 30
+
 # --- Scoring engine config ---
 # Exponential time-decay half-life for article weighting — an article this
 # many minutes old carries half the weight of a fresh one. Starting value,
@@ -196,6 +213,31 @@ RECENT_WINDOW_HOURS = 6
 # Minimum |instrument_score| for a window's sentiment to count as a real
 # directional lean rather than noise, used by the contradiction check.
 CONTRADICTION_MIN_MAGNITUDE = 0.15
+
+# The plain instrument_score threshold for BULLISH/BEARISH/NEUTRAL — an
+# instrument_score whose magnitude is at or below this counts as NEUTRAL.
+# Was an unnamed literal (0.02) inline in probability_engine.py's
+# score_bundle() until the hysteresis fix below needed to reference it by
+# name too.
+DIRECTION_NEUTRAL_BAND = 0.02
+
+# Extra margin (added to DIRECTION_NEUTRAL_BAND) instrument_score must
+# clear before score_bundle() accepts a direction FLIP away from a known
+# current_direction — real bug this fixes, live-investigated 2026-08-26:
+# one event/instrument pair recorded 21 direction flips within 72h,
+# oscillating in a ~47-54% probability band, because the plain
+# DIRECTION_NEUTRAL_BAND threshold has no memory of the currently-
+# recorded direction. Pure time-decay recomputation (no new article
+# needed) was enough to cross that narrow line back and forth repeatedly,
+# and each crossing got written and displayed as if new evidence had
+# flipped the call — see probability_engine.py's _direction_for_score().
+# Untuned starting value, same honesty as every other threshold in this
+# codebase — 0.03 means DIRECTION_NEUTRAL_BAND + this = instrument_score
+# must reach 0.05 in magnitude to flip OUT of a currently-recorded
+# direction (bullish/bearish/neutral), vs. only 0.02 to enter that
+# direction fresh (current_direction=None, e.g. this event's first-ever
+# score) or to stay in a direction the plain read already agrees with.
+DIRECTION_FLIP_HYSTERESIS_MARGIN = 0.03
 
 # --- Source trust weighting (0-1), used in scoring engine later ---
 # Placeholder starting weights — to be refined after backtest validation.
@@ -268,7 +310,7 @@ EVENT_SURPRISE_DIRECTION = {
     # module docstring). Re-verify title strings exact-match once this runs
     # against the live feed.
     "Core PCE Price Index m/m": "higher_bullish",
-    "Advance GDP q/q": "higher_bullish",
+    "Prelim GDP q/q": "higher_bullish",
     "ISM Services PMI": "higher_bullish",
     "Prelim UoM Consumer Sentiment": "higher_bullish",
     # "Federal Funds Rate" and "FOMC Statement" deliberately NOT added:
@@ -357,6 +399,57 @@ PRINT_SURPRISE_LEXICON = {
         "higher": ["consumer sentiment improves", "confidence rises", "sentiment beats estimates", "upside surprise"],
         "lower": ["consumer sentiment falls", "confidence declines", "sentiment misses estimates", "downside surprise"],
     },
+    # Same root cause again, surfaced 2026-08-26: Core PCE Price Index m/m
+    # had a real, confirmed actual (0.2%, matched forecast) via
+    # fill_missing_actuals.py, but was STILL invisible in the History tab —
+    # no PRINT_SURPRISE_LEXICON entry meant score_print_direction() had
+    # never once fired for it, so zero print_predictions rows existed to
+    # join against, regardless of event_history having a real actual.
+    "Core PCE Price Index m/m": {
+        "higher": ["sticky core inflation", "hotter than expected", "upside surprise", "core inflation accelerat"],
+        "lower": ["cooling core inflation", "softer than expected", "downside surprise", "core disinflation"],
+    },
+}
+
+# Event-title-keyed relevance filter for data_layer/event_context.py's
+# build_event_news_bundle(). The article pipeline has NO topic filtering at
+# the fetch layer (every source is called with query="" — "return
+# everything in the window", see news_feed.py/rss_sources.py) — a
+# deliberate choice for events where the general macro news cycle IS the
+# relevant news cycle, but it means events with a narrower true topic (a
+# specific central bank decision, not "any USD macro news today") can pick
+# up off-topic articles from the same broad feed. Confirmed live
+# 2026-08-19: unrelated Apple/Nvidia headlines showed up in FOMC Meeting
+# Minutes' top-3 contributing articles for XAUUSD.
+#
+# An article is kept if its title+summary contains ANY keyword below
+# (case-insensitive substring match), for its event's title. Same
+# fail-open contract as PRINT_SURPRISE_LEXICON: an event title with NO
+# entry here gets NO filtering at all — guessing a keyword list for an
+# event nobody's curated risks silently dropping genuinely relevant
+# coverage, worse than the noise it would remove. Config-only to extend to
+# another event title, no code changes required.
+#
+# Only the FOMC family is populated for now (the one confirmed to actually
+# need it) — "Federal Funds Rate" and "FOMC Statement" are Forex Factory's
+# other FOMC-decision title variants (see KALSHI_RATE_DECISION_SERIES /
+# EVENT_SURPRISE_DIRECTION's comments on this same title family).
+EVENT_RELEVANCE_KEYWORDS_BY_TITLE = {
+    "FOMC Meeting Minutes": [
+        "fomc", "federal reserve", "federal funds rate", "fed rate", "fed chair",
+        "fed meeting", "fed minutes", "interest rate decision", "monetary policy",
+        "rate hike", "rate cut", "powell", "dot plot", "central bank",
+    ],
+    "FOMC Statement": [
+        "fomc", "federal reserve", "federal funds rate", "fed rate", "fed chair",
+        "fed meeting", "fed minutes", "interest rate decision", "monetary policy",
+        "rate hike", "rate cut", "powell", "dot plot", "central bank",
+    ],
+    "Federal Funds Rate": [
+        "fomc", "federal reserve", "federal funds rate", "fed rate", "fed chair",
+        "fed meeting", "fed minutes", "interest rate decision", "monetary policy",
+        "rate hike", "rate cut", "powell", "dot plot", "central bank",
+    ],
 }
 
 # Trust weight for a precursor's structured surprise contribution — high,
@@ -444,7 +537,7 @@ KALSHI_SERIES_BY_EVENT_TITLE = {
 # an EVENT_SURPRISE_DIRECTION entry — no new direction-mapping needed.
 KALSHI_DATE_TICKETED_SERIES_BY_EVENT_TITLE = {
     "Unemployment Claims": "KXJOBLESSCLAIMS",
-    "Advance GDP q/q": "KXGDP",
+    "Prelim GDP q/q": "KXGDP",
     "Prelim UoM Consumer Sentiment": "KXUSMICHCSP",
     "Challenger Job Cuts": "KXCHCUTS",
     "PPI m/m": "KXUSPPI",
@@ -570,18 +663,17 @@ REDUNDANCY_DISCOUNT_MULTIPLIER = 0.3       # a redundant contribution is still W
 # merge in webapp/app.py.
 PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS = 7
 
-# (2026-08-17 follow-up) How long a resolved event's real call gets
-# absolute display priority over ANY pending event, regardless of
-# distance — see get_predictions()'s sort key in webapp/app.py. Beyond
-# this window a resolved event is no longer "current news" and falls
-# back into the same proximity-sorted tier as pending events, so a
-# genuinely imminent pending event (e.g. FOMC) isn't permanently masked
-# by a days-old resolved one now that resolved events stay visible for
-# up to PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS. 24h matches this
-# project's own existing "fresh" staleness band (see
-# docs/calendar-feed-staleness-policy.md) — reused for consistency, not
-# independently derived.
-RESOLVED_PRIORITY_WINDOW_HOURS = 24
+# RESOLVED_PRIORITY_WINDOW_HOURS (2026-08-17 follow-up) removed 2026-08-26 —
+# get_predictions()'s sort key in webapp/app.py no longer gives a resolved
+# event ANY priority window over pending ones; pending events always sort
+# first now, full stop. Removed after a live incident: a resolved event's
+# essence score can get recomputed from event_history at any time
+# (independent of the scheduler's own cadence — e.g.
+# scripts/fill_missing_actuals.py patching in a real actual hours after
+# release), which made "resolved, within N hours" an unreliable signal for
+# "this is current" — it was burying a genuinely upcoming pending event
+# under an already-resolved one purely because the resolved one happened
+# to get recomputed more recently.
 
 # Below this relative (or, when forecast≈0, absolute) delta between actual
 # and forecast, classify_surprise() below calls it 'in_line' rather than

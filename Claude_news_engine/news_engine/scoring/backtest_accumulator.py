@@ -61,7 +61,7 @@ from typing import Optional
 from config.settings import (
     KALSHI_DATE_TICKETED_SERIES_BY_EVENT_TITLE, KALSHI_RATE_DECISION_SERIES,
     KALSHI_SERIES_BY_EVENT_TITLE,
-    MIN_OCCURRENCES_FOR_TREND_PRIOR, PRE_EVENT_WINDOW_HOURS,
+    MIN_OCCURRENCES_FOR_TREND_PRIOR, POST_RELEASE_GRACE_MINUTES, PRE_EVENT_WINDOW_HOURS,
     EVENT_SURPRISE_DIRECTION, ACCUMULATOR_MEDIUM_ALLOWLIST,
     THIN_SAMPLE_SIGNAL_THRESHOLD,
 )
@@ -104,7 +104,12 @@ FINAL_INTERVAL_SECONDS = 5 * 60          # tightest, within the final hour (or p
 
 DAY_OF_EVENT_WINDOW_HOURS = 24
 FINAL_WINDOW_HOURS = 1
-POST_RELEASE_GRACE_MINUTES = 30
+# Moved to config/settings.py (2026-08-26) so data_layer.calendar_feed's
+# events_in_pre_window() can share the exact same constant — it previously
+# had no post-release grace period of its own, disagreeing with this
+# interval logic's assumption that scoring would continue for
+# POST_RELEASE_GRACE_MINUTES after a release. See that constant's comment
+# in config/settings.py for the live bug this caused.
 
 # Budget protection: hourly/day-of-event checking is a real, deliberate
 # increase in article-fetch volume (see module docstring). If the rolling
@@ -451,19 +456,26 @@ def score_and_record_event(
         print(f"[backtest_accumulator] Kalshi read for {event.title}: {kalshi_read.implied_direction} ({kalshi_read.implied_probability:.0%} implied, {kalshi_read.open_interest:.0f} open interest)")
 
     for instrument in instruments:
+        # Fetched BEFORE score_bundle() (not just for the material-change
+        # check afterward, as before) so its direction can be passed in as
+        # current_direction — enables score_bundle()'s direction hysteresis
+        # (see _direction_for_score()), which is what actually stops a
+        # flip-flopping read from ever reaching `result.direction` in the
+        # first place, rather than filtering it out after the fact.
+        latest = get_latest_prediction(conn, event.title, instrument)
         try:
             result = score_bundle(
                 bundle, instrument, precursor_events=precursors,
                 print_call=print_call, trend_signal=trend_signal,
                 kalshi_read=kalshi_read, kalshi_direction_override=kalshi_direction_value,
                 macro_backdrop=macro_backdrop,
+                current_direction=latest.direction if latest is not None else None,
             )
         except Exception as exc:  # noqa: BLE001 — one pair's failure must not stop the others
             print(f"[backtest_accumulator] WARNING: scoring failed for {instrument}/{event.title}: {exc}")
             continue
 
         results[instrument] = result
-        latest = get_latest_prediction(conn, event.title, instrument)
         if latest is not None and not _is_material_change(
             result.direction.value, result.probability, result.article_count,
             latest.direction, latest.probability, latest.article_count,

@@ -533,6 +533,65 @@ def test_redundancy_discount_works_across_sentiment_tiers_not_just_lexicon():
     print("PASS\n")
 
 
+def _bundle_with_print_call_score(confidence):
+    """
+    A single print_call contribution, no articles — the only voter, so
+    instrument_score is fully controllable via `confidence` with no
+    FinBERT/lexicon variability. CPI m/m is 'higher_bullish' and
+    direction='higher' gives usd_sentiment=+confidence; XAUUSD is
+    'inverse', so instrument_score = -confidence. See
+    _build_print_call_contribution()'s math.
+    """
+    event = _cpi_event()
+    bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
+    print_call = PrintCall(direction="higher", confidence=confidence, article_count=5)
+    return bundle, print_call
+
+
+def test_direction_hysteresis_not_applied_without_a_current_direction():
+    print("=== score_bundle: no current_direction given (first-ever score) -> plain threshold, no hysteresis ===")
+    bundle, print_call = _bundle_with_print_call_score(0.03)  # instrument_score -0.03, clears the PLAIN 0.02 band
+    result = score_bundle(bundle, "XAUUSD", print_call=print_call, current_direction=None)
+    assert result.direction == Direction.BEARISH
+    print("PASS\n")
+
+
+def test_direction_hysteresis_suppresses_a_flip_that_does_not_clear_the_wider_band():
+    print("=== score_bundle: a move that clears the PLAIN band but not the WIDER hysteresis band does not flip away from current_direction ===")
+    # Real bug this fixes (2026-08-26 live investigation): 21 recorded
+    # direction flips within 72h for one event/instrument, oscillating in
+    # a narrow band purely from continuous time-decay recomputation, no
+    # new evidence required each time.
+    bundle, print_call = _bundle_with_print_call_score(0.03)  # instrument_score -0.03: plain=BEARISH, but doesn't clear the wider band
+    result = score_bundle(bundle, "XAUUSD", print_call=print_call, current_direction="bullish")
+    assert result.direction == Direction.BULLISH, "should stay at the current direction — the move is real but not wide enough to flip"
+    print("PASS\n")
+
+
+def test_direction_hysteresis_allows_a_flip_that_clears_the_wider_band():
+    print("=== score_bundle: a move that clears the WIDER hysteresis band DOES flip, even away from current_direction ===")
+    bundle, print_call = _bundle_with_print_call_score(0.06)  # instrument_score -0.06: clears the wider 0.05 band
+    result = score_bundle(bundle, "XAUUSD", print_call=print_call, current_direction="bullish")
+    assert result.direction == Direction.BEARISH
+    print("PASS\n")
+
+
+def test_direction_hysteresis_no_effect_when_new_plain_direction_already_matches_current():
+    print("=== score_bundle: hysteresis is a no-op when the plain direction already matches current_direction ===")
+    bundle, print_call = _bundle_with_print_call_score(0.03)  # instrument_score -0.03: plain=BEARISH
+    result = score_bundle(bundle, "XAUUSD", print_call=print_call, current_direction="bearish")
+    assert result.direction == Direction.BEARISH
+    print("PASS\n")
+
+
+def test_direction_hysteresis_keeps_neutral_when_move_out_of_neutral_is_too_small():
+    print("=== score_bundle: hysteresis applies leaving NEUTRAL too, not just leaving bullish/bearish ===")
+    bundle, print_call = _bundle_with_print_call_score(0.03)  # plain=BEARISH (clears 0.02), but not the wider 0.05 band
+    result = score_bundle(bundle, "XAUUSD", print_call=print_call, current_direction="neutral")
+    assert result.direction == Direction.NEUTRAL, "should stay neutral — the move isn't wide enough to leave it"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_bundle_without_new_params_is_unchanged()
     test_print_call_higher_on_bullish_indicator_is_bullish_for_direct_instrument()
@@ -561,4 +620,9 @@ if __name__ == "__main__":
     test_redundancy_discount_does_not_apply_to_distinct_articles()
     test_redundancy_discount_does_not_apply_when_far_apart_in_time()
     test_redundancy_discount_works_across_sentiment_tiers_not_just_lexicon()
+    test_direction_hysteresis_not_applied_without_a_current_direction()
+    test_direction_hysteresis_suppresses_a_flip_that_does_not_clear_the_wider_band()
+    test_direction_hysteresis_allows_a_flip_that_clears_the_wider_band()
+    test_direction_hysteresis_no_effect_when_new_plain_direction_already_matches_current()
+    test_direction_hysteresis_keeps_neutral_when_move_out_of_neutral_is_too_small()
     print("All probability_engine tests passed.")

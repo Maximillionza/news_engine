@@ -18,7 +18,7 @@ from scoring.backtest_store import (
     get_connection, record_prediction, count_predictions,
     get_predictions_awaiting_outcome, record_outcome, get_all_confirmed_cases,
     record_dismissal, get_latest_prediction, get_latest_two_predictions,
-    record_check, count_recent_checks, get_prediction_history,
+    record_check, count_recent_checks, get_prediction_history, get_last_check_utc,
 )
 
 
@@ -299,6 +299,32 @@ def test_record_check_and_count_recent_checks():
 
         count = count_recent_checks(conn, since=now - dt.timedelta(hours=24))
         assert count == 2, f"expected only the 2 checks inside the last 24h, got {count}"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_last_check_utc_returns_none_with_no_checks_logged():
+    print("=== backtest_store: get_last_check_utc is None (not fabricated) before the accumulator has ever run ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        assert get_last_check_utc(conn) is None
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_last_check_utc_returns_the_most_recent_timestamp():
+    print("=== backtest_store: get_last_check_utc returns the MOST RECENT check, regardless of insert order ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        now = dt.datetime(2026, 8, 19, 12, 0, tzinfo=dt.timezone.utc)
+
+        record_check(conn, now - dt.timedelta(hours=2))
+        record_check(conn, now)                          # most recent — inserted last too, but that's incidental
+        record_check(conn, now - dt.timedelta(hours=5))   # inserted last, but NOT the most recent by timestamp
+
+        assert get_last_check_utc(conn) == now
         conn.close()
     print("PASS\n")
 
@@ -696,6 +722,8 @@ if __name__ == "__main__":
     test_get_latest_two_predictions_empty_when_nothing_recorded()
     test_confirmed_cases_joins_latest_prediction_with_outcome()
     test_record_check_and_count_recent_checks()
+    test_get_last_check_utc_returns_none_with_no_checks_logged()
+    test_get_last_check_utc_returns_the_most_recent_timestamp()
     test_record_print_prediction_if_changed_writes_first_call()
     test_record_print_prediction_if_changed_skips_identical_call()
     test_record_print_prediction_if_changed_writes_on_direction_flip()

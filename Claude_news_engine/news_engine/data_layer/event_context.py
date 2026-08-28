@@ -12,7 +12,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 
-from config.settings import PRE_EVENT_WINDOW_HOURS, UTC_TZ
+from config.settings import EVENT_RELEVANCE_KEYWORDS_BY_TITLE, PRE_EVENT_WINDOW_HOURS, UTC_TZ
 from data_layer.calendar_feed import EconomicEvent
 from data_layer.news_feed import NewsArticle, NewsSource, fetch_from_all_sources, deduplicate_articles
 
@@ -29,6 +29,24 @@ class EventNewsBundle:
     def minutes_before_event(self, article: NewsArticle) -> float:
         """Positive = article came before the event. Negative = after (should not happen in a proper pre-event bundle)."""
         return (self.event.event_time_utc - article.published_utc).total_seconds() / 60.0
+
+
+def _is_relevant(article: NewsArticle, keywords: list[str]) -> bool:
+    haystack = f"{article.title} {article.summary}".lower()
+    return any(kw in haystack for kw in keywords)
+
+
+def _filter_relevant(articles: list[NewsArticle], event_title: str) -> list[NewsArticle]:
+    """
+    Applies EVENT_RELEVANCE_KEYWORDS_BY_TITLE's keyword filter, if this
+    event's title has an entry — fail-open (returns articles unchanged) if
+    it doesn't, same "absent, not fabricated" contract the rest of this
+    pipeline uses. See that dict's docstring in config/settings.py.
+    """
+    keywords = EVENT_RELEVANCE_KEYWORDS_BY_TITLE.get(event_title)
+    if not keywords:
+        return articles
+    return [a for a in articles if _is_relevant(a, keywords)]
 
 
 def build_event_news_bundle(
@@ -64,6 +82,7 @@ def build_event_news_bundle(
 
     # Enforce the cutoff strictly — some APIs are sloppy about time_from filtering
     windowed = [a for a in raw_articles if window_start <= a.published_utc <= as_of]
+    windowed = _filter_relevant(windowed, event.title)
     windowed = deduplicate_articles(windowed)
 
     return EventNewsBundle(event=event, articles=windowed, as_of_utc=as_of)
