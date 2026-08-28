@@ -70,6 +70,42 @@ FRED_RELEASE_ID_BY_EVENT_TITLE = {
     # Gray & Christmas) FRED has never carried.
 }
 
+# FRED series ID + `units` param for data_layer/fred_actuals.py's live
+# actual-value fallback (missing/late Forex Factory `actual` — see
+# docs/superpowers/specs/2026-08-26-fred-actuals-fallback-design.md).
+# Every (series_id, units) pair below was live-verified 2026-08-26 against
+# the real FRED API, same discipline FRED_RELEASE_ID_BY_EVENT_TITLE above
+# already requires — not assumed from series naming conventions.
+#
+# `units="pch"` (percent change from the prior period) for m/m-framed
+# titles, `units="pc1"` (percent change from a year ago) for y/y-framed
+# titles — FRED computes the percent change server-side, so no manual
+# level-to-percent math is needed here.
+#
+# Deliberately NOT included (need a different, not-yet-designed `units`/
+# formatting convention — raw level, absolute change, or annualized rate,
+# not a plain percent change): "Non-Farm Employment Change" (FF reports an
+# absolute count, e.g. "150K"), "Unemployment Rate" (FF reports the raw
+# level, e.g. "4.4%", not a change), "Unemployment Claims" (raw weekly
+# count), "Prelim GDP q/q" (FF's figure is an ANNUALIZED rate — FRED's
+# GDPC1 with units="pch" gives the raw quarterly change, ~1/4 the
+# annualized figure, which would silently write a wrong value),
+# "Prelim UoM Consumer Sentiment" (raw index level), "ADP Nonfarm
+# Employment Change" (no FRED series has been confirmed to actually match
+# ADP's own monthly report).
+FRED_SERIES_ID_BY_EVENT_TITLE = {
+    "CPI m/m": ("CPIAUCSL", "pch"),
+    "CPI y/y": ("CPIAUCSL", "pc1"),
+    "Core CPI m/m": ("CPILFESL", "pch"),
+    "Core CPI y/y": ("CPILFESL", "pc1"),
+    "PPI m/m": ("PPIFIS", "pch"),
+    "Core PPI m/m": ("PPIFES", "pch"),
+    "Core PCE Price Index m/m": ("PCEPILFE", "pch"),
+    "Retail Sales m/m": ("RSAFS", "pch"),
+    "Average Hourly Earnings m/m": ("CES0500000003", "pch"),
+    "Import Prices m/m": ("IR", "pch"),
+}
+
 # --- Contextual sentiment scoring (upgrade over the naive lexicon) ---
 # R2 (docs/fundamental-analysis-swot-2026-08-14.md): ENABLE_FINBERT_SENTIMENT
 # now defaults ON. The lexicon's one documented failure (BACKTEST_REPORT.md
