@@ -518,6 +518,30 @@ def test_upsert_event_history_seeded_source_survives_a_later_live_upsert_with_re
     print("PASS\n")
 
 
+def test_upsert_event_history_does_not_overwrite_an_already_stored_real_actual():
+    print("=== webapp/store: a genuine actual already stored is never overwritten by a later, different real actual ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 26, 12, 30, tzinfo=UTC_TZ)
+
+        fred_event = _fake_event(title="Core PCE Price Index m/m", event_time_utc=event_time, actual="0.2%")
+        store.upsert_event_history(conn, fred_event, "in_line", dt.datetime(2026, 8, 26, 13, 15, tzinfo=UTC_TZ), source="fred")
+
+        # Forex Factory eventually posts its own (DIFFERENT) actual for the
+        # same occurrence — this must be a no-op on actual/surprise_direction/
+        # source: "first writer wins, actual is immutable once genuinely set".
+        ff_event = _fake_event(title="Core PCE Price Index m/m", event_time_utc=event_time, actual="0.3%")
+        store.upsert_event_history(conn, ff_event, "higher_bullish", dt.datetime(2026, 8, 27, 9, 0, tzinfo=UTC_TZ), source="live")
+
+        rows = store.get_event_history(conn, "Core PCE Price Index m/m")
+        assert rows[0].actual == "0.2%"  # unchanged — the FIRST real actual
+        assert rows[0].surprise_direction == "in_line"  # unchanged
+        assert rows[0].source == "fred"  # unchanged, never relabeled 'live'
+        conn.close()
+    print("PASS\n")
+
+
 def test_get_events_with_stale_missing_actual_excludes_text_only_events():
     print("=== webapp/store: get_events_with_stale_missing_actual excludes structurally text-only events (forecast AND previous both NULL) past the grace period ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -707,6 +731,7 @@ if __name__ == "__main__":
     test_get_connection_fresh_db_has_source_column_no_error()
     test_get_events_with_stale_missing_actual_respects_grace_period()
     test_upsert_event_history_seeded_source_survives_a_later_live_upsert_with_real_actual()
+    test_upsert_event_history_does_not_overwrite_an_already_stored_real_actual()
     test_get_events_with_stale_missing_actual_excludes_text_only_events()
     test_get_events_with_stale_missing_actual_excludes_titles_outside_event_surprise_direction()
     test_infer_event_time_of_day_returns_none_without_resolved_history()

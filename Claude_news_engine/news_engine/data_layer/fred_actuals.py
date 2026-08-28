@@ -75,9 +75,31 @@ def get_actual_from_fred(event_title: str, event_time_utc: dt.datetime) -> Optio
     # hasn't updated yet.
     try:
         realtime_start = dt.date.fromisoformat(newest["realtime_start"])
-    except (KeyError, ValueError):
+    except (KeyError, TypeError, ValueError):
         return None
     if realtime_start < event_time_utc.date():
+        return None
+
+    # Period-plausibility check, alongside the freshness check above: FRED
+    # can publish a same-day revision to an OLDER reference period (routine
+    # around seasonal-factor revisions) before it ingests the new period's
+    # point. sort_order=desc&limit=1 would return that older revision, and
+    # it would pass the realtime_start check above (it WAS published today)
+    # while actually being the wrong period's value. All 10 currently-
+    # mapped series (config.settings.FRED_SERIES_ID_BY_EVENT_TITLE) are
+    # monthly — no quarterly series, GDP is explicitly excluded. FRED's
+    # `date` for a monthly series is the FIRST of the covered month, and
+    # this project's own genuine same-month releases land up to ~56 days
+    # after that (e.g. July's reading, date=2026-07-01, released 2026-08-26
+    # — see the "fresh"/"pc1 units" fixtures in tests/test_fred_actuals.py).
+    # 60 days gives that real lag a small margin while still rejecting a
+    # revision to a PRIOR period, which would land roughly one more
+    # monthly cycle back (~90 days) — comfortably past this tolerance.
+    try:
+        obs_date = dt.date.fromisoformat(newest["date"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if (event_time_utc.date() - obs_date).days > 60:
         return None
 
     try:

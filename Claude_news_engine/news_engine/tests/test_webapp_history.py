@@ -240,6 +240,34 @@ def test_history_row_carries_live_web_fallback_source_intact():
     print("PASS\n")
 
 
+def test_history_row_carries_fred_source_intact():
+    print("=== webapp/history: HistoryRow.source preserves 'fred' — not collapsed to 'live' ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.upsert_event_history(
+            dash_conn, _resolved_event("Core CPI m/m", event_time, "0.2%", "0.0%", "0.2%"),
+            "in_line", now=event_time, source="fred",
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_print_prediction_if_changed(
+            bt_conn, "Core CPI m/m", event_time,
+            PrintCall(direction="lower", confidence=0.51, article_count=89), now=event_time, source="live",
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert rows[0].source == "fred"
+    print("PASS\n")
+
+
 # --- Text-event fallback rows ---
 
 def test_text_only_event_with_prediction_produces_fallback_row():
@@ -564,6 +592,7 @@ if __name__ == "__main__":
     test_resolved_numeric_event_with_no_print_call_excluded_entirely()
     test_history_row_carries_source_and_prefers_seeded_when_mixed()
     test_history_row_carries_live_web_fallback_source_intact()
+    test_history_row_carries_fred_source_intact()
     test_unchanged_vs_previous_badge_does_not_affect_outcome()
     test_text_only_event_with_prediction_produces_fallback_row()
     test_text_only_event_confirmed_outcome_judged_correctly()

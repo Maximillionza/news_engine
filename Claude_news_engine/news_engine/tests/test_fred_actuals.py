@@ -94,6 +94,32 @@ def test_get_actual_from_fred_returns_none_on_missing_value_marker():
     print("PASS\n")
 
 
+def test_get_actual_from_fred_returns_none_when_realtime_start_is_null():
+    print("=== fred_actuals: realtime_start=None (TypeError risk) fails open to None, never raises ===")
+    event_time = dt.datetime(2026, 8, 26, 12, 30, tzinfo=UTC_TZ)
+    with patch.object(fred_actuals, "FRED_API_KEY", "test-key"), \
+         patch.object(fred_actuals.requests, "get") as mock_get:
+        mock_get.return_value = _fake_response([_obs("2026-07-01", "0.24552", None)])
+        result = fred_actuals.get_actual_from_fred("Core PCE Price Index m/m", event_time)
+        assert result is None
+    print("PASS\n")
+
+
+def test_get_actual_from_fred_returns_none_when_reference_period_implausibly_old():
+    print("=== fred_actuals: a fresh-realtime_start observation for an implausibly OLD reference period (a same-day revision to a prior period) returns None ===")
+    event_time = dt.datetime(2026, 8, 26, 12, 30, tzinfo=UTC_TZ)
+    with patch.object(fred_actuals, "FRED_API_KEY", "test-key"), \
+         patch.object(fred_actuals.requests, "get") as mock_get:
+        # realtime_start passes the freshness check (published today), but
+        # the reference period itself is ~90 days before the release —
+        # a same-day revision to a much older period, not this release's
+        # genuine figure.
+        mock_get.return_value = _fake_response([_obs("2026-05-28", "0.14676", "2026-08-26")])
+        result = fred_actuals.get_actual_from_fred("Core PCE Price Index m/m", event_time)
+        assert result is None
+    print("PASS\n")
+
+
 def test_get_actual_from_fred_returns_none_on_request_failure():
     print("=== fred_actuals: a failed request fails open to None, never raises ===")
     event_time = dt.datetime(2026, 8, 26, 12, 30, tzinfo=UTC_TZ)
@@ -122,6 +148,8 @@ if __name__ == "__main__":
     test_get_actual_from_fred_uses_pc1_units_for_a_yy_title()
     test_get_actual_from_fred_returns_none_when_observation_is_stale()
     test_get_actual_from_fred_returns_none_on_missing_value_marker()
+    test_get_actual_from_fred_returns_none_when_realtime_start_is_null()
+    test_get_actual_from_fred_returns_none_when_reference_period_implausibly_old()
     test_get_actual_from_fred_returns_none_on_request_failure()
     test_get_actual_from_fred_returns_none_on_empty_observations()
     print("All fred_actuals tests passed.")

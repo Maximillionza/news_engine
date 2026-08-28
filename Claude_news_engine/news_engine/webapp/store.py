@@ -285,14 +285,20 @@ def upsert_event_history(
 ) -> None:
     """
     Records this event occurrence's forecast/previous, filling in
-    actual/surprise_direction once available without ever blanking a
-    previously-recorded actual on a later, stale re-fetch that hasn't
-    caught up yet (the `WHERE excluded.actual IS NOT NULL` guard below —
-    SQLite's ON CONFLICT DO UPDATE has no per-column conditional syntax,
-    so the WHERE clause on the whole UPDATE governs whether the actual/
-    surprise_direction pair updates at all; forecast/previous are
-    harmless to re-write identically every time since they don't change
-    after an event first appears on the calendar).
+    actual/surprise_direction ONLY ONCE — the first call that supplies a
+    real actual wins, and every later call is a no-op on actual/
+    surprise_direction/source, even if it supplies a different real
+    actual (e.g. Forex Factory finally posting its own number after the
+    FRED fallback already filled the row in). The `WHERE excluded.actual
+    IS NOT NULL AND event_history.actual IS NULL` guard below enforces
+    both halves of that: it stops a stale re-fetch's NULL from blanking a
+    previously-recorded actual, AND stops a later genuine actual from
+    overwriting one already stored (SQLite's ON CONFLICT DO UPDATE has no
+    per-column conditional syntax, so the WHERE clause on the whole
+    UPDATE governs whether the actual/surprise_direction pair updates at
+    all; forecast/previous are harmless to re-write identically every
+    time since they don't change after an event first appears on the
+    calendar).
 
     source updates ONLY when the row's actual was still NULL before this
     call — i.e. this call is the one genuinely filling it in for the
@@ -316,7 +322,7 @@ def upsert_event_history(
             surprise_direction = excluded.surprise_direction,
             updated_at_utc = excluded.updated_at_utc,
             source = CASE WHEN event_history.actual IS NULL THEN excluded.source ELSE event_history.source END
-        WHERE excluded.actual IS NOT NULL
+        WHERE excluded.actual IS NOT NULL AND event_history.actual IS NULL
         """,
         (
             event.title, event.event_time_utc.isoformat(), event.forecast, event.previous,

@@ -63,7 +63,7 @@ class HistoryRow:
     ne_confidence: float
     outcome: Optional[str]          # 'Confirmed' | 'Missed' | None
     unjudged_reason: Optional[str]  # None when outcome is a real verdict; else 'shrug' | 'unknown_surprise' | 'pending'
-    source: str                     # 'live' | 'seeded' | 'live_web_fallback' — for numeric rows, 'seeded' wins if either side of the join disagrees, else 'live_web_fallback' wins if either side is 'live_web_fallback', else 'live'
+    source: str                     # 'live' | 'seeded' | 'live_web_fallback' | 'fred' — for numeric rows, 'seeded' wins if either side of the join disagrees, else 'live_web_fallback' wins if either side is 'live_web_fallback', else 'fred' wins if either side is 'fred', else 'live'
 
 
 def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[dt.datetime] = None) -> list[HistoryRow]:
@@ -146,11 +146,17 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                 # in event_history (call.source can't be it in practice, but
                 # checking both sides costs nothing and keeps this resilient
                 # to a future write path), so it's checked next, before
-                # falling back to 'live'. Must genuinely distinguish all
-                # three values — never collapse to a live/seeded boolean.
+                # falling back to 'live'. 'fred' (data_layer/fred_actuals.py's
+                # live actual-value fallback, landed 2026-08-26) follows the
+                # same reasoning as 'live_web_fallback' — it only ever lands
+                # in event_history, never in call.source, but checking both
+                # sides costs nothing and keeps this resilient to a future
+                # write path. Must genuinely distinguish all four values —
+                # never collapse to a live/seeded boolean.
                 source=(
                     "seeded" if "seeded" in (event.source, call.source)
                     else "live_web_fallback" if "live_web_fallback" in (event.source, call.source)
+                    else "fred" if "fred" in (event.source, call.source)
                     else "live"
                 ),
             ))
