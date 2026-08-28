@@ -332,6 +332,88 @@ def test_run_scoring_cycle_confirms_a_matching_macro_calendar_row():
     print("PASS\n")
 
 
+def test_run_scoring_cycle_fills_actual_from_fred_when_ff_has_none():
+    print("=== scheduler: run_scoring_cycle fills event_history.actual from FRED when FF's own actual is still None ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime.now(dt.timezone.utc)
+        past_event = EconomicEvent(
+            title="Core PCE Price Index m/m", country="USD", impact="High",
+            event_time_utc=now - dt.timedelta(hours=2), forecast="0.2%", previous="0.1%", actual=None,
+        )
+        with patch.object(scheduler, "fetch_calendar", return_value=[past_event]), \
+             patch.object(scheduler, "get_actual_from_fred", return_value="0.2%") as mock_fred, \
+             patch.object(store, "DB_PATH", db_path):
+            scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
+
+        mock_fred.assert_called_once_with("Core PCE Price Index m/m", past_event.event_time_utc)
+        conn = store.get_connection(db_path)
+        rows = store.get_event_history(conn, "Core PCE Price Index m/m")
+        assert len(rows) == 1
+        assert rows[0].actual == "0.2%"
+        assert rows[0].source == "fred"
+        conn.close()
+    print("PASS\n")
+
+
+def test_run_scoring_cycle_does_not_call_fred_when_ff_already_has_actual():
+    print("=== scheduler: run_scoring_cycle does not call FRED at all when FF's own actual is already present ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime.now(dt.timezone.utc)
+        resolved_event = EconomicEvent(
+            title="Core PCE Price Index m/m", country="USD", impact="High",
+            event_time_utc=now - dt.timedelta(hours=2), forecast="0.2%", previous="0.1%", actual="0.2%",
+        )
+        with patch.object(scheduler, "fetch_calendar", return_value=[resolved_event]), \
+             patch.object(scheduler, "get_actual_from_fred") as mock_fred, \
+             patch.object(store, "DB_PATH", db_path):
+            scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
+
+        mock_fred.assert_not_called()
+    print("PASS\n")
+
+
+def test_run_scoring_cycle_does_not_call_fred_for_a_future_event():
+    print("=== scheduler: run_scoring_cycle does not call FRED for an event that hasn't released yet ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime.now(dt.timezone.utc)
+        future_event = EconomicEvent(
+            title="Core PCE Price Index m/m", country="USD", impact="High",
+            event_time_utc=now + dt.timedelta(hours=2), forecast="0.2%", previous="0.1%", actual=None,
+        )
+        with patch.object(scheduler, "fetch_calendar", return_value=[future_event]), \
+             patch.object(scheduler, "get_actual_from_fred") as mock_fred, \
+             patch.object(store, "DB_PATH", db_path):
+            scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
+
+        mock_fred.assert_not_called()
+    print("PASS\n")
+
+
+def test_run_scoring_cycle_does_not_write_when_fred_also_has_nothing():
+    print("=== scheduler: run_scoring_cycle leaves the event pending when FRED returns None too ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        now = dt.datetime.now(dt.timezone.utc)
+        past_event = EconomicEvent(
+            title="Core PCE Price Index m/m", country="USD", impact="High",
+            event_time_utc=now - dt.timedelta(hours=2), forecast="0.2%", previous="0.1%", actual=None,
+        )
+        with patch.object(scheduler, "fetch_calendar", return_value=[past_event]), \
+             patch.object(scheduler, "get_actual_from_fred", return_value=None), \
+             patch.object(store, "DB_PATH", db_path):
+            scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
+
+        conn = store.get_connection(db_path)
+        rows = store.get_event_history(conn, "Core PCE Price Index m/m")
+        assert len(rows) == 1
+        assert rows[0].actual is None
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_scoring_cycle_writes_new_rows_and_skips_duplicates()
     test_scoring_cycle_persists_calendar_snapshot_on_success()
@@ -349,4 +431,8 @@ if __name__ == "__main__":
     test_adaptive_interval_reschedule_detection_is_optional()
     test_run_scoring_cycle_records_event_history_for_every_event()
     test_run_scoring_cycle_confirms_a_matching_macro_calendar_row()
+    test_run_scoring_cycle_fills_actual_from_fred_when_ff_has_none()
+    test_run_scoring_cycle_does_not_call_fred_when_ff_already_has_actual()
+    test_run_scoring_cycle_does_not_call_fred_for_a_future_event()
+    test_run_scoring_cycle_does_not_write_when_fred_also_has_nothing()
     print("All scheduler tests passed.")

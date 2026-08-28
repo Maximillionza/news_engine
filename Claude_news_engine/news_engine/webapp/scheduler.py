@@ -7,6 +7,7 @@ new row only when the score actually changed from the last stored run
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import threading
 import time
@@ -15,6 +16,7 @@ from typing import Callable, Optional
 
 from config.settings import EVENT_SURPRISE_DIRECTION
 from data_layer.calendar_feed import EconomicEvent, classify_surprise, fetch_calendar, filter_relevant_events
+from data_layer.fred_actuals import get_actual_from_fred
 from webapp.scoring_service import score_event_for_symbol
 from webapp.store import (
     get_connection, record_run, get_latest_two, save_calendar_snapshot_if_changed, upsert_event_history,
@@ -146,6 +148,23 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
         # False) if no macro row exists for this occurrence — normal, not
         # every FF event necessarily has a prior FRED-sourced entry.
         confirm_macro_calendar_event(conn, event.title, event.event_time_utc, now_for_history)
+
+        # FRED actuals fallback (docs/superpowers/specs/2026-08-26-fred-actuals-fallback-design.md):
+        # FF's own `actual` is frequently missing or posts hours late,
+        # confirmed recurring — only attempted for events that have
+        # already released (a future event obviously has no actual yet
+        # regardless of source) and only when FF hasn't supplied one
+        # already. get_actual_from_fred() itself is a cheap no-op (a dict
+        # lookup, no request) for any title outside its ~10-title
+        # coverage, so this is safe to call unconditionally here.
+        if event.actual is None and event.event_time_utc <= now_for_history:
+            fred_actual = get_actual_from_fred(event.title, event.event_time_utc)
+            if fred_actual is not None:
+                fred_event = dataclasses.replace(event, actual=fred_actual)
+                upsert_event_history(
+                    conn, fred_event, classify_surprise(fred_event), now_for_history,
+                    source="fred",
+                )
 
     try:
         for ticker in tracked_symbols:
