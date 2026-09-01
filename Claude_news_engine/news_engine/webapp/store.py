@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS event_history (
     recorded_at_utc TEXT NOT NULL,
     updated_at_utc TEXT NOT NULL,
     source TEXT NOT NULL DEFAULT 'live',
+    impact TEXT,
     UNIQUE(event_title, event_time_utc)
 );
 CREATE TABLE IF NOT EXISTS macro_calendar (
@@ -110,6 +111,7 @@ class EventHistoryRow:
     actual: Optional[str]
     surprise_direction: Optional[str]
     source: str
+    impact: Optional[str] = None
 
 
 @dataclass
@@ -150,6 +152,24 @@ def _migrate_add_source_column(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+def _migrate_add_impact_column(conn: sqlite3.Connection) -> None:
+    """
+    Same reasoning as _migrate_add_source_column: CREATE TABLE IF NOT
+    EXISTS doesn't retroactively add a column to an already-created DB
+    file. Existing rows read back impact=None (genuinely unknown — never
+    guessed) until a fresh upsert_event_history() call for that exact
+    occurrence supplies it, which only happens for a row whose `actual`
+    is still NULL (see upsert_event_history's docstring on why the
+    UPDATE path is conditional) — an already-resolved legacy row's
+    impact stays None permanently, which is fine: it's never read again
+    once outside the 7-day recently-resolved retention window.
+    """
+    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(event_history)").fetchall()}
+    if "impact" not in existing_columns:
+        conn.execute("ALTER TABLE event_history ADD COLUMN impact TEXT")
+        conn.commit()
+
+
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     # db_path resolved inside the body (not as a default arg value) so
     # tests can patch module-level DB_PATH and have it take effect.
@@ -158,6 +178,7 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
     _migrate_add_source_column(conn)
+    _migrate_add_impact_column(conn)
     return conn
 
 
@@ -315,8 +336,8 @@ def upsert_event_history(
     conn.execute(
         """
         INSERT INTO event_history
-            (event_title, event_time_utc, forecast, previous, actual, surprise_direction, recorded_at_utc, updated_at_utc, source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (event_title, event_time_utc, forecast, previous, actual, surprise_direction, recorded_at_utc, updated_at_utc, source, impact)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(event_title, event_time_utc) DO UPDATE SET
             actual = excluded.actual,
             surprise_direction = excluded.surprise_direction,
@@ -326,7 +347,7 @@ def upsert_event_history(
         """,
         (
             event.title, event.event_time_utc.isoformat(), event.forecast, event.previous,
-            event.actual, surprise_direction, now.isoformat(), now.isoformat(), source,
+            event.actual, surprise_direction, now.isoformat(), now.isoformat(), source, event.impact,
         ),
     )
     conn.commit()
@@ -335,7 +356,7 @@ def upsert_event_history(
 def get_event_history(conn: sqlite3.Connection, event_title: str, limit: int = 6) -> list[EventHistoryRow]:
     """Past occurrences of this event title, most recent first, capped at `limit`. Empty list if none recorded yet."""
     rows = conn.execute(
-        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source "
+        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source, impact "
         "FROM event_history WHERE event_title = ? ORDER BY event_time_utc DESC LIMIT ?",
         (event_title, limit),
     ).fetchall()
@@ -351,7 +372,7 @@ def get_resolved_event_history(conn: sqlite3.Connection, limit: int = 200) -> li
     for its numeric-forecast rows.
     """
     rows = conn.execute(
-        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source "
+        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source, impact "
         "FROM event_history WHERE actual IS NOT NULL ORDER BY event_time_utc DESC LIMIT ?",
         (limit,),
     ).fetchall()
