@@ -247,8 +247,10 @@ class EventHistoryRow:
     actual: Optional[str]
     surprise_direction: Optional[str]
     source: str
-    impact: Optional[str]
+    impact: Optional[str] = None
 ```
+
+`impact` defaults to `None` deliberately — `get_events_with_stale_missing_actual()` and `get_text_only_resolved_events()` (both further down in `webapp/store.py`, both also constructing `EventHistoryRow(**dict(row))`) are NOT touched by this task; their SELECTs don't include `impact`, so their rows come back with `impact=None` — consistent with the existing fail-safe rule ("unknown impact is treated as not-Medium+") rather than a gap. `tests/test_webapp_trend.py`'s `_row()` helper also constructs `EventHistoryRow(...)` without `impact` — the default means it keeps working unmodified.
 
 Update `upsert_event_history()`'s INSERT (the UPDATE/CONFLICT clause is unchanged — impact is written once, at first insert, same as forecast/previous, and is never revised by the conditional UPDATE branch):
 
@@ -307,7 +309,7 @@ def get_resolved_event_history(conn: sqlite3.Connection, limit: int = 200) -> li
 - [ ] **Step 4: Run tests to verify they pass, and run the whole store test file**
 
 Run: `python -m pytest tests/test_webapp_store.py -v`
-Expected: all PASS, including the three new tests. If any pre-existing test constructs an `EventHistoryRow(...)` positionally or by keyword without `impact`, update that call site to pass `impact=None` (or a real value if the test is about impact-sensitive behavior) — this is the one place outside this task's own new tests where the dataclass's new required field can break an existing test.
+Expected: all PASS, including the three new tests. `impact` has a `None` default (see Step 3), so no other existing call site needs updating.
 
 - [ ] **Step 5: Commit**
 
