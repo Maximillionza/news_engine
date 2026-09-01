@@ -414,6 +414,65 @@ def test_run_scoring_cycle_does_not_write_when_fred_also_has_nothing():
     print("PASS\n")
 
 
+def test_run_scoring_cycle_writes_history_for_low_impact_usd_event_but_does_not_score_it():
+    print("=== run_scoring_cycle: a Low-impact USD event gets an event_history row but is NEVER passed to score_event_for_symbol ===")
+    low_event = EconomicEvent(
+        title="Housing Starts", country="USD", impact="Low",
+        event_time_utc=dt.datetime(2026, 9, 2, 12, 30, tzinfo=UTC_TZ),
+        forecast="1.35M", previous="1.32M", actual=None,
+    )
+    with patch.object(scheduler, "fetch_calendar", return_value=[low_event]), \
+         patch.object(scheduler, "save_calendar_snapshot_if_changed") as mock_save, \
+         patch.object(scheduler, "upsert_event_history") as mock_history, \
+         patch.object(scheduler, "confirm_macro_calendar_event"), \
+         patch.object(scheduler, "get_actual_from_fred", return_value=None), \
+         patch.object(scheduler, "get_connection"), \
+         patch.object(scheduler, "get_latest_two", return_value=[]), \
+         patch.object(scheduler, "record_run") as mock_record, \
+         patch.object(scheduler, "classify_symbol") as mock_classify:
+        mock_classify.return_value.symbol_class = "gold"
+        result = scheduler.run_scoring_cycle(["XAUUSD"])
+
+    # History IS written for the Low-impact event...
+    mock_history.assert_called_once()
+    assert mock_history.call_args.args[1] is low_event
+    # ...but it's never scored (record_run never called), and it's not
+    # part of the returned scoring-relevant event list either.
+    mock_record.assert_not_called()
+    assert result == []
+    print("PASS\n")
+
+
+def test_run_scoring_cycle_calendar_snapshot_includes_low_impact_but_scoring_stays_medium_plus():
+    print("=== run_scoring_cycle: the persisted calendar snapshot includes Low-impact events; the returned/scored event list does not ===")
+    low_event = EconomicEvent(
+        title="Housing Starts", country="USD", impact="Low",
+        event_time_utc=dt.datetime(2026, 9, 2, 12, 30, tzinfo=UTC_TZ),
+        forecast="1.35M", previous="1.32M", actual=None,
+    )
+    high_event = EconomicEvent(
+        title="ISM Manufacturing PMI", country="USD", impact="High",
+        event_time_utc=dt.datetime(2026, 9, 2, 14, 0, tzinfo=UTC_TZ),
+        forecast="55.2", previous="55.6", actual=None,
+    )
+    with patch.object(scheduler, "fetch_calendar", return_value=[low_event, high_event]), \
+         patch.object(scheduler, "save_calendar_snapshot_if_changed") as mock_save, \
+         patch.object(scheduler, "upsert_event_history"), \
+         patch.object(scheduler, "confirm_macro_calendar_event"), \
+         patch.object(scheduler, "get_actual_from_fred", return_value=None), \
+         patch.object(scheduler, "get_connection"), \
+         patch.object(scheduler, "get_latest_two", return_value=[]), \
+         patch.object(scheduler, "record_run"), \
+         patch.object(scheduler, "classify_symbol") as mock_classify:
+        mock_classify.return_value.symbol_class = "gold"
+        result = scheduler.run_scoring_cycle(["XAUUSD"])
+
+    snapshot_events = mock_save.call_args.args[1]
+    assert low_event in snapshot_events and high_event in snapshot_events
+    assert result == [high_event]  # scoring-relevant list excludes the Low-impact event
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_scoring_cycle_writes_new_rows_and_skips_duplicates()
     test_scoring_cycle_persists_calendar_snapshot_on_success()
@@ -435,4 +494,6 @@ if __name__ == "__main__":
     test_run_scoring_cycle_does_not_call_fred_when_ff_already_has_actual()
     test_run_scoring_cycle_does_not_call_fred_for_a_future_event()
     test_run_scoring_cycle_does_not_write_when_fred_also_has_nothing()
+    test_run_scoring_cycle_writes_history_for_low_impact_usd_event_but_does_not_score_it()
+    test_run_scoring_cycle_calendar_snapshot_includes_low_impact_but_scoring_stays_medium_plus()
     print("All scheduler tests passed.")

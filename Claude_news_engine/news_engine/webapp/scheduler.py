@@ -112,10 +112,13 @@ def _scores_equal(prob_a: Optional[float], dir_a: str, prob_b: Optional[float], 
 
 def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None) -> Optional[list[EconomicEvent]]:
     """
-    Returns the fetched (Medium+ impact) events on success, or None if
-    the calendar fetch failed — the caller (start_scheduler's loop) uses
-    this to pick the next adaptive poll interval; a failed fetch means
-    "no fresh info to reason from," not "nothing is urgent."
+    Returns the fetched Medium+ impact, USD scoring-relevant events on
+    success (the same list this always returned — Low-impact events are
+    tracked for context but never drive scoring or the adaptive poll
+    interval), or None if the calendar fetch failed — the caller
+    (start_scheduler's loop) uses this to pick the next adaptive poll
+    interval; a failed fetch means "no fresh info to reason from," not
+    "nothing is urgent."
     """
     conn = get_connection(db_path)
     try:
@@ -125,10 +128,21 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
         conn.close()
         return None
 
-    # Medium (not just High) so precursor-style events (ADP, PPI m/m, Import
-    # Prices, Challenger Job Cuts) reach scoring — see PRECURSOR_EVENTS /
-    # EVENT_SURPRISE_DIRECTION in config/settings.py.
-    events = filter_relevant_events(all_events, min_impact="Medium")
+    # Two distinct thresholds, deliberately not one list (design doc:
+    # docs/superpowers/specs/2026-08-31-low-impact-context-tracking-design.md):
+    #
+    # calendar_events (USD, Low+) — drives the persisted calendar snapshot
+    # (Calendar tab) AND the history-writing loop below. Low-impact events
+    # get real actual/forecast/previous data for context and the macro-
+    # backdrop cross-check, but deliberately never reach the scoring loop.
+    #
+    # scoring_events (USD, Medium+) — unchanged threshold from before this
+    # change. Drives symbol scoring (dashboard cards/gauges) and is what
+    # this function returns for the adaptive-interval calculation. A
+    # Low-impact event approaching must never tighten the poll interval,
+    # since nothing about it is ever traded.
+    calendar_events = filter_relevant_events(all_events, min_impact="Low")
+    scoring_events = filter_relevant_events(all_events, min_impact="Medium")
 
     # This loop is the SOLE calendar fetcher for the whole dashboard — see
     # module docstring. Persist immediately so /api/calendar and
@@ -136,10 +150,17 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
     # never blocking a request on a live fetch or a live feed's rate limit.
     # No-ops (returns False) if this fetch matches what's already stored —
     # "store and use as current until new information supersedes this."
-    save_calendar_snapshot_if_changed(conn, events, dt.datetime.now(dt.timezone.utc))
+    save_calendar_snapshot_if_changed(conn, calendar_events, dt.datetime.now(dt.timezone.utc))
 
     now_for_history = dt.datetime.now(dt.timezone.utc)
-    for event in all_events:
+    # USD-only (any impact tier) — NOT all_events. all_events is the full,
+    # unfiltered global FF feed (every country, every impact tier);
+    # writing history for foreign-country events was a pre-existing gap
+    # (see the design doc's "Problem" section, point 2) — nothing in this
+    # codebase ever scores a non-USD instrument, so those rows were pure
+    # bloat and, worse, could leak into webapp/app.py's recently-resolved
+    # backfill. calendar_events is exactly "USD, Low+" — the correct scope.
+    for event in calendar_events:
         upsert_event_history(conn, event, classify_surprise(event), now_for_history)
         # "Micro lens" reconciliation (docs/macro-calendar-design-2026-08-16.md):
         # every real event FF's feed returns gets a chance to confirm a
@@ -174,7 +195,7 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
                 print(f"[scheduler] WARNING: skipping unrecognized symbol {ticker!r}: {exc}")
                 continue
 
-            for event in events:
+            for event in scoring_events:
                 result = score_event_for_symbol(event, symbol_class)
                 if not result.applicable:
                     continue  # fx_cross — no USD exposure, never scored at all
@@ -212,7 +233,7 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
     finally:
         conn.close()
 
-    return events
+    return scoring_events
 
 
 def start_scheduler(tracked_symbols_provider: Callable[[], list[str]]) -> None:
