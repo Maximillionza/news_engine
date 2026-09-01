@@ -157,12 +157,29 @@ def _migrate_add_impact_column(conn: sqlite3.Connection) -> None:
     Same reasoning as _migrate_add_source_column: CREATE TABLE IF NOT
     EXISTS doesn't retroactively add a column to an already-created DB
     file. Existing rows read back impact=None (genuinely unknown — never
-    guessed) until a fresh upsert_event_history() call for that exact
-    occurrence supplies it, which only happens for a row whose `actual`
-    is still NULL (see upsert_event_history's docstring on why the
-    UPDATE path is conditional) — an already-resolved legacy row's
-    impact stays None permanently, which is fine: it's never read again
-    once outside the 7-day recently-resolved retention window.
+    guessed) until something backfills it, and exactly what self-heals
+    depends on the row's state at migration time:
+
+    - A legacy row that's already RESOLVED (actual already non-NULL)
+      keeps impact=None permanently. upsert_event_history()'s UPDATE
+      branch is gated on a single WHERE (`excluded.actual IS NOT NULL
+      AND event_history.actual IS NULL`) that governs the whole SET
+      clause, impact included — SQLite's ON CONFLICT DO UPDATE has no
+      per-column conditional, so once `event_history.actual` is already
+      non-NULL that WHERE can never be true again for this row, and
+      impact never gets touched, on any future call, for the life of the
+      row. This is fine: a resolved row falls out of the 7-day recently-
+      resolved retention window and is never read again after that.
+
+    - A legacy row that's still PENDING (actual still NULL) self-heals
+      impact, but only on the specific upsert_event_history() call that
+      finally RESOLVES it (supplies a real `event.actual` for the first
+      time) — that's the only call shape that satisfies the WHERE above.
+      A call that still supplies no actual (event.actual is None) leaves
+      the WHERE false and is a complete no-op on this row, impact
+      included; it does not partially apply. See upsert_event_history()'s
+      own docstring for the full COALESCE(event_history.impact,
+      excluded.impact) reasoning.
     """
     existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(event_history)").fetchall()}
     if "impact" not in existing_columns:
@@ -332,6 +349,18 @@ def upsert_event_history(
     live re-fetch touching it (actual already non-NULL) leaves source
     untouched — never silently relabeled as live or web-fallback, which
     would misrepresent how the original forecast/previous were captured.
+
+    impact is the one exception to the "first-writer-wins" pattern above:
+    it isn't a first-writer-wins field the way actual/source are, so it's
+    set UNCONDITIONALLY (not gated behind the same WHERE) whenever the
+    UPDATE branch fires at all — COALESCE(event_history.impact,
+    excluded.impact) keeps whatever impact is already stored and only
+    fills in a legacy NULL, never overwriting a real value with another.
+    Because SQLite's ON CONFLICT DO UPDATE has exactly one WHERE for the
+    whole statement (same limitation the actual/source reasoning above
+    already lives with), this only self-heals a row while it's still
+    PENDING (actual IS NULL) — see _migrate_add_impact_column()'s
+    docstring for exactly which legacy rows this does and doesn't reach.
     """
     conn.execute(
         """
@@ -342,7 +371,8 @@ def upsert_event_history(
             actual = excluded.actual,
             surprise_direction = excluded.surprise_direction,
             updated_at_utc = excluded.updated_at_utc,
-            source = CASE WHEN event_history.actual IS NULL THEN excluded.source ELSE event_history.source END
+            source = CASE WHEN event_history.actual IS NULL THEN excluded.source ELSE event_history.source END,
+            impact = COALESCE(event_history.impact, excluded.impact)
         WHERE excluded.actual IS NOT NULL AND event_history.actual IS NULL
         """,
         (
@@ -401,10 +431,13 @@ def get_events_with_stale_missing_actual(
     find.
 
     Also excludes titles absent from config.settings.EVENT_SURPRISE_DIRECTION.
-    The scheduler stores every calendar row unfiltered, including foreign-
-    market events (German bond auctions, BRC Retail Sales Monitor, Cash
-    Rate, ...) classify_surprise() has no mapping for — even if an agent
-    researched and filled one of those in, it would land with
+    The scheduler (webapp/scheduler.py's run_scoring_cycle) now scopes
+    event_history writes to calendar_events — USD, Low+ — not the full,
+    unfiltered global FF feed, so a foreign-market event (German bond
+    auctions, BRC Retail Sales Monitor, Cash Rate, ...) never gets an
+    event_history row at all any more. This filter's remaining purpose is
+    USD titles classify_surprise() still has no mapping for — even if an
+    agent researched and filled one of those in, it would land with
     surprise_direction still NULL (classify_surprise() returns None for
     any title outside EVENT_SURPRISE_DIRECTION), so it can never count
     toward a trend or the History tab. Without this filter those titles

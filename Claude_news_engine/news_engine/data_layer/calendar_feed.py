@@ -126,6 +126,15 @@ IMPACT_LEVELS = {"Low", "Medium", "High", "Holiday"}
 # single source of truth for "how do Low/Medium/High rank against each
 # other," so a future impact tier (if FF ever adds one) only needs
 # updating here, not re-derived at each call site.
+#
+# "Holiday" is deliberately NOT a key here — it ranks 0 via .get(...,0),
+# same as any unrecognized tier, so it falls below every Low+ floor used
+# across the codebase (calendar snapshot, event_history writes, dashboard
+# cards). This is undocumented-but-intentional history: before this
+# branch's USD-scoped event_history loop, a USD "Holiday" row still got
+# an event_history row via the old unfiltered all_events loop; it no
+# longer does. Believed fine/desirable (a holiday marker isn't a real
+# release), just noting the behavior change here rather than silently.
 IMPACT_RANK = {"Low": 1, "Medium": 2, "High": 3}
 
 

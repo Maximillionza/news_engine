@@ -284,8 +284,8 @@ def test_adaptive_interval_reschedule_detection_is_optional():
     print("PASS\n")
 
 
-def test_run_scoring_cycle_records_event_history_for_every_event():
-    print("=== scheduler: run_scoring_cycle records event_history for every fetched event, not just tracked-symbol matches ===")
+def test_run_scoring_cycle_records_event_history_for_every_usd_event():
+    print("=== scheduler: run_scoring_cycle records event_history for every USD event, not just tracked-symbol matches ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         event = EconomicEvent(
@@ -443,6 +443,37 @@ def test_run_scoring_cycle_writes_history_for_low_impact_usd_event_but_does_not_
     print("PASS\n")
 
 
+def test_run_scoring_cycle_never_writes_history_for_a_non_usd_event():
+    print("=== run_scoring_cycle: a non-USD event (e.g. EUR) never gets an event_history row — calendar_events is USD-only, not all_events ===")
+    eur_event = EconomicEvent(
+        title="German Bond Auction", country="EUR", impact="High",
+        event_time_utc=dt.datetime(2026, 9, 2, 12, 30, tzinfo=UTC_TZ),
+        forecast="1.5%", previous="1.4%", actual=None,
+    )
+    with patch.object(scheduler, "fetch_calendar", return_value=[eur_event]), \
+         patch.object(scheduler, "save_calendar_snapshot_if_changed") as mock_save, \
+         patch.object(scheduler, "upsert_event_history") as mock_history, \
+         patch.object(scheduler, "confirm_macro_calendar_event"), \
+         patch.object(scheduler, "get_actual_from_fred", return_value=None), \
+         patch.object(scheduler, "get_connection"), \
+         patch.object(scheduler, "get_latest_two", return_value=[]), \
+         patch.object(scheduler, "record_run") as mock_record, \
+         patch.object(scheduler, "classify_symbol") as mock_classify:
+        mock_classify.return_value.symbol_class = "gold"
+        result = scheduler.run_scoring_cycle(["XAUUSD"])
+
+    # calendar_events is filter_relevant_events(all_events, min_impact="Low")
+    # — filter_relevant_events also enforces country == "USD" — so a
+    # foreign-country event never reaches the history-writing loop at all,
+    # regardless of impact tier.
+    mock_history.assert_not_called()
+    mock_save.assert_called_once()
+    assert eur_event not in mock_save.call_args.args[1]
+    mock_record.assert_not_called()
+    assert result == []
+    print("PASS\n")
+
+
 def test_run_scoring_cycle_calendar_snapshot_includes_low_impact_but_scoring_stays_medium_plus():
     print("=== run_scoring_cycle: the persisted calendar snapshot includes Low-impact events; the returned/scored event list does not ===")
     low_event = EconomicEvent(
@@ -488,12 +519,13 @@ if __name__ == "__main__":
     test_adaptive_interval_sense_check_for_a_just_rescheduled_event()
     test_adaptive_interval_no_sense_check_without_a_reschedule()
     test_adaptive_interval_reschedule_detection_is_optional()
-    test_run_scoring_cycle_records_event_history_for_every_event()
+    test_run_scoring_cycle_records_event_history_for_every_usd_event()
     test_run_scoring_cycle_confirms_a_matching_macro_calendar_row()
     test_run_scoring_cycle_fills_actual_from_fred_when_ff_has_none()
     test_run_scoring_cycle_does_not_call_fred_when_ff_already_has_actual()
     test_run_scoring_cycle_does_not_call_fred_for_a_future_event()
     test_run_scoring_cycle_does_not_write_when_fred_also_has_nothing()
     test_run_scoring_cycle_writes_history_for_low_impact_usd_event_but_does_not_score_it()
+    test_run_scoring_cycle_never_writes_history_for_a_non_usd_event()
     test_run_scoring_cycle_calendar_snapshot_includes_low_impact_but_scoring_stays_medium_plus()
     print("All scheduler tests passed.")

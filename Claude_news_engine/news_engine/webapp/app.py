@@ -237,7 +237,16 @@ def get_predictions():
     # No live fetch here either — same reasoning as /api/calendar. `error`
     # means "nothing persisted yet," not "a live request just failed."
     snapshot = get_calendar_snapshot(conn)
-    events = snapshot.events if snapshot is not None else []
+    raw_events = snapshot.events if snapshot is not None else []
+    # Medium+ only — the persisted snapshot is deliberately Low+ (it feeds
+    # the Calendar tab's own /api/calendar route, which must keep seeing
+    # every Low-impact event), but a Low-impact event must NEVER become a
+    # dashboard card/gauge (Global Constraint). Impact-unknown (missing/
+    # None) is also excluded — same fail-safe direction used below for the
+    # recently-resolved backfill: when impact tier is unknown, treat it as
+    # NOT card-worthy rather than risk showing a card for something that
+    # might be Low-impact.
+    events = [e for e in raw_events if IMPACT_RANK.get(e.get("impact"), 0) >= IMPACT_RANK["Medium"]]
     error = None if snapshot is not None else "Calendar data not yet available — waiting for the first background fetch."
 
     # Merge recently-resolved events back in even after FF's own live feed

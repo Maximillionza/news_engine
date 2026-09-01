@@ -403,6 +403,69 @@ def test_pre_migration_row_has_none_impact():
     print("PASS\n")
 
 
+def test_pre_migration_pending_row_backfills_impact_on_the_call_that_resolves_it():
+    print("=== event_history: a legacy PENDING row (impact=None, actual=None) backfills its real impact on the upsert_event_history() call that finally resolves it ===")
+    conn = get_connection(":memory:")
+    now = dt.datetime(2026, 8, 31, 12, 0, tzinfo=dt.timezone.utc)
+    event_time = now - dt.timedelta(hours=1)
+    # Simulate a pre-migration PENDING row: no impact column supplied,
+    # actual still NULL (never resolved) — exactly what a real DB file
+    # created before the impact column existed, on a not-yet-released
+    # event, looks like.
+    conn.execute(
+        "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, "
+        "surprise_direction, recorded_at_utc, updated_at_utc, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("Legacy Pending Event", event_time.isoformat(), "1.0", "0.9", None, None, now.isoformat(), now.isoformat(), "live"),
+    )
+    conn.commit()
+
+    rows = store.get_event_history(conn, "Legacy Pending Event")
+    assert rows[0].impact is None  # still unknown before any post-migration upsert touches it
+
+    # A resolving upsert_event_history() call (real event.actual, real
+    # event.impact) is the only call shape that can trigger the UPDATE
+    # branch's WHERE (excluded.actual IS NOT NULL AND
+    # event_history.actual IS NULL) — see upsert_event_history()'s and
+    # _migrate_add_impact_column()'s docstrings. It backfills impact via
+    # COALESCE(event_history.impact, excluded.impact) in the same UPDATE.
+    resolving_event = EconomicEvent(
+        title="Legacy Pending Event", country="USD", impact="Medium",
+        event_time_utc=event_time, forecast="1.0", previous="0.9", actual="1.2",
+    )
+    store.upsert_event_history(conn, resolving_event, "higher", now)
+
+    rows = store.get_event_history(conn, "Legacy Pending Event")
+    assert len(rows) == 1
+    assert rows[0].actual == "1.2"
+    assert rows[0].impact == "Medium"
+    print("PASS\n")
+
+
+def test_pre_migration_pending_row_impact_not_backfilled_by_a_non_resolving_call():
+    print("=== event_history: a legacy PENDING row's impact stays None across an upsert_event_history() call that still supplies no actual — the WHERE guard is a single all-or-nothing gate, not a per-column one ===")
+    conn = get_connection(":memory:")
+    now = dt.datetime(2026, 8, 31, 12, 0, tzinfo=dt.timezone.utc)
+    event_time = now - dt.timedelta(hours=1)
+    conn.execute(
+        "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, "
+        "surprise_direction, recorded_at_utc, updated_at_utc, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("Legacy Still Pending Event", event_time.isoformat(), "1.0", "0.9", None, None, now.isoformat(), now.isoformat(), "live"),
+    )
+    conn.commit()
+
+    non_resolving_event = EconomicEvent(
+        title="Legacy Still Pending Event", country="USD", impact="Medium",
+        event_time_utc=event_time, forecast="1.0", previous="0.9", actual=None,
+    )
+    store.upsert_event_history(conn, non_resolving_event, None, now)
+
+    rows = store.get_event_history(conn, "Legacy Still Pending Event")
+    assert len(rows) == 1
+    assert rows[0].actual is None
+    assert rows[0].impact is None, "a call that still supplies no actual must not partially apply — impact stays unknown until the resolving call"
+    print("PASS\n")
+
+
 def test_get_text_only_resolved_events_requires_both_forecast_and_actual_null():
     print("=== store: get_text_only_resolved_events only returns rows with BOTH forecast and actual NULL, past events only ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -777,6 +840,8 @@ if __name__ == "__main__":
     test_upsert_event_history_persists_impact()
     test_get_resolved_event_history_returns_impact()
     test_pre_migration_row_has_none_impact()
+    test_pre_migration_pending_row_backfills_impact_on_the_call_that_resolves_it()
+    test_pre_migration_pending_row_impact_not_backfilled_by_a_non_resolving_call()
     test_get_text_only_resolved_events_requires_both_forecast_and_actual_null()
     test_get_text_only_resolved_events_excludes_event_missing_only_one_field()
     test_upsert_event_history_defaults_to_live_source()
