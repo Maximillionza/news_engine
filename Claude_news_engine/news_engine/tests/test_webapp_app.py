@@ -1323,6 +1323,70 @@ def test_predictions_does_not_duplicate_a_recently_resolved_event_ff_still_has()
     print("PASS\n")
 
 
+def test_recently_resolved_backfill_excludes_low_impact_event():
+    print("=== app: /api/predictions does NOT backfill a resolved Low-impact event into the events/cards list ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path):
+            now = dt.datetime.now(dt.timezone.utc)
+            future_event = EconomicEvent(
+                title="FOMC Meeting Minutes", country="USD", impact="High",
+                event_time_utc=now + dt.timedelta(days=2),
+            )
+            _seed_calendar(db_path, [future_event])
+
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            low_time = now - dt.timedelta(hours=2)
+            store.record_run(conn, "XAUUSD", "Housing Starts (Test)", low_time, 0.55, "bullish", 0.6)
+            low_event = EconomicEvent(
+                title="Housing Starts (Test)", country="USD", impact="Low",
+                event_time_utc=low_time,
+                forecast="1.35M", previous="1.32M", actual="1.40M",
+            )
+            store.upsert_event_history(conn, low_event, "higher", now)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            titles = {e["event_title"] for e in events}
+            assert "Housing Starts (Test)" not in titles, f"a resolved Low-impact event should not resurface here, got {titles}"
+    print("PASS\n")
+
+
+def test_recently_resolved_backfill_still_includes_medium_impact_event():
+    print("=== app: /api/predictions still backfills a resolved Medium-impact event — this task narrows the threshold, it doesn't remove the feature ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path):
+            now = dt.datetime.now(dt.timezone.utc)
+            future_event = EconomicEvent(
+                title="FOMC Meeting Minutes", country="USD", impact="High",
+                event_time_utc=now + dt.timedelta(days=2),
+            )
+            _seed_calendar(db_path, [future_event])
+
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            medium_time = now - dt.timedelta(hours=2)
+            store.record_run(conn, "XAUUSD", "Retail Sales m/m (Test)", medium_time, 0.55, "bullish", 0.6)
+            medium_event = EconomicEvent(
+                title="Retail Sales m/m (Test)", country="USD", impact="Medium",
+                event_time_utc=medium_time,
+                forecast="0.3%", previous="0.2%", actual="0.4%",
+            )
+            store.upsert_event_history(conn, medium_event, "higher", now)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            titles = {e["event_title"] for e in events}
+            assert "Retail Sales m/m (Test)" in titles, f"expected Retail Sales m/m (Test) to still appear, got {titles}"
+    print("PASS\n")
+
+
 def test_article_history_route_returns_full_progression_with_top_contributions():
     print("=== GET /api/predictions/<symbol>/article_history: returns the full progression, most recent first, with top_contributions ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -1427,4 +1491,6 @@ if __name__ == "__main__":
     test_predictions_keeps_a_recently_resolved_event_after_it_scrolls_out_of_ff_snapshot()
     test_predictions_excludes_a_resolved_event_older_than_the_retention_window()
     test_predictions_does_not_duplicate_a_recently_resolved_event_ff_still_has()
+    test_recently_resolved_backfill_excludes_low_impact_event()
+    test_recently_resolved_backfill_still_includes_medium_impact_event()
     print("All webapp.app tests passed.")

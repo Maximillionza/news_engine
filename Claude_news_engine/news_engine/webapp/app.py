@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from flask import Flask, jsonify, request, send_from_directory
 
 from config.settings import EVENT_SURPRISE_DIRECTION, PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS
-from data_layer.calendar_feed import EconomicEvent, get_last_successful_fetch_age_seconds
+from data_layer.calendar_feed import EconomicEvent, get_last_successful_fetch_age_seconds, IMPACT_RANK
 from webapp.scheduler import start_scheduler
 from webapp.scoring_service import score_event_for_symbol
 from webapp.store import (
@@ -263,6 +263,15 @@ def get_predictions():
         for row in get_resolved_event_history(conn)
         if dt.datetime.fromisoformat(row.event_time_utc) >= retention_cutoff
         and (row.event_title, row.event_time_utc) not in existing_keys
+        # Medium+ only — IMPACT_RANK.get(row.impact, 0) is 0 for both a
+        # genuinely Low-impact row and a legacy/impact-unknown row (impact
+        # IS NULL, e.g. a row written before webapp/store.py's impact
+        # column existed), and 0 is always below IMPACT_RANK["Medium"].
+        # That's the deliberate fail-safe: when impact tier is unknown,
+        # treat it as NOT card-worthy rather than risk showing one for
+        # something that might be Low-impact (design doc: "recently
+        # resolved backfill: scope to USD Medium+ only").
+        and IMPACT_RANK.get(row.impact, 0) >= IMPACT_RANK["Medium"]
     ]
     events = events + recently_resolved
 
