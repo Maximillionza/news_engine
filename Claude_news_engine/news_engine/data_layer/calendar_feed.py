@@ -122,6 +122,12 @@ def get_last_successful_fetch_age_seconds() -> Optional[float]:
 # Impact levels FF uses in the feed
 IMPACT_LEVELS = {"Low", "Medium", "High", "Holiday"}
 
+# Shared with webapp/app.py's recently-resolved backfill filter — the
+# single source of truth for "how do Low/Medium/High rank against each
+# other," so a future impact tier (if FF ever adds one) only needs
+# updating here, not re-derived at each call site.
+IMPACT_RANK = {"Low": 1, "Medium": 2, "High": 3}
+
 
 @dataclass
 class EconomicEvent:
@@ -335,12 +341,11 @@ def filter_relevant_events(
     never a blanket lower threshold, which would dilute callers that rely
     on this function's default High-only behavior).
     """
-    impact_rank = {"Low": 1, "Medium": 2, "High": 3}
-    min_rank = impact_rank.get(min_impact, 3)
+    min_rank = IMPACT_RANK.get(min_impact, 3)
 
     return [
         e for e in events
-        if e.country in countries and (impact_rank.get(e.impact, 0) >= min_rank or e.title in extra_titles)
+        if e.country in countries and (IMPACT_RANK.get(e.impact, 0) >= min_rank or e.title in extra_titles)
     ]
 
 

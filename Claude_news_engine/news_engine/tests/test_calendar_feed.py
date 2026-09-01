@@ -224,6 +224,14 @@ def test_events_in_pre_window_excludes_an_event_past_the_post_release_grace_peri
     print("PASS\n")
 
 
+def test_impact_rank_constant_matches_filter_relevant_events_ranking():
+    print("=== IMPACT_RANK: exported constant matches filter_relevant_events' own Low<Medium<High ranking ===")
+    from data_layer.calendar_feed import IMPACT_RANK
+    assert IMPACT_RANK == {"Low": 1, "Medium": 2, "High": 3}
+    assert IMPACT_RANK["Low"] < IMPACT_RANK["Medium"] < IMPACT_RANK["High"]
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_lastweek_rejected_with_informative_error()
     test_nextweek_rejected_with_informative_error()
@@ -236,6 +244,7 @@ if __name__ == "__main__":
     test_classify_surprise_is_literal_not_bullish_bearish()
     test_filter_relevant_events_extra_titles_admits_medium_regardless_of_threshold()
     test_filter_relevant_events_extra_titles_defaults_to_empty()
+    test_impact_rank_constant_matches_filter_relevant_events_ranking()
     test_get_last_successful_fetch_age_seconds_none_when_never_fetched()
     test_get_last_successful_fetch_age_seconds_reads_the_cooldown_file()
     test_events_in_pre_window_includes_an_event_still_ahead()
