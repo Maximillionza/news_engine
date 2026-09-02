@@ -9,13 +9,21 @@ import os
 from dataclasses import dataclass
 from unittest.mock import patch
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import UTC_TZ
 from data_layer.calendar_feed import EconomicEvent
+from data_layer.cot_positioning import CotPositioningRead
 from data_layer.event_context import EventNewsBundle
+from data_layer.macro_backdrop import MacroBackdropRead
+from data_layer.news_feed import NewsArticle
 import scoring.probability_engine as probability_engine
-from scoring.probability_engine import score_bundle, Direction
+from scoring.probability_engine import (
+    score_bundle, Direction,
+    _check_cot_crowding, _check_equity_risk_sentiment, _check_oil_shock,
+)
 from scoring.print_direction import PrintCall
 
 EVENT_TIME = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
@@ -365,6 +373,8 @@ def test_sufficient_signal_count_is_not_capped():
 class _FakeMacroBackdrop:
     """Duck-typed stand-in for data_layer.macro_backdrop.MacroBackdropRead — probability_engine.py never imports that module, tests exercise the duck-typed .lean contract directly."""
     lean: int | None
+    equity_index_trend_pct: float | None = None
+    oil_daily_change_pct: float | None = None
 
 
 def test_macro_backdrop_agrees_when_lean_matches_aggregate_sign():
@@ -434,6 +444,201 @@ def test_macro_backdrop_no_lean_is_treated_as_no_data_not_disagreement():
     with_macro_result = score_bundle(bundle, "XAUUSD", macro_backdrop=flat_backdrop)
     assert with_macro_result.macro_backdrop_agrees is None
     assert abs(with_macro_result.confidence - no_macro_result.confidence) < 1e-9
+    print("PASS\n")
+
+
+# --- _check_cot_crowding ---
+
+def test_check_cot_crowding_no_data_returns_none_none():
+    print("=== _check_cot_crowding: no COT data at all returns (None, None) ===")
+    assert _check_cot_crowding(aggregate_usd=0.5, cot_positioning=None) == (None, None)
+    print("PASS\n")
+
+
+def test_check_cot_crowding_not_extreme_returns_none_none():
+    print("=== _check_cot_crowding: positioning within the normal range returns (None, None) regardless of the read's direction ===")
+    cot = CotPositioningRead(net_leveraged_funds_position=100, percentile_in_trailing_window=50.0, report_date=dt.date(2026, 8, 29), lookback_weeks=52)
+    assert _check_cot_crowding(aggregate_usd=0.5, cot_positioning=cot) == (None, None)
+    print("PASS\n")
+
+
+def test_check_cot_crowding_extreme_and_aligned_dampens():
+    print("=== _check_cot_crowding: extreme long positioning aligned with a USD-bullish read triggers the dampener ===")
+    cot = CotPositioningRead(net_leveraged_funds_position=50000, percentile_in_trailing_window=98.0, report_date=dt.date(2026, 8, 29), lookback_weeks=52)
+    crowded, note = _check_cot_crowding(aggregate_usd=0.5, cot_positioning=cot)  # positive = USD-bullish, matches is_crowded=+1
+    assert crowded is True
+    assert note is not None
+    print("PASS\n")
+
+
+def test_check_cot_crowding_extreme_but_opposite_direction_no_effect():
+    print("=== _check_cot_crowding: extreme long positioning does NOT dampen a USD-BEARISH read (crowding must match direction) ===")
+    cot = CotPositioningRead(net_leveraged_funds_position=50000, percentile_in_trailing_window=98.0, report_date=dt.date(2026, 8, 29), lookback_weeks=52)
+    crowded, note = _check_cot_crowding(aggregate_usd=-0.5, cot_positioning=cot)  # negative = USD-bearish, opposite of is_crowded=+1
+    assert crowded is None  # not (False, ...) — this check has no disagreement case, only "crowded+aligned" or "no concern"
+    assert note is None
+    print("PASS\n")
+
+
+# --- _check_equity_risk_sentiment ---
+
+def test_check_equity_risk_sentiment_only_applies_to_risk_sentiment_instruments():
+    print("=== _check_equity_risk_sentiment: returns (None, None) for XAUUSD regardless of equity data (not risk_sentiment-mapped) ===")
+    macro = MacroBackdropRead(
+        dollar_index_trend_pct=None, dollar_index_latest_date=None,
+        real_yield_trend_bps=None, real_yield_latest_date=None,
+        oil_trend_pct=None, oil_latest_date=None,
+        equity_index_trend_pct=5.0, equity_index_latest_date=dt.date(2026, 8, 29),  # strongly risk-on
+        oil_daily_change_pct=None, lookback_days=10,
+    )
+    assert _check_equity_risk_sentiment(instrument_score=-0.5, instrument="XAUUSD", macro_backdrop=macro) == (None, None)
+    print("PASS\n")
+
+
+def test_check_equity_risk_sentiment_agrees_for_us30():
+    print("=== _check_equity_risk_sentiment: US30 with equities trending up and a bullish instrument_score agrees ===")
+    macro = MacroBackdropRead(
+        dollar_index_trend_pct=None, dollar_index_latest_date=None,
+        real_yield_trend_bps=None, real_yield_latest_date=None,
+        oil_trend_pct=None, oil_latest_date=None,
+        equity_index_trend_pct=5.0, equity_index_latest_date=dt.date(2026, 8, 29),
+        oil_daily_change_pct=None, lookback_days=10,
+    )
+    agrees, note = _check_equity_risk_sentiment(instrument_score=0.3, instrument="US30", macro_backdrop=macro)
+    assert agrees is True
+    assert note is None
+    print("PASS\n")
+
+
+def test_check_equity_risk_sentiment_disagrees_for_us30():
+    print("=== _check_equity_risk_sentiment: US30 with equities trending DOWN (risk-off) but a bullish instrument_score disagrees ===")
+    macro = MacroBackdropRead(
+        dollar_index_trend_pct=None, dollar_index_latest_date=None,
+        real_yield_trend_bps=None, real_yield_latest_date=None,
+        oil_trend_pct=None, oil_latest_date=None,
+        equity_index_trend_pct=-5.0, equity_index_latest_date=dt.date(2026, 8, 29),
+        oil_daily_change_pct=None, lookback_days=10,
+    )
+    agrees, note = _check_equity_risk_sentiment(instrument_score=0.3, instrument="US30", macro_backdrop=macro)
+    assert agrees is False
+    assert note is not None
+    print("PASS\n")
+
+
+def test_check_equity_risk_sentiment_below_threshold_no_effect():
+    print("=== _check_equity_risk_sentiment: a tiny equity move below EQUITY_INDEX_LEAN_THRESHOLD_PCT has no effect ===")
+    macro = MacroBackdropRead(
+        dollar_index_trend_pct=None, dollar_index_latest_date=None,
+        real_yield_trend_bps=None, real_yield_latest_date=None,
+        oil_trend_pct=None, oil_latest_date=None,
+        equity_index_trend_pct=0.1, equity_index_latest_date=dt.date(2026, 8, 29),  # well below 1.0% threshold
+        oil_daily_change_pct=None, lookback_days=10,
+    )
+    assert _check_equity_risk_sentiment(instrument_score=0.3, instrument="US30", macro_backdrop=macro) == (None, None)
+    print("PASS\n")
+
+
+# --- _check_oil_shock ---
+
+def test_check_oil_shock_no_data_returns_false_none():
+    print("=== _check_oil_shock: no macro backdrop data at all returns (False, None) ===")
+    assert _check_oil_shock(macro_backdrop=None) == (False, None)
+    print("PASS\n")
+
+
+def test_check_oil_shock_below_threshold_no_effect():
+    print("=== _check_oil_shock: a routine day-over-day oil move below OIL_SHOCK_DAILY_THRESHOLD_PCT has no effect ===")
+    macro = MacroBackdropRead(
+        dollar_index_trend_pct=None, dollar_index_latest_date=None,
+        real_yield_trend_bps=None, real_yield_latest_date=None,
+        oil_trend_pct=None, oil_latest_date=None,
+        equity_index_trend_pct=None, equity_index_latest_date=None,
+        oil_daily_change_pct=1.5, lookback_days=10,  # well below 4.0% threshold
+    )
+    assert _check_oil_shock(macro_backdrop=macro) == (False, None)
+    print("PASS\n")
+
+
+def test_check_oil_shock_above_threshold_triggers_regardless_of_direction():
+    print("=== _check_oil_shock: a sharp single-day oil move (either direction) triggers the flag ===")
+    for daily_change in (6.0, -6.0):
+        macro = MacroBackdropRead(
+            dollar_index_trend_pct=None, dollar_index_latest_date=None,
+            real_yield_trend_bps=None, real_yield_latest_date=None,
+            oil_trend_pct=None, oil_latest_date=None,
+            equity_index_trend_pct=None, equity_index_latest_date=None,
+            oil_daily_change_pct=daily_change, lookback_days=10,
+        )
+        shocked, note = _check_oil_shock(macro_backdrop=macro)
+        assert shocked is True
+        assert note is not None
+    print("PASS\n")
+
+
+# --- score_bundle() integration: the core invariant — none of the three ever touch direction/probability ---
+
+def test_score_bundle_new_signals_default_to_no_effect_when_omitted():
+    print("=== score_bundle: omitting cot_positioning entirely reproduces today's exact behavior (backward compatible) ===")
+    event = _cpi_event()
+    article = NewsArticle(
+        title="Sticky inflation could push CPI higher", summary="Analysts see upside risk to the print.",
+        source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+        url="https://example.test/new-signals-default",
+    )
+    bundle = EventNewsBundle(event=event, articles=[article], as_of_utc=EVENT_TIME)
+    result = score_bundle(bundle, "XAUUSD")  # no cot_positioning, no macro_backdrop — exactly like every existing call site
+    assert result.cot_crowding_flag is None
+    assert result.equity_risk_agrees is None
+    assert result.oil_shock_flag is False
+    print("PASS\n")
+
+
+def test_score_bundle_cot_crowding_only_touches_confidence():
+    print("=== score_bundle: a crowded, aligned COT read discounts confidence but never changes direction or probability ===")
+    event = _cpi_event()
+    # "Hawkish tilt firms, rate hike bets rise" reliably scores USD-bullish
+    # (positive aggregate_usd) — same article used by the macro-backdrop
+    # agreement tests above, needed here so it aligns with is_crowded=+1.
+    article = NewsArticle(
+        title="Hawkish tilt firms, rate hike bets rise", summary="Dollar strength widely expected.",
+        source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+        url="https://example.test/cot-crowding-only-confidence",
+    )
+    bundle = EventNewsBundle(event=event, articles=[article], as_of_utc=EVENT_TIME)
+    baseline = score_bundle(bundle, "XAUUSD")
+    cot = CotPositioningRead(net_leveraged_funds_position=50000, percentile_in_trailing_window=98.0, report_date=dt.date(2026, 8, 29), lookback_weeks=52)
+    with_cot = score_bundle(bundle, "XAUUSD", cot_positioning=cot)
+
+    assert with_cot.direction == baseline.direction
+    assert with_cot.probability == pytest.approx(baseline.probability)
+    assert with_cot.confidence < baseline.confidence  # crowding only ever DAMPENS
+    assert with_cot.cot_crowding_flag is True
+    print("PASS\n")
+
+
+def test_score_bundle_oil_shock_only_touches_confidence():
+    print("=== score_bundle: an oil shock discounts confidence but never changes direction or probability ===")
+    event = _cpi_event()
+    article = NewsArticle(
+        title="Sticky inflation could push CPI higher", summary="Analysts see upside risk to the print.",
+        source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+        url="https://example.test/oil-shock-only-confidence",
+    )
+    bundle = EventNewsBundle(event=event, articles=[article], as_of_utc=EVENT_TIME)
+    baseline = score_bundle(bundle, "XAUUSD")
+    macro = MacroBackdropRead(
+        dollar_index_trend_pct=None, dollar_index_latest_date=None,
+        real_yield_trend_bps=None, real_yield_latest_date=None,
+        oil_trend_pct=None, oil_latest_date=None,
+        equity_index_trend_pct=None, equity_index_latest_date=None,
+        oil_daily_change_pct=7.0, lookback_days=10,
+    )
+    with_shock = score_bundle(bundle, "XAUUSD", macro_backdrop=macro)
+
+    assert with_shock.direction == baseline.direction
+    assert with_shock.probability == pytest.approx(baseline.probability)
+    assert with_shock.confidence < baseline.confidence
+    assert with_shock.oil_shock_flag is True
     print("PASS\n")
 
 
@@ -616,6 +821,20 @@ if __name__ == "__main__":
     test_macro_backdrop_disagreement_discounts_confidence_not_probability_or_direction()
     test_macro_backdrop_none_contributes_nothing()
     test_macro_backdrop_no_lean_is_treated_as_no_data_not_disagreement()
+    test_check_cot_crowding_no_data_returns_none_none()
+    test_check_cot_crowding_not_extreme_returns_none_none()
+    test_check_cot_crowding_extreme_and_aligned_dampens()
+    test_check_cot_crowding_extreme_but_opposite_direction_no_effect()
+    test_check_equity_risk_sentiment_only_applies_to_risk_sentiment_instruments()
+    test_check_equity_risk_sentiment_agrees_for_us30()
+    test_check_equity_risk_sentiment_disagrees_for_us30()
+    test_check_equity_risk_sentiment_below_threshold_no_effect()
+    test_check_oil_shock_no_data_returns_false_none()
+    test_check_oil_shock_below_threshold_no_effect()
+    test_check_oil_shock_above_threshold_triggers_regardless_of_direction()
+    test_score_bundle_new_signals_default_to_no_effect_when_omitted()
+    test_score_bundle_cot_crowding_only_touches_confidence()
+    test_score_bundle_oil_shock_only_touches_confidence()
     test_redundancy_discount_applies_to_near_duplicate_articles()
     test_redundancy_discount_does_not_apply_to_distinct_articles()
     test_redundancy_discount_does_not_apply_when_far_apart_in_time()

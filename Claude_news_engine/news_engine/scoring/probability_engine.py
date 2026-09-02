@@ -32,14 +32,17 @@ from enum import Enum
 from config.settings import (
     CONTEXTUAL_CONFIDENCE_THRESHOLD,
     CONTRADICTION_MIN_MAGNITUDE,
+    COT_CROWDING_CONFIDENCE_MULTIPLIER,
     DIRECTION_FLIP_HYSTERESIS_MARGIN,
     DIRECTION_NEUTRAL_BAND,
     ENABLE_FINBERT_SENTIMENT,
     ENABLE_LLM_SENTIMENT,
+    EQUITY_RISK_DISAGREEMENT_CONFIDENCE_MULTIPLIER,
     EVENT_SURPRISE_DIRECTION,
     INSTRUMENTS,
     KALSHI_TRUST_WEIGHT,
     MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER,
+    OIL_SHOCK_CONFIDENCE_MULTIPLIER,
     PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES,
     PRECURSOR_TRUST_WEIGHT,
     PRINT_CALL_TRUST_WEIGHT,
@@ -57,6 +60,7 @@ from config.settings import (
 )
 from data_layer.calendar_feed import EconomicEvent
 from data_layer.event_context import EventNewsBundle
+from data_layer.macro_backdrop import EQUITY_INDEX_LEAN_THRESHOLD_PCT, OIL_SHOCK_DAILY_THRESHOLD_PCT
 from data_layer.news_feed import NewsArticle
 from scoring.finbert_sentiment import score_article_finbert
 from scoring.llm_sentiment import score_article_llm
@@ -160,6 +164,12 @@ class ProbabilityResult:
     thin_sample: bool = False           # True if probability was pulled toward 50% by THIN_SAMPLE_PROBABILITY_CAP (see R3)
     macro_backdrop_agrees: bool | None = None   # None = no macro backdrop data available; True/False = did the dollar/rates backdrop agree with this read? (see R5)
     macro_backdrop_note: str | None = None
+    cot_crowding_flag: bool | None = None       # None = no COT data or not extreme; True = crowded and aligned with this read (see R-fundamental-signals-batch)
+    cot_crowding_note: str | None = None
+    equity_risk_agrees: bool | None = None       # None = not a risk_sentiment instrument, or no equity data; True/False = did the equity backdrop agree?
+    equity_risk_note: str | None = None
+    oil_shock_flag: bool = False                 # True = a sharp single-session oil move was detected
+    oil_shock_note: str | None = None
     redundant_contributions_discounted: int = 0   # how many article contributions were discounted as likely-redundant with an earlier one (see _apply_redundancy_discounts)
     contributions: list[ArticleContribution] = field(default_factory=list, repr=False)
     precursor_contributions: list[PrecursorContribution] = field(default_factory=list, repr=False)
@@ -590,6 +600,99 @@ def _check_macro_backdrop(
     return False, note
 
 
+def _check_cot_crowding(
+    aggregate_usd: float,
+    cot_positioning,  # CotPositioningRead | None — duck-typed (.is_crowded), no data_layer.cot_positioning import needed
+) -> tuple[bool | None, str | None]:
+    """
+    Confidence-only crowding dampener (spec: never a directional lean).
+    Opposite polarity from _check_macro_backdrop: this fires on
+    AGREEMENT with an extreme reading, not disagreement — a crowded
+    trade in the SAME direction as this read is the caution signal, not
+    a crowded trade in the opposite direction (which this check ignores
+    entirely, hence no (False, ...) case here at all).
+
+    Returns (None, None) if no COT data, or positioning isn't extreme.
+    Returns (True, note) if positioning IS extreme AND aligned with
+    aggregate_usd's sign.
+    """
+    if cot_positioning is None:
+        return None, None
+    crowded_direction = cot_positioning.is_crowded
+    if crowded_direction is None:
+        return None, None
+
+    usd_sign = 1 if aggregate_usd >= 0 else -1
+    if crowded_direction != usd_sign:
+        return None, None
+
+    direction_label = "long" if crowded_direction > 0 else "short"
+    note = (
+        f"COT positioning shows crowded {direction_label} USD Index speculative positioning "
+        f"(percentile {cot_positioning.percentile_in_trailing_window:.0f}) aligned with this read — "
+        f"may already be priced in, treat with extra caution."
+    )
+    return True, note
+
+
+def _check_equity_risk_sentiment(
+    instrument_score: float,
+    instrument: str,
+    macro_backdrop,  # MacroBackdropRead | None — duck-typed (.equity_index_trend_pct), reuses the same object _check_macro_backdrop reads
+) -> tuple[bool | None, str | None]:
+    """
+    Only ever active for risk_sentiment-mapped instruments (today: US30)
+    — returns (None, None) immediately for anything else, regardless of
+    equity data availability. Compares equity_index_trend_pct's sign
+    (positive = risk-on) against instrument_score's sign for THIS
+    instrument (not aggregate_usd) — an equity index has no USD sign of
+    its own.
+    """
+    if INSTRUMENTS.get(instrument, {}).get("usd_relationship") != "risk_sentiment":
+        return None, None
+    if macro_backdrop is None:
+        return None, None
+    equity_trend = macro_backdrop.equity_index_trend_pct
+    if equity_trend is None or abs(equity_trend) < EQUITY_INDEX_LEAN_THRESHOLD_PCT:
+        return None, None
+
+    equity_sign = 1 if equity_trend > 0 else -1
+    instrument_sign = 1 if instrument_score >= 0 else -1
+    if equity_sign == instrument_sign:
+        return True, None
+
+    equity_dir = "risk-on (equities up)" if equity_sign > 0 else "risk-off (equities down)"
+    read_dir = "bullish" if instrument_sign > 0 else "bearish"
+    note = (
+        f"Equity risk-sentiment backdrop leans {equity_dir}, but this {instrument} read is {read_dir} "
+        f"— treat with extra caution until they align."
+    )
+    return False, note
+
+
+def _check_oil_shock(macro_backdrop) -> tuple[bool, str | None]:
+    """
+    Fires on a sharp single-session oil move, regardless of direction or
+    of this bundle's own USD read — "something sharp just happened
+    outside the tracked calendar," not an agree/disagree comparison.
+    Always returns a bool (never None) for the flag itself, matching
+    ProbabilityResult.oil_shock_flag's bool (not Optional[bool]) type —
+    there's no meaningful "unknown" state distinct from "no shock."
+    """
+    if macro_backdrop is None:
+        return False, None
+    daily_change = macro_backdrop.oil_daily_change_pct
+    if daily_change is None or abs(daily_change) < OIL_SHOCK_DAILY_THRESHOLD_PCT:
+        return False, None
+
+    direction = "spiked" if daily_change > 0 else "dropped"
+    note = (
+        f"Oil {direction} {abs(daily_change):.1f}% in the most recent session — "
+        f"a possible exogenous shock outside the tracked calendar, treat this call with extra caution."
+    )
+    return True, note
+
+
 def _map_to_instrument_score(usd_sentiment: float, instrument: str) -> float:
     relationship = INSTRUMENTS[instrument]["usd_relationship"]
     if relationship == "inverse":
@@ -706,7 +809,8 @@ def score_bundle(
     trend_signal=None,  # TrendSignal | None — duck-typed
     kalshi_read=None,   # KalshiRead | None — duck-typed
     kalshi_direction_override=None,  # str | None — 'higher_bullish'/'higher_bearish', see below
-    macro_backdrop=None,  # MacroBackdropRead | None — duck-typed, see _check_macro_backdrop()
+    macro_backdrop=None,  # MacroBackdropRead | None — duck-typed, see _check_macro_backdrop(), _check_equity_risk_sentiment(), _check_oil_shock()
+    cot_positioning=None,  # CotPositioningRead | None — duck-typed, see _check_cot_crowding()
     current_direction: str | None = None,  # 'bullish'/'bearish'/'neutral' | None — see _direction_for_score()
 ) -> ProbabilityResult:
     """
@@ -762,6 +866,15 @@ def score_bundle(
     and the thin-sample cap already follow. See _check_macro_backdrop().
     None contributes nothing (confidence unchanged, macro_backdrop_agrees
     stays None).
+
+    cot_positioning: optional — an independent CFTC COT positioning read
+    (data_layer.cot_positioning.CotPositioningRead), the fundamental
+    signals batch's crowding dampener. NEVER blended into
+    aggregate_usd_sentiment (same "no real backtested trust weight yet"
+    discipline as macro_backdrop) — it can only discount CONFIDENCE, and
+    only when positioning is BOTH extreme AND aligned with this read's
+    own direction (opposite polarity from macro_backdrop's disagreement-
+    based discount). See _check_cot_crowding().
 
     current_direction: optional — the currently-recorded direction for
     this (event, instrument) pair ('bullish'/'bearish'/'neutral'), if
@@ -849,6 +962,18 @@ def score_bundle(
     if macro_backdrop_agrees is False:
         confidence *= MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER
 
+    cot_crowding_flag, cot_crowding_note = _check_cot_crowding(aggregate_usd, cot_positioning)
+    if cot_crowding_flag:
+        confidence *= COT_CROWDING_CONFIDENCE_MULTIPLIER
+
+    equity_risk_agrees, equity_risk_note = _check_equity_risk_sentiment(instrument_score, instrument, macro_backdrop)
+    if equity_risk_agrees is False:
+        confidence *= EQUITY_RISK_DISAGREEMENT_CONFIDENCE_MULTIPLIER
+
+    oil_shock_flag, oil_shock_note = _check_oil_shock(macro_backdrop)
+    if oil_shock_flag:
+        confidence *= OIL_SHOCK_CONFIDENCE_MULTIPLIER
+
     direction = _direction_for_score(instrument_score, current_direction)
 
     # Contradiction detection stays article-only — it's designed to catch
@@ -870,6 +995,12 @@ def score_bundle(
         thin_sample=thin_sample,
         macro_backdrop_agrees=macro_backdrop_agrees,
         macro_backdrop_note=macro_backdrop_note,
+        cot_crowding_flag=cot_crowding_flag,
+        cot_crowding_note=cot_crowding_note,
+        equity_risk_agrees=equity_risk_agrees,
+        equity_risk_note=equity_risk_note,
+        oil_shock_flag=oil_shock_flag,
+        oil_shock_note=oil_shock_note,
         redundant_contributions_discounted=redundant_contributions_discounted,
         contributions=article_contributions,
         precursor_contributions=precursor_contributions,
