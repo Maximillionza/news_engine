@@ -986,6 +986,57 @@ def test_score_bundle_flags_chain_conflict_when_linked_precursors_disagree():
     print("PASS\n")
 
 
+def test_migrated_links_produce_identical_score_bundle_result_old_vs_new_path():
+    print("=== REGRESSION: graph-driven ADP->NFP and PPI->CPI precursors produce IDENTICAL score_bundle() results to the old hardcoded path ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = webapp_store.get_connection(Path(tmp) / "test.db")
+
+        # --- NFP target, ADP precursor ---
+        nfp_event = EconomicEvent(title="Non-Farm Employment Change", country="USD", impact="High", event_time_utc=EVENT_TIME, forecast="180K")
+        adp_time = EVENT_TIME - dt.timedelta(hours=48)
+        adp_event = EconomicEvent(title="ADP Nonfarm Employment Change", country="USD", impact="Medium", event_time_utc=adp_time, forecast="150K", actual="190K")
+        webapp_store.upsert_event_history(conn, adp_event, surprise_direction="higher", now=adp_time)
+
+        nfp_bundle = EventNewsBundle(event=nfp_event, articles=[], as_of_utc=EVENT_TIME)
+        old_path_nfp = score_bundle(nfp_bundle, "XAUUSD", precursor_events=[adp_event])
+        new_precursors_nfp = get_precursor_events_for("Non-Farm Employment Change", EVENT_TIME, conn)
+        new_path_nfp = score_bundle(nfp_bundle, "XAUUSD", precursor_events=new_precursors_nfp)
+
+        assert new_path_nfp.aggregate_usd_sentiment == old_path_nfp.aggregate_usd_sentiment
+        assert new_path_nfp.probability == old_path_nfp.probability
+        assert new_path_nfp.confidence == old_path_nfp.confidence
+        assert new_path_nfp.direction == old_path_nfp.direction
+
+        # --- CPI target, PPI precursor ---
+        cpi_event = _cpi_event()
+        ppi_time = EVENT_TIME - dt.timedelta(hours=36)
+        ppi_event = EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=ppi_time, forecast="0.2%", actual="0.4%")
+        webapp_store.upsert_event_history(conn, ppi_event, surprise_direction="higher", now=ppi_time)
+
+        cpi_bundle = EventNewsBundle(event=cpi_event, articles=[], as_of_utc=EVENT_TIME)
+        old_path_cpi = score_bundle(cpi_bundle, "XAUUSD", precursor_events=[ppi_event])
+        new_precursors_cpi = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
+        new_path_cpi = score_bundle(cpi_bundle, "XAUUSD", precursor_events=new_precursors_cpi)
+
+        assert new_path_cpi.aggregate_usd_sentiment == old_path_cpi.aggregate_usd_sentiment
+        assert new_path_cpi.probability == old_path_cpi.probability
+        assert new_path_cpi.confidence == old_path_cpi.confidence
+        assert new_path_cpi.direction == old_path_cpi.direction
+        conn.close()
+    print("PASS\n")
+
+
+def test_event_influence_links_weight_is_stored_but_not_consumed_by_scoring():
+    print("=== EVENT_INFLUENCE_LINKS: the per-link float weight has no effect on _build_precursor_contributions()'s trust_weight ===")
+    from config.settings import PRECURSOR_TRUST_WEIGHT
+    event = EconomicEvent(title="Challenger Job Cuts", country="USD", impact="Low", event_time_utc=EVENT_TIME, forecast="20K", actual="35K")  # linked to NFP at weight 0.35, NOT 0.9
+    from scoring.probability_engine import _build_precursor_contributions
+    contributions = _build_precursor_contributions([event], EVENT_TIME)
+    assert len(contributions) == 1
+    assert contributions[0].trust_weight == PRECURSOR_TRUST_WEIGHT, "trust_weight must still come from the single global constant, not the link's own 0.35 weight"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_bundle_without_new_params_is_unchanged()
     test_print_call_higher_on_bullish_indicator_is_bullish_for_direct_instrument()
