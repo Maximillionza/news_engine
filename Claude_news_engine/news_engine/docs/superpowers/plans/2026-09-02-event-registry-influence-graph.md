@@ -34,7 +34,9 @@
 
 - [ ] **Step 1: Replace `PRECURSOR_EVENTS` with `EVENT_REGISTRY` in `config/settings.py`**
 
-Delete the existing `PRECURSOR_EVENTS` block (lines 272-283) and replace it with:
+**Ruling (recorded post-review — see Task 6 Step 3): do NOT delete `PRECURSOR_EVENTS` in this step.** It is still imported and used by `data_layer/calendar_feed.py`'s `find_precursor_events()` (and transitively by `scoring/backtest_accumulator.py`/its tests) until Task 6 removes those call sites — deleting it here breaks the test suite for the next 5 tasks. Add `EVENT_REGISTRY` as a new block; leave `PRECURSOR_EVENTS` in place immediately after it, untouched. Task 6 deletes it once its last consumer is gone.
+
+Insert the new block (replacing only the old docstring comment above `PRECURSOR_EVENTS`, not the dict itself):
 
 ```python
 # --- Recurring event registry ---
@@ -1009,7 +1011,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `scoring/backtest_accumulator.py` (replace `find_precursor_events()` call with a graph-driven read)
 - Modify: `data_layer/calendar_feed.py` (remove `find_precursor_events()` and its `PRECURSOR_EVENTS` import — fully superseded)
-- Modify: `config/settings.py` (remove the now-unused `PRECURSOR_EVENTS` import site check — already deleted in Task 1, this step just confirms no leftover references)
+- Modify: `config/settings.py` (delete the `PRECURSOR_EVENTS` constant itself — see the ruling note in Step 3 below for why it's still present at the start of this task)
 - Modify: `tests/test_backtest_accumulator.py` (rewrite the two precursor tests to the new DB-driven mechanism)
 - Test: `tests/test_backtest_accumulator.py` (rewritten in place)
 
@@ -1080,9 +1082,11 @@ with:
 
 Remove `find_precursor_events` from the `from data_layer.calendar_feed import (...)` block at the top of the file (leave `EconomicEvent, fetch_calendar, filter_relevant_events, events_in_pre_window, _parse_numeric` in place).
 
-- [ ] **Step 3: Remove `find_precursor_events()` and `PRECURSOR_EVENTS` from `data_layer/calendar_feed.py`**
+- [ ] **Step 3: Remove `find_precursor_events()` from `data_layer/calendar_feed.py`, and `PRECURSOR_EVENTS` from `config/settings.py`**
 
-Delete the `find_precursor_events()` function (the block ending just before the module's trailing blank line) and remove `PRECURSOR_EVENTS` from the `from config.settings import (...)` block at the top of the file.
+**Ruling (recorded during Task 1's review — plan defect found in execution, corrected here):** Task 1's original text said to delete `PRECURSOR_EVENTS` immediately. That would have broken `data_layer/calendar_feed.py` (still imports and uses it in `find_precursor_events()`), `scoring/backtest_accumulator.py`, and `tests/test_backtest_accumulator.py` for the entire span of Tasks 1-5, since nothing before this task removes those call sites — an `ImportError` at module load, failing most of the test suite. `PRECURSOR_EVENTS` was correctly left in place through Task 1-5 for exactly this reason. This task is where it finally becomes safe to delete, now that its last consumers are being removed in this same step.
+
+Delete the `find_precursor_events()` function from `data_layer/calendar_feed.py` (the block ending just before the module's trailing blank line) and remove `PRECURSOR_EVENTS` from its `from config.settings import (...)` block at the top of the file. Then delete the `PRECURSOR_EVENTS` dict itself from `config/settings.py` (it currently sits directly after the `EVENT_REGISTRY` block, added there by Task 1).
 
 - [ ] **Step 4: Rewrite the two accumulator precursor tests**
 
