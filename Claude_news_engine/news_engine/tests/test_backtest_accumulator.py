@@ -385,43 +385,39 @@ def test_is_material_change_crossing_thin_sample_threshold_is_material():
     print("PASS\n")
 
 
-def test_precursor_events_found_and_passed_to_score_bundle():
-    print("=== accumulator: an already-released precursor event (e.g. PPI before CPI) is found and blended into scoring ===")
+def test_precursor_events_found_via_graph_and_passed_to_score_bundle():
+    print("=== accumulator: a graph-linked, already-resolved precursor event (e.g. PPI before CPI) is found via event_history and blended into scoring ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
+        dashboard_db_path = Path(tmp) / "dashboard.db"
         now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
-        # "CPI m/m" is a real key in config.settings.PRECURSOR_EVENTS,
-        # mapped to ["PPI m/m", "Core PPI m/m", "Import Prices m/m"] —
-        # using a real title so find_precursor_events()'s real config
-        # lookup actually matches, not a mocked stand-in.
         target = EconomicEvent(
             title="CPI m/m", country="USD", impact="High",
             event_time_utc=now + dt.timedelta(hours=20), forecast="0.2%", actual=None,
         )
+        precursor_time = now - dt.timedelta(hours=5)
         precursor = EconomicEvent(
             title="Core PPI m/m", country="USD", impact="Medium",
-            event_time_utc=now - dt.timedelta(hours=5), forecast="0.2%", actual="0.4%",  # already released
+            event_time_utc=precursor_time, forecast="0.2%", actual="0.4%",  # already released, linked to CPI m/m
         )
-        unrelated = EconomicEvent(
-            title="Some Unrelated Report", country="USD", impact="Low",
-            event_time_utc=now - dt.timedelta(hours=3), forecast="1.0%", actual="1.0%",
-        )
+        dash_conn = webapp_store.get_connection(dashboard_db_path)
+        webapp_store.upsert_event_history(dash_conn, precursor, surprise_direction="higher", now=precursor_time)
+        dash_conn.close()
 
-        with patch.object(accumulator, "fetch_calendar", return_value=[target, precursor, unrelated]), \
+        with patch.object(accumulator, "fetch_calendar", return_value=[target]), \
              patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: [e for e in events if e.impact == "High"]), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=target, articles=[], as_of_utc=now)), \
-             patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score, \
-             patch.object(accumulator, "get_market_read", return_value=None), \
-             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
-
+             patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path), \
+             patch.object(accumulator, "score_bundle") as mock_score:
+            mock_score.return_value = _fake_result()
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
 
             mock_score.assert_called_once()
             _, kwargs = mock_score.call_args
             assert "precursor_events" in kwargs, "score_bundle must be called with precursor_events, not left at its None default"
             precursors_passed = kwargs["precursor_events"]
-            assert len(precursors_passed) == 1, f"expected exactly the PPI precursor (Medium impact, real actual, before target), got {precursors_passed}"
+            assert len(precursors_passed) == 1, f"expected exactly the Core PPI precursor (linked, resolved, in-window), got {precursors_passed}"
             assert precursors_passed[0].title == "Core PPI m/m"
     print("PASS\n")
 
@@ -665,38 +661,41 @@ def test_print_call_passed_to_score_bundle():
     print("PASS\n")
 
 
-def test_precursor_events_uses_unfiltered_calendar_not_high_impact_only():
-    print("=== accumulator: precursor lookup uses the FULL unfiltered calendar, not the High-impact-only filtered list ===")
+def test_precursor_events_found_regardless_of_scoring_calendar_filter():
+    print("=== accumulator: precursor lookup reads event_history directly, unaffected by the scoring candidate list's High-impact-only filter ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
+        dashboard_db_path = Path(tmp) / "dashboard.db"
         now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
         target = EconomicEvent(
             title="CPI m/m", country="USD", impact="High",
             event_time_utc=now + dt.timedelta(hours=20), forecast="0.2%", actual=None,
         )
-        # Medium impact — filter_relevant_events() (High-only) would drop
-        # this from the SCORING candidate list, but it must still be found
-        # as a precursor, since find_precursor_events() is explicitly
-        # supposed to search the full calendar (precursors are typically
-        # Medium impact, per the module's own established convention).
+        precursor_time = now - dt.timedelta(hours=5)
+        # "PPI m/m" is Medium impact — filter_relevant_events() (High-only)
+        # would drop it from the SCORING candidate list, but the
+        # graph-driven precursor lookup reads event_history directly and
+        # must still find it.
         precursor = EconomicEvent(
             title="PPI m/m", country="USD", impact="Medium",
-            event_time_utc=now - dt.timedelta(hours=5), forecast="0.2%", actual="0.5%",
+            event_time_utc=precursor_time, forecast="0.2%", actual="0.5%",
         )
+        dash_conn = webapp_store.get_connection(dashboard_db_path)
+        webapp_store.upsert_event_history(dash_conn, precursor, surprise_direction="higher", now=precursor_time)
+        dash_conn.close()
 
-        with patch.object(accumulator, "fetch_calendar", return_value=[target, precursor]), \
+        with patch.object(accumulator, "fetch_calendar", return_value=[target]), \
              patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: [e for e in events if e.impact == "High"]), \
              patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
              patch.object(accumulator, "build_event_news_bundle", return_value=EventNewsBundle(event=target, articles=[], as_of_utc=now)), \
-             patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score, \
-             patch.object(accumulator, "get_market_read", return_value=None), \
-             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
-
+             patch.object(accumulator, "DASHBOARD_DB_PATH", dashboard_db_path), \
+             patch.object(accumulator, "score_bundle") as mock_score:
+            mock_score.return_value = _fake_result()
             accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now)
 
             _, kwargs = mock_score.call_args
             titles_passed = [e.title for e in kwargs["precursor_events"]]
-            assert "PPI m/m" in titles_passed, "Medium-impact precursor must still be found via the full unfiltered calendar"
+            assert "PPI m/m" in titles_passed, "Medium-impact precursor must still be found via event_history, regardless of the scoring filter"
     print("PASS\n")
 
 
@@ -1140,7 +1139,7 @@ def test_score_and_record_event_passes_cot_positioning_through_to_score_bundle()
     sentinel_cot = CotPositioningRead(net_leveraged_funds_position=100, percentile_in_trailing_window=50.0, report_date=dt.date(2026, 8, 29), lookback_weeks=52)
     with patch.object(accumulator, "build_event_news_bundle", return_value=_bundle(event, [])), \
          patch.object(accumulator, "record_check"), \
-         patch.object(accumulator, "find_precursor_events", return_value=[]), \
+         patch.object(accumulator, "_read_precursor_events", return_value=[]), \
          patch.object(accumulator, "score_print_direction", return_value=None), \
          patch.object(accumulator, "_read_trend_signal", return_value=None), \
          patch.object(accumulator, "_read_kalshi_signal", return_value=(None, None)), \
@@ -1174,7 +1173,7 @@ if __name__ == "__main__":
     test_build_top_contributions_returns_empty_list_when_total_weight_is_zero()
     test_is_material_change_threshold_boundary()
     test_is_material_change_crossing_thin_sample_threshold_is_material()
-    test_precursor_events_found_and_passed_to_score_bundle()
+    test_precursor_events_found_via_graph_and_passed_to_score_bundle()
     test_print_direction_call_recorded_once_per_event()
     test_print_direction_none_call_writes_nothing()
     test_trend_signal_passed_to_score_bundle_when_gate_met()
@@ -1182,7 +1181,7 @@ if __name__ == "__main__":
     test_trend_signal_is_none_when_dashboard_db_unreachable()
     test_trend_signal_is_none_when_read_itself_fails()
     test_print_call_passed_to_score_bundle()
-    test_precursor_events_uses_unfiltered_calendar_not_high_impact_only()
+    test_precursor_events_found_regardless_of_scoring_calendar_filter()
     test_high_impact_only_no_medium_widening()
     test_accumulator_includes_allowlisted_medium_events()
     test_run_accumulator_cycle_fetches_cot_once_per_cycle_not_per_event()

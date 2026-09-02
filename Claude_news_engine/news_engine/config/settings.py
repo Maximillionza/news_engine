@@ -357,8 +357,8 @@ EVENT_REGISTRY: dict[str, dict] = {
 # tier (EVENT_REGISTRY) is metadata used only to decide dashboard-score-
 # or-not, never a structural constraint on which links are allowed.
 #
-# Absorbs and replaces the old PRECURSOR_EVENTS dict — ADP->NFP and
-# PPI->CPI are its first two entries below, at the same weight
+# Absorbs and replaces the old hardcoded precursor-lookup dict — ADP->NFP
+# and PPI->CPI are its first two entries below, at the same weight
 # (PRECURSOR_TRUST_WEIGHT, 0.9) the old hardcoded mechanism used, so the
 # migration is behavior-preserving (see tests/test_probability_engine.py's
 # regression test).
@@ -372,7 +372,7 @@ EVENT_REGISTRY: dict[str, dict] = {
 # constant in this codebase.
 EVENT_INFLUENCE_LINKS: dict[str, list[tuple[str, float]]] = {
     "Non-Farm Employment Change": [
-        ("ADP Nonfarm Employment Change", 0.90),  # migrated from the old hardcoded PRECURSOR_EVENTS link
+        ("ADP Nonfarm Employment Change", 0.90),  # migrated from the old hardcoded precursor-lookup link
         ("JOLTS Job Openings", 0.40),
         ("Challenger Job Cuts", 0.35),
         ("Unemployment Claims", 0.30),
@@ -385,7 +385,7 @@ EVENT_INFLUENCE_LINKS: dict[str, list[tuple[str, float]]] = {
         ("ADP Nonfarm Employment Change", 0.50),
     ],
     "CPI m/m": [
-        ("PPI m/m", 0.90),  # migrated from the old hardcoded PRECURSOR_EVENTS link
+        ("PPI m/m", 0.90),  # migrated from the old hardcoded precursor-lookup link
         ("Core PPI m/m", 0.60),
         ("Import Prices m/m", 0.40),
         ("ISM Manufacturing Prices", 0.30),
@@ -449,19 +449,6 @@ EVENT_INFLUENCE_LINKS: dict[str, list[tuple[str, float]]] = {
         ("Building Permits", 0.30),
         ("Housing Starts", 0.30),
     ],
-}
-
-# --- Leading-indicator precursor events ---
-# Kept for backward compatibility with existing calendar_feed.py code.
-# See EVENT_REGISTRY above for the full recurring event registry.
-PRECURSOR_EVENTS = {
-    "Non-Farm Employment Change": ["ADP Nonfarm Employment Change", "Unemployment Claims", "Challenger Job Cuts"],
-    "Unemployment Rate": ["ADP Nonfarm Employment Change", "Unemployment Claims"],
-    "Average Hourly Earnings m/m": ["ADP Nonfarm Employment Change"],
-    "CPI m/m": ["PPI m/m", "Core PPI m/m", "Import Prices m/m"],
-    "CPI y/y": ["PPI m/m", "Core PPI m/m"],
-    "Core CPI m/m": ["Core PPI m/m"],
-    "Core CPI y/y": ["Core PPI m/m"],
 }
 
 # For each event TITLE (major or precursor), whether an actual print ABOVE

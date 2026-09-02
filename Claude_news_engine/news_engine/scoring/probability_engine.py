@@ -386,15 +386,16 @@ def get_precursor_events_for(
     conn,
 ) -> list[EconomicEvent]:
     """
-    Graph-driven replacement for data_layer.calendar_feed.find_precursor_events().
-    Looks up EVENT_INFLUENCE_LINKS[target_title] (empty list if no
-    configured links). For each linked precursor title, fetches that
-    title's most recent RESOLVED (actual IS NOT NULL) event_history row —
-    kept only if it falls inside target's own PRE_EVENT_WINDOW_HOURS
-    pre-event window, the same bound find_precursor_events() used, so a
-    resolved row from a PRIOR cycle (e.g. last month's ADP print) is never
-    mistaken for this cycle's precursor. Skips any precursor title with
-    no resolved row in that window at all — never fabricates.
+    Graph-driven replacement for the old in-memory-calendar precursor
+    lookup (removed from data_layer/calendar_feed.py). Looks up
+    EVENT_INFLUENCE_LINKS[target_title] (empty list if no configured
+    links). For each linked precursor title, fetches that title's most
+    recent RESOLVED (actual IS NOT NULL) event_history row — kept only if
+    it falls inside target's own PRE_EVENT_WINDOW_HOURS pre-event window,
+    the same bound the old lookup used, so a resolved row from a PRIOR
+    cycle (e.g. last month's ADP print) is never mistaken for this
+    cycle's precursor. Skips any precursor title with no resolved row in
+    that window at all — never fabricates.
 
     `conn` is a webapp.store-shaped sqlite3.Connection (duck-typed — this
     module never imports webapp/ at module level, to avoid a cycle with
@@ -909,8 +910,8 @@ def score_bundle(
 
     precursor_events: optional leading-indicator events (already-released
     minor/medium USD releases that predict this event — ADP before NFP,
-    PPI before CPI, etc; see data_layer.calendar_feed.find_precursor_events()
-    for how to build this list). Their forecast-vs-actual surprise is
+    PPI before CPI, etc; see get_precursor_events_for() above for how to
+    build this list). Their forecast-vs-actual surprise is
     blended in as a structured, high-trust contribution alongside article
     sentiment — same USD-directional axis, same weighted-average math,
     just a different (and more reliable) source of signal.

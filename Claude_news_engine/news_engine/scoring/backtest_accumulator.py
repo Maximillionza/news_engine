@@ -9,12 +9,12 @@ confirmed against real outcomes later via scripts/confirm_backtest_outcomes.py.
 
 Also blends in structured precursor data: already-released leading
 indicators (e.g. PPI before CPI, ADP before NFP — see config.settings'
-PRECURSOR_EVENTS and data_layer.calendar_feed.find_precursor_events())
-get passed into score_bundle() alongside article sentiment, found
-against the FULL unfiltered calendar since precursors are typically
-Medium impact. Not every event has a configured precursor, and a
-precursor with nothing released yet in the target's pre-event window
-contributes nothing — both are normal, not a bug.
+EVENT_INFLUENCE_LINKS and scoring.probability_engine.get_precursor_events_for())
+get passed into score_bundle() alongside article sentiment, read from the
+dashboard's persisted event_history — unaffected by any high-impact-only
+filter, since precursors are typically Medium impact. Not every event has
+a configured precursor, and a precursor with nothing released yet in the
+target's pre-event window contributes nothing — both are normal, not a bug.
 
 Deliberately NOT wired into webapp/ — the dashboard is essence-only by
 design (no article fetching at all); this accumulator is article-based
@@ -67,14 +67,14 @@ from config.settings import (
 )
 from data_layer.calendar_feed import (
     EconomicEvent, fetch_calendar, filter_relevant_events, events_in_pre_window,
-    find_precursor_events, _parse_numeric,
+    _parse_numeric,
 )
 from data_layer.event_context import build_event_news_bundle
 from data_layer.rss_sources import build_all_preview_sources
 from data_layer.kalshi_feed import KalshiRead, get_market_read, get_market_read_by_date
 from data_layer.macro_backdrop import get_macro_backdrop_read
 from data_layer.cot_positioning import get_cot_positioning_read
-from scoring.probability_engine import score_bundle
+from scoring.probability_engine import score_bundle, get_precursor_events_for
 from scoring.print_direction import score_print_direction
 from scoring.backtest_store import (
     get_connection, record_prediction, get_latest_prediction, record_check, count_recent_checks,
@@ -237,6 +237,28 @@ def _read_trend_signal(event_title: str):
     if len(confirmed) < MIN_OCCURRENCES_FOR_TREND_PRIOR:
         return None
     return compute_trend_signal(confirmed)
+
+
+def _read_precursor_events(event: EconomicEvent) -> list[EconomicEvent]:
+    """
+    Reads config.settings.EVENT_INFLUENCE_LINKS-linked precursor events
+    for `event` via a short-lived READ-ONLY connection to the dashboard's
+    own DB — same pattern and same fail-open contract as
+    _read_trend_signal() above. Replaces the old in-memory-calendar
+    precursor lookup (removed from data_layer/calendar_feed.py), which
+    searched the CURRENT WEEK's in-memory calendar fetch instead of the
+    persisted event_history table.
+    """
+    conn = None
+    try:
+        conn = get_dashboard_connection(DASHBOARD_DB_PATH)
+        return get_precursor_events_for(event.title, event.event_time_utc, conn)
+    except Exception as exc:  # noqa: BLE001 — ANY dashboard-DB failure (open OR read) must not crash the accumulator cycle
+        print(f"[backtest_accumulator] WARNING: could not read precursor events for {event.title}: {exc}")
+        return []
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def _shift_back_one_month(d: dt.date) -> dt.date:
@@ -439,11 +461,13 @@ def score_and_record_event(
     # budget-fallback check on the NEXT cycle (see module docstring).
     record_check(conn, now)
 
-    # Against the FULL unfiltered calendar (all_events), not a
-    # High-impact-only filtered list — precursors like ADP, PPI m/m are
-    # typically Medium impact and would be silently excluded if this
-    # searched a filtered list instead.
-    precursors = find_precursor_events(event, all_events)
+    # Graph-driven (config.settings.EVENT_INFLUENCE_LINKS) precursor
+    # lookup against the dashboard's persisted event_history — replaces
+    # the old in-memory calendar search (removed from
+    # data_layer/calendar_feed.py). `all_events` is still accepted as a
+    # parameter for signature stability (scripts/run_manual_sentiment_check.py
+    # still passes it) but is no longer used for precursor lookup.
+    precursors = _read_precursor_events(event)
     if precursors:
         print(f"[backtest_accumulator] precursors for {event.title}: {[p.title for p in precursors]}")
 

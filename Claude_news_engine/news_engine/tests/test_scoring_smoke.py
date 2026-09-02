@@ -8,15 +8,18 @@ catch obvious regressions before touching real data.
 import datetime as dt
 import sys
 import os
+import tempfile
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import UTC_TZ
-from data_layer.calendar_feed import EconomicEvent, find_precursor_events
+from data_layer.calendar_feed import EconomicEvent
 from data_layer.event_context import EventNewsBundle
 from data_layer.news_feed import NewsArticle, deduplicate_articles
 import scoring.probability_engine as probability_engine
-from scoring.probability_engine import score_bundle, Direction
+import webapp.store as webapp_store
+from scoring.probability_engine import score_bundle, Direction, get_precursor_events_for
 from scoring.history import EventScoreTracker
 from scoring.sentiment import score_article_text
 
@@ -194,16 +197,21 @@ def test_precursor_leading_indicator():
     )
     # Real numbers from the 2026-08-07 NFP backtest case earlier this
     # session: ADP came in at 44K vs 75K forecast, a soft miss.
+    adp_time = EVENT_TIME - dt.timedelta(hours=47, minutes=30)
     adp = EconomicEvent(
         title="ADP Nonfarm Employment Change", country="USD", impact="Medium",
-        event_time_utc=EVENT_TIME - dt.timedelta(hours=47, minutes=30),
+        event_time_utc=adp_time,
         forecast="75K", actual="44K",
     )
 
     surprise = adp.usd_surprise_score()
     assert surprise is not None and surprise < 0, "a miss on a higher_bullish indicator should be USD-bearish"
 
-    precursors = find_precursor_events(nfp, [nfp, adp])
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = webapp_store.get_connection(Path(tmp) / "test.db")
+        webapp_store.upsert_event_history(conn, adp, surprise_direction="lower", now=adp_time)
+        precursors = get_precursor_events_for(nfp.title, nfp.event_time_utc, conn)
+        conn.close()
     assert len(precursors) == 1 and precursors[0].title == adp.title, "ADP should be found as NFP's precursor"
 
     empty_bundle = EventNewsBundle(event=nfp, articles=[], as_of_utc=EVENT_TIME)

@@ -43,7 +43,6 @@ from config.settings import (
     LOCAL_TZ,
     POST_RELEASE_GRACE_MINUTES,
     PRE_EVENT_WINDOW_HOURS,
-    PRECURSOR_EVENTS,
     SURPRISE_SENSITIVITY,
     UTC_TZ,
 )
@@ -382,35 +381,6 @@ def events_in_pre_window(events: list[EconomicEvent], now_utc: Optional[dt.datet
         if window_start <= now_utc <= window_end:
             active.append(e)
     return active
-
-
-def find_precursor_events(
-    target: EconomicEvent,
-    all_events: list[EconomicEvent],
-) -> list[EconomicEvent]:
-    """
-    Of `all_events`, returns the already-released USD events that are
-    known leading indicators for `target` (per config.settings'
-    PRECURSOR_EVENTS) and fall inside target's own pre-event window — e.g.
-    an ADP miss 2 days before NFP.
-
-    Only returns events with a real `actual` value — a precursor that
-    hasn't printed yet has nothing to contribute (and would otherwise
-    silently be excluded downstream anyway, since usd_surprise_score()
-    needs both forecast and actual).
-    """
-    precursor_titles = set(PRECURSOR_EVENTS.get(target.title, []))
-    if not precursor_titles:
-        return []
-
-    window_start = target.event_time_utc - dt.timedelta(hours=PRE_EVENT_WINDOW_HOURS)
-    return [
-        e for e in all_events
-        if e.title in precursor_titles
-        and e.country == "USD"
-        and e.actual
-        and window_start <= e.event_time_utc < target.event_time_utc
-    ]
 
 
 if __name__ == "__main__":

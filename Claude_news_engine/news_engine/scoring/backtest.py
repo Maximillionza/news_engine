@@ -75,10 +75,10 @@ def run_backtest_case(
     Production path — fetches real pre-event articles from live sources.
 
     precursor_events: optional leading-indicator events already released
-    ahead of `event` (build with data_layer.calendar_feed.find_precursor_events()
-    against the full, unfiltered calendar — the high-impact-only filter
-    used for the target event would exclude these, since precursors like
-    ADP are typically Medium impact).
+    ahead of `event` (build with scoring.probability_engine.get_precursor_events_for()
+    against the dashboard's persisted event_history — precursors like ADP
+    are typically Medium impact, so this is unaffected by any high-impact-only
+    filter used for the target event's own candidate list).
     """
     bundle = build_event_news_bundle(event, sources, query, mode="backtest")
     case = BacktestCase(
