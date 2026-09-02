@@ -48,7 +48,7 @@ FRED_RELEASE_ID_BY_EVENT_TITLE = {
     "PPI m/m": 46, "Core PPI m/m": 46,                                             # Producer Price Index
     "Non-Farm Employment Change": 50, "Unemployment Rate": 50,                     # Employment Situation
     "Average Hourly Earnings m/m": 50,
-    "ADP Nonfarm Employment Change": 194,                                          # ADP National Employment Report
+    "ADP Non-Farm Employment Change": 194,                                         # ADP National Employment Report
     "Retail Sales m/m": 9,                                                         # Advance Monthly Sales for Retail and Food Services
     "Prelim GDP q/q": 53,                                                         # Gross Domestic Product
     "Core PCE Price Index m/m": 54,                                                # Personal Income and Outlays
@@ -286,14 +286,14 @@ EVENT_REGISTRY: dict[str, dict] = {
     "Average Hourly Earnings m/m": {"impact": "High", "avg_interval_months": 1.0},
     "Average Hourly Earnings y/y": {"impact": "Medium", "avg_interval_months": 1.0},
     "Participation Rate": {"impact": "Low", "avg_interval_months": 1.0},
-    "ADP Nonfarm Employment Change": {"impact": "Medium", "avg_interval_months": 1.0},
+    "ADP Non-Farm Employment Change": {"impact": "Medium", "avg_interval_months": 1.0},
     "JOLTS Job Openings": {"impact": "Medium", "avg_interval_months": 1.0},
     "JOLTS Quits Rate": {"impact": "Low", "avg_interval_months": 1.0},
-    "Challenger Job Cuts": {"impact": "Low", "avg_interval_months": 1.0},
+    "Challenger Job Cuts y/y": {"impact": "Low", "avg_interval_months": 1.0},
     "Unemployment Claims": {"impact": "Medium", "avg_interval_months": 0.23},
     "Continuing Claims": {"impact": "Low", "avg_interval_months": 0.23},
-    "Nonfarm Productivity q/q": {"impact": "Medium", "avg_interval_months": 3.0},
-    "Unit Labor Costs q/q": {"impact": "Medium", "avg_interval_months": 3.0},
+    "Labor Productivity q/q": {"impact": "Medium", "avg_interval_months": 3.0},  # FF's real title for the first (preliminary) reading -- "Nonfarm Productivity q/q" never matched any live row, confirmed 2026-09-02
+    "Revised Unit Labor Costs q/q": {"impact": "Medium", "avg_interval_months": 3.0},  # FF's real title -- "Unit Labor Costs q/q" never matched any live row, confirmed 2026-09-02
     # --- Inflation ---
     "CPI m/m": {"impact": "High", "avg_interval_months": 1.0},
     "CPI y/y": {"impact": "High", "avg_interval_months": 1.0},
@@ -340,7 +340,7 @@ EVENT_REGISTRY: dict[str, dict] = {
     "S&P/CS Composite-20 HPI y/y": {"impact": "Low", "avg_interval_months": 1.0},
     # --- Trade, inventories & policy ---
     "Trade Balance": {"impact": "Low", "avg_interval_months": 1.0},
-    "Wholesale Inventories m/m": {"impact": "Low", "avg_interval_months": 1.0},
+    "Prelim Wholesale Inventories m/m": {"impact": "Low", "avg_interval_months": 1.0},  # FF's real title -- "Wholesale Inventories m/m" never matched any live row, confirmed 2026-09-02
     "Business Inventories m/m": {"impact": "Low", "avg_interval_months": 1.0},
     "FOMC Statement": {"impact": "High", "avg_interval_months": 1.6},  # real-world ~8 meetings/year, NOT literally quarterly
     "FOMC Press Conference": {"impact": "High", "avg_interval_months": 1.6},
@@ -372,17 +372,17 @@ EVENT_REGISTRY: dict[str, dict] = {
 # constant in this codebase.
 EVENT_INFLUENCE_LINKS: dict[str, list[tuple[str, float]]] = {
     "Non-Farm Employment Change": [
-        ("ADP Nonfarm Employment Change", 0.90),  # migrated from the old hardcoded precursor-lookup link
+        ("ADP Non-Farm Employment Change", 0.90),  # migrated from the old hardcoded precursor-lookup link
         ("JOLTS Job Openings", 0.40),
-        ("Challenger Job Cuts", 0.35),
+        ("Challenger Job Cuts y/y", 0.35),
         ("Unemployment Claims", 0.30),
     ],
     "Unemployment Rate": [
-        ("ADP Nonfarm Employment Change", 0.60),
+        ("ADP Non-Farm Employment Change", 0.60),
         ("Unemployment Claims", 0.40),
     ],
     "Average Hourly Earnings m/m": [
-        ("ADP Nonfarm Employment Change", 0.50),
+        ("ADP Non-Farm Employment Change", 0.50),
     ],
     "CPI m/m": [
         ("PPI m/m", 0.90),  # migrated from the old hardcoded precursor-lookup link
@@ -458,11 +458,11 @@ EVENT_INFLUENCE_LINKS: dict[str, list[tuple[str, float]]] = {
 # a higher CPI print is bullish).
 EVENT_SURPRISE_DIRECTION = {
     "Non-Farm Employment Change": "higher_bullish",
-    "ADP Nonfarm Employment Change": "higher_bullish",
+    "ADP Non-Farm Employment Change": "higher_bullish",
     "Average Hourly Earnings m/m": "higher_bullish",
     "Unemployment Rate": "higher_bearish",
     "Unemployment Claims": "higher_bearish",
-    "Challenger Job Cuts": "higher_bearish",
+    "Challenger Job Cuts y/y": "higher_bearish",
     "CPI m/m": "higher_bullish",
     "CPI y/y": "higher_bullish",
     "Core CPI m/m": "higher_bullish",
@@ -679,7 +679,7 @@ PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES = PRE_EVENT_WINDOW_HOURS * 60
 # never triggers a Kalshi lookup at all.
 KALSHI_SERIES_BY_EVENT_TITLE = {
     "Non-Farm Employment Change": "KXPAYROLLS",
-    "ADP Nonfarm Employment Change": "KXADP",
+    "ADP Non-Farm Employment Change": "KXADP",
     "Unemployment Rate": "KXU3",
     "CPI m/m": "KXCPI",
     "CPI y/y": "KXCPIYOY",
@@ -708,7 +708,7 @@ KALSHI_DATE_TICKETED_SERIES_BY_EVENT_TITLE = {
     "Unemployment Claims": "KXJOBLESSCLAIMS",
     "Prelim GDP q/q": "KXGDP",
     "Prelim UoM Consumer Sentiment": "KXUSMICHCSP",
-    "Challenger Job Cuts": "KXCHCUTS",
+    "Challenger Job Cuts y/y": "KXCHCUTS",
     "PPI m/m": "KXUSPPI",
     "Retail Sales m/m": "KXUSRETAIL",
 }

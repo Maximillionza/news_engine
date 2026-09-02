@@ -994,7 +994,7 @@ def test_migrated_links_produce_identical_score_bundle_result_old_vs_new_path():
         # --- NFP target, ADP precursor ---
         nfp_event = EconomicEvent(title="Non-Farm Employment Change", country="USD", impact="High", event_time_utc=EVENT_TIME, forecast="180K")
         adp_time = EVENT_TIME - dt.timedelta(hours=48)
-        adp_event = EconomicEvent(title="ADP Nonfarm Employment Change", country="USD", impact="Medium", event_time_utc=adp_time, forecast="150K", actual="190K")
+        adp_event = EconomicEvent(title="ADP Non-Farm Employment Change", country="USD", impact="Medium", event_time_utc=adp_time, forecast="150K", actual="190K")
         webapp_store.upsert_event_history(conn, adp_event, surprise_direction="higher", now=adp_time)
 
         nfp_bundle = EventNewsBundle(event=nfp_event, articles=[], as_of_utc=EVENT_TIME)
@@ -1029,7 +1029,7 @@ def test_migrated_links_produce_identical_score_bundle_result_old_vs_new_path():
 def test_event_influence_links_weight_is_stored_but_not_consumed_by_scoring():
     print("=== EVENT_INFLUENCE_LINKS: the per-link float weight has no effect on _build_precursor_contributions()'s trust_weight ===")
     from config.settings import PRECURSOR_TRUST_WEIGHT
-    event = EconomicEvent(title="Challenger Job Cuts", country="USD", impact="Low", event_time_utc=EVENT_TIME, forecast="20K", actual="35K")  # linked to NFP at weight 0.35, NOT 0.9
+    event = EconomicEvent(title="Challenger Job Cuts y/y", country="USD", impact="Low", event_time_utc=EVENT_TIME, forecast="20K", actual="35K")  # linked to NFP at weight 0.35, NOT 0.9
     from scoring.probability_engine import _build_precursor_contributions
     contributions = _build_precursor_contributions([event], EVENT_TIME)
     assert len(contributions) == 1

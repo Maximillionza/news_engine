@@ -38,7 +38,7 @@ scoped down rather than force-fit with unverifiable numbers:
   Gray & Christmas's report is a survey tally, not tracked against a
   Dow-Jones/Reuters poll the way NFP/CPI/PPI are) — no real forecast
   value exists to cite, so no entries are included.
-- Import Prices m/m, ADP Nonfarm Employment Change, Average Hourly
+- Import Prices m/m, ADP Non-Farm Employment Change, Average Hourly
   Earnings m/m, Unemployment Rate, ISM Manufacturing PMI: partial
   coverage — included only for the specific months where a full,
   independently-citable forecast/previous/actual triplet was found;
@@ -652,10 +652,10 @@ HISTORICAL_EVENTS: list[HistoricalEventFact] = [
     ),
 
     # ============================================================
-    # ADP Nonfarm Employment Change
+    # ADP Non-Farm Employment Change
     # ============================================================
     HistoricalEventFact(
-        title="ADP Nonfarm Employment Change",
+        title="ADP Non-Farm Employment Change",
         event_time_utc=dt.datetime(2026, 6, 3, 12, 15, tzinfo=UTC_TZ),
         forecast="110K", previous="105K", actual="122K",
         source_note="May 2026 ADP private payrolls, released Jun 3 2026 "
@@ -666,7 +666,7 @@ HISTORICAL_EVENTS: list[HistoricalEventFact] = [
                      "payrolls-increase-by-122000.html).",
     ),
     HistoricalEventFact(
-        title="ADP Nonfarm Employment Change",
+        title="ADP Non-Farm Employment Change",
         event_time_utc=dt.datetime(2026, 7, 1, 12, 15, tzinfo=UTC_TZ),
         forecast="110K", previous="122K", actual="98K",
         source_note="June 2026 ADP private payrolls, released Jul 1 2026 "
@@ -677,7 +677,7 @@ HISTORICAL_EVENTS: list[HistoricalEventFact] = [
                      "by-98000-in-june-less-than-expected-adp-reports.html).",
     ),
     HistoricalEventFact(
-        title="ADP Nonfarm Employment Change",
+        title="ADP Non-Farm Employment Change",
         event_time_utc=dt.datetime(2026, 8, 5, 12, 15, tzinfo=UTC_TZ),
         forecast="70K", previous="98K", actual="44K",
         source_note="July 2026 ADP private payrolls, released Aug 5 2026 "

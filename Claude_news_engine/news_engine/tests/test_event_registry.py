@@ -139,7 +139,7 @@ def test_event_influence_links_every_title_is_registered():
 def test_event_influence_links_absorbs_the_old_hardcoded_adp_ppi_links():
     print("=== EVENT_INFLUENCE_LINKS: the two previously-hardcoded links (ADP->NFP, PPI->CPI) are present ===")
     nfp_precursors = dict(EVENT_INFLUENCE_LINKS.get("Non-Farm Employment Change", []))
-    assert "ADP Nonfarm Employment Change" in nfp_precursors
+    assert "ADP Non-Farm Employment Change" in nfp_precursors
     cpi_precursors = dict(EVENT_INFLUENCE_LINKS.get("CPI m/m", []))
     assert "PPI m/m" in cpi_precursors
     print("PASS\n")

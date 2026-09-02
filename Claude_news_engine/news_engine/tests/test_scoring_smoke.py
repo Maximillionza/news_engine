@@ -199,7 +199,7 @@ def test_precursor_leading_indicator():
     # session: ADP came in at 44K vs 75K forecast, a soft miss.
     adp_time = EVENT_TIME - dt.timedelta(hours=47, minutes=30)
     adp = EconomicEvent(
-        title="ADP Nonfarm Employment Change", country="USD", impact="Medium",
+        title="ADP Non-Farm Employment Change", country="USD", impact="Medium",
         event_time_utc=adp_time,
         forecast="75K", actual="44K",
     )

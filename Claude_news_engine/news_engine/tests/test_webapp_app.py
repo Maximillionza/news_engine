@@ -1400,7 +1400,7 @@ def test_predictions_excludes_low_impact_event_from_the_live_snapshot():
             # entry would pass this test vacuously (it could never score
             # regardless of this fix), so this title is the sharpest fixture.
             low_event = EconomicEvent(
-                title="Challenger Job Cuts", country="USD", impact="Low",
+                title="Challenger Job Cuts y/y", country="USD", impact="Low",
                 event_time_utc=now - dt.timedelta(hours=1),
                 forecast="-5.0%", previous="10.0%", actual="-20.0%",
             )
@@ -1435,7 +1435,7 @@ def test_predictions_excludes_low_impact_event_from_the_live_snapshot():
             resp = client.get("/api/predictions")
             events = resp.get_json()["predictions"][0]["events"]
             titles = {e["event_title"] for e in events}
-            assert "Challenger Job Cuts" not in titles, (
+            assert "Challenger Job Cuts y/y" not in titles, (
                 f"a Low-impact event from the live snapshot must never become a dashboard card/gauge, got {titles}"
             )
             # This fix narrows the card list, it must not remove events

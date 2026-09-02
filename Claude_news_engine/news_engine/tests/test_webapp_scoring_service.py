@@ -50,7 +50,7 @@ def test_adp_miss_flips_gold_bullish():
     # article-free path agrees with the precursor-contribution path,
     # since both are built on the same EconomicEvent.usd_surprise_score().
     event = EconomicEvent(
-        title="ADP Nonfarm Employment Change", country="USD", impact="Medium",
+        title="ADP Non-Farm Employment Change", country="USD", impact="Medium",
         event_time_utc=dt.datetime(2026, 8, 5, 13, 0, tzinfo=UTC_TZ),
         forecast="75K", actual="44K",
     )
@@ -66,7 +66,7 @@ def test_adp_miss_flips_gold_bullish():
 def test_adp_miss_flips_usdjpy_bearish():
     print("=== same ADP miss scores USDJPY BEARISH via direct relationship (USD weak -> USDJPY falls) ===")
     event = EconomicEvent(
-        title="ADP Nonfarm Employment Change", country="USD", impact="Medium",
+        title="ADP Non-Farm Employment Change", country="USD", impact="Medium",
         event_time_utc=dt.datetime(2026, 8, 5, 13, 0, tzinfo=UTC_TZ),
         forecast="75K", actual="44K",
     )
