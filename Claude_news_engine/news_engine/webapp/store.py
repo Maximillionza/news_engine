@@ -410,7 +410,7 @@ def get_resolved_event_history(conn: sqlite3.Connection, limit: int = 200) -> li
 
 
 def get_events_with_stale_missing_actual(
-    conn: sqlite3.Connection, now: dt.datetime, grace_period_hours: float = 6.0,
+    conn: sqlite3.Connection, now: dt.datetime, grace_period_hours: float = 1.0,
 ) -> list[EventHistoryRow]:
     """
     Every event_history row whose actual is still NULL and whose
@@ -418,7 +418,11 @@ def get_events_with_stale_missing_actual(
     candidate for the actuals-fallback enrichment pass. The grace period
     exists because Forex Factory's feed genuinely takes some time to
     publish an actual after release; searching too early would find
-    nothing real and waste an agent's WebSearch budget.
+    nothing real and waste an agent's WebSearch budget. Lowered from 6h to
+    1h (2026-09-02): FF has proven consistently unreliable at posting
+    actuals promptly, and 6h left real gaps sitting unflagged for most of
+    a trading session before an agent would even see them as candidates —
+    1h is a tighter, still-reasonable margin past a genuine publish delay.
 
     Also excludes rows that are structurally text-only (forecast IS NULL
     AND previous IS NULL — e.g. "RBA Gov Bullock Speaks") using the same
