@@ -63,7 +63,7 @@ from config.settings import (
     KALSHI_SERIES_BY_EVENT_TITLE,
     MIN_OCCURRENCES_FOR_TREND_PRIOR, POST_RELEASE_GRACE_MINUTES, PRE_EVENT_WINDOW_HOURS,
     EVENT_SURPRISE_DIRECTION, ACCUMULATOR_MEDIUM_ALLOWLIST,
-    THIN_SAMPLE_SIGNAL_THRESHOLD,
+    THIN_SAMPLE_SIGNAL_THRESHOLD, EVENT_INFLUENCE_LINKS,
 )
 from data_layer.calendar_feed import (
     EconomicEvent, fetch_calendar, filter_relevant_events, events_in_pre_window,
@@ -470,6 +470,12 @@ def score_and_record_event(
     precursors = _read_precursor_events(event)
     if precursors:
         print(f"[backtest_accumulator] precursors for {event.title}: {[p.title for p in precursors]}")
+    else:
+        configured_count = len(EVENT_INFLUENCE_LINKS.get(event.title, []))
+        if configured_count:
+            print(f"[backtest_accumulator] no resolved in-window precursors for {event.title} ({configured_count} links configured — dashboard event_history may not have caught up)")
+        else:
+            print(f"[backtest_accumulator] no precursor links configured for {event.title}")
 
     print_call = score_print_direction(bundle)
     if print_call is not None:

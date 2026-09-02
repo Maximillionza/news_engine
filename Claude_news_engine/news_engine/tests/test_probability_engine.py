@@ -1095,4 +1095,6 @@ if __name__ == "__main__":
     test_check_precursor_chain_conflict_two_disagree_flags()
     test_check_precursor_chain_conflict_three_with_one_outlier_flags()
     test_score_bundle_flags_chain_conflict_when_linked_precursors_disagree()
+    test_migrated_links_produce_identical_score_bundle_result_old_vs_new_path()
+    test_event_influence_links_weight_is_stored_but_not_consumed_by_scoring()
     print("All probability_engine tests passed.")
