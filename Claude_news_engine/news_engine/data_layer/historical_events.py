@@ -198,6 +198,44 @@ HISTORICAL_EVENTS: list[HistoricalEventFact] = [
                      "March's rate and the forecast. CNBC 'Jobs report "
                      "April 2026'.",
     ),
+    HistoricalEventFact(
+        title="Unemployment Rate",
+        event_time_utc=dt.datetime(2026, 6, 5, 12, 30, tzinfo=UTC_TZ),
+        forecast="4.3%", previous="4.3%", actual="4.3%",
+        source_note="May 2026 unemployment rate, released with the Jun 5 "
+                     "2026 jobs report -- held steady at 4.3%, matching "
+                     "market expectations. Bloomberg 'US Jobs Report May "
+                     "2026: 172,000 Added, Unemployment Rate Holds at 4.3%' "
+                     "(bloomberg.com/news/articles/2026-06-05/us-adds-"
+                     "172-000-jobs-in-may-beating-all-economists-estimates), "
+                     "BLS 'Unemployment rate unchanged at 4.3 percent in "
+                     "May 2026' (bls.gov/opub/ted/2026/unemployment-rate-"
+                     "unchanged-at-4-3-percent-in-may-2026.htm).",
+    ),
+    HistoricalEventFact(
+        title="Unemployment Rate",
+        event_time_utc=dt.datetime(2026, 7, 2, 12, 30, tzinfo=UTC_TZ),
+        forecast="4.3%", previous="4.3%", actual="4.2%",
+        source_note="June 2026 unemployment rate, released with the Jul 2 "
+                     "2026 jobs report -- ticked down to 4.2% vs forecast "
+                     "to hold at 4.3%, below expectations as labor force "
+                     "participation fell. CNBC 'U.S. job creation cools in "
+                     "June with payrolls growth of just 57,000; "
+                     "unemployment rate at 4.2%' "
+                     "(cnbc.com/2026/07/02/jobs-report-june-2026-.html).",
+    ),
+    HistoricalEventFact(
+        title="Unemployment Rate",
+        event_time_utc=dt.datetime(2026, 8, 7, 12, 30, tzinfo=UTC_TZ),
+        forecast="4.2%", previous="4.2%", actual="4.1%",
+        source_note="July 2026 unemployment rate, released with the Aug 7 "
+                     "2026 jobs report -- dropped to 4.1% vs forecast to "
+                     "hold at 4.2%, below expectations, alongside the "
+                     "surprise -23K payrolls print. NBC News 'July jobs "
+                     "report: US economy shed 23,000 jobs, a sudden "
+                     "reversal' (nbcnews.com/business/economy/"
+                     "july-2026-jobs-report-rcna591138).",
+    ),
 
     # ============================================================
     # Average Hourly Earnings m/m (bundled with the NFP report)
@@ -212,6 +250,41 @@ HISTORICAL_EVENTS: list[HistoricalEventFact] = [
                      "'Jobs report April 2026' "
                      "(cnbc.com/2026/05/08/jobs-report-april-2026.html) + "
                      "'Jobs report March 2026' for the previous figure.",
+    ),
+    HistoricalEventFact(
+        title="Average Hourly Earnings m/m",
+        event_time_utc=dt.datetime(2026, 6, 5, 12, 30, tzinfo=UTC_TZ),
+        forecast="0.3%", previous="0.2%", actual="0.3%",
+        source_note="May 2026 average hourly earnings, released with the "
+                     "Jun 5 2026 jobs report -- rose 0.3% m/m, up 3.4% y/y, "
+                     "both in line with Wall Street consensus; April's m/m "
+                     "gain was +0.2% (this project's own prior seeded "
+                     "entry). Bloomberg 'US Jobs Report May 2026' "
+                     "(bloomberg.com/news/articles/2026-06-05/us-adds-"
+                     "172-000-jobs-in-may-beating-all-economists-estimates).",
+    ),
+    HistoricalEventFact(
+        title="Average Hourly Earnings m/m",
+        event_time_utc=dt.datetime(2026, 7, 2, 12, 30, tzinfo=UTC_TZ),
+        forecast="0.3%", previous="0.3%", actual="0.3%",
+        source_note="June 2026 average hourly earnings, released with the "
+                     "Jul 2 2026 jobs report -- rose 0.3% m/m to $37.64, "
+                     "matching both May's pace and market expectations. "
+                     "FX.co 'US Wage Growth Steady at 0.3% as Forecast' "
+                     "(fx.co/en/forex-news/3048795).",
+    ),
+    HistoricalEventFact(
+        title="Average Hourly Earnings m/m",
+        event_time_utc=dt.datetime(2026, 8, 7, 12, 30, tzinfo=UTC_TZ),
+        forecast="0.3%", previous="0.3%", actual="0.1%",
+        source_note="July 2026 average hourly earnings, released with the "
+                     "Aug 7 2026 jobs report -- rose just +0.1% m/m vs the "
+                     "0.3% Barclays/HSBC consensus, a miss alongside the "
+                     "surprise -23K payrolls print. BLS 'Real average "
+                     "hourly earnings decreased 0.2 percent from July 2025 "
+                     "to July 2026' (bls.gov/opub/ted/2026/real-average-"
+                     "hourly-earnings-decreased-0-2-percent-from-"
+                     "july-2025-to-july-2026.htm).",
     ),
 
     # ============================================================
