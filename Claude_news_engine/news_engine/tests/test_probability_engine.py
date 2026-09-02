@@ -619,8 +619,17 @@ def test_score_bundle_cot_crowding_only_touches_confidence():
 def test_score_bundle_oil_shock_only_touches_confidence():
     print("=== score_bundle: an oil shock discounts confidence but never changes direction or probability ===")
     event = _cpi_event()
+    # Same proven-non-zero-confidence article as the COT crowding test above
+    # (not the brief's literal "Sticky inflation could push CPI higher" —
+    # under the full test suite, tests/test_scoring_smoke.py leaks a
+    # module-level ENABLE_FINBERT_SENTIMENT=False mutation with no teardown,
+    # forcing lexicon-only scoring for the rest of the session; that literal
+    # article scores confidence exactly 0.0 under lexicon-only mode, which
+    # makes "with_shock.confidence < baseline.confidence" false (0.0 < 0.0).
+    # This article scores non-zero confidence under both FinBERT and
+    # lexicon-only paths, so the test is robust to that leak either way).
     article = NewsArticle(
-        title="Sticky inflation could push CPI higher", summary="Analysts see upside risk to the print.",
+        title="Hawkish tilt firms, rate hike bets rise", summary="Dollar strength widely expected.",
         source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
         url="https://example.test/oil-shock-only-confidence",
     )
