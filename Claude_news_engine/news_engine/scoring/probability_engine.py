@@ -44,6 +44,7 @@ from config.settings import (
     KALSHI_TRUST_WEIGHT,
     MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER,
     OIL_SHOCK_CONFIDENCE_MULTIPLIER,
+    PRECURSOR_CHAIN_CONFLICT_CONFIDENCE_MULTIPLIER,
     PRE_EVENT_WINDOW_HOURS,
     PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES,
     PRECURSOR_TRUST_WEIGHT,
@@ -172,6 +173,8 @@ class ProbabilityResult:
     equity_risk_note: str | None = None
     oil_shock_flag: bool = False                 # True = a sharp single-session oil move was detected
     oil_shock_note: str | None = None
+    chain_conflict_flag: bool = False             # True = 2+ linked, confirmed precursors disagreed in direction
+    chain_conflict_note: str | None = None
     redundant_contributions_discounted: int = 0   # how many article contributions were discounted as likely-redundant with an earlier one (see _apply_redundancy_discounts)
     contributions: list[ArticleContribution] = field(default_factory=list, repr=False)
     precursor_contributions: list[PrecursorContribution] = field(default_factory=list, repr=False)
@@ -189,6 +192,8 @@ class ProbabilityResult:
             base += f" — ⚠ {self.contradiction_note}"
         if self.macro_backdrop_agrees is False:
             base += f" — ⚠ {self.macro_backdrop_note}"
+        if self.chain_conflict_flag:
+            base += f" — ⚠ {self.chain_conflict_note}"
         return base
 
 
@@ -746,6 +751,38 @@ def _check_oil_shock(macro_backdrop) -> tuple[bool, str | None]:
     return True, note
 
 
+def _check_precursor_chain_conflict(
+    precursor_contributions: list[PrecursorContribution],
+) -> tuple[bool, str | None]:
+    """
+    (True, note) if 2+ precursor contributions disagree in sign (one
+    USD-bullish, one USD-bearish) — a genuine conflict within THIS target
+    event's own linked-precursor chain (config.settings.EVENT_INFLUENCE_LINKS).
+    Distinct from _detect_contradiction() (article-only, recent-vs-older
+    narrative shift) and from _check_macro_backdrop() (compares against
+    an external dollar/rates read, not against other precursors).
+
+    (False, None) if fewer than 2 precursor contributions, or all agree.
+    Never touches direction or probability — confidence-only, same
+    discipline as every other _check_* function here.
+    """
+    if len(precursor_contributions) < 2:
+        return False, None
+
+    bullish = [c for c in precursor_contributions if c.usd_sentiment > 0]
+    bearish = [c for c in precursor_contributions if c.usd_sentiment < 0]
+    if not bullish or not bearish:
+        return False, None
+
+    bullish_titles = ", ".join(c.event.title for c in bullish)
+    bearish_titles = ", ".join(c.event.title for c in bearish)
+    note = (
+        f"Linked precursor chain conflict: {bullish_titles} read USD-bullish while "
+        f"{bearish_titles} read USD-bearish — not silently averaged, treat this call with extra caution."
+    )
+    return True, note
+
+
 def _map_to_instrument_score(usd_sentiment: float, instrument: str) -> float:
     relationship = INSTRUMENTS[instrument]["usd_relationship"]
     if relationship == "inverse":
@@ -1027,6 +1064,10 @@ def score_bundle(
     if oil_shock_flag:
         confidence *= OIL_SHOCK_CONFIDENCE_MULTIPLIER
 
+    chain_conflict_flag, chain_conflict_note = _check_precursor_chain_conflict(precursor_contributions)
+    if chain_conflict_flag:
+        confidence *= PRECURSOR_CHAIN_CONFLICT_CONFIDENCE_MULTIPLIER
+
     direction = _direction_for_score(instrument_score, current_direction)
 
     # Contradiction detection stays article-only — it's designed to catch
@@ -1054,6 +1095,8 @@ def score_bundle(
         equity_risk_note=equity_risk_note,
         oil_shock_flag=oil_shock_flag,
         oil_shock_note=oil_shock_note,
+        chain_conflict_flag=chain_conflict_flag,
+        chain_conflict_note=chain_conflict_note,
         redundant_contributions_discounted=redundant_contributions_discounted,
         contributions=article_contributions,
         precursor_contributions=precursor_contributions,

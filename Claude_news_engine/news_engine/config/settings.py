@@ -839,6 +839,16 @@ EQUITY_RISK_DISAGREEMENT_CONFIDENCE_MULTIPLIER = 0.7
 # outside the tracked calendar" flag, not an agree/disagree comparison.
 OIL_SHOCK_CONFIDENCE_MULTIPLIER = 0.8
 
+# Confidence dampener when 2+ of a target event's linked, CONFIRMED
+# precursors (config.settings.EVENT_INFLUENCE_LINKS) disagree in USD
+# direction — a genuine conflict within the target's own precursor
+# chain, distinct from _detect_contradiction() (article-only,
+# recent-vs-older narrative shift) and _check_macro_backdrop() (compares
+# against an EXTERNAL dollar/rates read, not other precursors). Same
+# untuned-starting-value honesty as every other confidence multiplier
+# here, calibrated later against real backtest data.
+PRECURSOR_CHAIN_CONFLICT_CONFIDENCE_MULTIPLIER = 0.75
+
 # --- Correlation/redundancy discount (2026-08-16 follow-up to the R5 review) ---
 # _weighted_aggregate()/_agreement_and_coverage() previously treated every
 # article contribution as independent evidence — the same standard

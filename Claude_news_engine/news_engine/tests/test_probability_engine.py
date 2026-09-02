@@ -930,6 +930,62 @@ def test_get_precursor_events_for_multiple_links_all_resolved():
     print("PASS\n")
 
 
+def _precursor_contribution(usd_sentiment: float):
+    event = EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=EVENT_TIME, forecast="0.2%", actual="0.4%")
+    from scoring.probability_engine import PrecursorContribution
+    return PrecursorContribution(event=event, usd_sentiment=usd_sentiment, trust_weight=0.9, time_weight=1.0, combined_weight=0.9)
+
+
+def test_check_precursor_chain_conflict_fewer_than_two_no_conflict():
+    print("=== _check_precursor_chain_conflict: fewer than 2 precursor contributions can never conflict ===")
+    from scoring.probability_engine import _check_precursor_chain_conflict
+    assert _check_precursor_chain_conflict([]) == (False, None)
+    assert _check_precursor_chain_conflict([_precursor_contribution(0.5)]) == (False, None)
+    print("PASS\n")
+
+
+def test_check_precursor_chain_conflict_two_agree_no_conflict():
+    print("=== _check_precursor_chain_conflict: 2 precursors agreeing in sign is not a conflict ===")
+    from scoring.probability_engine import _check_precursor_chain_conflict
+    result = _check_precursor_chain_conflict([_precursor_contribution(0.5), _precursor_contribution(0.3)])
+    assert result == (False, None)
+    print("PASS\n")
+
+
+def test_check_precursor_chain_conflict_two_disagree_flags():
+    print("=== _check_precursor_chain_conflict: 2 precursors disagreeing in sign flags a real conflict ===")
+    from scoring.probability_engine import _check_precursor_chain_conflict
+    flag, note = _check_precursor_chain_conflict([_precursor_contribution(0.5), _precursor_contribution(-0.4)])
+    assert flag is True
+    assert note is not None and "conflict" in note.lower()
+    print("PASS\n")
+
+
+def test_check_precursor_chain_conflict_three_with_one_outlier_flags():
+    print("=== _check_precursor_chain_conflict: 3 precursors with one outlier still flags (2+ disagree is enough) ===")
+    from scoring.probability_engine import _check_precursor_chain_conflict
+    flag, note = _check_precursor_chain_conflict([_precursor_contribution(0.5), _precursor_contribution(0.4), _precursor_contribution(-0.3)])
+    assert flag is True
+    print("PASS\n")
+
+
+def test_score_bundle_flags_chain_conflict_when_linked_precursors_disagree():
+    print("=== score_bundle: 2 linked, confirmed precursors disagreeing in direction sets chain_conflict_flag and dampens confidence ===")
+    event = _cpi_event()  # "CPI m/m" target, links to PPI m/m + Core PPI m/m + Import Prices m/m + ISM Prices Paid
+    bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
+    ppi_beat = EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=EVENT_TIME - dt.timedelta(hours=10), forecast="0.2%", actual="0.5%")  # higher_bullish, beat -> USD-bullish
+    import_miss = EconomicEvent(title="Import Prices m/m", country="USD", impact="Low", event_time_utc=EVENT_TIME - dt.timedelta(hours=5), forecast="0.3%", actual="0.0%")  # higher_bullish, big miss -> USD-bearish
+
+    no_conflict_result = score_bundle(bundle, "XAUUSD", precursor_events=[ppi_beat])
+    assert no_conflict_result.chain_conflict_flag is False
+
+    conflict_result = score_bundle(bundle, "XAUUSD", precursor_events=[ppi_beat, import_miss])
+    assert conflict_result.chain_conflict_flag is True
+    assert conflict_result.chain_conflict_note is not None
+    assert conflict_result.confidence < no_conflict_result.confidence * 1.01, "a chain conflict must dampen confidence, never raise it"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_bundle_without_new_params_is_unchanged()
     test_print_call_higher_on_bullish_indicator_is_bullish_for_direct_instrument()
@@ -983,4 +1039,9 @@ if __name__ == "__main__":
     test_get_precursor_events_for_skips_unresolved_precursor()
     test_get_precursor_events_for_ignores_stale_resolved_row_outside_window()
     test_get_precursor_events_for_multiple_links_all_resolved()
+    test_check_precursor_chain_conflict_fewer_than_two_no_conflict()
+    test_check_precursor_chain_conflict_two_agree_no_conflict()
+    test_check_precursor_chain_conflict_two_disagree_flags()
+    test_check_precursor_chain_conflict_three_with_one_outlier_flags()
+    test_score_bundle_flags_chain_conflict_when_linked_precursors_disagree()
     print("All probability_engine tests passed.")
