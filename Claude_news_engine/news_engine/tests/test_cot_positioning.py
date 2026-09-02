@@ -14,10 +14,24 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 import requests
 
+import data_layer.cot_positioning as cot_positioning
 from data_layer.cot_positioning import (
     get_cot_positioning_read, CotPositioningRead,
     COT_CROWDING_PERCENTILE_THRESHOLD, COT_CROWDING_LOOKBACK_WEEKS,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_cot_cache():
+    """The module caches its last read per calendar day in module-level
+    globals. Without resetting them, one test's cached result leaks into
+    the next test that calls get_cot_positioning_read() on the same real
+    day — reset before (and after, for safety) every test."""
+    cot_positioning._cache_date = None
+    cot_positioning._cache_read = None
+    yield
+    cot_positioning._cache_date = None
+    cot_positioning._cache_read = None
 
 
 def _cftc_response(rows):

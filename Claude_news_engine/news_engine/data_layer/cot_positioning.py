@@ -10,9 +10,8 @@ spec's Decisions section: explicitly deferred, revisit only if the
 dampener-only design proves insufficient).
 
 Data source: CFTC's Socrata Open Data API, publicreporting.cftc.gov,
-resource gpe5-46if ("TFF - Futures Only") — live-verified during this
-plan's brainstorm: genuinely free, no API key/token required, real
-weekly rows for "U.S. DOLLAR INDEX - ICE FUTURES U.S." with
+resource gpe5-46if ("TFF - Futures Only") — real weekly rows for the
+USD Index futures contract (cftc_contract_market_code "098662") with
 lev_money_positions_long/lev_money_positions_short fields (the
 "Leveraged Funds" trader category — the standard "smart money crowding"
 read in COT-based fundamental analysis, as opposed to Dealers/Asset
@@ -26,15 +25,15 @@ READ-ONLY, same fail-open contract as every other data_layer module:
 returns None on a missing/empty response, a failed request, or any
 exception — never raises, never invents a value.
 
-CAUTION — re-verified live on 2026-09-02: as of that check, CFTC has
-renamed this contract's market_and_exchange_names value. Rows filtered
-on USD_INDEX_MARKET_NAME below ("U.S. DOLLAR INDEX - ICE FUTURES U.S.")
-only exist through report_date 2022-02-01; the same contract
-(cftc_contract_market_code "098662") continues under the new name
-"USD INDEX - ICE FUTURES U.S." with current weekly data. Left as
-originally specified (not redesigned) — see
-task-3-report.md for the full finding. This means, unpatched, the
-query below will silently return only pre-2022 rows, not an error.
+CORRECTION (live-verified 2026-09-02, this task): the plan's original
+brainstorm recorded the market_and_exchange_names value as
+"U.S. DOLLAR INDEX - ICE FUTURES U.S." — that string is stale. CFTC
+renamed it (same cftc_contract_market_code "098662") to
+"USD INDEX - ICE FUTURES U.S." starting with the 2022-02-08 report; the
+old string returns nothing newer than 2022-02-01. Independently
+re-confirmed live twice (once during implementation, once by the
+controller) before landing — USD_INDEX_MARKET_NAME below uses the
+current, correct name.
 """
 from __future__ import annotations
 
@@ -45,7 +44,7 @@ from typing import Optional
 import requests
 
 CFTC_TFF_RESOURCE_URL = "https://publicreporting.cftc.gov/resource/gpe5-46if.json"
-USD_INDEX_MARKET_NAME = "U.S. DOLLAR INDEX - ICE FUTURES U.S."
+USD_INDEX_MARKET_NAME = "USD INDEX - ICE FUTURES U.S."
 
 # How far back to look for the trailing percentile window — a standard
 # one-year COT lookback. Untuned starting value.
