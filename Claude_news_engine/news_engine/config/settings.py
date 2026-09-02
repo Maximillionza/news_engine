@@ -626,6 +626,37 @@ THIN_SAMPLE_PROBABILITY_CAP = 0.80   # max/min probability allowed on a thin sam
 # exists.
 MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER = 0.7
 
+# --- Fundamental signals batch (docs/superpowers/specs/2026-09-02-fundamental-signals-batch-design.md) ---
+# Three more confidence-only modifiers, same discipline as
+# MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER above: none of these
+# are blended into aggregate_usd_sentiment as a weighted vote (no
+# backtested trust weight exists for any of them yet) — each can only
+# discount CONFIDENCE, never invent or override a direction. All three
+# are untuned starting values, needs revisiting once real backtest data
+# exists.
+
+# COT positioning crowding (scoring/probability_engine.py's
+# _check_cot_crowding()): dampens confidence when speculative USD Index
+# futures positioning is BOTH extreme AND aligned with this read's own
+# direction — a crowded trade in the same direction as the call is a
+# caution signal, the opposite polarity from the disagreement-based
+# checks below.
+COT_CROWDING_CONFIDENCE_MULTIPLIER = 0.85
+
+# Equity risk-sentiment leg (scoring/probability_engine.py's
+# _check_equity_risk_sentiment()): dampens confidence when an equity
+# index's trend clearly disagrees with a risk_sentiment-mapped
+# instrument's own score (today: US30 only) — same disagreement-based
+# discount pattern as the macro backdrop check above.
+EQUITY_RISK_DISAGREEMENT_CONFIDENCE_MULTIPLIER = 0.7
+
+# Oil single-day shock flag (scoring/probability_engine.py's
+# _check_oil_shock()): dampens confidence whenever a sharp single-session
+# oil move fires, regardless of direction or agreement with anything else
+# — a "treat this call with extra caution, something sharp just happened
+# outside the tracked calendar" flag, not an agree/disagree comparison.
+OIL_SHOCK_CONFIDENCE_MULTIPLIER = 0.8
+
 # --- Correlation/redundancy discount (2026-08-16 follow-up to the R5 review) ---
 # _weighted_aggregate()/_agreement_and_coverage() previously treated every
 # article contribution as independent evidence — the same standard
