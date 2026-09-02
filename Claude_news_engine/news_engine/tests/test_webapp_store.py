@@ -15,6 +15,7 @@ from webapp.store import (
     get_connection, record_run, get_latest_two, get_history,
     add_tracked_symbol, remove_tracked_symbol, list_tracked_symbols,
     get_calendar_snapshot, save_calendar_snapshot_if_changed,
+    get_resolved_event_history,
 )
 from config.settings import UTC_TZ
 from data_layer.calendar_feed import EconomicEvent
@@ -349,6 +350,119 @@ def test_get_resolved_event_history_most_recent_first_and_limit():
         assert rows[0].event_title == "NFP"
         assert rows[1].event_title == "PPI m/m"
         conn.close()
+    print("PASS\n")
+
+
+def test_upsert_event_history_persists_impact():
+    print("=== upsert_event_history: stores the event's impact tier on the row ===")
+    conn = get_connection(":memory:")
+    event = _fake_event(title="Housing Starts", forecast="1.35M", actual=None)
+    event.impact = "Low"
+    event.previous = "1.32M"
+    now = dt.datetime(2026, 8, 31, 12, 0, tzinfo=dt.timezone.utc)
+    store.upsert_event_history(conn, event, surprise_direction=None, now=now)
+
+    rows = store.get_event_history(conn, "Housing Starts")
+    assert len(rows) == 1
+    assert rows[0].impact == "Low"
+    print("PASS\n")
+
+
+def test_get_resolved_event_history_returns_impact():
+    print("=== get_resolved_event_history: impact field flows through to the cross-title resolved query too ===")
+    conn = get_connection(":memory:")
+    event = _fake_event(title="Factory Orders m/m", forecast="0.2%", actual="0.3%")
+    event.impact = "Low"
+    event.previous = "0.1%"
+    now = dt.datetime(2026, 8, 31, 12, 0, tzinfo=dt.timezone.utc)
+    store.upsert_event_history(conn, event, surprise_direction="higher", now=now)
+
+    rows = get_resolved_event_history(conn)
+    assert len(rows) == 1
+    assert rows[0].impact == "Low"
+    print("PASS\n")
+
+
+def test_pre_migration_row_has_none_impact():
+    print("=== event_history: a row written before this column existed reads back impact=None, not a crash or a fabricated value ===")
+    conn = get_connection(":memory:")
+    now = dt.datetime(2026, 8, 31, 12, 0, tzinfo=dt.timezone.utc)
+    # Simulate a pre-migration row by inserting directly, bypassing upsert_event_history
+    # (which always supplies impact going forward) — this is exactly what a real
+    # database file created before this change looks like.
+    conn.execute(
+        "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, "
+        "surprise_direction, recorded_at_utc, updated_at_utc, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("Legacy Event", now.isoformat(), "1.0", "0.9", "1.1", "higher", now.isoformat(), now.isoformat(), "live"),
+    )
+    conn.commit()
+
+    rows = store.get_event_history(conn, "Legacy Event")
+    assert len(rows) == 1
+    assert rows[0].impact is None
+    print("PASS\n")
+
+
+def test_pre_migration_pending_row_backfills_impact_on_the_call_that_resolves_it():
+    print("=== event_history: a legacy PENDING row (impact=None, actual=None) backfills its real impact on the upsert_event_history() call that finally resolves it ===")
+    conn = get_connection(":memory:")
+    now = dt.datetime(2026, 8, 31, 12, 0, tzinfo=dt.timezone.utc)
+    event_time = now - dt.timedelta(hours=1)
+    # Simulate a pre-migration PENDING row: no impact column supplied,
+    # actual still NULL (never resolved) — exactly what a real DB file
+    # created before the impact column existed, on a not-yet-released
+    # event, looks like.
+    conn.execute(
+        "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, "
+        "surprise_direction, recorded_at_utc, updated_at_utc, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("Legacy Pending Event", event_time.isoformat(), "1.0", "0.9", None, None, now.isoformat(), now.isoformat(), "live"),
+    )
+    conn.commit()
+
+    rows = store.get_event_history(conn, "Legacy Pending Event")
+    assert rows[0].impact is None  # still unknown before any post-migration upsert touches it
+
+    # A resolving upsert_event_history() call (real event.actual, real
+    # event.impact) is the only call shape that can trigger the UPDATE
+    # branch's WHERE (excluded.actual IS NOT NULL AND
+    # event_history.actual IS NULL) — see upsert_event_history()'s and
+    # _migrate_add_impact_column()'s docstrings. It backfills impact via
+    # COALESCE(event_history.impact, excluded.impact) in the same UPDATE.
+    resolving_event = EconomicEvent(
+        title="Legacy Pending Event", country="USD", impact="Medium",
+        event_time_utc=event_time, forecast="1.0", previous="0.9", actual="1.2",
+    )
+    store.upsert_event_history(conn, resolving_event, "higher", now)
+
+    rows = store.get_event_history(conn, "Legacy Pending Event")
+    assert len(rows) == 1
+    assert rows[0].actual == "1.2"
+    assert rows[0].impact == "Medium"
+    print("PASS\n")
+
+
+def test_pre_migration_pending_row_impact_not_backfilled_by_a_non_resolving_call():
+    print("=== event_history: a legacy PENDING row's impact stays None across an upsert_event_history() call that still supplies no actual — the WHERE guard is a single all-or-nothing gate, not a per-column one ===")
+    conn = get_connection(":memory:")
+    now = dt.datetime(2026, 8, 31, 12, 0, tzinfo=dt.timezone.utc)
+    event_time = now - dt.timedelta(hours=1)
+    conn.execute(
+        "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, "
+        "surprise_direction, recorded_at_utc, updated_at_utc, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("Legacy Still Pending Event", event_time.isoformat(), "1.0", "0.9", None, None, now.isoformat(), now.isoformat(), "live"),
+    )
+    conn.commit()
+
+    non_resolving_event = EconomicEvent(
+        title="Legacy Still Pending Event", country="USD", impact="Medium",
+        event_time_utc=event_time, forecast="1.0", previous="0.9", actual=None,
+    )
+    store.upsert_event_history(conn, non_resolving_event, None, now)
+
+    rows = store.get_event_history(conn, "Legacy Still Pending Event")
+    assert len(rows) == 1
+    assert rows[0].actual is None
+    assert rows[0].impact is None, "a call that still supplies no actual must not partially apply — impact stays unknown until the resolving call"
     print("PASS\n")
 
 
@@ -723,6 +837,11 @@ if __name__ == "__main__":
     test_get_event_history_unknown_title_returns_empty_list()
     test_get_resolved_event_history_only_returns_rows_with_actual()
     test_get_resolved_event_history_most_recent_first_and_limit()
+    test_upsert_event_history_persists_impact()
+    test_get_resolved_event_history_returns_impact()
+    test_pre_migration_row_has_none_impact()
+    test_pre_migration_pending_row_backfills_impact_on_the_call_that_resolves_it()
+    test_pre_migration_pending_row_impact_not_backfilled_by_a_non_resolving_call()
     test_get_text_only_resolved_events_requires_both_forecast_and_actual_null()
     test_get_text_only_resolved_events_excludes_event_missing_only_one_field()
     test_upsert_event_history_defaults_to_live_source()

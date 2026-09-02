@@ -1323,6 +1323,127 @@ def test_predictions_does_not_duplicate_a_recently_resolved_event_ff_still_has()
     print("PASS\n")
 
 
+def test_recently_resolved_backfill_excludes_low_impact_event():
+    print("=== app: /api/predictions does NOT backfill a resolved Low-impact event into the events/cards list ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path):
+            now = dt.datetime.now(dt.timezone.utc)
+            future_event = EconomicEvent(
+                title="FOMC Meeting Minutes", country="USD", impact="High",
+                event_time_utc=now + dt.timedelta(days=2),
+            )
+            _seed_calendar(db_path, [future_event])
+
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            low_time = now - dt.timedelta(hours=2)
+            store.record_run(conn, "XAUUSD", "Housing Starts (Test)", low_time, 0.55, "bullish", 0.6)
+            low_event = EconomicEvent(
+                title="Housing Starts (Test)", country="USD", impact="Low",
+                event_time_utc=low_time,
+                forecast="1.35M", previous="1.32M", actual="1.40M",
+            )
+            store.upsert_event_history(conn, low_event, "higher", now)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            titles = {e["event_title"] for e in events}
+            assert "Housing Starts (Test)" not in titles, f"a resolved Low-impact event should not resurface here, got {titles}"
+    print("PASS\n")
+
+
+def test_recently_resolved_backfill_still_includes_medium_impact_event():
+    print("=== app: /api/predictions still backfills a resolved Medium-impact event — this task narrows the threshold, it doesn't remove the feature ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path):
+            now = dt.datetime.now(dt.timezone.utc)
+            future_event = EconomicEvent(
+                title="FOMC Meeting Minutes", country="USD", impact="High",
+                event_time_utc=now + dt.timedelta(days=2),
+            )
+            _seed_calendar(db_path, [future_event])
+
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            medium_time = now - dt.timedelta(hours=2)
+            store.record_run(conn, "XAUUSD", "Retail Sales m/m (Test)", medium_time, 0.55, "bullish", 0.6)
+            medium_event = EconomicEvent(
+                title="Retail Sales m/m (Test)", country="USD", impact="Medium",
+                event_time_utc=medium_time,
+                forecast="0.3%", previous="0.2%", actual="0.4%",
+            )
+            store.upsert_event_history(conn, medium_event, "higher", now)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            titles = {e["event_title"] for e in events}
+            assert "Retail Sales m/m (Test)" in titles, f"expected Retail Sales m/m (Test) to still appear, got {titles}"
+    print("PASS\n")
+
+
+def test_predictions_excludes_low_impact_event_from_the_live_snapshot():
+    print("=== app: /api/predictions never turns a Low-impact event from the LIVE calendar snapshot into a card, even when it has EVENT_SURPRISE_DIRECTION coverage ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(store, "DB_PATH", db_path):
+            now = dt.datetime.now(dt.timezone.utc)
+            # "Challenger Job Cuts" is Low-impact on FF but IS present in
+            # config.settings.EVENT_SURPRISE_DIRECTION — i.e. it CAN be
+            # read-time-scored by _recompute_stale_pending() if it leaks
+            # through unfiltered. A Low title with no EVENT_SURPRISE_DIRECTION
+            # entry would pass this test vacuously (it could never score
+            # regardless of this fix), so this title is the sharpest fixture.
+            low_event = EconomicEvent(
+                title="Challenger Job Cuts", country="USD", impact="Low",
+                event_time_utc=now - dt.timedelta(hours=1),
+                forecast="-5.0%", previous="10.0%", actual="-20.0%",
+            )
+            medium_event = EconomicEvent(
+                title="Retail Sales m/m", country="USD", impact="Medium",
+                event_time_utc=now + dt.timedelta(hours=5),
+                forecast="0.3%", previous="0.2%",
+            )
+            # Seed straight into the SNAPSHOT (webapp/scheduler.py's
+            # calendar_events, USD Low+) — not event_history — since the
+            # bug this guards is /api/predictions building its card list
+            # directly from get_calendar_snapshot()'s events, unfiltered.
+            _seed_calendar(db_path, [low_event, medium_event])
+
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            # event_history row with a real actual, matching low_event's
+            # own event_time_utc exactly — this is what lets
+            # _recompute_stale_pending() read-time-score the Low-impact
+            # event into a real direction/probability (reproducing the
+            # reviewer's 96%-bullish-confidence finding) if the impact
+            # filter is missing.
+            store.upsert_event_history(conn, low_event, "lower", now)
+            # Seed a prediction_runs row so the Medium event is guaranteed
+            # to have "something to say" and survive the route's own
+            # nothing-yet-to-show guard — isolating this assertion to the
+            # impact filter under test, not any scoring-path detail.
+            store.record_run(conn, "XAUUSD", "Retail Sales m/m", medium_event.event_time_utc, 0.6, "bullish", 0.5)
+            conn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            titles = {e["event_title"] for e in events}
+            assert "Challenger Job Cuts" not in titles, (
+                f"a Low-impact event from the live snapshot must never become a dashboard card/gauge, got {titles}"
+            )
+            # This fix narrows the card list, it must not remove events
+            # entirely — the Medium-impact sibling must still appear.
+            assert "Retail Sales m/m" in titles, f"expected Retail Sales m/m to still appear, got {titles}"
+    print("PASS\n")
+
+
 def test_article_history_route_returns_full_progression_with_top_contributions():
     print("=== GET /api/predictions/<symbol>/article_history: returns the full progression, most recent first, with top_contributions ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -1427,4 +1548,7 @@ if __name__ == "__main__":
     test_predictions_keeps_a_recently_resolved_event_after_it_scrolls_out_of_ff_snapshot()
     test_predictions_excludes_a_resolved_event_older_than_the_retention_window()
     test_predictions_does_not_duplicate_a_recently_resolved_event_ff_still_has()
+    test_recently_resolved_backfill_excludes_low_impact_event()
+    test_recently_resolved_backfill_still_includes_medium_impact_event()
+    test_predictions_excludes_low_impact_event_from_the_live_snapshot()
     print("All webapp.app tests passed.")

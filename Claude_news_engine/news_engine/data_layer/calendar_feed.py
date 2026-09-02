@@ -122,6 +122,21 @@ def get_last_successful_fetch_age_seconds() -> Optional[float]:
 # Impact levels FF uses in the feed
 IMPACT_LEVELS = {"Low", "Medium", "High", "Holiday"}
 
+# Shared with webapp/app.py's recently-resolved backfill filter — the
+# single source of truth for "how do Low/Medium/High rank against each
+# other," so a future impact tier (if FF ever adds one) only needs
+# updating here, not re-derived at each call site.
+#
+# "Holiday" is deliberately NOT a key here — it ranks 0 via .get(...,0),
+# same as any unrecognized tier, so it falls below every Low+ floor used
+# across the codebase (calendar snapshot, event_history writes, dashboard
+# cards). This is undocumented-but-intentional history: before this
+# branch's USD-scoped event_history loop, a USD "Holiday" row still got
+# an event_history row via the old unfiltered all_events loop; it no
+# longer does. Believed fine/desirable (a holiday marker isn't a real
+# release), just noting the behavior change here rather than silently.
+IMPACT_RANK = {"Low": 1, "Medium": 2, "High": 3}
+
 
 @dataclass
 class EconomicEvent:
@@ -335,12 +350,11 @@ def filter_relevant_events(
     never a blanket lower threshold, which would dilute callers that rely
     on this function's default High-only behavior).
     """
-    impact_rank = {"Low": 1, "Medium": 2, "High": 3}
-    min_rank = impact_rank.get(min_impact, 3)
+    min_rank = IMPACT_RANK.get(min_impact, 3)
 
     return [
         e for e in events
-        if e.country in countries and (impact_rank.get(e.impact, 0) >= min_rank or e.title in extra_titles)
+        if e.country in countries and (IMPACT_RANK.get(e.impact, 0) >= min_rank or e.title in extra_titles)
     ]
 
 
