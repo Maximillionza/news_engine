@@ -348,6 +348,109 @@ EVENT_REGISTRY: dict[str, dict] = {
     "Federal Funds Rate": {"impact": "High", "avg_interval_months": 1.6},
 }
 
+# --- Influence graph ---
+# Hand-curated, seeded from docs/fundamental-analysis-monthly-event-
+# map-2026-09-02.md's §6 precursor chains — same authoring discipline as
+# EVENT_SURPRISE_DIRECTION, not inferred or ML-scored. Tier-agnostic in
+# structure: Low->Medium, Low->High, Medium->High, and High->High links
+# all use the same {target: [(precursor, weight), ...]} shape — impact
+# tier (EVENT_REGISTRY) is metadata used only to decide dashboard-score-
+# or-not, never a structural constraint on which links are allowed.
+#
+# Absorbs and replaces the old PRECURSOR_EVENTS dict — ADP->NFP and
+# PPI->CPI are its first two entries below, at the same weight
+# (PRECURSOR_TRUST_WEIGHT, 0.9) the old hardcoded mechanism used, so the
+# migration is behavior-preserving (see tests/test_probability_engine.py's
+# regression test).
+#
+# The float weight is EXPLICITLY NOT consumed by any scoring math yet —
+# it's authored metadata for a future refinement once real backtest data
+# justifies weighting one precursor's disagreement more than another's
+# (see docs/superpowers/specs/2026-09-02-event-registry-influence-graph-design.md's
+# "confluence as an explicit boost" deferral). Every value here is an
+# untuned starting estimate, same honesty as every other confidence
+# constant in this codebase.
+EVENT_INFLUENCE_LINKS: dict[str, list[tuple[str, float]]] = {
+    "Non-Farm Employment Change": [
+        ("ADP Nonfarm Employment Change", 0.90),  # migrated from the old hardcoded PRECURSOR_EVENTS link
+        ("JOLTS Job Openings", 0.40),
+        ("Challenger Job Cuts", 0.35),
+        ("Unemployment Claims", 0.30),
+    ],
+    "Unemployment Rate": [
+        ("ADP Nonfarm Employment Change", 0.60),
+        ("Unemployment Claims", 0.40),
+    ],
+    "Average Hourly Earnings m/m": [
+        ("ADP Nonfarm Employment Change", 0.50),
+    ],
+    "CPI m/m": [
+        ("PPI m/m", 0.90),  # migrated from the old hardcoded PRECURSOR_EVENTS link
+        ("Core PPI m/m", 0.60),
+        ("Import Prices m/m", 0.40),
+        ("ISM Manufacturing Prices", 0.30),
+        ("ISM Services Prices", 0.30),
+    ],
+    "CPI y/y": [
+        ("PPI m/m", 0.80),
+        ("Core PPI m/m", 0.55),
+    ],
+    "Core CPI m/m": [
+        ("Core PPI m/m", 0.85),
+    ],
+    "Core CPI y/y": [
+        ("Core PPI m/m", 0.70),
+    ],
+    "Core PCE Price Index m/m": [
+        ("CPI m/m", 0.70),  # High->High: the Fed's own preferred gauge, reads the CPI print first
+        ("Core CPI m/m", 0.75),
+    ],
+    "FOMC Statement": [
+        ("Non-Farm Employment Change", 0.50),   # High->High: labor strength shapes the Fed's read
+        ("CPI m/m", 0.60),                       # High->High: inflation is the Committee's primary input
+        ("Core PCE Price Index m/m", 0.65),      # High->High: the Fed's own preferred gauge
+    ],
+    "Federal Funds Rate": [
+        ("Non-Farm Employment Change", 0.50),
+        ("CPI m/m", 0.60),
+        ("Core PCE Price Index m/m", 0.65),
+    ],
+    "Prelim GDP q/q": [
+        ("Retail Sales m/m", 0.35),        # feeds the Personal Consumption Expenditures component
+        ("Durable Goods Orders m/m", 0.30),  # feeds the Business Investment component
+        ("Trade Balance", 0.20),            # feeds the Net Exports component
+        ("ISM Manufacturing PMI", 0.30),
+        ("ISM Services PMI", 0.30),
+    ],
+    "ISM Manufacturing PMI": [
+        ("S&P Global Manufacturing PMI Flash", 0.45),
+    ],
+    "ISM Services PMI": [
+        ("S&P Global Services PMI Flash", 0.45),
+    ],
+    "Industrial Production m/m": [
+        ("ISM Manufacturing PMI", 0.40),
+    ],
+    "Durable Goods Orders m/m": [
+        ("ISM Manufacturing PMI", 0.30),
+    ],
+    "Retail Sales m/m": [
+        ("CB Consumer Confidence", 0.35),
+        ("Prelim UoM Consumer Sentiment", 0.35),
+    ],
+    "Housing Starts": [
+        ("Building Permits", 0.55),  # leading -> coincident, same publish cycle
+    ],
+    "Existing Home Sales": [
+        ("Building Permits", 0.30),
+        ("Housing Starts", 0.30),
+    ],
+    "New Home Sales": [
+        ("Building Permits", 0.30),
+        ("Housing Starts", 0.30),
+    ],
+}
+
 # --- Leading-indicator precursor events ---
 # Kept for backward compatibility with existing calendar_feed.py code.
 # See EVENT_REGISTRY above for the full recurring event registry.

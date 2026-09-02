@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.settings import EVENT_REGISTRY, UTC_TZ
+from config.settings import EVENT_REGISTRY, EVENT_INFLUENCE_LINKS, UTC_TZ
 from data_layer.calendar_feed import EconomicEvent
 from data_layer.event_registry import get_approximate_next_occurrence
 import webapp.store as store
@@ -126,6 +126,25 @@ def test_get_approximate_next_occurrence_ff_snapshot_beats_everything():
     print("PASS\n")
 
 
+def test_event_influence_links_every_title_is_registered():
+    print("=== EVENT_INFLUENCE_LINKS: every target and precursor title is present in EVENT_REGISTRY ===")
+    for target, precursors in EVENT_INFLUENCE_LINKS.items():
+        assert target in EVENT_REGISTRY, f"link target {target!r} is not in EVENT_REGISTRY — a link to an unregistered title is a config bug"
+        for precursor_title, weight in precursors:
+            assert precursor_title in EVENT_REGISTRY, f"link precursor {precursor_title!r} (-> {target!r}) is not in EVENT_REGISTRY"
+            assert 0.0 < weight <= 1.0, f"link {precursor_title!r} -> {target!r} has an out-of-range weight: {weight}"
+    print("PASS\n")
+
+
+def test_event_influence_links_absorbs_the_old_hardcoded_adp_ppi_links():
+    print("=== EVENT_INFLUENCE_LINKS: the two previously-hardcoded links (ADP->NFP, PPI->CPI) are present ===")
+    nfp_precursors = dict(EVENT_INFLUENCE_LINKS.get("Non-Farm Employment Change", []))
+    assert "ADP Nonfarm Employment Change" in nfp_precursors
+    cpi_precursors = dict(EVENT_INFLUENCE_LINKS.get("CPI m/m", []))
+    assert "PPI m/m" in cpi_precursors
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_event_registry_every_entry_has_impact_and_interval()
     test_event_registry_covers_every_event_surprise_direction_title()
@@ -135,3 +154,5 @@ if __name__ == "__main__":
     test_get_approximate_next_occurrence_tier3_fractional_interval()
     test_get_approximate_next_occurrence_macro_calendar_beats_cadence_math()
     test_get_approximate_next_occurrence_ff_snapshot_beats_everything()
+    test_event_influence_links_every_title_is_registered()
+    test_event_influence_links_absorbs_the_old_hardcoded_adp_ppi_links()
