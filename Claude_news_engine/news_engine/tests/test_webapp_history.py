@@ -119,8 +119,8 @@ def test_unresolved_numeric_event_excluded_entirely():
     print("PASS\n")
 
 
-def test_resolved_numeric_event_with_no_print_call_excluded_entirely():
-    print("=== build_print_call_history: a resolved numeric event with NO print_predictions row is excluded entirely ===")
+def test_resolved_numeric_event_with_neither_print_call_nor_prediction_excluded_entirely():
+    print("=== build_print_call_history: a resolved numeric event with NEITHER a print_predictions row NOR a predictions row is excluded entirely ===")
     with tempfile.TemporaryDirectory() as tmp:
         dash_db = Path(tmp) / "dashboard.db"
         backtest_db = Path(tmp) / "backtest.db"
@@ -139,6 +139,135 @@ def test_resolved_numeric_event_with_no_print_call_excluded_entirely():
             rows = history.build_print_call_history()
 
         assert rows == []
+    print("PASS\n")
+
+
+def test_resolved_numeric_event_falls_back_to_accumulator_prediction_when_no_print_call():
+    print("=== build_print_call_history: a resolved numeric event with NO print-call but a real accumulator prediction falls back to it, one row per instrument, Confirmed when the call matches the real surprise ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        # "CPI m/m" is higher_bullish. Actual beat forecast -> surprise_direction='higher'.
+        store.upsert_event_history(
+            dash_conn, _resolved_event("CPI m/m", event_time, "0.1%", "-0.4%", "0.4%"),
+            "higher", now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        # No print_predictions row at all (never mocked/seeded) — only the
+        # accumulator's own main prediction. XAUUSD is inverse-mapped, so a
+        # higher_bullish surprise implies a BEARISH call for gold.
+        backtest_store.record_prediction(
+            bt_conn, "CPI m/m", "XAUUSD", event_time,
+            0.7, "bearish", 0.6, 40, False, scored_at_utc=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].instrument == "XAUUSD"
+        assert rows[0].ne_prediction == "bearish"
+        assert rows[0].previous == "-0.4%"
+        assert rows[0].forecast == "0.1%"
+        assert rows[0].actual == "0.4%"
+        assert rows[0].outcome == "Confirmed"
+    print("PASS\n")
+
+
+def test_resolved_numeric_event_fallback_missed_when_direction_mismatches():
+    print("=== build_print_call_history: the accumulator-prediction fallback judges Missed when the call disagrees with the real surprise ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.upsert_event_history(
+            dash_conn, _resolved_event("CPI m/m", event_time, "0.1%", "-0.4%", "0.4%"),
+            "higher", now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        # Same higher_bullish surprise as above, but this time the recorded
+        # call is BULLISH for gold (inverse-mapped) -- the wrong sign.
+        backtest_store.record_prediction(
+            bt_conn, "CPI m/m", "XAUUSD", event_time,
+            0.7, "bullish", 0.6, 40, False, scored_at_utc=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].outcome == "Missed"
+    print("PASS\n")
+
+
+def test_resolved_numeric_event_fallback_neutral_direction_not_judged():
+    print("=== build_print_call_history: the accumulator-prediction fallback treats a 'neutral' call as unjudged (shrug), never inverted ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.upsert_event_history(
+            dash_conn, _resolved_event("CPI m/m", event_time, "0.1%", "-0.4%", "0.4%"),
+            "higher", now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, "CPI m/m", "XAUUSD", event_time,
+            0.5, "neutral", 0.6, 40, False, scored_at_utc=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].outcome is None
+        assert rows[0].unjudged_reason == "shrug"
+    print("PASS\n")
+
+
+def test_resolved_numeric_event_fallback_produces_one_row_per_instrument():
+    print("=== build_print_call_history: the accumulator-prediction fallback produces one row per instrument with its own recorded prediction ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.upsert_event_history(
+            dash_conn, _resolved_event("CPI m/m", event_time, "0.1%", "-0.4%", "0.4%"),
+            "higher", now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, "CPI m/m", "XAUUSD", event_time,
+            0.7, "bearish", 0.6, 40, False, scored_at_utc=event_time,
+        )
+        # No US30 prediction recorded for this occurrence — must not produce a row.
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].instrument == "XAUUSD"
     print("PASS\n")
 
 
@@ -463,11 +592,14 @@ def test_pre_filter_limit_does_not_starve_rare_row_type():
         # below — enough to fill get_resolved_event_history()'s pre-filter
         # budget on their own at limit=50, which is exactly what starves
         # the older target row out BEFORE any merge or print_predictions
-        # lookup happens. (These rows never get a print_predictions call
-        # themselves via record_prediction() — that writes to the
-        # unrelated `predictions` table — but that's fine: starvation
-        # here happens purely in the SQL pre-filter, upstream of any
-        # print_predictions lookup.)
+        # lookup happens. Deliberately given NEITHER a print_predictions
+        # NOR a predictions row (2026-09-02: the latter now produces its
+        # own fallback output row, per build_print_call_history()'s
+        # accumulator-prediction fallback) — these rows exist purely to
+        # inflate the row COUNT for the SQL pre-filter check and must
+        # contribute nothing to the final output either way, so this test
+        # isolates the pre-filter concern from the separate final
+        # display-limit truncation.
         for i in range(60):
             event_time = base_time + dt.timedelta(days=i + 1)
             crowding_event = EconomicEvent(
@@ -475,10 +607,6 @@ def test_pre_filter_limit_does_not_starve_rare_row_type():
                 forecast="0.1%", previous="0.1%", actual="0.1%",
             )
             store.upsert_event_history(dash_conn, crowding_event, "in_line", now=event_time)
-            backtest_store.record_prediction(
-                bt_conn, "Retail Sales m/m", "XAUUSD", event_time,
-                0.55, "bullish", 0.5, 40, False, scored_at_utc=event_time,
-            )
 
         # One OLDER, rare numeric event, also with a real print call — with
         # limit=50 pushed into the pre-filter (the bug), this is pushed
@@ -589,7 +717,11 @@ if __name__ == "__main__":
     test_resolved_event_with_real_call_is_judged()
     test_resolved_event_with_shrug_call_excluded_from_judging()
     test_unresolved_numeric_event_excluded_entirely()
-    test_resolved_numeric_event_with_no_print_call_excluded_entirely()
+    test_resolved_numeric_event_with_neither_print_call_nor_prediction_excluded_entirely()
+    test_resolved_numeric_event_falls_back_to_accumulator_prediction_when_no_print_call()
+    test_resolved_numeric_event_fallback_missed_when_direction_mismatches()
+    test_resolved_numeric_event_fallback_neutral_direction_not_judged()
+    test_resolved_numeric_event_fallback_produces_one_row_per_instrument()
     test_history_row_carries_source_and_prefers_seeded_when_mixed()
     test_history_row_carries_live_web_fallback_source_intact()
     test_history_row_carries_fred_source_intact()

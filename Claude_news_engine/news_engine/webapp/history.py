@@ -2,8 +2,10 @@
 Read-only cross-pipeline join for the dashboard's History tab —
 webapp.store's event_history (resolved occurrences, this dashboard's own
 DB) joined with scoring.backtest_store's print_predictions (numeric
-events) or predictions+outcomes (text-only events with no forecast at
-all, e.g. FOMC Statement), producing a Confirmed/Missed track record.
+events, when a qualifying article scored one), predictions+outcomes
+(numeric events with NO print-call, and every text-only event with no
+forecast at all, e.g. FOMC Statement), producing a Confirmed/Missed track
+record.
 
 Mirrors the read-only cross-pipeline pattern already established twice in
 this codebase: webapp/app.py reads scoring.backtest_store's DB read-only
@@ -12,14 +14,22 @@ webapp.store's DB read-only for the trend signal. This module is the
 third instance, dashboard-side, display-only — it writes nothing to
 either DB.
 
-Not every High-impact USD event has a number to compare against — FOMC
-Statement/Press Conference publish no forecast/actual at all, but the
-accumulator's article-based sentiment call (predictions table) already
-scores them regardless (score_bundle()'s core article-sentiment path
-requires no numeric forecast — only the additional structured
-contributions like the print-direction lexicon do). Those events get a
-separate row per instrument using that regular sentiment call instead of
-a numeric surprise comparison.
+Not every resolved numeric event has a print-direction call — that needs
+real article text matching PRINT_SURPRISE_LEXICON, which may never
+arrive (quota exhausted, no coverage, or just too soon). Those events
+fall back to the accumulator's own main prediction (predictions table),
+which precursor/trend/Kalshi signals alone can drive with zero
+qualifying articles — compared directly against the real
+surprise_direction already sitting in event_history, the same
+number-vs-call comparison the print-call path uses, not against
+outcomes/price-move confirmation (2026-09-02 fix — see
+_implied_surprise_direction()). Not every High-impact USD event has a
+number to compare against at all — FOMC Statement/Press Conference
+publish no forecast/actual whatsoever, but the accumulator's prediction
+still scores them (score_bundle()'s core article-sentiment path requires
+no numeric forecast). Those genuinely-numberless events get a separate
+row per instrument using outcomes/price-move confirmation instead, since
+there's no real surprise_direction to compare against at all.
 """
 from __future__ import annotations
 
@@ -27,7 +37,7 @@ import datetime as dt
 from dataclasses import dataclass
 from typing import Optional
 
-from config.settings import INSTRUMENTS
+from config.settings import EVENT_SURPRISE_DIRECTION, INSTRUMENTS
 from scoring.print_direction import NO_HIT_CONFIDENCE
 from webapp.store import get_connection, get_resolved_event_history, get_text_only_resolved_events
 
@@ -50,11 +60,39 @@ PRE_FILTER_LIMIT = 200
 MIN_TEXT_EVENT_CONFIDENCE = NO_HIT_CONFIDENCE
 
 
+def _implied_surprise_direction(event_title: str, instrument: str, direction: str) -> Optional[str]:
+    """
+    Reverses score_bundle()'s instrument-mapping (see
+    scoring/probability_engine.py's _map_to_instrument_score()) to recover
+    the 'higher'/'lower' surprise-direction call this instrument's
+    recorded prediction implies about the underlying NUMBER — so it can
+    be compared directly against event_history.surprise_direction, the
+    same equality check the numeric print-call path below already uses.
+    `direction` must be 'bullish' or 'bearish' (never 'neutral' — callers
+    gate that separately, since 'neutral' has no directional call to
+    invert). Returns None if this title has no EVENT_SURPRISE_DIRECTION
+    entry — should not happen in practice (a resolved row's
+    surprise_direction can only be non-None when classify_surprise()
+    found one), but never fabricates a guess if it somehow does.
+    """
+    surprise_map = EVENT_SURPRISE_DIRECTION.get(event_title)
+    if surprise_map is None:
+        return None
+    relationship = INSTRUMENTS[instrument]["usd_relationship"]
+    # 'inverse' and 'risk_sentiment' both flip sign relative to direct USD
+    # sentiment (see _map_to_instrument_score()'s own comment on
+    # risk_sentiment's simplification) — only 'direct' passes through
+    # unflipped.
+    usd_direction = direction if relationship == "direct" else ("bearish" if direction == "bullish" else "bullish")
+    higher_bullish = surprise_map == "higher_bullish"
+    return "higher" if (usd_direction == "bullish") == higher_bullish else "lower"
+
+
 @dataclass
 class HistoryRow:
     event_title: str
     event_time_utc: str
-    instrument: Optional[str]       # None for numeric rows; 'XAUUSD'/'US30' for text-event fallback rows
+    instrument: Optional[str]       # None for a print-call-backed numeric row; 'XAUUSD'/'US30' for a numeric-fallback or text-event row
     previous: Optional[str]
     forecast: Optional[str]
     actual: Optional[str]
@@ -68,13 +106,19 @@ class HistoryRow:
 
 def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[dt.datetime] = None) -> list[HistoryRow]:
     """
-    Only resolved event_history occurrences (actual IS NOT NULL) WITH a
-    matching print_predictions row appear as numeric rows — either
-    condition missing means the occurrence is skipped entirely. Text-only
-    occurrences (forecast AND actual both NULL) with a real predictions
-    row appear as one fallback row per instrument. Fails open to an empty
-    list if the backtest DB is unreachable for any reason — never crashes
-    the /api/history route over a cross-pipeline read error.
+    Resolved event_history occurrences (actual IS NOT NULL) become numeric
+    rows via a print_predictions match when one exists (one row, instrument
+    None), or — when no print-call was ever recorded — via a fallback to
+    the accumulator's main predictions row, one per instrument (2026-09-02
+    fix: this used to skip the occurrence entirely, hiding a real recorded
+    prediction from History whenever no qualifying article ever showed up).
+    An occurrence with NEITHER a print-call NOR a predictions row for a
+    given instrument is still excluded for that instrument — never shown
+    with blanks. Text-only occurrences (forecast AND actual both NULL)
+    with a real predictions row appear as one fallback row per instrument,
+    same as before. Fails open to an empty list if the backtest DB is
+    unreachable for any reason — never crashes the /api/history route
+    over a cross-pipeline read error.
     """
     now = now or dt.datetime.now(dt.timezone.utc)
 
@@ -115,7 +159,58 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                 print(f"[webapp.history] WARNING: could not read print call for {event.event_title}: {exc}")
                 continue
             if call is None:
-                continue  # resolved event, but never scored by the accumulator — excluded, not shown with blanks
+                # No print-direction call (needs real article text matching
+                # PRINT_SURPRISE_LEXICON) — fall back to the accumulator's
+                # own main prediction (predictions table), which precursor/
+                # trend/Kalshi signals alone can drive without any
+                # qualifying article at all. Compared directly against
+                # event.surprise_direction (the same equality check the
+                # numeric print-call path above uses), not against
+                # outcomes/price-move confirmation — that stays the
+                # text-only path's job below, since a numeric event's own
+                # real surprise is already known the instant it resolves,
+                # no price data or Dukascopy fetch required.
+                for instrument in INSTRUMENTS.keys():
+                    try:
+                        prediction = get_latest_prediction_for_occurrence(bt_conn, event.event_title, instrument, event_time)
+                    except Exception as exc:  # noqa: BLE001 — one bad lookup must not crash the whole build
+                        print(f"[webapp.history] WARNING: could not read fallback prediction for {event.event_title}/{instrument}: {exc}")
+                        continue
+                    if prediction is None:
+                        continue  # never scored for this instrument at this occurrence — no row, not shown with blanks
+
+                    fallback_outcome: Optional[str] = None
+                    fallback_unjudged_reason: Optional[str] = None
+                    if prediction.confidence <= NO_HIT_CONFIDENCE:
+                        fallback_unjudged_reason = "shrug"
+                    elif prediction.direction == "neutral":
+                        fallback_unjudged_reason = "shrug"  # no directional call made — nothing to invert or compare
+                    elif event.surprise_direction is None:
+                        fallback_unjudged_reason = "unknown_surprise"
+                    else:
+                        implied_surprise = _implied_surprise_direction(event.event_title, instrument, prediction.direction)
+                        fallback_outcome = "Confirmed" if implied_surprise == event.surprise_direction else "Missed"
+
+                    rows.append(HistoryRow(
+                        event_title=event.event_title,
+                        event_time_utc=event.event_time_utc,
+                        instrument=instrument,
+                        previous=event.previous,
+                        forecast=event.forecast,
+                        actual=event.actual,
+                        unchanged_vs_previous=(event.actual == event.previous),
+                        ne_prediction=prediction.direction,
+                        ne_confidence=prediction.confidence,
+                        outcome=fallback_outcome,
+                        unjudged_reason=fallback_unjudged_reason,
+                        source=(
+                            "seeded" if "seeded" in (event.source, prediction.source)
+                            else "live_web_fallback" if "live_web_fallback" in (event.source, prediction.source)
+                            else "fred" if "fred" in (event.source, prediction.source)
+                            else "live"
+                        ),
+                    ))
+                continue  # resolved event, no print-direction call — either shown via the fallback above or excluded per-instrument, never with blanks
 
             outcome: Optional[str] = None
             unjudged_reason: Optional[str] = None
