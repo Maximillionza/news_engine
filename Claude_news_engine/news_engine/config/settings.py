@@ -258,17 +258,99 @@ SOURCE_TRUST_WEIGHTS = {
     "rss_investing_com_forex": 0.55,  # broader syndication, mixed editorial quality
 }
 
-# --- Leading-indicator precursor events ---
-# Minor/medium USD releases that are known leading indicators for a later
-# major event — e.g. ADP prints ~2 days before NFP and is widely watched as
-# a preview. Unlike article sentiment (lexicon-guessed from prose), a
-# precursor's forecast-vs-actual is a real structured number straight from
-# the calendar feed — no text interpretation involved.
+# --- Recurring event registry ---
+# Every recurring USD release worth tracking (docs/fundamental-analysis-
+# monthly-event-map-2026-09-02.md's ~55-event map), regardless of impact
+# tier or whether it's scoreable today — a title with no
+# EVENT_SURPRISE_DIRECTION entry yet is still registered here, its
+# EVENT_INFLUENCE_LINKS links just stay dormant (can't resolve a
+# surprise) until that config gap is closed separately. Title strings
+# are best-effort standard Forex Factory naming, NOT independently
+# verified against a live feed capture in this sandbox (same caveat
+# EVENT_SURPRISE_DIRECTION's own recent additions carry) — re-verify
+# each new title against the live feed (or the already-confirmed
+# EVENT_SURPRISE_DIRECTION/ACCUMULATOR_MEDIUM_ALLOWLIST dicts, for
+# titles already confirmed there) once this runs where FF is reachable.
 #
-# Hand-curated starter list, not exhaustive — easy to extend. Real-world
-# release ordering (does PPI actually land before CPI this particular
-# month?) varies, so this is "if it happens to have already printed in the
-# target's pre-event window," not a guaranteed sequence.
+# avg_interval_months is a real average cadence, not a coarse monthly/
+# quarterly/annual label — FOMC is real-world ~8 meetings/year (~1.6
+# months apart), not literally quarterly, so a coarse label would
+# misapproximate it. CFTC COT positioning (weekly, but not a scheduled
+# FF "release") is deliberately NOT registered here — it has its own
+# separate data_layer.cot_positioning mechanism, unrelated to this
+# calendar-title registry.
+EVENT_REGISTRY: dict[str, dict] = {
+    # --- Labor market ---
+    "Non-Farm Employment Change": {"impact": "High", "avg_interval_months": 1.0},
+    "Unemployment Rate": {"impact": "High", "avg_interval_months": 1.0},
+    "Average Hourly Earnings m/m": {"impact": "High", "avg_interval_months": 1.0},
+    "Average Hourly Earnings y/y": {"impact": "Medium", "avg_interval_months": 1.0},
+    "Participation Rate": {"impact": "Low", "avg_interval_months": 1.0},
+    "ADP Nonfarm Employment Change": {"impact": "Medium", "avg_interval_months": 1.0},
+    "JOLTS Job Openings": {"impact": "Medium", "avg_interval_months": 1.0},
+    "JOLTS Quits Rate": {"impact": "Low", "avg_interval_months": 1.0},
+    "Challenger Job Cuts": {"impact": "Low", "avg_interval_months": 1.0},
+    "Unemployment Claims": {"impact": "Medium", "avg_interval_months": 0.23},
+    "Continuing Claims": {"impact": "Low", "avg_interval_months": 0.23},
+    "Nonfarm Productivity q/q": {"impact": "Medium", "avg_interval_months": 3.0},
+    "Unit Labor Costs q/q": {"impact": "Medium", "avg_interval_months": 3.0},
+    # --- Inflation ---
+    "CPI m/m": {"impact": "High", "avg_interval_months": 1.0},
+    "CPI y/y": {"impact": "High", "avg_interval_months": 1.0},
+    "Core CPI m/m": {"impact": "High", "avg_interval_months": 1.0},
+    "Core CPI y/y": {"impact": "High", "avg_interval_months": 1.0},
+    "PPI m/m": {"impact": "Medium", "avg_interval_months": 1.0},
+    "Core PPI m/m": {"impact": "Medium", "avg_interval_months": 1.0},
+    "Import Prices m/m": {"impact": "Low", "avg_interval_months": 1.0},
+    "Export Prices m/m": {"impact": "Low", "avg_interval_months": 1.0},
+    "Core PCE Price Index m/m": {"impact": "High", "avg_interval_months": 1.0},
+    "Core PCE Price Index y/y": {"impact": "High", "avg_interval_months": 1.0},
+    "Prelim UoM Inflation Expectations": {"impact": "Low", "avg_interval_months": 1.0},
+    # --- Growth & output ---
+    "Prelim GDP q/q": {"impact": "High", "avg_interval_months": 3.0},
+    "Final GDP q/q": {"impact": "Medium", "avg_interval_months": 3.0},
+    "GDP Price Index q/q": {"impact": "Low", "avg_interval_months": 3.0},
+    "ISM Manufacturing PMI": {"impact": "High", "avg_interval_months": 1.0},
+    "ISM Manufacturing Prices": {"impact": "Medium", "avg_interval_months": 1.0},
+    "ISM Manufacturing Employment": {"impact": "Low", "avg_interval_months": 1.0},
+    "ISM Services PMI": {"impact": "High", "avg_interval_months": 1.0},
+    "ISM Services Prices": {"impact": "Low", "avg_interval_months": 1.0},
+    "S&P Global Manufacturing PMI Flash": {"impact": "Low", "avg_interval_months": 1.0},
+    "S&P Global Manufacturing PMI": {"impact": "Low", "avg_interval_months": 1.0},
+    "S&P Global Services PMI Flash": {"impact": "Low", "avg_interval_months": 1.0},
+    "S&P Global Services PMI": {"impact": "Low", "avg_interval_months": 1.0},
+    "Industrial Production m/m": {"impact": "Medium", "avg_interval_months": 1.0},
+    "Capacity Utilization Rate": {"impact": "Low", "avg_interval_months": 1.0},
+    "Durable Goods Orders m/m": {"impact": "Medium", "avg_interval_months": 1.0},
+    "Core Durable Goods Orders m/m": {"impact": "Medium", "avg_interval_months": 1.0},
+    "Factory Orders m/m": {"impact": "Low", "avg_interval_months": 1.0},
+    # --- Consumer & housing ---
+    "Retail Sales m/m": {"impact": "Medium", "avg_interval_months": 1.0},
+    "Core Retail Sales m/m": {"impact": "Medium", "avg_interval_months": 1.0},
+    "Personal Income m/m": {"impact": "Low", "avg_interval_months": 1.0},
+    "Personal Spending m/m": {"impact": "Medium", "avg_interval_months": 1.0},
+    "CB Consumer Confidence": {"impact": "Medium", "avg_interval_months": 1.0},
+    "Prelim UoM Consumer Sentiment": {"impact": "Medium", "avg_interval_months": 1.0},
+    "Final UoM Consumer Sentiment": {"impact": "Low", "avg_interval_months": 1.0},
+    "Housing Starts": {"impact": "Low", "avg_interval_months": 1.0},
+    "Building Permits": {"impact": "Low", "avg_interval_months": 1.0},
+    "Existing Home Sales": {"impact": "Low", "avg_interval_months": 1.0},
+    "New Home Sales": {"impact": "Low", "avg_interval_months": 1.0},
+    "Pending Home Sales m/m": {"impact": "Low", "avg_interval_months": 1.0},
+    "S&P/CS Composite-20 HPI y/y": {"impact": "Low", "avg_interval_months": 1.0},
+    # --- Trade, inventories & policy ---
+    "Trade Balance": {"impact": "Low", "avg_interval_months": 1.0},
+    "Wholesale Inventories m/m": {"impact": "Low", "avg_interval_months": 1.0},
+    "Business Inventories m/m": {"impact": "Low", "avg_interval_months": 1.0},
+    "FOMC Statement": {"impact": "High", "avg_interval_months": 1.6},  # real-world ~8 meetings/year, NOT literally quarterly
+    "FOMC Press Conference": {"impact": "High", "avg_interval_months": 1.6},
+    "FOMC Meeting Minutes": {"impact": "Medium", "avg_interval_months": 1.6},  # same meeting cadence, published ~3 weeks later each time
+    "Federal Funds Rate": {"impact": "High", "avg_interval_months": 1.6},
+}
+
+# --- Leading-indicator precursor events ---
+# Kept for backward compatibility with existing calendar_feed.py code.
+# See EVENT_REGISTRY above for the full recurring event registry.
 PRECURSOR_EVENTS = {
     "Non-Farm Employment Change": ["ADP Nonfarm Employment Change", "Unemployment Claims", "Challenger Job Cuts"],
     "Unemployment Rate": ["ADP Nonfarm Employment Change", "Unemployment Claims"],
@@ -277,9 +359,6 @@ PRECURSOR_EVENTS = {
     "CPI y/y": ["PPI m/m", "Core PPI m/m"],
     "Core CPI m/m": ["Core PPI m/m"],
     "Core CPI y/y": ["Core PPI m/m"],
-    # FOMC rate decisions are driven more by speeches/minutes/dot-plot than
-    # a clean single precursor print — deliberately left empty rather than
-    # guessing a mapping that isn't real.
 }
 
 # For each event TITLE (major or precursor), whether an actual print ABOVE
