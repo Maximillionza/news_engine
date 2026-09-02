@@ -38,11 +38,13 @@ from config.settings import (
     ENABLE_FINBERT_SENTIMENT,
     ENABLE_LLM_SENTIMENT,
     EQUITY_RISK_DISAGREEMENT_CONFIDENCE_MULTIPLIER,
+    EVENT_INFLUENCE_LINKS,
     EVENT_SURPRISE_DIRECTION,
     INSTRUMENTS,
     KALSHI_TRUST_WEIGHT,
     MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER,
     OIL_SHOCK_CONFIDENCE_MULTIPLIER,
+    PRE_EVENT_WINDOW_HOURS,
     PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES,
     PRECURSOR_TRUST_WEIGHT,
     PRINT_CALL_TRUST_WEIGHT,
@@ -371,6 +373,57 @@ def _build_precursor_contributions(
             )
         )
     return contributions
+
+
+def get_precursor_events_for(
+    target_title: str,
+    target_event_time_utc: dt.datetime,
+    conn,
+) -> list[EconomicEvent]:
+    """
+    Graph-driven replacement for data_layer.calendar_feed.find_precursor_events().
+    Looks up EVENT_INFLUENCE_LINKS[target_title] (empty list if no
+    configured links). For each linked precursor title, fetches that
+    title's most recent RESOLVED (actual IS NOT NULL) event_history row —
+    kept only if it falls inside target's own PRE_EVENT_WINDOW_HOURS
+    pre-event window, the same bound find_precursor_events() used, so a
+    resolved row from a PRIOR cycle (e.g. last month's ADP print) is never
+    mistaken for this cycle's precursor. Skips any precursor title with
+    no resolved row in that window at all — never fabricates.
+
+    `conn` is a webapp.store-shaped sqlite3.Connection (duck-typed — this
+    module never imports webapp/ at module level, to avoid a cycle with
+    webapp/ importing scoring/).
+    """
+    from webapp.store import get_event_history  # local import: avoid a module-level cycle with webapp/
+
+    linked = EVENT_INFLUENCE_LINKS.get(target_title, [])
+    if not linked:
+        return []
+    window_start = target_event_time_utc - dt.timedelta(hours=PRE_EVENT_WINDOW_HOURS)
+
+    precursors: list[EconomicEvent] = []
+    for precursor_title, _weight in linked:
+        rows = get_event_history(conn, precursor_title, limit=6)
+        resolved = [r for r in rows if r.actual is not None]
+        if not resolved:
+            continue
+        most_recent = resolved[0]  # get_event_history orders DESC by event_time_utc
+        event_time = dt.datetime.fromisoformat(most_recent.event_time_utc)
+        if not (window_start <= event_time < target_event_time_utc):
+            continue
+        precursors.append(
+            EconomicEvent(
+                title=most_recent.event_title,
+                country="USD",
+                impact=most_recent.impact or "Medium",
+                event_time_utc=event_time,
+                forecast=most_recent.forecast,
+                previous=most_recent.previous,
+                actual=most_recent.actual,
+            )
+        )
+    return precursors
 
 
 def _build_print_call_contribution(

@@ -6,7 +6,9 @@ score_bundle()'s existing weighted-average math. No network needed.
 import datetime as dt
 import sys
 import os
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -20,8 +22,9 @@ from data_layer.event_context import EventNewsBundle
 from data_layer.macro_backdrop import MacroBackdropRead
 from data_layer.news_feed import NewsArticle
 import scoring.probability_engine as probability_engine
+import webapp.store as webapp_store
 from scoring.probability_engine import (
-    score_bundle, Direction,
+    score_bundle, Direction, get_precursor_events_for,
     _check_cot_crowding, _check_equity_risk_sentiment, _check_oil_shock,
 )
 from scoring.print_direction import PrintCall
@@ -844,6 +847,89 @@ def test_direction_hysteresis_keeps_neutral_when_move_out_of_neutral_is_too_smal
     print("PASS\n")
 
 
+def test_get_precursor_events_for_no_configured_links_returns_empty():
+    print("=== get_precursor_events_for: a target with no EVENT_INFLUENCE_LINKS entry returns [] ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = webapp_store.get_connection(Path(tmp) / "test.db")
+        result = get_precursor_events_for("Some Untracked Event", EVENT_TIME, conn)
+        assert result == []
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_precursor_events_for_finds_resolved_precursor_in_window():
+    print("=== get_precursor_events_for: finds a linked precursor's most recent RESOLVED event_history row inside the target's pre-event window ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = webapp_store.get_connection(Path(tmp) / "test.db")
+        precursor_time = EVENT_TIME - dt.timedelta(hours=5)
+        webapp_store.upsert_event_history(
+            conn,
+            EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=precursor_time, forecast="0.2%", actual="0.4%"),
+            surprise_direction="higher", now=precursor_time,
+        )
+        result = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
+        assert len(result) == 1
+        assert result[0].title == "PPI m/m"
+        assert result[0].actual == "0.4%"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_precursor_events_for_skips_unresolved_precursor():
+    print("=== get_precursor_events_for: a linked precursor with no resolved actual yet is simply absent, never fabricated ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = webapp_store.get_connection(Path(tmp) / "test.db")
+        precursor_time = EVENT_TIME - dt.timedelta(hours=5)
+        webapp_store.upsert_event_history(
+            conn,
+            EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=precursor_time, forecast="0.2%", actual=None),
+            surprise_direction=None, now=precursor_time,
+        )
+        result = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
+        assert result == []
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_precursor_events_for_ignores_stale_resolved_row_outside_window():
+    print("=== get_precursor_events_for: a resolved precursor row from a PRIOR cycle, outside this target's pre-event window, is not used ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = webapp_store.get_connection(Path(tmp) / "test.db")
+        stale_time = EVENT_TIME - dt.timedelta(days=40)  # well outside PRE_EVENT_WINDOW_HOURS (72h)
+        webapp_store.upsert_event_history(
+            conn,
+            EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=stale_time, forecast="0.2%", actual="0.3%"),
+            surprise_direction="higher", now=stale_time,
+        )
+        result = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
+        assert result == [], "a month-old resolved PPI print must not be mistaken for this cycle's precursor"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_precursor_events_for_multiple_links_all_resolved():
+    print("=== get_precursor_events_for: multiple configured links for one target all resolve independently ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = webapp_store.get_connection(Path(tmp) / "test.db")
+        ppi_time = EVENT_TIME - dt.timedelta(hours=48)
+        import_time = EVENT_TIME - dt.timedelta(hours=6)
+        webapp_store.upsert_event_history(
+            conn,
+            EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=ppi_time, forecast="0.2%", actual="0.4%"),
+            surprise_direction="higher", now=ppi_time,
+        )
+        webapp_store.upsert_event_history(
+            conn,
+            EconomicEvent(title="Import Prices m/m", country="USD", impact="Low", event_time_utc=import_time, forecast="0.1%", actual="0.1%"),
+            surprise_direction="in_line", now=import_time,
+        )
+        result = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
+        titles = {e.title for e in result}
+        assert titles == {"PPI m/m", "Import Prices m/m"}
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_bundle_without_new_params_is_unchanged()
     test_print_call_higher_on_bullish_indicator_is_bullish_for_direct_instrument()
@@ -892,4 +978,9 @@ if __name__ == "__main__":
     test_direction_hysteresis_allows_a_flip_that_clears_the_wider_band()
     test_direction_hysteresis_no_effect_when_new_plain_direction_already_matches_current()
     test_direction_hysteresis_keeps_neutral_when_move_out_of_neutral_is_too_small()
+    test_get_precursor_events_for_no_configured_links_returns_empty()
+    test_get_precursor_events_for_finds_resolved_precursor_in_window()
+    test_get_precursor_events_for_skips_unresolved_precursor()
+    test_get_precursor_events_for_ignores_stale_resolved_row_outside_window()
+    test_get_precursor_events_for_multiple_links_all_resolved()
     print("All probability_engine tests passed.")
