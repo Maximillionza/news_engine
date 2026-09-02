@@ -130,29 +130,30 @@ def get_cot_positioning_read(now: Optional[dt.datetime] = None) -> Optional[CotP
             net_long = float(row.get("lev_money_positions_long", 0) or 0)
             net_short = float(row.get("lev_money_positions_short", 0) or 0)
             net_positions.append(net_long - net_short)
-    except (TypeError, ValueError) as exc:
+
+        if len(net_positions) < 2:
+            _cache_date, _cache_read = today, None
+            return None
+
+        newest_net = net_positions[0]
+        # Percentile rank of the newest reading within the whole window
+        # (including itself) — what fraction of the window's values are at
+        # or below the newest reading.
+        at_or_below = sum(1 for v in net_positions if v <= newest_net)
+        percentile = at_or_below / len(net_positions) * 100.0
+
+        newest_date = dt.date.fromisoformat(rows[0]["report_date_as_yyyy_mm_dd"].split("T")[0])
+
+        read = CotPositioningRead(
+            net_leveraged_funds_position=int(newest_net),
+            percentile_in_trailing_window=percentile,
+            report_date=newest_date,
+            lookback_weeks=COT_CROWDING_LOOKBACK_WEEKS,
+        )
+    except Exception as exc:  # noqa: BLE001 — malformed rows must not crash the caller
         print(f"[cot_positioning] WARNING: unexpected row shape: {exc}")
         _cache_date, _cache_read = today, None
         return None
 
-    if len(net_positions) < 2:
-        _cache_date, _cache_read = today, None
-        return None
-
-    newest_net = net_positions[0]
-    # Percentile rank of the newest reading within the whole window
-    # (including itself) — what fraction of the window's values are at
-    # or below the newest reading.
-    at_or_below = sum(1 for v in net_positions if v <= newest_net)
-    percentile = at_or_below / len(net_positions) * 100.0
-
-    newest_date = dt.date.fromisoformat(rows[0]["report_date_as_yyyy_mm_dd"].split("T")[0])
-
-    read = CotPositioningRead(
-        net_leveraged_funds_position=int(newest_net),
-        percentile_in_trailing_window=percentile,
-        report_date=newest_date,
-        lookback_weeks=COT_CROWDING_LOOKBACK_WEEKS,
-    )
     _cache_date, _cache_read = today, read
     return read

@@ -651,6 +651,44 @@ def test_score_bundle_oil_shock_only_touches_confidence():
     print("PASS\n")
 
 
+def test_score_bundle_equity_risk_sentiment_only_touches_confidence():
+    print("=== score_bundle: an equity-risk disagreement discounts confidence but never changes direction or probability (US30) ===")
+    event = _cpi_event()
+    # Same proven-non-zero-confidence article as the COT crowding / oil
+    # shock tests above (see test_score_bundle_oil_shock_only_touches_confidence's
+    # comment) — under the full test suite, tests/test_scoring_smoke.py
+    # leaks a module-level ENABLE_FINBERT_SENTIMENT=False mutation with no
+    # teardown, forcing lexicon-only scoring for the rest of the session;
+    # this article scores non-zero confidence under both FinBERT and
+    # lexicon-only paths, so the test is robust to that leak either way.
+    article = NewsArticle(
+        title="Hawkish tilt firms, rate hike bets rise", summary="Dollar strength widely expected.",
+        source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+        url="https://example.test/equity-risk-only-confidence",
+    )
+    bundle = EventNewsBundle(event=event, articles=[article], as_of_utc=EVENT_TIME)
+    baseline = score_bundle(bundle, "US30")
+    # This article scores USD-bullish (positive aggregate_usd), which
+    # _map_to_instrument_score's risk_sentiment branch flips negative for
+    # US30 (hawkish/USD-bullish -> risk-off -> US30-bearish). A positive
+    # equity_index_trend_pct (risk-on) therefore disagrees with this
+    # bearish US30 read.
+    macro = MacroBackdropRead(
+        dollar_index_trend_pct=None, dollar_index_latest_date=None,
+        real_yield_trend_bps=None, real_yield_latest_date=None,
+        oil_trend_pct=None, oil_latest_date=None,
+        equity_index_trend_pct=2.0, equity_index_latest_date=dt.date(2026, 8, 29),
+        oil_daily_change_pct=None, lookback_days=10,
+    )
+    with_equity_disagreement = score_bundle(bundle, "US30", macro_backdrop=macro)
+
+    assert with_equity_disagreement.direction == baseline.direction
+    assert with_equity_disagreement.probability == pytest.approx(baseline.probability)
+    assert with_equity_disagreement.confidence < baseline.confidence  # disagreement only ever DAMPENS
+    assert with_equity_disagreement.equity_risk_agrees is False
+    print("PASS\n")
+
+
 def test_redundancy_discount_applies_to_near_duplicate_articles():
     print("=== Correlation/redundancy: two near-duplicate articles close in time — the later one is discounted, not double-counted ===")
     from data_layer.news_feed import NewsArticle
@@ -844,6 +882,7 @@ if __name__ == "__main__":
     test_score_bundle_new_signals_default_to_no_effect_when_omitted()
     test_score_bundle_cot_crowding_only_touches_confidence()
     test_score_bundle_oil_shock_only_touches_confidence()
+    test_score_bundle_equity_risk_sentiment_only_touches_confidence()
     test_redundancy_discount_applies_to_near_duplicate_articles()
     test_redundancy_discount_does_not_apply_to_distinct_articles()
     test_redundancy_discount_does_not_apply_when_far_apart_in_time()

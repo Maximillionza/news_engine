@@ -100,6 +100,38 @@ def test_mid_range_positioning_is_not_crowded():
     print("PASS\n")
 
 
+def test_malformed_date_returns_none():
+    print("=== get_cot_positioning_read: a missing/unparseable report_date field returns None, never raises ===")
+    # Missing report_date_as_yyyy_mm_dd entirely (KeyError inside the parse).
+    rows_missing_key = [_row(f"2026-{(i % 12) + 1:02d}-01T00:00:00.000", 1000 * (i + 1)) for i in range(20)]
+    rows_missing_key = list(reversed(rows_missing_key))
+    del rows_missing_key[0]["report_date_as_yyyy_mm_dd"]
+    with patch("requests.get", return_value=_cftc_response(rows_missing_key)):
+        assert get_cot_positioning_read() is None
+
+    cot_positioning._cache_date = None
+    cot_positioning._cache_read = None
+
+    # Unparseable date string (ValueError inside dt.date.fromisoformat).
+    rows_bad_date = [_row(f"2026-{(i % 12) + 1:02d}-01T00:00:00.000", 1000 * (i + 1)) for i in range(20)]
+    rows_bad_date = list(reversed(rows_bad_date))
+    rows_bad_date[0]["report_date_as_yyyy_mm_dd"] = "not-a-date"
+    with patch("requests.get", return_value=_cftc_response(rows_bad_date)):
+        assert get_cot_positioning_read() is None
+    print("PASS\n")
+
+
+def test_dict_response_returns_none():
+    print("=== get_cot_positioning_read: a Socrata-style dict error response (HTTP 200) returns None, never raises ===")
+    # A truthy dict passes the `if not rows:` check, then iterating it
+    # yields string keys, whose .get(...) call would raise AttributeError
+    # if not caught by the widened exception handling.
+    error_response = {"error": True, "message": "simulated Socrata error payload"}
+    with patch("requests.get", return_value=_cftc_response(error_response)):
+        assert get_cot_positioning_read() is None
+    print("PASS\n")
+
+
 def test_daily_cache_avoids_refetching_same_day():
     print("=== get_cot_positioning_read: a second call the same day reuses the cached read, doesn't re-fetch ===")
     rows = [_row(f"2026-{(i % 12) + 1:02d}-01T00:00:00.000", 1000 * (i + 1)) for i in range(20)]
@@ -118,5 +150,7 @@ if __name__ == "__main__":
     test_empty_response_returns_none()
     test_real_data_computes_percentile_and_is_crowded()
     test_mid_range_positioning_is_not_crowded()
+    test_malformed_date_returns_none()
+    test_dict_response_returns_none()
     test_daily_cache_avoids_refetching_same_day()
     print("All cot_positioning tests passed.")
