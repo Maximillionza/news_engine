@@ -73,6 +73,7 @@ from data_layer.event_context import build_event_news_bundle
 from data_layer.rss_sources import build_all_preview_sources
 from data_layer.kalshi_feed import KalshiRead, get_market_read, get_market_read_by_date
 from data_layer.macro_backdrop import get_macro_backdrop_read
+from data_layer.cot_positioning import get_cot_positioning_read
 from scoring.probability_engine import score_bundle
 from scoring.print_direction import score_print_direction
 from scoring.backtest_store import (
@@ -388,7 +389,8 @@ def score_and_record_event(
     instruments: list[str],
     sources,
     now: Optional[dt.datetime] = None,
-    macro_backdrop=None,  # MacroBackdropRead | None — duck-typed, see scoring/probability_engine.py's _check_macro_backdrop()
+    macro_backdrop=None,  # MacroBackdropRead | None — duck-typed, see scoring/probability_engine.py's _check_macro_backdrop()/_check_equity_risk_sentiment()/_check_oil_shock()
+    cot_positioning=None,  # CotPositioningRead | None — duck-typed, see scoring/probability_engine.py's _check_cot_crowding()
 ) -> dict:
     """
     Runs the FULL article-based scoring pipeline for ONE event, across
@@ -411,6 +413,11 @@ def score_and_record_event(
     used. `macro_backdrop` is passed in for the same reason (R5,
     docs/fundamental-analysis-swot-2026-08-14.md) — it's a USD-level read,
     not event-specific, so a caller scoring multiple events in one cycle
+    should fetch it once, not once per event.
+
+    `cot_positioning` is passed in for the same reason as `macro_backdrop`
+    — it's a USD-level positioning read (weekly CFTC data, not
+    event-specific), so a caller scoring multiple events in one cycle
     should fetch it once, not once per event.
 
     Returns {instrument: ProbabilityResult} for instruments that were
@@ -469,6 +476,7 @@ def score_and_record_event(
                 print_call=print_call, trend_signal=trend_signal,
                 kalshi_read=kalshi_read, kalshi_direction_override=kalshi_direction_value,
                 macro_backdrop=macro_backdrop,
+                cot_positioning=cot_positioning,
                 current_direction=latest.direction if latest is not None else None,
             )
         except Exception as exc:  # noqa: BLE001 — one pair's failure must not stop the others
@@ -527,6 +535,8 @@ def run_accumulator_cycle(
         sources = None  # lazily built, only if at least one event is actually active this cycle
         macro_backdrop = None
         macro_backdrop_fetched = False
+        cot_positioning = None
+        cot_positioning_fetched = False
         for event in active:
             # Every tracked instrument is checked for every active event on
             # every cycle — no per-pair check budget (see module docstring
@@ -544,7 +554,15 @@ def run_accumulator_cycle(
             if not macro_backdrop_fetched:
                 macro_backdrop = get_macro_backdrop_read()
                 macro_backdrop_fetched = True
-            score_and_record_event(conn, event, all_events, instruments, sources, now=now, macro_backdrop=macro_backdrop)
+            # Same once-per-cycle reasoning as macro_backdrop above — COT
+            # is weekly data, not event-specific.
+            if not cot_positioning_fetched:
+                cot_positioning = get_cot_positioning_read()
+                cot_positioning_fetched = True
+            score_and_record_event(
+                conn, event, all_events, instruments, sources, now=now,
+                macro_backdrop=macro_backdrop, cot_positioning=cot_positioning,
+            )
 
         return events
     finally:

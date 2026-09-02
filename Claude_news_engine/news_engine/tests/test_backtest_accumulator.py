@@ -7,13 +7,14 @@ import os
 import tempfile
 import datetime as dt
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import UTC_TZ, PRE_EVENT_WINDOW_HOURS, ACCUMULATOR_MEDIUM_ALLOWLIST
 from data_layer.calendar_feed import EconomicEvent
 from data_layer.event_context import EventNewsBundle
+from data_layer.cot_positioning import CotPositioningRead
 from scoring.probability_engine import Direction, ProbabilityResult, ArticleContribution
 from data_layer.news_feed import NewsArticle
 import scoring.backtest_accumulator as accumulator
@@ -42,6 +43,11 @@ def _fake_event(hours_from_now, now, title="Test Event", impact="High"):
         event_time_utc=now + dt.timedelta(hours=hours_from_now),
         forecast="1.0%", actual=None,
     )
+
+
+def _bundle(event, articles, now=None):
+    now = now or dt.datetime.now(UTC_TZ)
+    return EventNewsBundle(event=event, articles=articles, as_of_utc=now)
 
 
 def _fake_result(probability=0.7, direction=Direction.BULLISH):
@@ -499,7 +505,7 @@ def test_trend_signal_passed_to_score_bundle_when_gate_met():
         dash_conn.close()
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, current_direction=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, cot_positioning=None, current_direction=None):
             captured_kwargs["trend_signal"] = trend_signal
             return _fake_result()
 
@@ -541,7 +547,7 @@ def test_trend_signal_is_none_when_gate_not_met():
         dash_conn.close()
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, current_direction=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, cot_positioning=None, current_direction=None):
             captured_kwargs["trend_signal"] = trend_signal
             return _fake_result()
 
@@ -570,7 +576,7 @@ def test_trend_signal_is_none_when_dashboard_db_unreachable():
         bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, current_direction=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, cot_positioning=None, current_direction=None):
             captured_kwargs["trend_signal"] = trend_signal
             return _fake_result()
 
@@ -609,7 +615,7 @@ def test_trend_signal_is_none_when_read_itself_fails():
         webapp_store.get_connection(dashboard_db_path).close()
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, current_direction=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, cot_positioning=None, current_direction=None):
             captured_kwargs["trend_signal"] = trend_signal
             return _fake_result()
 
@@ -641,7 +647,7 @@ def test_print_call_passed_to_score_bundle():
         fake_call = accumulator_print_direction.PrintCall(direction="higher", confidence=0.6, article_count=2)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, current_direction=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, cot_positioning=None, current_direction=None):
             captured_kwargs["print_call"] = print_call
             return _fake_result()
 
@@ -787,7 +793,7 @@ def test_failed_scoring_for_one_pair_does_not_stop_others():
         now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
         event = _fake_event(hours_from_now=20, now=now)
 
-        def flaky_score_bundle(bundle, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, current_direction=None):
+        def flaky_score_bundle(bundle, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, cot_positioning=None, current_direction=None):
             if instrument == "XAUUSD":
                 raise Exception("scoring blew up")
             return _fake_result()
@@ -870,7 +876,7 @@ def test_kalshi_read_passed_to_score_bundle_for_numeric_event():
         fake_read = accumulator_kalshi_feed.KalshiRead(strike=0.1, implied_direction="higher", implied_probability=0.65, open_interest=100.0)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, current_direction=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, cot_positioning=None, current_direction=None):
             captured_kwargs["kalshi_read"] = kalshi_read
             captured_kwargs["kalshi_direction_override"] = kalshi_direction_override
             return _fake_result()
@@ -969,7 +975,7 @@ def test_kalshi_fetch_failure_fails_open_without_crashing_cycle():
         bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, current_direction=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, cot_positioning=None, current_direction=None):
             captured_kwargs["kalshi_read"] = kalshi_read
             return _fake_result()
 
@@ -1001,7 +1007,7 @@ def test_kalshi_fetch_returning_none_fails_open_without_crashing_cycle():
         bundle = EventNewsBundle(event=event, articles=[], as_of_utc=now)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, current_direction=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, cot_positioning=None, current_direction=None):
             captured_kwargs["kalshi_read"] = kalshi_read
             return _fake_result()
 
@@ -1040,7 +1046,7 @@ def test_read_kalshi_signal_resolves_fomc_via_month_ticker():
         fake_read = accumulator_kalshi_feed.KalshiRead(strike=4.25, implied_direction="in_line", implied_probability=0.5, open_interest=100.0)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, current_direction=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, cot_positioning=None, current_direction=None):
             captured_kwargs["kalshi_read"] = kalshi_read
             captured_kwargs["kalshi_direction_override"] = kalshi_direction_override
             return _fake_result()
@@ -1081,7 +1087,7 @@ def test_read_kalshi_signal_resolves_date_ticketed_event():
         fake_read = accumulator_kalshi_feed.KalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.6, open_interest=100.0)
 
         captured_kwargs = {}
-        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, current_direction=None):
+        def _capture_score_bundle(bundle_arg, instrument, precursor_events=None, print_call=None, trend_signal=None, kalshi_read=None, kalshi_direction_override=None, macro_backdrop=None, cot_positioning=None, current_direction=None):
             captured_kwargs["kalshi_read"] = kalshi_read
             captured_kwargs["kalshi_direction_override"] = kalshi_direction_override
             return _fake_result()
@@ -1105,6 +1111,48 @@ def test_read_kalshi_signal_resolves_date_ticketed_event():
         assert args[1] == event.event_time_utc.date()  # no month-lag for date-ticketed series
         assert captured_kwargs["kalshi_read"] is fake_read
         assert captured_kwargs["kalshi_direction_override"] == "higher_bullish"
+    print("PASS\n")
+
+
+def test_run_accumulator_cycle_fetches_cot_once_per_cycle_not_per_event():
+    print("=== run_accumulator_cycle: cot_positioning is fetched ONCE per cycle, reused across every active event, same as macro_backdrop ===")
+    event_a = EconomicEvent(title="CPI m/m", country="USD", impact="High", event_time_utc=dt.datetime(2026, 9, 2, 12, 30, tzinfo=UTC_TZ), forecast="0.3%", previous="0.3%")
+    event_b = EconomicEvent(title="PPI m/m", country="USD", impact="High", event_time_utc=dt.datetime(2026, 9, 2, 12, 30, tzinfo=UTC_TZ), forecast="0.2%", previous="0.2%")
+    with patch.object(accumulator, "fetch_calendar", return_value=[event_a, event_b]), \
+         patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
+         patch.object(accumulator, "events_in_pre_window", return_value=[event_a, event_b]), \
+         patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+         patch.object(accumulator, "get_macro_backdrop_read", return_value=None), \
+         patch.object(accumulator, "get_cot_positioning_read", return_value=None) as mock_cot, \
+         patch.object(accumulator, "score_and_record_event") as mock_score, \
+         patch.object(accumulator, "get_connection"):
+        accumulator.run_accumulator_cycle(["XAUUSD"])
+
+    assert mock_cot.call_count == 1  # fetched once, not once per event
+    # Both calls to score_and_record_event received the SAME cot_positioning value (None here, but the point is it's the one shared fetch, not a fresh one per event)
+    assert mock_score.call_count == 2
+    print("PASS\n")
+
+
+def test_score_and_record_event_passes_cot_positioning_through_to_score_bundle():
+    print("=== score_and_record_event: cot_positioning is threaded through to score_bundle() unchanged ===")
+    event = EconomicEvent(title="CPI m/m", country="USD", impact="High", event_time_utc=dt.datetime(2026, 9, 2, 12, 30, tzinfo=UTC_TZ), forecast="0.3%", previous="0.3%")
+    sentinel_cot = CotPositioningRead(net_leveraged_funds_position=100, percentile_in_trailing_window=50.0, report_date=dt.date(2026, 8, 29), lookback_weeks=52)
+    with patch.object(accumulator, "build_event_news_bundle", return_value=_bundle(event, [])), \
+         patch.object(accumulator, "record_check"), \
+         patch.object(accumulator, "find_precursor_events", return_value=[]), \
+         patch.object(accumulator, "score_print_direction", return_value=None), \
+         patch.object(accumulator, "_read_trend_signal", return_value=None), \
+         patch.object(accumulator, "_read_kalshi_signal", return_value=(None, None)), \
+         patch.object(accumulator, "get_latest_prediction", return_value=None), \
+         patch.object(accumulator, "score_bundle") as mock_score_bundle, \
+         patch.object(accumulator, "_is_material_change", return_value=False):
+        accumulator.score_and_record_event(
+            conn=MagicMock(), event=event, all_events=[event], instruments=["XAUUSD"],
+            sources=[], cot_positioning=sentinel_cot,
+        )
+
+    assert mock_score_bundle.call_args.kwargs["cot_positioning"] is sentinel_cot
     print("PASS\n")
 
 
@@ -1137,6 +1185,8 @@ if __name__ == "__main__":
     test_precursor_events_uses_unfiltered_calendar_not_high_impact_only()
     test_high_impact_only_no_medium_widening()
     test_accumulator_includes_allowlisted_medium_events()
+    test_run_accumulator_cycle_fetches_cot_once_per_cycle_not_per_event()
+    test_score_and_record_event_passes_cot_positioning_through_to_score_bundle()
     test_accumulator_excludes_non_allowlisted_medium_events()
     test_failed_scoring_for_one_pair_does_not_stop_others()
     test_article_bundle_fetched_once_per_event_not_per_instrument()
