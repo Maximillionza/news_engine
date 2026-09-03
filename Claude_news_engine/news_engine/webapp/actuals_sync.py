@@ -21,6 +21,7 @@ reverse, by construction, so a plain pull-before-write never conflicts.
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import threading
@@ -28,6 +29,13 @@ import time
 import datetime as dt
 from pathlib import Path
 from typing import Optional
+
+from webapp.store import get_events_with_stale_missing_actual
+
+# The cloud routine only ever attempts candidates younger than this --
+# older gaps are the existing manual/backdate workflow's job, not
+# something a 2-hourly automated pass should keep retrying forever.
+MAX_CANDIDATE_AGE_HOURS = 48.0
 
 
 def _run_git(args: list[str], cwd: Path, timeout: int = 30) -> subprocess.CompletedProcess:
@@ -100,3 +108,53 @@ def _git_commit_and_push(repo_dir: Path, message: str) -> bool:
         return "nothing to commit" in commit_result.stdout.lower()
     push_result = _run_git(["push"], cwd=repo_dir)
     return push_result.returncode == 0
+
+
+def export_stale_queue(conn, repo_dir: Path, now: Optional[dt.datetime] = None) -> bool:
+    """
+    Overwrites <repo_dir>/data_layer/pending_actuals_queue.json with the
+    CURRENT stale-missing-actual candidate list (via
+    webapp.store.get_events_with_stale_missing_actual(), completely
+    unchanged -- every one of its existing exclusions, e.g. title outside
+    EVENT_SURPRISE_DIRECTION, structurally text-only, still within the
+    1h grace period, applies here identically), filtered to occurrences
+    within the last MAX_CANDIDATE_AGE_HOURS. Always a full snapshot, never
+    an append -- it reflects current DB state, not a log.
+
+    Commits and pushes only if the candidate list ITSELF changed from
+    what's already on disk (generated_at_utc is deliberately excluded
+    from that comparison -- it always differs and isn't real
+    information; comparing it would push on every single cycle). Returns
+    True if a push happened. Never raises -- the caller
+    (start_actuals_sync()'s loop) wraps the whole cycle in a broad
+    fail-open except.
+    """
+    now = now or dt.datetime.now(dt.timezone.utc)
+    cutoff = now - dt.timedelta(hours=MAX_CANDIDATE_AGE_HOURS)
+    rows = get_events_with_stale_missing_actual(conn, now)
+    candidates = [
+        {
+            "event_title": r.event_title,
+            "event_time_utc": r.event_time_utc,
+            "forecast": r.forecast,
+            "previous": r.previous,
+        }
+        for r in rows
+        if dt.datetime.fromisoformat(r.event_time_utc) >= cutoff
+    ]
+
+    queue_path = repo_dir / "data_layer" / "pending_actuals_queue.json"
+    existing_candidates = None
+    if queue_path.exists():
+        try:
+            existing_candidates = json.loads(queue_path.read_text()).get("candidates")
+        except (json.JSONDecodeError, OSError):
+            existing_candidates = None
+    if existing_candidates == candidates:
+        return False
+
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    queue_path.write_text(json.dumps(
+        {"generated_at_utc": now.isoformat(), "candidates": candidates}, indent=2, sort_keys=True,
+    ))
+    return _git_commit_and_push(repo_dir, f"chore: update pending actuals queue ({len(candidates)} candidate(s))")

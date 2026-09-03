@@ -17,7 +17,9 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import UTC_TZ
+from data_layer.calendar_feed import EconomicEvent
 import webapp.actuals_sync as actuals_sync
+import webapp.store as store
 
 
 def _fake_completed(returncode=0, stdout="", stderr=""):
@@ -169,6 +171,101 @@ def test_git_commit_and_push_returns_false_when_add_fails():
     print("PASS\n")
 
 
+def _seed_pending_event(conn, title, event_time, forecast="0.2%", previous="0.1%"):
+    event = EconomicEvent(title=title, country="USD", impact="High", event_time_utc=event_time, forecast=forecast, previous=previous)
+    store.upsert_event_history(conn, event, surprise_direction=None, now=event_time)
+
+
+def test_export_writes_candidates_within_cutoff():
+    print("=== export_stale_queue: writes the current stale-candidate list as pending_actuals_queue.json ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        repo_dir.mkdir()
+        now = dt.datetime(2026, 9, 3, 12, 0, tzinfo=UTC_TZ)
+        stale_time = now - dt.timedelta(hours=5)  # past the 1h grace period, within the 48h cutoff
+
+        conn = store.get_connection(dash_db)
+        _seed_pending_event(conn, "PPI m/m", stale_time, forecast="0.2%", previous="0.1%")
+
+        with patch.object(actuals_sync, "_git_commit_and_push", return_value=True):
+            pushed = actuals_sync.export_stale_queue(conn, repo_dir, now=now)
+        conn.close()
+
+        assert pushed is True
+        content = json.loads((repo_dir / "data_layer" / "pending_actuals_queue.json").read_text())
+        assert content["candidates"] == [
+            {"event_title": "PPI m/m", "event_time_utc": stale_time.isoformat(), "forecast": "0.2%", "previous": "0.1%"},
+        ]
+    print("PASS\n")
+
+
+def test_export_excludes_candidates_older_than_48_hours():
+    print("=== export_stale_queue: excludes a real stale candidate older than the 48h cutoff ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        repo_dir.mkdir()
+        now = dt.datetime(2026, 9, 3, 12, 0, tzinfo=UTC_TZ)
+        too_old_time = now - dt.timedelta(hours=60)
+
+        conn = store.get_connection(dash_db)
+        _seed_pending_event(conn, "PPI m/m", too_old_time)
+
+        with patch.object(actuals_sync, "_git_commit_and_push", return_value=True):
+            actuals_sync.export_stale_queue(conn, repo_dir, now=now)
+        conn.close()
+
+        content = json.loads((repo_dir / "data_layer" / "pending_actuals_queue.json").read_text())
+        assert content["candidates"] == []
+    print("PASS\n")
+
+
+def test_export_does_not_push_when_candidates_unchanged():
+    print("=== export_stale_queue: makes no commit/push when the candidate list hasn't changed from what's already written, even though generated_at_utc always differs ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        repo_dir.mkdir()
+        stale_time = dt.datetime(2026, 9, 3, 7, 0, tzinfo=UTC_TZ)
+
+        conn = store.get_connection(dash_db)
+        _seed_pending_event(conn, "PPI m/m", stale_time)
+
+        with patch.object(actuals_sync, "_git_commit_and_push", return_value=True) as mock_push:
+            actuals_sync.export_stale_queue(conn, repo_dir, now=dt.datetime(2026, 9, 3, 12, 0, tzinfo=UTC_TZ))
+            pushed_second_time = actuals_sync.export_stale_queue(conn, repo_dir, now=dt.datetime(2026, 9, 3, 12, 30, tzinfo=UTC_TZ))
+        conn.close()
+
+        assert pushed_second_time is False
+        mock_push.assert_called_once()  # only the first call actually pushed
+    print("PASS\n")
+
+
+def test_export_pushes_again_when_candidates_actually_change():
+    print("=== export_stale_queue: pushes again once the real candidate list changes (a new stale event appears) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        repo_dir.mkdir()
+        first_time = dt.datetime(2026, 9, 3, 7, 0, tzinfo=UTC_TZ)
+        second_time = dt.datetime(2026, 9, 3, 8, 0, tzinfo=UTC_TZ)
+        now = dt.datetime(2026, 9, 3, 12, 0, tzinfo=UTC_TZ)
+
+        conn = store.get_connection(dash_db)
+        _seed_pending_event(conn, "PPI m/m", first_time)
+
+        with patch.object(actuals_sync, "_git_commit_and_push", return_value=True) as mock_push:
+            actuals_sync.export_stale_queue(conn, repo_dir, now=now)
+            _seed_pending_event(conn, "Retail Sales m/m", second_time)
+            pushed_again = actuals_sync.export_stale_queue(conn, repo_dir, now=now)
+        conn.close()
+
+        assert pushed_again is True
+        assert mock_push.call_count == 2
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_run_git_disables_terminal_prompt()
     test_ensure_repo_cloned_clones_when_missing()
@@ -180,4 +277,8 @@ if __name__ == "__main__":
     test_git_commit_and_push_returns_false_when_push_fails()
     test_run_git_catches_timeout_and_returns_completed_process()
     test_git_commit_and_push_returns_false_when_add_fails()
+    test_export_writes_candidates_within_cutoff()
+    test_export_excludes_candidates_older_than_48_hours()
+    test_export_does_not_push_when_candidates_unchanged()
+    test_export_pushes_again_when_candidates_actually_change()
     print("All actuals_sync tests passed.")
