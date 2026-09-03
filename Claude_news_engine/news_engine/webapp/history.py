@@ -206,6 +206,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                         source=(
                             "seeded" if "seeded" in (event.source, prediction.source)
                             else "live_web_fallback" if "live_web_fallback" in (event.source, prediction.source)
+                            else "cloud_web_fallback" if "cloud_web_fallback" in (event.source, prediction.source)
                             else "fred" if "fred" in (event.source, prediction.source)
                             else "live"
                         ),
@@ -246,11 +247,14 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                 # same reasoning as 'live_web_fallback' — it only ever lands
                 # in event_history, never in call.source, but checking both
                 # sides costs nothing and keeps this resilient to a future
-                # write path. Must genuinely distinguish all four values —
-                # never collapse to a live/seeded boolean.
+                # write path. 'cloud_web_fallback' follows the same reasoning:
+                # checked before 'fred' to respect its priority in the fallback
+                # chain (see task-1-brief.md). Must genuinely distinguish all five
+                # values — never collapse to a live/seeded boolean.
                 source=(
                     "seeded" if "seeded" in (event.source, call.source)
                     else "live_web_fallback" if "live_web_fallback" in (event.source, call.source)
+                    else "cloud_web_fallback" if "cloud_web_fallback" in (event.source, call.source)
                     else "fred" if "fred" in (event.source, call.source)
                     else "live"
                 ),

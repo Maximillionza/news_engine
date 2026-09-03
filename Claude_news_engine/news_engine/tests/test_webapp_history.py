@@ -713,6 +713,64 @@ def test_empty_result_when_nothing_resolved():
     print("PASS\n")
 
 
+def test_numeric_row_recognizes_cloud_web_fallback_source():
+    print("=== webapp/history: HistoryRow.source recognizes 'cloud_web_fallback' on the numeric print-call path, never collapsed to 'live' ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.upsert_event_history(
+            dash_conn, _resolved_event("Core CPI m/m", event_time, "0.2%", "0.0%", "0.2%"),
+            "in_line", now=event_time, source="cloud_web_fallback",
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_print_prediction_if_changed(
+            bt_conn, "Core CPI m/m", event_time,
+            PrintCall(direction="lower", confidence=0.51, article_count=89), now=event_time, source="live",
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert rows[0].source == "cloud_web_fallback"
+    print("PASS\n")
+
+
+def test_fallback_row_recognizes_cloud_web_fallback_source():
+    print("=== webapp/history: HistoryRow.source recognizes 'cloud_web_fallback' on the accumulator-prediction fallback path too ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.upsert_event_history(
+            dash_conn, _resolved_event("CPI m/m", event_time, "0.1%", "-0.4%", "0.4%"),
+            "higher", now=event_time, source="cloud_web_fallback",
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        # No print_predictions row at all -- exercises the fallback branch.
+        backtest_store.record_prediction(
+            bt_conn, "CPI m/m", "XAUUSD", event_time,
+            0.7, "bearish", 0.6, 40, False, scored_at_utc=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].source == "cloud_web_fallback"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_resolved_event_with_real_call_is_judged()
     test_resolved_event_with_shrug_call_excluded_from_judging()
@@ -736,4 +794,6 @@ if __name__ == "__main__":
     test_null_surprise_direction_is_not_judged_as_missed()
     test_text_only_low_confidence_prediction_not_judged()
     test_empty_result_when_nothing_resolved()
+    test_numeric_row_recognizes_cloud_web_fallback_source()
+    test_fallback_row_recognizes_cloud_web_fallback_source()
     print("All webapp_history tests passed.")
