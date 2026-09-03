@@ -14,22 +14,29 @@ webapp.store's DB read-only for the trend signal. This module is the
 third instance, dashboard-side, display-only — it writes nothing to
 either DB.
 
-Not every resolved numeric event has a print-direction call — that needs
-real article text matching PRINT_SURPRISE_LEXICON, which may never
-arrive (quota exhausted, no coverage, or just too soon). Those events
-fall back to the accumulator's own main prediction (predictions table),
-which precursor/trend/Kalshi signals alone can drive with zero
-qualifying articles — compared directly against the real
-surprise_direction already sitting in event_history, the same
-number-vs-call comparison the print-call path uses, not against
-outcomes/price-move confirmation (2026-09-02 fix — see
-_implied_surprise_direction()). Not every High-impact USD event has a
-number to compare against at all — FOMC Statement/Press Conference
-publish no forecast/actual whatsoever, but the accumulator's prediction
-still scores them (score_bundle()'s core article-sentiment path requires
-no numeric forecast). Those genuinely-numberless events get a separate
-row per instrument using outcomes/price-move confirmation instead, since
-there's no real surprise_direction to compare against at all.
+Not every resolved numeric event has a usable print-direction call — that
+needs real article text matching PRINT_SURPRISE_LEXICON, which may never
+arrive (quota exhausted, no coverage, or just too soon), and even when
+articles exist, zero phrase hits still persists a real but contentless
+print_predictions row (confidence == NO_HIT_CONFIDENCE) rather than no row
+at all. Both cases fall back to the accumulator's own main prediction
+(predictions table), which precursor/trend/Kalshi signals alone can drive
+with zero qualifying articles — compared against the real surprise_direction
+already sitting in event_history, the same number-vs-call comparison the
+print-call path uses (2026-09-02 fix — see _implied_surprise_direction()),
+EXCEPT when that surprise_direction is 'in_line': a directional call can
+never equal 'in_line', so that comparison would always read Missed even
+when the real market moved and confirmed the call. That specific case is
+graded against the real Dukascopy-confirmed outcome instead — same ground
+truth the text-only path below already uses — with 'pending' (not a false
+Missed) until that confirmation lands (2026-09-04 fix). Not every
+High-impact USD event has a number to compare against at all — FOMC
+Statement/Press Conference publish no forecast/actual whatsoever, but the
+accumulator's prediction still scores them (score_bundle()'s core
+article-sentiment path requires no numeric forecast). Those
+genuinely-numberless events get a separate row per instrument using
+outcomes/price-move confirmation instead, since there's no real
+surprise_direction to compare against at all.
 """
 from __future__ import annotations
 
@@ -107,18 +114,25 @@ class HistoryRow:
 def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[dt.datetime] = None) -> list[HistoryRow]:
     """
     Resolved event_history occurrences (actual IS NOT NULL) become numeric
-    rows via a print_predictions match when one exists (one row, instrument
-    None), or — when no print-call was ever recorded — via a fallback to
-    the accumulator's main predictions row, one per instrument (2026-09-02
-    fix: this used to skip the occurrence entirely, hiding a real recorded
-    prediction from History whenever no qualifying article ever showed up).
-    An occurrence with NEITHER a print-call NOR a predictions row for a
-    given instrument is still excluded for that instrument — never shown
-    with blanks. Text-only occurrences (forecast AND actual both NULL)
-    with a real predictions row appear as one fallback row per instrument,
-    same as before. Fails open to an empty list if the backtest DB is
-    unreachable for any reason — never crashes the /api/history route
-    over a cross-pipeline read error.
+    rows via a print_predictions match when one exists AND carries real
+    signal (one row, instrument None), or — when no print-call was ever
+    recorded, or the one recorded is a contentless NO_HIT_CONFIDENCE stub
+    (2026-09-04 fix) — via a fallback to the accumulator's main predictions
+    row, one per instrument (2026-09-02 fix: this used to skip the
+    occurrence entirely, hiding a real recorded prediction from History
+    whenever no qualifying article ever showed up). Within that fallback,
+    an occurrence whose surprise_direction is 'in_line' (the print itself
+    had no real surprise to judge a direction against) is graded against
+    the real Dukascopy-confirmed outcome instead of the number, same as the
+    text-only path below, so a genuinely correct trade doesn't read as a
+    false Missed just because the print landed at consensus (2026-09-04
+    fix). An occurrence with NEITHER a usable print-call NOR a predictions
+    row for a given instrument is still excluded for that instrument —
+    never shown with blanks. Text-only occurrences (forecast AND actual
+    both NULL) with a real predictions row appear as one fallback row per
+    instrument, same as before. Fails open to an empty list if the
+    backtest DB is unreachable for any reason — never crashes the
+    /api/history route over a cross-pipeline read error.
     """
     now = now or dt.datetime.now(dt.timezone.utc)
 
@@ -158,18 +172,17 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
             except Exception as exc:  # noqa: BLE001 — one bad lookup must not crash the whole build
                 print(f"[webapp.history] WARNING: could not read print call for {event.event_title}: {exc}")
                 continue
-            if call is None:
-                # No print-direction call (needs real article text matching
-                # PRINT_SURPRISE_LEXICON) — fall back to the accumulator's
-                # own main prediction (predictions table), which precursor/
-                # trend/Kalshi signals alone can drive without any
-                # qualifying article at all. Compared directly against
-                # event.surprise_direction (the same equality check the
-                # numeric print-call path above uses), not against
-                # outcomes/price-move confirmation — that stays the
-                # text-only path's job below, since a numeric event's own
-                # real surprise is already known the instant it resolves,
-                # no price data or Dukascopy fetch required.
+            if call is None or call.confidence <= NO_HIT_CONFIDENCE:
+                # No print-direction call — either none was ever recorded, or
+                # score_print_direction() found articles but zero phrase hits
+                # and persisted a contentless in_line/NO_HIT_CONFIDENCE stub
+                # (2026-09-04 fix: that stub is a real row, not None — it was
+                # silently blocking this fallback and surfacing a false "no
+                # strong call" over a real, higher-confidence accumulator
+                # prediction the dashboard actually acted on). Either way,
+                # fall back to the accumulator's own main prediction
+                # (predictions table), which precursor/trend/Kalshi signals
+                # alone can drive without any qualifying article at all.
                 for instrument in INSTRUMENTS.keys():
                     try:
                         prediction = get_latest_prediction_for_occurrence(bt_conn, event.event_title, instrument, event_time)
@@ -187,6 +200,29 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                         fallback_unjudged_reason = "shrug"  # no directional call made — nothing to invert or compare
                     elif event.surprise_direction is None:
                         fallback_unjudged_reason = "unknown_surprise"
+                    elif event.surprise_direction == "in_line":
+                        # The print carried no real surprise for a directional
+                        # call to be judged against — _implied_surprise_direction()
+                        # only ever returns 'higher'/'lower', so comparing it to
+                        # 'in_line' here would ALWAYS read Missed, misrepresenting
+                        # a genuinely correct, profitable trade the market itself
+                        # confirmed for reasons the print's own magnitude doesn't
+                        # capture (positioning, other cross-currents). Grade
+                        # against the real Dukascopy-confirmed price move instead
+                        # — the same ground truth the text-only path below already
+                        # uses — so a real accurate call reads Confirmed, not a
+                        # false Missed (2026-09-04 fix). No recorded outcome yet
+                        # reads "pending", same as the text-only path, never a
+                        # silent Missed.
+                        try:
+                            outcome_row = get_outcome(bt_conn, event.event_title, instrument, event_time)
+                        except Exception as exc:  # noqa: BLE001 — one bad lookup must not crash the whole build
+                            print(f"[webapp.history] WARNING: could not read outcome for {event.event_title}/{instrument}: {exc}")
+                            outcome_row = None
+                        if outcome_row is None:
+                            fallback_unjudged_reason = "pending"
+                        else:
+                            fallback_outcome = "Confirmed" if outcome_row.actual_direction == prediction.direction else "Missed"
                     else:
                         implied_surprise = _implied_surprise_direction(event.event_title, instrument, prediction.direction)
                         fallback_outcome = "Confirmed" if implied_surprise == event.surprise_direction else "Missed"

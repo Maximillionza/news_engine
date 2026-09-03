@@ -61,8 +61,8 @@ def test_resolved_event_with_real_call_is_judged():
     print("PASS\n")
 
 
-def test_resolved_event_with_shrug_call_excluded_from_judging():
-    print("=== build_print_call_history: a shrug call (confidence <= NO_HIT_CONFIDENCE) is shown but not judged ===")
+def test_resolved_event_with_shrug_print_call_and_no_accumulator_prediction_excluded_entirely():
+    print("=== build_print_call_history: a shrug print call (confidence <= NO_HIT_CONFIDENCE) is treated as no call — excluded when there's no accumulator prediction either (2026-09-04 fix) ===")
     with tempfile.TemporaryDirectory() as tmp:
         dash_db = Path(tmp) / "dashboard.db"
         backtest_db = Path(tmp) / "backtest.db"
@@ -85,9 +85,96 @@ def test_resolved_event_with_shrug_call_excluded_from_judging():
         with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
             rows = history.build_print_call_history()
 
+        assert rows == []
+    print("PASS\n")
+
+
+def test_resolved_event_with_shrug_print_call_falls_back_to_real_accumulator_prediction():
+    print("=== build_print_call_history: a shrug print call (confidence <= NO_HIT_CONFIDENCE) no longer masks a real, higher-confidence accumulator prediction — falls back to it instead of reporting a false 'no strong call' (2026-09-04 fix) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.upsert_event_history(
+            dash_conn, _resolved_event("CPI m/m", event_time, "0.2%", "0.0%", "0.5%"),
+            "higher", now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        # An 8-article batch that matched none of PRINT_SURPRISE_LEXICON's
+        # phrases — a real, contentless stub (not None).
+        backtest_store.record_print_prediction_if_changed(
+            bt_conn, "CPI m/m", event_time,
+            PrintCall(direction="in_line", confidence=0.15, article_count=8), now=event_time,
+        )
+        # XAUUSD is inverse-mapped and CPI m/m is higher_bullish, so a
+        # 'bearish' gold call implies a 'higher' surprise (same math the
+        # existing test_resolved_numeric_event_falls_back_to_accumulator_
+        # prediction_when_no_print_call test above already relies on).
+        backtest_store.record_prediction(
+            bt_conn, "CPI m/m", "XAUUSD", event_time,
+            0.7, "bearish", 0.6, 40, False, scored_at_utc=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].instrument == "XAUUSD"
+        assert rows[0].ne_prediction == "bearish"
+        assert rows[0].outcome == "Confirmed"
+        assert rows[0].unjudged_reason is None
+    print("PASS\n")
+
+
+def test_resolved_event_in_line_surprise_graded_against_real_outcome_not_the_number():
+    print("=== build_print_call_history: an in_line surprise_direction is graded against the real Dukascopy-confirmed outcome, not a false Missed (2026-09-04 fix) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 3, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.upsert_event_history(
+            dash_conn, _resolved_event("Unemployment Claims", event_time, "205K", "203K", "206K"),
+            "in_line", now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        # 8 articles, zero phrase hits -> contentless print-call stub.
+        backtest_store.record_print_prediction_if_changed(
+            bt_conn, "Unemployment Claims", event_time,
+            PrintCall(direction="in_line", confidence=0.15, article_count=8), now=event_time,
+        )
+        backtest_store.record_prediction(
+            bt_conn, "Unemployment Claims", "XAUUSD", event_time,
+            0.56, "bullish", 0.21, 92, False, scored_at_utc=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
         assert len(rows) == 1
         assert rows[0].outcome is None
-        assert rows[0].unjudged_reason == "shrug"
+        assert rows[0].unjudged_reason == "pending"  # no outcomes row recorded yet — not a false Missed
+
+        # Now record the real Dukascopy-confirmed move (matches the bullish call).
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_outcome(bt_conn, "Unemployment Claims", "XAUUSD", event_time, "bullish", "Dukascopy: +1.07% in 30min (auto)")
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].outcome == "Confirmed"
+        assert rows[0].unjudged_reason is None
     print("PASS\n")
 
 
