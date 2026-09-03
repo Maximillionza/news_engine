@@ -38,12 +38,17 @@ def _run_git(args: list[str], cwd: Path, timeout: int = 30) -> subprocess.Comple
     forever waiting for a prompt that can never arrive in an unattended
     background thread. Never raises on a non-zero exit -- callers inspect
     .returncode themselves; only a genuinely broken invocation (git
-    itself missing, a filesystem error) propagates.
+    itself missing, a filesystem error) propagates. TimeoutExpired is
+    caught and converted to a CompletedProcess with returncode=1, so the
+    "never raises" contract is literally true.
     """
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
-    return subprocess.run(
-        ["git", *args], cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout,
-    )
+    try:
+        return subprocess.run(
+            ["git", *args], cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(args=["git", *args], returncode=1, stdout="", stderr=f"git {args[0] if args else ''} timed out after {timeout}s")
 
 
 def _ensure_repo_cloned(repo_dir: Path, remote_url: str) -> bool:
@@ -84,9 +89,12 @@ def _git_commit_and_push(repo_dir: Path, message: str) -> bool:
     success. A commit failure whose output mentions "nothing to commit"
     is treated as success (there was genuinely nothing new to push, not
     a real error) -- checked via the commit command's own stdout, not a
-    separate `git status` call. Never raises.
+    separate `git status` call. Never raises. If git add fails, returns
+    False immediately and skips commit/push.
     """
-    _run_git(["add", "-A"], cwd=repo_dir)
+    add_result = _run_git(["add", "-A"], cwd=repo_dir)
+    if add_result.returncode != 0:
+        return False
     commit_result = _run_git(["commit", "-m", message], cwd=repo_dir)
     if commit_result.returncode != 0:
         return "nothing to commit" in commit_result.stdout.lower()

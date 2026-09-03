@@ -135,6 +135,40 @@ def test_git_commit_and_push_returns_false_when_push_fails():
     print("PASS\n")
 
 
+def test_run_git_catches_timeout_and_returns_completed_process():
+    print("=== _run_git: catches subprocess.TimeoutExpired and returns CompletedProcess with returncode=1 (never raises) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        def _fake_run(args, cwd, env, capture_output, text, timeout):
+            raise subprocess.TimeoutExpired(cmd=["git"], timeout=30)
+
+        with patch.object(subprocess, "run", side_effect=_fake_run):
+            result = actuals_sync._run_git(["status"], cwd=Path(tmp), timeout=30)
+
+        assert isinstance(result, subprocess.CompletedProcess)
+        assert result.returncode != 0
+        assert "timed out" in result.stderr.lower()
+    print("PASS\n")
+
+
+def test_git_commit_and_push_returns_false_when_add_fails():
+    print("=== _git_commit_and_push: returns False immediately when git add fails, and skips commit/push ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        calls = []
+
+        def _fake_run_git(args, cwd, timeout=30):
+            calls.append(args[0])
+            if args[0] == "add":
+                return _fake_completed(returncode=1, stderr="could not add files")
+            return _fake_completed(returncode=0)
+
+        with patch.object(actuals_sync, "_run_git", side_effect=_fake_run_git):
+            result = actuals_sync._git_commit_and_push(Path(tmp), "test commit")
+
+        assert result is False
+        assert calls == ["add"]
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_run_git_disables_terminal_prompt()
     test_ensure_repo_cloned_clones_when_missing()
@@ -144,4 +178,6 @@ if __name__ == "__main__":
     test_git_commit_and_push_succeeds()
     test_git_commit_and_push_treats_nothing_to_commit_as_success()
     test_git_commit_and_push_returns_false_when_push_fails()
+    test_run_git_catches_timeout_and_returns_completed_process()
+    test_git_commit_and_push_returns_false_when_add_fails()
     print("All actuals_sync tests passed.")
