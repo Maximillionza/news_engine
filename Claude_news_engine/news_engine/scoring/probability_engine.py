@@ -394,8 +394,11 @@ def get_precursor_events_for(
     it falls inside target's own PRE_EVENT_WINDOW_HOURS pre-event window,
     the same bound the old lookup used, so a resolved row from a PRIOR
     cycle (e.g. last month's ADP print) is never mistaken for this
-    cycle's precursor. Skips any precursor title with no resolved row in
-    that window at all — never fabricates.
+    cycle's precursor. Also requires country == "USD" strictly (2026-09-03
+    fix) — a resolved row with country NULL or any other value is skipped,
+    never treated as USD by default; see the inline comment below for why.
+    Skips any precursor title with no resolved row in that window at all
+    — never fabricates.
 
     `conn` is a webapp.store-shaped sqlite3.Connection (duck-typed — this
     module never imports webapp/ at module level, to avoid a cycle with
@@ -411,7 +414,17 @@ def get_precursor_events_for(
     precursors: list[EconomicEvent] = []
     for precursor_title, _weight in linked:
         rows = get_event_history(conn, precursor_title, limit=6)
-        resolved = [r for r in rows if r.actual is not None]
+        # country == "USD" strictly (2026-09-03 root-cause fix) — never
+        # NULL/unknown either. Many precursor titles are generic strings
+        # ("CPI m/m", "Retail Sales m/m", "Unemployment Rate") that other
+        # countries also use on Forex Factory; confirmed live that foreign
+        # prints under these exact titles have landed in event_history
+        # before country was tracked. This path is fully automated with no
+        # human review, unlike webapp.store.get_events_with_stale_missing_
+        # actual()'s manual-research list — a legacy row with country
+        # still NULL is excluded here until it self-heals or gets
+        # backfilled, never treated as USD by default.
+        resolved = [r for r in rows if r.actual is not None and r.country == "USD"]
         if not resolved:
             continue
         most_recent = resolved[0]  # get_event_history orders DESC by event_time_utc

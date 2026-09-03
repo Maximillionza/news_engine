@@ -383,6 +383,62 @@ def test_get_resolved_event_history_returns_impact():
     print("PASS\n")
 
 
+def test_upsert_event_history_persists_country():
+    print("=== upsert_event_history: stores the event's country on the row, from the very first INSERT ===")
+    conn = get_connection(":memory:")
+    event = _fake_event(title="Housing Starts", forecast="1.35M", actual=None)  # country="USD" via _fake_event
+    now = dt.datetime(2026, 8, 31, 12, 0, tzinfo=dt.timezone.utc)
+    store.upsert_event_history(conn, event, surprise_direction=None, now=now)
+
+    rows = store.get_event_history(conn, "Housing Starts")
+    assert len(rows) == 1
+    assert rows[0].country == "USD"
+    print("PASS\n")
+
+
+def test_pre_migration_row_has_none_country():
+    print("=== event_history: a row written before this column existed reads back country=None, not a crash or a fabricated 'USD' ===")
+    conn = get_connection(":memory:")
+    now = dt.datetime(2026, 8, 31, 12, 0, tzinfo=dt.timezone.utc)
+    conn.execute(
+        "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, "
+        "surprise_direction, recorded_at_utc, updated_at_utc, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("Legacy Country Event", now.isoformat(), "1.0", "0.9", "1.1", "higher", now.isoformat(), now.isoformat(), "live"),
+    )
+    conn.commit()
+
+    rows = store.get_event_history(conn, "Legacy Country Event")
+    assert rows[0].country is None
+    print("PASS\n")
+
+
+def test_pre_migration_pending_row_backfills_country_on_the_call_that_resolves_it():
+    print("=== event_history: a legacy PENDING row (country=None) backfills its real country on the upsert_event_history() call that finally resolves it ===")
+    conn = get_connection(":memory:")
+    now = dt.datetime(2026, 8, 31, 12, 0, tzinfo=dt.timezone.utc)
+    event_time = now - dt.timedelta(hours=1)
+    conn.execute(
+        "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, "
+        "surprise_direction, recorded_at_utc, updated_at_utc, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("Legacy Pending Country Event", event_time.isoformat(), "1.0", "0.9", None, None, now.isoformat(), now.isoformat(), "live"),
+    )
+    conn.commit()
+
+    rows = store.get_event_history(conn, "Legacy Pending Country Event")
+    assert rows[0].country is None  # still unknown before any post-migration upsert touches it
+
+    resolving_event = EconomicEvent(
+        title="Legacy Pending Country Event", country="USD", impact="Medium",
+        event_time_utc=event_time, forecast="1.0", previous="0.9", actual="1.2",
+    )
+    store.upsert_event_history(conn, resolving_event, "higher", now)
+
+    rows = store.get_event_history(conn, "Legacy Pending Country Event")
+    assert len(rows) == 1
+    assert rows[0].country == "USD"
+    print("PASS\n")
+
+
 def test_pre_migration_row_has_none_impact():
     print("=== event_history: a row written before this column existed reads back impact=None, not a crash or a fabricated value ===")
     conn = get_connection(":memory:")
@@ -838,6 +894,9 @@ if __name__ == "__main__":
     test_get_resolved_event_history_only_returns_rows_with_actual()
     test_get_resolved_event_history_most_recent_first_and_limit()
     test_upsert_event_history_persists_impact()
+    test_upsert_event_history_persists_country()
+    test_pre_migration_row_has_none_country()
+    test_pre_migration_pending_row_backfills_country_on_the_call_that_resolves_it()
     test_get_resolved_event_history_returns_impact()
     test_pre_migration_row_has_none_impact()
     test_pre_migration_pending_row_backfills_impact_on_the_call_that_resolves_it()

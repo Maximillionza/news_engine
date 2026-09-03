@@ -907,6 +907,41 @@ def test_get_precursor_events_for_ignores_stale_resolved_row_outside_window():
     print("PASS\n")
 
 
+def test_get_precursor_events_for_excludes_foreign_country_row():
+    print("=== get_precursor_events_for: a resolved precursor row with a non-USD country is never used, even if it's the most recent ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = webapp_store.get_connection(Path(tmp) / "test.db")
+        precursor_time = EVENT_TIME - dt.timedelta(hours=5)
+        webapp_store.upsert_event_history(
+            conn,
+            EconomicEvent(title="PPI m/m", country="EUR", impact="Medium", event_time_utc=precursor_time, forecast="0.2%", actual="0.4%"),
+            surprise_direction="higher", now=precursor_time,
+        )
+        result = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
+        assert result == [], "a Eurozone PPI print must never be blended in as a USD precursor for a US CPI target"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_precursor_events_for_excludes_unknown_country_row():
+    print("=== get_precursor_events_for: a resolved precursor row with country still NULL (legacy, unmigrated) is excluded, never assumed USD ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = webapp_store.get_connection(Path(tmp) / "test.db")
+        precursor_time = EVENT_TIME - dt.timedelta(hours=5)
+        # No country passed to upsert_event_history's underlying INSERT --
+        # simulate a legacy pre-migration row by writing directly.
+        conn.execute(
+            "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, surprise_direction, recorded_at_utc, updated_at_utc, source) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'live')",
+            ("PPI m/m", precursor_time.isoformat(), "0.2%", None, "0.4%", "higher", precursor_time.isoformat(), precursor_time.isoformat()),
+        )
+        conn.commit()
+        result = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
+        assert result == [], "a legacy row with country still unknown must never be treated as USD by default"
+        conn.close()
+    print("PASS\n")
+
+
 def test_get_precursor_events_for_multiple_links_all_resolved():
     print("=== get_precursor_events_for: multiple configured links for one target all resolve independently ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -1089,6 +1124,8 @@ if __name__ == "__main__":
     test_get_precursor_events_for_finds_resolved_precursor_in_window()
     test_get_precursor_events_for_skips_unresolved_precursor()
     test_get_precursor_events_for_ignores_stale_resolved_row_outside_window()
+    test_get_precursor_events_for_excludes_foreign_country_row()
+    test_get_precursor_events_for_excludes_unknown_country_row()
     test_get_precursor_events_for_multiple_links_all_resolved()
     test_check_precursor_chain_conflict_fewer_than_two_no_conflict()
     test_check_precursor_chain_conflict_two_agree_no_conflict()

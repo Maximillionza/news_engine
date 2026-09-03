@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS event_history (
     updated_at_utc TEXT NOT NULL,
     source TEXT NOT NULL DEFAULT 'live',
     impact TEXT,
+    country TEXT,
     UNIQUE(event_title, event_time_utc)
 );
 CREATE TABLE IF NOT EXISTS macro_calendar (
@@ -112,6 +113,7 @@ class EventHistoryRow:
     surprise_direction: Optional[str]
     source: str
     impact: Optional[str] = None
+    country: Optional[str] = None  # None = genuinely unknown (legacy row, never confirmed) — never guessed
 
 
 @dataclass
@@ -187,6 +189,35 @@ def _migrate_add_impact_column(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+def _migrate_add_country_column(conn: sqlite3.Connection) -> None:
+    """
+    Same reasoning and self-healing behavior as _migrate_add_impact_column()
+    — see that docstring for the full COALESCE/resolution-gating mechanics,
+    identical here. Added 2026-09-03 (root-cause fix): event_history had no
+    country dimension at all, so foreign releases sharing a generic FF
+    title with a US one (e.g. Australia's own "CPI m/m", the UK's own
+    "Retail Sales m/m"/"Unemployment Rate") could be — and, confirmed live,
+    WERE — silently miscounted as USD candidates by any title-only lookup
+    (get_events_with_stale_missing_actual(), and more seriously
+    scoring.probability_engine.get_precursor_events_for(), which feeds
+    directly into automated scoring with no human review). New rows are
+    populated at INSERT time from the real EconomicEvent.country the
+    scheduler already only ever writes as "USD" (see
+    webapp/scheduler.py's calendar_events, already properly USD-scoped —
+    the contamination in legacy rows came from an OLDER, since-replaced
+    process instance, confirmed by cross-referencing FF's live feed's own
+    country tags for known-foreign titles, not from a live bug in the
+    current write path). Legacy rows read back country=None (genuinely
+    unknown) until self-healed on their next resolving call, or backfilled
+    for known-USD-by-construction sources — see
+    scripts/migrate_country_backfill.py.
+    """
+    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(event_history)").fetchall()}
+    if "country" not in existing_columns:
+        conn.execute("ALTER TABLE event_history ADD COLUMN country TEXT")
+        conn.commit()
+
+
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     # db_path resolved inside the body (not as a default arg value) so
     # tests can patch module-level DB_PATH and have it take effect.
@@ -196,6 +227,7 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn.executescript(_SCHEMA)
     _migrate_add_source_column(conn)
     _migrate_add_impact_column(conn)
+    _migrate_add_country_column(conn)
     return conn
 
 
@@ -350,34 +382,38 @@ def upsert_event_history(
     untouched — never silently relabeled as live or web-fallback, which
     would misrepresent how the original forecast/previous were captured.
 
-    impact is the one exception to the "first-writer-wins" pattern above:
-    it isn't a first-writer-wins field the way actual/source are, so it's
-    set UNCONDITIONALLY (not gated behind the same WHERE) whenever the
-    UPDATE branch fires at all — COALESCE(event_history.impact,
-    excluded.impact) keeps whatever impact is already stored and only
-    fills in a legacy NULL, never overwriting a real value with another.
-    Because SQLite's ON CONFLICT DO UPDATE has exactly one WHERE for the
-    whole statement (same limitation the actual/source reasoning above
-    already lives with), this only self-heals a row while it's still
-    PENDING (actual IS NULL) — see _migrate_add_impact_column()'s
-    docstring for exactly which legacy rows this does and doesn't reach.
+    impact and country are the two exceptions to the "first-writer-wins"
+    pattern above: neither is first-writer-wins the way actual/source
+    are, so both are set UNCONDITIONALLY (not gated behind the same
+    WHERE) whenever the UPDATE branch fires at all — COALESCE(...) keeps
+    whatever value is already stored and only fills in a legacy NULL,
+    never overwriting a real value with another. Because SQLite's ON
+    CONFLICT DO UPDATE has exactly one WHERE for the whole statement
+    (same limitation the actual/source reasoning above already lives
+    with), this only self-heals a row while it's still PENDING (actual
+    IS NULL) — see _migrate_add_impact_column()'s/_migrate_add_country_
+    column()'s docstrings for exactly which legacy rows this does and
+    doesn't reach. A brand-new row (first INSERT, no prior conflict)
+    always gets country populated immediately from event.country, since
+    that's real data available from the very first write, unlike actual.
     """
     conn.execute(
         """
         INSERT INTO event_history
-            (event_title, event_time_utc, forecast, previous, actual, surprise_direction, recorded_at_utc, updated_at_utc, source, impact)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (event_title, event_time_utc, forecast, previous, actual, surprise_direction, recorded_at_utc, updated_at_utc, source, impact, country)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(event_title, event_time_utc) DO UPDATE SET
             actual = excluded.actual,
             surprise_direction = excluded.surprise_direction,
             updated_at_utc = excluded.updated_at_utc,
             source = CASE WHEN event_history.actual IS NULL THEN excluded.source ELSE event_history.source END,
-            impact = COALESCE(event_history.impact, excluded.impact)
+            impact = COALESCE(event_history.impact, excluded.impact),
+            country = COALESCE(event_history.country, excluded.country)
         WHERE excluded.actual IS NOT NULL AND event_history.actual IS NULL
         """,
         (
             event.title, event.event_time_utc.isoformat(), event.forecast, event.previous,
-            event.actual, surprise_direction, now.isoformat(), now.isoformat(), source, event.impact,
+            event.actual, surprise_direction, now.isoformat(), now.isoformat(), source, event.impact, event.country,
         ),
     )
     conn.commit()
@@ -386,7 +422,7 @@ def upsert_event_history(
 def get_event_history(conn: sqlite3.Connection, event_title: str, limit: int = 6) -> list[EventHistoryRow]:
     """Past occurrences of this event title, most recent first, capped at `limit`. Empty list if none recorded yet."""
     rows = conn.execute(
-        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source, impact "
+        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source, impact, country "
         "FROM event_history WHERE event_title = ? ORDER BY event_time_utc DESC LIMIT ?",
         (event_title, limit),
     ).fetchall()
@@ -402,7 +438,7 @@ def get_resolved_event_history(conn: sqlite3.Connection, limit: int = 200) -> li
     for its numeric-forecast rows.
     """
     rows = conn.execute(
-        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source, impact "
+        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source, impact, country "
         "FROM event_history WHERE actual IS NOT NULL ORDER BY event_time_utc DESC LIMIT ?",
         (limit,),
     ).fetchall()
@@ -446,6 +482,18 @@ def get_events_with_stale_missing_actual(
     any title outside EVENT_SURPRISE_DIRECTION), so it can never count
     toward a trend or the History tab. Without this filter those titles
     are guaranteed-wasted WebSearch budget for the enrichment pass.
+
+    Deliberately does NOT filter on country = 'USD' (2026-09-03): unlike
+    scoring.probability_engine.get_precursor_events_for() (fully
+    automated, no human review), a human researches this list's
+    candidates via WebSearch before anything gets written — a legacy row
+    with country still NULL (pre-migration, genuinely unresolved either
+    way) stays a legitimate candidate for that manual review rather than
+    being silently dropped. Title-only filtering already excludes the
+    unambiguous country-prefixed foreign titles; a bare shared title
+    (e.g. a stale legacy "CPI m/m" row that turns out to be foreign) is
+    something the researching agent catches during WebSearch, same as
+    any other cross-check in that workflow.
     """
     cutoff = (now - dt.timedelta(hours=grace_period_hours)).isoformat()
     known_titles = list(EVENT_SURPRISE_DIRECTION.keys())
@@ -453,7 +501,7 @@ def get_events_with_stale_missing_actual(
         return []
     placeholders = ",".join("?" for _ in known_titles)
     rows = conn.execute(
-        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source "
+        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source, country "
         "FROM event_history WHERE actual IS NULL AND event_time_utc < ? "
         "AND NOT (forecast IS NULL AND previous IS NULL) "
         f"AND event_title IN ({placeholders}) "
@@ -480,7 +528,7 @@ def get_text_only_resolved_events(conn: sqlite3.Connection, now: Optional[dt.dat
     """
     now = now or dt.datetime.now(dt.timezone.utc)
     rows = conn.execute(
-        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source "
+        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source, country "
         "FROM event_history WHERE forecast IS NULL AND actual IS NULL AND event_time_utc <= ? "
         "ORDER BY event_time_utc DESC LIMIT ?",
         (now.isoformat(), limit),
