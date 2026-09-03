@@ -30,7 +30,9 @@ import datetime as dt
 from pathlib import Path
 from typing import Optional
 
-from webapp.store import get_events_with_stale_missing_actual
+from data_layer.calendar_feed import EconomicEvent, classify_surprise
+from webapp.store import get_events_with_stale_missing_actual, upsert_event_history
+from scripts.fill_missing_actuals import FillReport
 
 # The cloud routine only ever attempts candidates younger than this --
 # older gaps are the existing manual/backdate workflow's job, not
@@ -158,3 +160,67 @@ def export_stale_queue(conn, repo_dir: Path, now: Optional[dt.datetime] = None) 
         {"generated_at_utc": now.isoformat(), "candidates": candidates}, indent=2, sort_keys=True,
     ))
     return _git_commit_and_push(repo_dir, f"chore: update pending actuals queue ({len(candidates)} candidate(s))")
+
+
+def apply_resolved_inbox(conn, repo_dir: Path, now: Optional[dt.datetime] = None) -> FillReport:
+    """
+    Pulls repo_dir (best-effort -- a failed pull just means this cycle
+    works from a slightly stale local copy, never fatal), reads
+    <repo_dir>/data_layer/resolved_actuals_inbox.json (absent, unreadable,
+    or malformed JSON is treated as zero entries, never an error -- same
+    "absent is a valid state" discipline as everywhere else in this
+    codebase), and for each entry whose event_history row STILL has
+    actual IS NULL, writes it via the exact write scripts/fill_missing_
+    actuals.py's run() uses, with source="cloud_web_fallback" (a distinct
+    provenance value, never collapsed into "live_web_fallback" -- see
+    webapp/history.py's source-precedence chains, Task 1). An entry for
+    an already-resolved row (by ANY source) is silently skipped -- safe
+    to re-read the same append-only inbox file forever, since nothing
+    here ever mutates or removes an inbox entry. Returns the same
+    FillReport shape fill_missing_actuals.run() does. Never raises.
+    """
+    now = now or dt.datetime.now(dt.timezone.utc)
+    report = FillReport()
+    _git_pull(repo_dir)
+
+    inbox_path = repo_dir / "data_layer" / "resolved_actuals_inbox.json"
+    entries = []
+    if inbox_path.exists():
+        try:
+            entries = json.loads(inbox_path.read_text()).get("entries", [])
+        except (json.JSONDecodeError, OSError):
+            entries = []
+
+    for entry in entries:
+        title = entry.get("event_title")
+        event_time_str = entry.get("event_time_utc")
+        actual = entry.get("actual")
+        if not title or not event_time_str or not actual:
+            report.skipped += 1
+            report.skip_reasons.append(f"malformed inbox entry: {entry!r}")
+            continue
+
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_title = ? AND event_time_utc = ?",
+            (title, event_time_str),
+        ).fetchall()
+        if not rows:
+            report.skipped += 1
+            report.skip_reasons.append(f"{title}@{event_time_str}: no matching event_history row")
+            continue
+        existing = dict(rows[0])
+        if existing["actual"] is not None:
+            report.skipped += 1
+            report.skip_reasons.append(f"{title}@{event_time_str}: already has a real actual, not overwritten")
+            continue
+
+        event = EconomicEvent(
+            title=title, country="USD", impact="High",
+            event_time_utc=dt.datetime.fromisoformat(event_time_str),
+            forecast=existing["forecast"], previous=existing["previous"], actual=actual,
+        )
+        surprise_direction = classify_surprise(event)
+        upsert_event_history(conn, event, surprise_direction, now, source="cloud_web_fallback")
+        report.written += 1
+
+    return report

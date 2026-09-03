@@ -17,7 +17,8 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import UTC_TZ
-from data_layer.calendar_feed import EconomicEvent
+from data_layer.calendar_feed import EconomicEvent, classify_surprise
+from scripts.fill_missing_actuals import FillReport
 import webapp.actuals_sync as actuals_sync
 import webapp.store as store
 
@@ -266,6 +267,141 @@ def test_export_pushes_again_when_candidates_actually_change():
     print("PASS\n")
 
 
+def _write_inbox(repo_dir, entries):
+    inbox_path = repo_dir / "data_layer" / "resolved_actuals_inbox.json"
+    inbox_path.parent.mkdir(parents=True, exist_ok=True)
+    inbox_path.write_text(json.dumps({"entries": entries}))
+
+
+def test_apply_writes_pending_entries_with_cloud_source():
+    print("=== apply_resolved_inbox: writes a real actual for a still-pending event, with source='cloud_web_fallback' ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        event_time = dt.datetime(2026, 9, 1, 12, 30, tzinfo=UTC_TZ)
+
+        conn = store.get_connection(dash_db)
+        _seed_pending_event(conn, "PPI m/m", event_time, forecast="0.2%", previous="0.1%")
+        _write_inbox(repo_dir, [
+            {"event_title": "PPI m/m", "event_time_utc": event_time.isoformat(), "actual": "0.3%",
+             "source_note": "BLS official release, https://example.test", "researched_at_utc": "2026-09-03T10:00:00+00:00"},
+        ])
+
+        with patch.object(actuals_sync, "_git_pull", return_value=True):
+            report = actuals_sync.apply_resolved_inbox(conn, repo_dir, now=dt.datetime(2026, 9, 3, 12, 0, tzinfo=UTC_TZ))
+
+        rows = store.get_event_history(conn, "PPI m/m")
+        conn.close()
+
+        assert report.written == 1
+        assert len(rows) == 1
+        assert rows[0].actual == "0.3%"
+        assert rows[0].source == "cloud_web_fallback"
+    print("PASS\n")
+
+
+def test_apply_skips_entries_already_resolved():
+    print("=== apply_resolved_inbox: an inbox entry for an already-resolved event is skipped, never overwritten ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        event_time = dt.datetime(2026, 9, 1, 12, 30, tzinfo=UTC_TZ)
+
+        conn = store.get_connection(dash_db)
+        event = EconomicEvent(title="PPI m/m", country="USD", impact="High", event_time_utc=event_time, forecast="0.2%", previous="0.1%", actual="0.5%")
+        store.upsert_event_history(conn, event, classify_surprise(event), now=event_time, source="live")
+        _write_inbox(repo_dir, [
+            {"event_title": "PPI m/m", "event_time_utc": event_time.isoformat(), "actual": "0.3%",
+             "source_note": "BLS official release, https://example.test", "researched_at_utc": "2026-09-03T10:00:00+00:00"},
+        ])
+
+        with patch.object(actuals_sync, "_git_pull", return_value=True):
+            report = actuals_sync.apply_resolved_inbox(conn, repo_dir, now=dt.datetime(2026, 9, 3, 12, 0, tzinfo=UTC_TZ))
+
+        rows = store.get_event_history(conn, "PPI m/m")
+        conn.close()
+
+        assert report.written == 0
+        assert report.skipped == 1
+        assert rows[0].actual == "0.5%"  # untouched -- the live value wins, never overwritten by the cloud-researched one
+        assert rows[0].source == "live"
+    print("PASS\n")
+
+
+def test_apply_treats_missing_inbox_file_as_empty():
+    print("=== apply_resolved_inbox: a repo with no inbox file yet is treated as zero entries, not an error ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        repo_dir.mkdir()
+        conn = store.get_connection(dash_db)
+
+        with patch.object(actuals_sync, "_git_pull", return_value=True):
+            report = actuals_sync.apply_resolved_inbox(conn, repo_dir)
+        conn.close()
+
+        assert report.written == 0
+        assert report.skipped == 0
+    print("PASS\n")
+
+
+def test_apply_treats_malformed_inbox_json_as_empty():
+    print("=== apply_resolved_inbox: a corrupted/malformed inbox file is treated as zero entries, not an error ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        inbox_path = repo_dir / "data_layer" / "resolved_actuals_inbox.json"
+        inbox_path.parent.mkdir(parents=True)
+        inbox_path.write_text("{not valid json")
+        conn = store.get_connection(dash_db)
+
+        with patch.object(actuals_sync, "_git_pull", return_value=True):
+            report = actuals_sync.apply_resolved_inbox(conn, repo_dir)
+        conn.close()
+
+        assert report.written == 0
+        assert report.skipped == 0
+    print("PASS\n")
+
+
+def test_apply_skips_malformed_entry_missing_actual():
+    print("=== apply_resolved_inbox: an inbox entry missing a real 'actual' is skipped, never fabricated ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        event_time = dt.datetime(2026, 9, 1, 12, 30, tzinfo=UTC_TZ)
+
+        conn = store.get_connection(dash_db)
+        _seed_pending_event(conn, "PPI m/m", event_time)
+        _write_inbox(repo_dir, [
+            {"event_title": "PPI m/m", "event_time_utc": event_time.isoformat(), "actual": None,
+             "source_note": "no real value found", "researched_at_utc": "2026-09-03T10:00:00+00:00"},
+        ])
+
+        with patch.object(actuals_sync, "_git_pull", return_value=True):
+            report = actuals_sync.apply_resolved_inbox(conn, repo_dir)
+        conn.close()
+
+        assert report.written == 0
+        assert report.skipped == 1
+    print("PASS\n")
+
+
+def test_apply_pulls_before_reading_the_inbox():
+    print("=== apply_resolved_inbox: pulls the repo before reading the inbox file, so it sees the cloud routine's latest push ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        conn = store.get_connection(dash_db)
+
+        with patch.object(actuals_sync, "_git_pull", return_value=True) as mock_pull:
+            actuals_sync.apply_resolved_inbox(conn, repo_dir)
+        conn.close()
+
+        mock_pull.assert_called_once_with(repo_dir)
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_run_git_disables_terminal_prompt()
     test_ensure_repo_cloned_clones_when_missing()
@@ -281,4 +417,10 @@ if __name__ == "__main__":
     test_export_excludes_candidates_older_than_48_hours()
     test_export_does_not_push_when_candidates_unchanged()
     test_export_pushes_again_when_candidates_actually_change()
+    test_apply_writes_pending_entries_with_cloud_source()
+    test_apply_skips_entries_already_resolved()
+    test_apply_treats_missing_inbox_file_as_empty()
+    test_apply_treats_malformed_inbox_json_as_empty()
+    test_apply_skips_malformed_entry_missing_actual()
+    test_apply_pulls_before_reading_the_inbox()
     print("All actuals_sync tests passed.")
