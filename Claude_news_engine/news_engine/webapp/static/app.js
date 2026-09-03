@@ -381,6 +381,46 @@ function renderCard(symbolEntry) {
     return rows.join('');
   }
 
+  // Release days routinely publish several sub-metrics at the IDENTICAL
+  // time (e.g. Core CPI m/m, Core CPI y/y, CPI m/m, CPI y/y all at 12:30
+  // UTC — see webapp/app.py's /api/predictions sort-key comment). The
+  // backend already returns every qualifying event for this symbol in
+  // `events`, sorted; only `events[0]` (`next`, above) was ever rendered
+  // — every other simultaneous event was computed and shipped in the API
+  // response but never shown anywhere. This compact secondary list
+  // surfaces the rest, one line each, deliberately NOT the full
+  // article/print/trend/Kalshi breakdown `next` gets — that keeps a
+  // 4-event cluster from ballooning the card, while still making the
+  // other calls visible instead of silently invisible.
+  function otherEventsHtml(events) {
+    // Only genuinely SIMULTANEOUS events (identical event_time_utc to the
+    // featured one) belong here — `events` also carries other upcoming/
+    // recent events for this symbol that just happen to sort near the
+    // top, which is a different concern and would make this list grow
+    // unboundedly instead of reflecting an actual release-time cluster.
+    const simultaneous = events.slice(1).filter((e) => e.event_time_utc === events[0].event_time_utc);
+    if (simultaneous.length === 0) return '';
+    const rows = simultaneous.map((e) => {
+      if (e.direction === "pending") {
+        return `<div class="other-event-row">
+          <span class="other-event-title">${escapeHtml(e.event_title)}</span>
+          <span class="other-event-pending">Pending</span>
+        </div>`;
+      }
+      const pct = directionPct(e.probability, e.direction);
+      const dClass = directionClass(e.direction);
+      return `<div class="other-event-row">
+        <span class="other-event-title">${escapeHtml(e.event_title)}</span>
+        <span class="other-event-call ${dClass}">${directionLabel(e.direction)} ${pct}%</span>
+      </div>`;
+    }).join('');
+    return `<div class="other-events">
+      <div class="other-events-heading">${simultaneous.length} more event${simultaneous.length === 1 ? '' : 's'} at this time</div>
+      ${rows}
+    </div>`;
+  }
+  const otherEventsLine = otherEventsHtml(events);
+
   if (next.direction === "pending") {
     // The event/when data is already in the response — showing it here
     // instead of a generic placeholder tells the user WHAT they're
@@ -391,7 +431,7 @@ function renderCard(symbolEntry) {
       : `Awaiting: ${escapeHtml(next.event_title)}`;
     body += `<div class="pending">${heading}<br>
       <span style="font-size:12px;color:#888">${formatEventDateTime(next.event_time_utc)}</span></div>
-      ${articlePredictionLine}${printPredictionLine}${kalshiReadLine}${trendSignalLine}`;
+      ${articlePredictionLine}${printPredictionLine}${kalshiReadLine}${trendSignalLine}${otherEventsLine}`;
     // Real, live-observed case this branch must NOT skip (2026-08-17):
     // FOMC-style events whose essence-only score can never resolve
     // (title has no EVENT_SURPRISE_DIRECTION entry — see
@@ -433,6 +473,7 @@ function renderCard(symbolEntry) {
     <div style="font-size:12px;color:#888">${escapeHtml(next.event_title)}</div>
     ${articlePredictionLine}${printPredictionLine}${kalshiReadLine}</div></div>
     <div class="bull-bear-scale">${bullBearScaleSvg(next.probability)}</div>`;
+  body += otherEventsLine;
   body += dayStripHtml(next.event_time_utc);
   const historyToggleId = `history-${symbol}-${next.event_title.replace(/[^a-zA-Z0-9]/g, '')}`;
   body += `<div class="history-toggle">
