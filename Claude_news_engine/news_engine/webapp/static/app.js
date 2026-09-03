@@ -851,6 +851,8 @@ function renderHistoryTable(rows) {
       ? ' <span style="color:#888;font-size:11px;font-weight:normal">(seeded)</span>'
       : r.source === "live_web_fallback"
       ? ' <span style="color:#888;font-size:11px;font-weight:normal">(web-sourced)</span>'
+      : r.source === "cloud_web_fallback"
+      ? ' <span style="color:#888;font-size:11px;font-weight:normal">(cloud-researched)</span>'
       : "";
     // Numeric rows use higher/lower/in_line; text-event fallback rows use bullish/bearish/neutral.
     const predictionLabel = { higher: "Higher", lower: "Lower", in_line: "In-line", bullish: "Bullish", bearish: "Bearish", neutral: "Neutral" }[r.ne_prediction] || escapeHtml(r.ne_prediction);
