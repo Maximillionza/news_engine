@@ -97,29 +97,67 @@ def _git_pull(repo_dir: Path) -> bool:
     (credentials not configured yet, network down, merge conflict that
     --ff-only refuses). Never raises. A failed pull just means this
     cycle might work from a slightly stale local copy or skip doing
-    anything useful; never fatal, always retried next cycle.
+    anything useful; never fatal, always retried next cycle. Logs a
+    warning on failure -- previously silent, so a wedged pull (expired
+    PAT, a real conflict) left no trace anywhere in the logs.
     """
     result = _run_git(["pull", "--ff-only"], cwd=repo_dir)
+    if result.returncode != 0:
+        print(f"[actuals_sync] WARNING: git pull failed: {result.stderr.strip()}")
     return result.returncode == 0
+
+
+def _git_push_with_retry(repo_dir: Path) -> bool:
+    """
+    Pushes repo_dir's current branch. If the push is rejected (the
+    remote advanced since our last pull -- e.g. the other side of this
+    sync pushed in between), pulls once and retries the push exactly
+    once more. Never raises. Logs a warning if it still fails after the
+    retry.
+    """
+    push_result = _run_git(["push"], cwd=repo_dir)
+    if push_result.returncode == 0:
+        return True
+    _git_pull(repo_dir)
+    push_result = _run_git(["push"], cwd=repo_dir)
+    if push_result.returncode != 0:
+        print(f"[actuals_sync] WARNING: git push failed even after a pull-and-retry: {push_result.stderr.strip()}")
+    return push_result.returncode == 0
+
+
+def _has_unpushed_commits(repo_dir: Path) -> bool:
+    """
+    True if the local branch has commits not yet on its upstream (a
+    prior push failed silently, or the remote advanced and diverged) --
+    used so export_stale_queue() doesn't skip re-pushing forever just
+    because the candidate list happens to be stable.
+    """
+    result = _run_git(["rev-list", "@{u}..HEAD"], cwd=repo_dir)
+    return result.returncode == 0 and bool(result.stdout.strip())
 
 
 def _git_commit_and_push(repo_dir: Path, message: str) -> bool:
     """
-    Stages everything in repo_dir, commits, and pushes. Returns True on
-    success. A commit failure whose output mentions "nothing to commit"
-    is treated as success (there was genuinely nothing new to push, not
-    a real error) -- checked via the commit command's own stdout, not a
-    separate `git status` call. Never raises. If git add fails, returns
-    False immediately and skips commit/push.
+    Stages everything in repo_dir, commits, and pushes (via
+    _git_push_with_retry(), which itself pulls-and-retries once on a
+    rejected push). Returns True on success. A commit failure whose
+    output mentions "nothing to commit" is treated as success for the
+    commit step itself (there was genuinely nothing new to stage) but
+    STILL falls through to the same push-with-retry path -- a prior
+    cycle's commit that landed locally but never made it to the remote
+    (a transient push failure) gets another chance here even when this
+    cycle's own add/commit finds nothing new. Never raises. If git add
+    fails, returns False immediately and skips commit/push (logged).
     """
     add_result = _run_git(["add", "-A"], cwd=repo_dir)
     if add_result.returncode != 0:
+        print(f"[actuals_sync] WARNING: git add failed: {add_result.stderr.strip()}")
         return False
     commit_result = _run_git(["commit", "-m", message], cwd=repo_dir)
-    if commit_result.returncode != 0:
-        return "nothing to commit" in commit_result.stdout.lower()
-    push_result = _run_git(["push"], cwd=repo_dir)
-    return push_result.returncode == 0
+    if commit_result.returncode != 0 and "nothing to commit" not in commit_result.stdout.lower():
+        print(f"[actuals_sync] WARNING: git commit failed: {commit_result.stderr.strip()}")
+        return False
+    return _git_push_with_retry(repo_dir)
 
 
 def export_stale_queue(conn, repo_dir: Path, now: Optional[dt.datetime] = None) -> bool:
@@ -152,7 +190,7 @@ def export_stale_queue(conn, repo_dir: Path, now: Optional[dt.datetime] = None) 
             "previous": r.previous,
         }
         for r in rows
-        if dt.datetime.fromisoformat(r.event_time_utc) >= cutoff
+        if dt.datetime.fromisoformat(r.event_time_utc) >= cutoff and r.country in (None, "USD")
     ]
 
     queue_path = repo_dir / "data_layer" / "pending_actuals_queue.json"
@@ -163,6 +201,8 @@ def export_stale_queue(conn, repo_dir: Path, now: Optional[dt.datetime] = None) 
         except (json.JSONDecodeError, OSError):
             existing_candidates = None
     if existing_candidates == candidates:
+        if _has_unpushed_commits(repo_dir):
+            return _git_push_with_retry(repo_dir)
         return False
 
     queue_path.parent.mkdir(parents=True, exist_ok=True)
@@ -197,41 +237,54 @@ def apply_resolved_inbox(conn, repo_dir: Path, now: Optional[dt.datetime] = None
     entries = []
     if inbox_path.exists():
         try:
-            entries = json.loads(inbox_path.read_text()).get("entries", [])
+            data = json.loads(inbox_path.read_text())
+            if isinstance(data, dict):
+                entries = data.get("entries", [])
+            if not isinstance(entries, list):
+                entries = []
         except (json.JSONDecodeError, OSError):
             entries = []
 
     for entry in entries:
-        title = entry.get("event_title")
-        event_time_str = entry.get("event_time_utc")
-        actual = entry.get("actual")
-        if not title or not event_time_str or not actual:
-            report.skipped += 1
-            report.skip_reasons.append(f"malformed inbox entry: {entry!r}")
-            continue
+        try:
+            if not isinstance(entry, dict):
+                report.skipped += 1
+                report.skip_reasons.append(f"malformed inbox entry (not an object): {entry!r}")
+                continue
+            title = entry.get("event_title")
+            event_time_str = entry.get("event_time_utc")
+            actual = entry.get("actual")
+            if not isinstance(title, str) or not title or not isinstance(event_time_str, str) or not event_time_str or not isinstance(actual, str) or not actual:
+                report.skipped += 1
+                report.skip_reasons.append(f"malformed inbox entry: {entry!r}")
+                continue
 
-        rows = conn.execute(
-            "SELECT * FROM event_history WHERE event_title = ? AND event_time_utc = ?",
-            (title, event_time_str),
-        ).fetchall()
-        if not rows:
-            report.skipped += 1
-            report.skip_reasons.append(f"{title}@{event_time_str}: no matching event_history row")
-            continue
-        existing = dict(rows[0])
-        if existing["actual"] is not None:
-            report.skipped += 1
-            report.skip_reasons.append(f"{title}@{event_time_str}: already has a real actual, not overwritten")
-            continue
+            rows = conn.execute(
+                "SELECT * FROM event_history WHERE event_title = ? AND event_time_utc = ?",
+                (title, event_time_str),
+            ).fetchall()
+            if not rows:
+                report.skipped += 1
+                report.skip_reasons.append(f"{title}@{event_time_str}: no matching event_history row")
+                continue
+            existing = dict(rows[0])
+            if existing["actual"] is not None:
+                report.skipped += 1
+                report.skip_reasons.append(f"{title}@{event_time_str}: already has a real actual, not overwritten")
+                continue
 
-        event = EconomicEvent(
-            title=title, country="USD", impact="High",
-            event_time_utc=dt.datetime.fromisoformat(event_time_str),
-            forecast=existing["forecast"], previous=existing["previous"], actual=actual,
-        )
-        surprise_direction = classify_surprise(event)
-        upsert_event_history(conn, event, surprise_direction, now, source="cloud_web_fallback")
-        report.written += 1
+            event = EconomicEvent(
+                title=title, country="USD", impact="High",
+                event_time_utc=dt.datetime.fromisoformat(event_time_str),
+                forecast=existing["forecast"], previous=existing["previous"], actual=actual,
+            )
+            surprise_direction = classify_surprise(event)
+            upsert_event_history(conn, event, surprise_direction, now, source="cloud_web_fallback")
+            report.written += 1
+        except Exception as exc:  # noqa: BLE001 — one malformed entry must never poison every future cycle
+            report.skipped += 1
+            report.skip_reasons.append(f"unexpected error processing inbox entry {entry!r}: {exc}")
+            continue
 
     return report
 

@@ -124,9 +124,12 @@ def test_git_commit_and_push_treats_nothing_to_commit_as_success():
 
 
 def test_git_commit_and_push_returns_false_when_push_fails():
-    print("=== _git_commit_and_push: a real commit followed by a failed push returns False ===")
+    print("=== _git_commit_and_push: a real commit followed by a push that fails even after the pull-and-retry returns False ===")
     with tempfile.TemporaryDirectory() as tmp:
+        calls = []
+
         def _fake_run_git(args, cwd, timeout=30):
+            calls.append(args[0])
             if args[0] == "push":
                 return _fake_completed(returncode=1, stderr="could not read Username")
             return _fake_completed(returncode=0)
@@ -135,6 +138,32 @@ def test_git_commit_and_push_returns_false_when_push_fails():
             result = actuals_sync._git_commit_and_push(Path(tmp), "test commit")
 
         assert result is False
+        # add, commit, push (fails), pull (retry), push (fails again) -- gives up after one retry
+        assert calls == ["add", "commit", "push", "pull", "push"]
+    print("PASS\n")
+
+
+def test_git_commit_and_push_retries_push_after_pull_on_rejection():
+    print("=== _git_commit_and_push: a rejected push is retried exactly once after a pull, and recovers if the retry succeeds ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        calls = []
+        push_attempts = {"count": 0}
+
+        def _fake_run_git(args, cwd, timeout=30):
+            calls.append(args[0])
+            if args[0] == "push":
+                push_attempts["count"] += 1
+                if push_attempts["count"] == 1:
+                    return _fake_completed(returncode=1, stderr="rejected -- remote advanced")
+                return _fake_completed(returncode=0)
+            return _fake_completed(returncode=0)
+
+        with patch.object(actuals_sync, "_run_git", side_effect=_fake_run_git):
+            result = actuals_sync._git_commit_and_push(Path(tmp), "test commit")
+
+        assert result is True
+        assert calls == ["add", "commit", "push", "pull", "push"]
+        assert push_attempts["count"] == 2
     print("PASS\n")
 
 
@@ -223,7 +252,7 @@ def test_export_excludes_candidates_older_than_48_hours():
 
 
 def test_export_does_not_push_when_candidates_unchanged():
-    print("=== export_stale_queue: makes no commit/push when the candidate list hasn't changed from what's already written, even though generated_at_utc always differs ===")
+    print("=== export_stale_queue: makes no commit/push when the candidate list hasn't changed from what's already written, even though generated_at_utc always differs, and nothing is left unpushed ===")
     with tempfile.TemporaryDirectory() as tmp:
         dash_db = Path(tmp) / "dashboard.db"
         repo_dir = Path(tmp) / "repo"
@@ -233,13 +262,38 @@ def test_export_does_not_push_when_candidates_unchanged():
         conn = store.get_connection(dash_db)
         _seed_pending_event(conn, "PPI m/m", stale_time)
 
-        with patch.object(actuals_sync, "_git_commit_and_push", return_value=True) as mock_push:
+        with patch.object(actuals_sync, "_git_commit_and_push", return_value=True) as mock_push, \
+             patch.object(actuals_sync, "_has_unpushed_commits", return_value=False):
             actuals_sync.export_stale_queue(conn, repo_dir, now=dt.datetime(2026, 9, 3, 12, 0, tzinfo=UTC_TZ))
             pushed_second_time = actuals_sync.export_stale_queue(conn, repo_dir, now=dt.datetime(2026, 9, 3, 12, 30, tzinfo=UTC_TZ))
         conn.close()
 
         assert pushed_second_time is False
         mock_push.assert_called_once()  # only the first call actually pushed
+    print("PASS\n")
+
+
+def test_export_retries_push_when_candidates_unchanged_but_something_unpushed_remains():
+    print("=== export_stale_queue: even when the candidate list hasn't changed, a prior cycle's unpushed commit still gets retried ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        repo_dir.mkdir()
+        stale_time = dt.datetime(2026, 9, 3, 7, 0, tzinfo=UTC_TZ)
+
+        conn = store.get_connection(dash_db)
+        _seed_pending_event(conn, "PPI m/m", stale_time)
+
+        with patch.object(actuals_sync, "_git_commit_and_push", return_value=True):
+            actuals_sync.export_stale_queue(conn, repo_dir, now=dt.datetime(2026, 9, 3, 12, 0, tzinfo=UTC_TZ))
+
+        with patch.object(actuals_sync, "_has_unpushed_commits", return_value=True), \
+             patch.object(actuals_sync, "_git_push_with_retry", return_value=True) as mock_retry_push:
+            pushed_second_time = actuals_sync.export_stale_queue(conn, repo_dir, now=dt.datetime(2026, 9, 3, 12, 30, tzinfo=UTC_TZ))
+        conn.close()
+
+        assert pushed_second_time is True
+        mock_retry_push.assert_called_once_with(repo_dir)
     print("PASS\n")
 
 
@@ -387,6 +441,104 @@ def test_apply_skips_malformed_entry_missing_actual():
     print("PASS\n")
 
 
+def test_export_excludes_non_usd_country_candidates():
+    print("=== export_stale_queue: a row with a real non-USD country is excluded, since this automated path has no human reviewer ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        repo_dir.mkdir()
+        now = dt.datetime(2026, 9, 3, 12, 0, tzinfo=UTC_TZ)
+        stale_time = now - dt.timedelta(hours=5)
+
+        conn = store.get_connection(dash_db)
+        eur_event = EconomicEvent(title="CPI m/m", country="EUR", impact="High", event_time_utc=stale_time, forecast="0.2%", previous="0.1%")
+        store.upsert_event_history(conn, eur_event, surprise_direction=None, now=stale_time)
+
+        with patch.object(actuals_sync, "_git_commit_and_push", return_value=True):
+            actuals_sync.export_stale_queue(conn, repo_dir, now=now)
+        conn.close()
+
+        content = json.loads((repo_dir / "data_layer" / "pending_actuals_queue.json").read_text())
+        assert content["candidates"] == []
+    print("PASS\n")
+
+
+def test_apply_treats_inbox_root_list_as_empty():
+    print("=== apply_resolved_inbox: an inbox whose JSON root is a list (not an object) is treated as zero entries ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        inbox_path = repo_dir / "data_layer" / "resolved_actuals_inbox.json"
+        inbox_path.parent.mkdir(parents=True)
+        inbox_path.write_text(json.dumps(["not", "a", "dict"]))
+        conn = store.get_connection(dash_db)
+
+        with patch.object(actuals_sync, "_git_pull", return_value=True):
+            report = actuals_sync.apply_resolved_inbox(conn, repo_dir)
+        conn.close()
+
+        assert report.written == 0
+        assert report.skipped == 0
+    print("PASS\n")
+
+
+def test_apply_skips_bare_string_entry_but_still_processes_good_one():
+    print("=== apply_resolved_inbox: a bare string entry alongside a valid dict entry is skipped without poisoning the good entry ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        event_time = dt.datetime(2026, 9, 1, 12, 30, tzinfo=UTC_TZ)
+
+        conn = store.get_connection(dash_db)
+        _seed_pending_event(conn, "PPI m/m", event_time, forecast="0.2%", previous="0.1%")
+        inbox_path = repo_dir / "data_layer" / "resolved_actuals_inbox.json"
+        inbox_path.parent.mkdir(parents=True, exist_ok=True)
+        inbox_path.write_text(json.dumps({"entries": [
+            "not a dict, just a bare string",
+            {"event_title": "PPI m/m", "event_time_utc": event_time.isoformat(), "actual": "0.3%",
+             "source_note": "BLS official release, https://example.test", "researched_at_utc": "2026-09-03T10:00:00+00:00"},
+        ]}))
+
+        with patch.object(actuals_sync, "_git_pull", return_value=True):
+            report = actuals_sync.apply_resolved_inbox(conn, repo_dir, now=dt.datetime(2026, 9, 3, 12, 0, tzinfo=UTC_TZ))
+
+        rows = store.get_event_history(conn, "PPI m/m")
+        conn.close()
+
+        assert report.written == 1
+        assert report.skipped == 1
+        assert rows[0].actual == "0.3%"
+    print("PASS\n")
+
+
+def test_apply_skips_entry_whose_actual_is_a_json_number_not_a_string():
+    print("=== apply_resolved_inbox: an 'actual' arriving as a JSON number is skipped, never coerced/fabricated into a string ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        repo_dir = Path(tmp) / "repo"
+        event_time = dt.datetime(2026, 9, 1, 12, 30, tzinfo=UTC_TZ)
+
+        conn = store.get_connection(dash_db)
+        _seed_pending_event(conn, "PPI m/m", event_time, forecast="0.2%", previous="0.1%")
+        inbox_path = repo_dir / "data_layer" / "resolved_actuals_inbox.json"
+        inbox_path.parent.mkdir(parents=True, exist_ok=True)
+        inbox_path.write_text(json.dumps({"entries": [
+            {"event_title": "PPI m/m", "event_time_utc": event_time.isoformat(), "actual": 0.3,
+             "source_note": "BLS official release, https://example.test", "researched_at_utc": "2026-09-03T10:00:00+00:00"},
+        ]}))
+
+        with patch.object(actuals_sync, "_git_pull", return_value=True):
+            report = actuals_sync.apply_resolved_inbox(conn, repo_dir, now=dt.datetime(2026, 9, 3, 12, 0, tzinfo=UTC_TZ))
+
+        rows = store.get_event_history(conn, "PPI m/m")
+        conn.close()
+
+        assert report.written == 0
+        assert report.skipped == 1
+        assert rows[0].actual is None
+    print("PASS\n")
+
+
 def test_apply_pulls_before_reading_the_inbox():
     print("=== apply_resolved_inbox: pulls the repo before reading the inbox file, so it sees the cloud routine's latest push ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -411,16 +563,22 @@ if __name__ == "__main__":
     test_git_commit_and_push_succeeds()
     test_git_commit_and_push_treats_nothing_to_commit_as_success()
     test_git_commit_and_push_returns_false_when_push_fails()
+    test_git_commit_and_push_retries_push_after_pull_on_rejection()
     test_run_git_catches_timeout_and_returns_completed_process()
     test_git_commit_and_push_returns_false_when_add_fails()
     test_export_writes_candidates_within_cutoff()
     test_export_excludes_candidates_older_than_48_hours()
     test_export_does_not_push_when_candidates_unchanged()
+    test_export_retries_push_when_candidates_unchanged_but_something_unpushed_remains()
     test_export_pushes_again_when_candidates_actually_change()
+    test_export_excludes_non_usd_country_candidates()
     test_apply_writes_pending_entries_with_cloud_source()
     test_apply_skips_entries_already_resolved()
     test_apply_treats_missing_inbox_file_as_empty()
     test_apply_treats_malformed_inbox_json_as_empty()
+    test_apply_treats_inbox_root_list_as_empty()
+    test_apply_skips_bare_string_entry_but_still_processes_good_one()
+    test_apply_skips_entry_whose_actual_is_a_json_number_not_a_string()
     test_apply_skips_malformed_entry_missing_actual()
     test_apply_pulls_before_reading_the_inbox()
     print("All actuals_sync tests passed.")
