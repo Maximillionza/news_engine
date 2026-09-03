@@ -17,6 +17,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from config.settings import EVENT_SURPRISE_DIRECTION, PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS
 from data_layer.calendar_feed import EconomicEvent, get_last_successful_fetch_age_seconds, IMPACT_RANK
 from webapp.scheduler import start_scheduler
+from webapp.actuals_sync import start_actuals_sync
 from webapp.scoring_service import score_event_for_symbol
 from webapp.store import (
     get_connection, get_latest_two, get_history,
@@ -712,4 +713,5 @@ if __name__ == "__main__":
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     _ensure_defaults()
     start_scheduler(_get_tracked_symbols)
+    start_actuals_sync()
     app.run(port=5001, debug=False)

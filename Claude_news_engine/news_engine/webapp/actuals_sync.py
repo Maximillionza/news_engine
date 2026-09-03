@@ -31,13 +31,23 @@ from pathlib import Path
 from typing import Optional
 
 from data_layer.calendar_feed import EconomicEvent, classify_surprise
-from webapp.store import get_events_with_stale_missing_actual, upsert_event_history
+from webapp.store import get_connection, get_events_with_stale_missing_actual, upsert_event_history
 from scripts.fill_missing_actuals import FillReport
 
 # The cloud routine only ever attempts candidates younger than this --
 # older gaps are the existing manual/backdate workflow's job, not
 # something a 2-hourly automated pass should keep retrying forever.
 MAX_CANDIDATE_AGE_HOURS = 48.0
+
+# Decoupled from webapp/scheduler.py's own adaptive FF-fetch cadence --
+# this is purely "how often do we check the sync repo for cloud-side
+# progress and re-export our own current candidate list," a much cheaper
+# operation than a live FF fetch (most cycles find nothing changed and
+# push nothing at all).
+ACTUALS_SYNC_INTERVAL_SECONDS = 30 * 60
+
+DEFAULT_SYNC_REPO_DIR = Path(__file__).parent / ".actuals_sync" / "repo"
+SYNC_REMOTE_URL = "https://github.com/Maximillionza/News_Engine2.git"
 
 
 def _run_git(args: list[str], cwd: Path, timeout: int = 30) -> subprocess.CompletedProcess:
@@ -224,3 +234,38 @@ def apply_resolved_inbox(conn, repo_dir: Path, now: Optional[dt.datetime] = None
         report.written += 1
 
     return report
+
+
+def start_actuals_sync(repo_dir: Optional[Path] = None) -> None:
+    """
+    Background daemon thread mirroring webapp/scheduler.py's
+    start_scheduler() pattern exactly: infinite loop, one fixed retry
+    interval, and a broad fail-open except around the whole cycle body
+    so one bad git/DB operation never kills the thread. Each cycle:
+    ensure the dedicated sync clone exists (cloning it on the very first
+    cycle only), apply any new cloud-researched actuals into the live
+    DB, then export the current stale-candidate queue (which may have
+    just shrunk from the applies immediately above, if anything was
+    newly resolved this cycle).
+    """
+    repo_dir = repo_dir or DEFAULT_SYNC_REPO_DIR
+
+    def _loop():
+        while True:
+            try:
+                repo_dir.parent.mkdir(parents=True, exist_ok=True)
+                _ensure_repo_cloned(repo_dir, SYNC_REMOTE_URL)
+                conn = get_connection()
+                try:
+                    report = apply_resolved_inbox(conn, repo_dir)
+                    if report.written:
+                        print(f"[actuals_sync] applied {report.written} cloud-researched actual(s)")
+                    export_stale_queue(conn, repo_dir)
+                finally:
+                    conn.close()
+            except Exception as exc:  # noqa: BLE001 — the loop must survive any unhandled error
+                print(f"[actuals_sync] ERROR: sync cycle failed, will retry next interval: {exc}")
+            time.sleep(ACTUALS_SYNC_INTERVAL_SECONDS)
+
+    thread = threading.Thread(target=_loop, daemon=True)
+    thread.start()

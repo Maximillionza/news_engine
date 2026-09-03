@@ -7,3 +7,4 @@ __pycache__/
 webapp/dashboard.db
 data_layer/.last_ff_fetch_at
 data_layer/.last_macro_calendar_refresh_at
+webapp/.actuals_sync/
