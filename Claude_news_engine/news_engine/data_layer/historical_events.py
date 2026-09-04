@@ -21,11 +21,17 @@ ISM/Challenger Gray & Christmas primary and wire-service sources — one
 citation per entry in source_note. Two categories were deliberately
 scoped down rather than force-fit with unverifiable numbers:
 
-- Unemployment Claims (weekly, ~31 occurrences in range): SKIPPED
-  entirely. A weekly-cadence claims trend streak is rarely the
-  analytical focus versus the monthly prints, and 31 additional
-  entries would dominate this file's volume for low marginal value —
-  explicit scope-down per the Task 4 brief's own suggestion.
+- Unemployment Claims (weekly, ~31 occurrences in range): SKIPPED for
+  the bulk of the range — a weekly-cadence claims trend streak is
+  rarely the analytical focus versus the monthly prints, and 31
+  additional entries would dominate this file's volume for low
+  marginal value — explicit scope-down per the Task 4 brief's own
+  suggestion. Two exceptions were added later (2026-09-04) for the
+  Jun 25 and Jul 2 2026 occurrences specifically, after a real
+  trading-accuracy audit needed this series — those are the only two
+  of the ~10 occurrences in that particular 3-month window with an
+  independently-citable forecast; the rest have real cited
+  previous/actual but no verifiable consensus and stay excluded.
 - Core PCE Price Index m/m: SKIPPED entirely. Financial press
   (CNBC/BEA coverage) consistently reports Core PCE's pre-release
   consensus as a year-over-year figure, not month-over-month — no
@@ -776,5 +782,40 @@ HISTORICAL_EVENTS: list[HistoricalEventFact] = [
                      "since 2008' (cnbc.com/2026/07/17/import-prices-"
                      "post-surprise-gain-as-costs-of-goods-from-china-"
                      "hit-highest-since-2008.html).",
+    ),
+
+    # ============================================================
+    # Unemployment Claims
+    # ============================================================
+    # Weekly cadence was deliberately skipped in the original Task 4 pass
+    # (see this file's module docstring) as low marginal value against its
+    # volume. These two are added on a specific, later request (2026-09-04)
+    # after a real trading-accuracy audit needed this series filled — only
+    # the two occurrences in the 3-month backfill window with an
+    # independently-citable forecast were added; the other ~8 weeks in the
+    # window have real, cited previous/actual (see chat record) but no
+    # verifiable consensus figure, so they're excluded per this file's
+    # forecast-required convention, not fabricated.
+    HistoricalEventFact(
+        title="Unemployment Claims",
+        event_time_utc=dt.datetime(2026, 6, 25, 12, 30, tzinfo=UTC_TZ),
+        forecast="225K", previous="227K", actual="215K",
+        source_note="Week ending Jun 20 2026 initial jobless claims, "
+                     "released Jun 25 2026 -- actual 215K vs 225K forecast, "
+                     "a decrease of 12,000 from the previous week's 227K. "
+                     "verifiedinvesting.com 'Jobless Claims June 20, 2026: "
+                     "215K Initial' + seekingalpha 'Initial jobless claims "
+                     "unexpectedly slip by 10k in past week'.",
+    ),
+    HistoricalEventFact(
+        title="Unemployment Claims",
+        event_time_utc=dt.datetime(2026, 7, 2, 12, 30, tzinfo=UTC_TZ),
+        forecast="220K", previous="216K", actual="215K",
+        source_note="Week ending Jun 27 2026 initial jobless claims, "
+                     "released Jul 2 2026 -- actual 215K vs 220K forecast, "
+                     "down 1,000 from the prior week's 216K. Investing.com "
+                     "'U.S. Initial Jobless Claims Rise Slightly, "
+                     "Surpassing Forecast' coverage of the same release "
+                     "week's four-week-average context.",
     ),
 ]
