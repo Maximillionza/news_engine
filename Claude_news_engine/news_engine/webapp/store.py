@@ -356,46 +356,39 @@ def upsert_event_history(
     """
     Records this event occurrence's forecast/previous, filling in
     actual/surprise_direction ONLY ONCE — the first call that supplies a
-    real actual wins, and every later call is a no-op on actual/
-    surprise_direction/source, even if it supplies a different real
-    actual (e.g. Forex Factory finally posting its own number after the
-    FRED fallback already filled the row in). The `WHERE excluded.actual
-    IS NOT NULL AND event_history.actual IS NULL` guard below enforces
-    both halves of that: it stops a stale re-fetch's NULL from blanking a
-    previously-recorded actual, AND stops a later genuine actual from
-    overwriting one already stored (SQLite's ON CONFLICT DO UPDATE has no
-    per-column conditional syntax, so the WHERE clause on the whole
-    UPDATE governs whether the actual/surprise_direction pair updates at
-    all; forecast/previous are harmless to re-write identically every
-    time since they don't change after an event first appears on the
-    calendar).
+    real actual wins, and every later call leaves actual/surprise_direction/
+    source untouched, even if it supplies a different real actual (e.g.
+    Forex Factory finally posting its own number after the FRED fallback
+    already filled the row in) or none at all (a stale re-fetch must never
+    blank a previously-recorded actual). Each of those three columns is
+    gated by its own `CASE WHEN event_history.actual IS NULL THEN
+    excluded.<col> ELSE event_history.<col> END` (2026-09-04 fix — see
+    below for what this replaced).
 
-    source updates ONLY when the row's actual was still NULL before this
-    call — i.e. this call is the one genuinely filling it in for the
-    first time (the CASE below reads event_history.actual, the PRE-update
-    value, not excluded.actual). That lets scripts/fill_missing_actuals.py
-    correctly stamp source='live_web_fallback' onto a row a live fetch
-    created (actual=None, source='live' by default) but never resolved.
-    It also preserves the original guarantee for a seeded occurrence: a
-    seeded row is seeded WITH its actual already populated, so a later
-    live re-fetch touching it (actual already non-NULL) leaves source
-    untouched — never silently relabeled as live or web-fallback, which
-    would misrepresent how the original forecast/previous were captured.
+    forecast/previous/impact/country are NOT first-writer-wins — every
+    call updates them from the caller's freshest data, always (forecast/
+    previous straight from `excluded`; impact/country via
+    COALESCE(event_history.col, excluded.col), which keeps whatever's
+    already stored and only fills in a legacy NULL, never overwriting a
+    real value with another).
 
-    impact and country are the two exceptions to the "first-writer-wins"
-    pattern above: neither is first-writer-wins the way actual/source
-    are, so both are set UNCONDITIONALLY (not gated behind the same
-    WHERE) whenever the UPDATE branch fires at all — COALESCE(...) keeps
-    whatever value is already stored and only fills in a legacy NULL,
-    never overwriting a real value with another. Because SQLite's ON
-    CONFLICT DO UPDATE has exactly one WHERE for the whole statement
-    (same limitation the actual/source reasoning above already lives
-    with), this only self-heals a row while it's still PENDING (actual
-    IS NULL) — see _migrate_add_impact_column()'s/_migrate_add_country_
-    column()'s docstrings for exactly which legacy rows this does and
-    doesn't reach. A brand-new row (first INSERT, no prior conflict)
-    always gets country populated immediately from event.country, since
-    that's real data available from the very first write, unlike actual.
+    2026-09-04 root-cause fix: this used to be one blanket `WHERE
+    excluded.actual IS NOT NULL AND event_history.actual IS NULL` guarding
+    the ENTIRE UPDATE (SQLite's ON CONFLICT DO UPDATE has no per-column
+    conditional syntax, so a single WHERE governs whether the whole SET
+    list applies at all). That silently froze forecast/previous/impact/
+    country at whatever the row's FIRST-ever write captured, for as long
+    as the event stayed pending — including forecast, which Forex Factory
+    does revise between an event's first calendar appearance and its
+    release. Confirmed live: 2026-09-04's Non-Farm Employment Change and
+    Unemployment Rate rows were frozen at a stale/wrong forecast from an
+    earlier fetch while every later re-fetch (with FF's corrected number)
+    silently no-op'd. Per-column CASE/COALESCE expressions replace the
+    blanket WHERE so each column's own update rule governs independently
+    — actual/surprise_direction/source keep their exact first-writer-wins
+    semantics, forecast/previous/impact/country now genuinely self-heal on
+    every pending re-fetch instead of only on the one call that happens to
+    also resolve actual.
     """
     conn.execute(
         """
@@ -403,13 +396,14 @@ def upsert_event_history(
             (event_title, event_time_utc, forecast, previous, actual, surprise_direction, recorded_at_utc, updated_at_utc, source, impact, country)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(event_title, event_time_utc) DO UPDATE SET
-            actual = excluded.actual,
-            surprise_direction = excluded.surprise_direction,
+            forecast = excluded.forecast,
+            previous = excluded.previous,
+            actual = CASE WHEN event_history.actual IS NULL THEN excluded.actual ELSE event_history.actual END,
+            surprise_direction = CASE WHEN event_history.actual IS NULL THEN excluded.surprise_direction ELSE event_history.surprise_direction END,
             updated_at_utc = excluded.updated_at_utc,
             source = CASE WHEN event_history.actual IS NULL THEN excluded.source ELSE event_history.source END,
             impact = COALESCE(event_history.impact, excluded.impact),
             country = COALESCE(event_history.country, excluded.country)
-        WHERE excluded.actual IS NOT NULL AND event_history.actual IS NULL
         """,
         (
             event.title, event.event_time_utc.isoformat(), event.forecast, event.previous,

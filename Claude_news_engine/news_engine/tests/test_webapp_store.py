@@ -497,8 +497,8 @@ def test_pre_migration_pending_row_backfills_impact_on_the_call_that_resolves_it
     print("PASS\n")
 
 
-def test_pre_migration_pending_row_impact_not_backfilled_by_a_non_resolving_call():
-    print("=== event_history: a legacy PENDING row's impact stays None across an upsert_event_history() call that still supplies no actual — the WHERE guard is a single all-or-nothing gate, not a per-column one ===")
+def test_pre_migration_pending_row_impact_backfilled_by_a_non_resolving_call():
+    print("=== event_history: a legacy PENDING row's impact now self-heals on ANY upsert_event_history() call, not only the one that resolves it (2026-09-04 fix: impact/country/forecast/previous are per-column now, no longer gated on actual resolving) ===")
     conn = get_connection(":memory:")
     now = dt.datetime(2026, 8, 31, 12, 0, tzinfo=dt.timezone.utc)
     event_time = now - dt.timedelta(hours=1)
@@ -518,7 +518,31 @@ def test_pre_migration_pending_row_impact_not_backfilled_by_a_non_resolving_call
     rows = store.get_event_history(conn, "Legacy Still Pending Event")
     assert len(rows) == 1
     assert rows[0].actual is None
-    assert rows[0].impact is None, "a call that still supplies no actual must not partially apply — impact stays unknown until the resolving call"
+    assert rows[0].impact == "Medium", "impact/country self-heal on every re-fetch now, not only the resolving one"
+    print("PASS\n")
+
+
+def test_upsert_event_history_forecast_and_previous_self_heal_while_still_pending():
+    print("=== store: forecast/previous update on EVERY re-fetch while an event is still pending, not frozen at the first-ever write (2026-09-04 root-cause fix — a stale forecast from an early calendar sighting no longer survives a later, corrected fetch) ===")
+    conn = get_connection(":memory:")
+    event_time = dt.datetime(2026, 9, 4, 12, 30, tzinfo=UTC_TZ)
+    first_sight = EconomicEvent(
+        title="Unemployment Rate", country="USD", impact="High", event_time_utc=event_time,
+        forecast="6.4%", previous="6.4%", actual=None,
+    )
+    store.upsert_event_history(conn, first_sight, surprise_direction=None, now=dt.datetime(2026, 8, 28, 9, 0, tzinfo=UTC_TZ))
+
+    corrected_refetch = EconomicEvent(
+        title="Unemployment Rate", country="USD", impact="High", event_time_utc=event_time,
+        forecast="4.1%", previous="4.1%", actual=None,
+    )
+    store.upsert_event_history(conn, corrected_refetch, surprise_direction=None, now=dt.datetime(2026, 9, 4, 15, 40, tzinfo=UTC_TZ))
+
+    rows = store.get_event_history(conn, "Unemployment Rate")
+    assert len(rows) == 1
+    assert rows[0].forecast == "4.1%", "forecast must track Forex Factory's latest figure while still pending, not freeze at first sight"
+    assert rows[0].previous == "4.1%"
+    assert rows[0].actual is None
     print("PASS\n")
 
 
