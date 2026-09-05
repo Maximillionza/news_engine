@@ -51,12 +51,12 @@ def reconcile_group(
 
 Algorithm (per instrument, only when 2+ titles in the group have a non-neutral direction):
 
-1. Titles scored `neutral` are excluded from the agreement/conflict check (a neutral call has no direction to agree or conflict with) but still contribute to the consolidated calculation below (as a zero-lean, full-weight term — see the formula).
-2. **Dominant** = the highest-confidence title among the non-neutral calls.
-3. **Consolidated** = `sum(confidence_i * signed_lean_i) / sum(confidence_i)` across every co-released title in the group (neutral titles included, contributing `signed_lean_i = 0`), where `signed_lean_i = (probability_i - 0.5) * 2` maps each title's own stored probability onto a [-1, 1] bearish-to-bullish axis, weighted by that title's own confidence. A positive result means the consolidated lean is bullish, negative bearish. Pure arithmetic over rows already in `predictions` — no rescoring, no article re-fetch.
-4. If every title in the group is neutral → group call is neutral, `conflict=False`, no dominant to report (falls through to today's neutral rendering).
-5. If dominant's direction matches the consolidated result's sign → `conflict=False`, `prediction` = the dominant title's own real object (probability/confidence/article_count untouched — never a synthetic blend).
-6. If they disagree → `conflict=True`, `conflicting_titles` = every title in the group with a non-neutral call.
+1. Titles scored `neutral` are excluded from the agreement/conflict check entirely (a neutral call has no direction to agree or conflict with).
+2. **Revision, 2026-09-05:** the original design here used a confidence-weighted "consolidated lean" to validate the dominant title against, allowing a higher-combined-confidence pair to outvote a dissenting minority title. Tested against the real 2026-09-04 case (NFP bullish/0.53 confidence, AHE bullish/0.54 confidence, Unemployment Rate bearish/0.37 confidence) before implementation began, that weighted calculation resolved to "no conflict" — the two bullish titles' combined confidence outweighed Unemployment Rate's bearish read — even though the real subsequent price move was bearish (XAUUSD -1.73%), meaning the minority read was the economically correct one and the weighted design would have hidden exactly the case that motivated this spec. Replaced with strict unanimity: **any** real (non-neutral) disagreement among co-released titles is a conflict, full stop — no confidence contest decides a winner between genuinely different directions.
+3. **Dominant** = the highest-confidence title among the non-neutral calls — used ONLY to select whose prediction object gets displayed when every non-neutral title already agrees; it never gets to overrule a real dissenting title.
+4. If every non-neutral title shares the same direction → `conflict=False`, `prediction` = the dominant title's own real object (probability/confidence/article_count untouched — never a synthetic blend).
+5. If any two non-neutral titles disagree → `conflict=True`, `conflicting_titles` = every title in the group with a non-neutral call.
+6. If every title in the group is neutral (or fewer than 2 are non-neutral) → nothing to reconcile, caller falls through to today's plain single-title display.
 
 ### 2. `/api/predictions` integration (`webapp/app.py`)
 
@@ -81,7 +81,7 @@ The "N more events" list's own data (each title's own individual accumulator cal
 
 ## Testing
 
-- `tests/test_webapp_reconciliation.py` (new): `reconcile_group()` unit tests — all-agree (no conflict, dominant matches consolidated), genuine conflict (dominant disagrees consolidated), all-neutral group, single real call (returns None, caller falls through), mixed neutral+real calls, confidence-weighting correctness on the consolidated calculation.
+- `tests/test_webapp_reconciliation.py` (new): `reconcile_group()` unit tests — unanimous agreement (no conflict, dominant/highest-confidence title's prediction returned), genuine conflict (any real disagreement, regardless of confidence), all-neutral group, single real call (returns None, caller falls through), mixed neutral+real calls.
 - `tests/test_webapp_app.py`: extend `/api/predictions` tests for the new `article_prediction_conflict` field — present only on genuine conflict, absent otherwise (backward-compatible shape).
-- Explicit regression test reproducing 2026-09-04's real case: NFP/AHE/Unemployment Rate co-released, US30 bullish/bullish/bearish → confirms `conflict=True` (2/3 bullish, 1/3 bearish, but need the actual dominant-vs-consolidated math to land on conflict given real confidences — a scenario worth verifying by construction, not assumption, once the plan implements the exact weighting).
+- Explicit regression test reproducing 2026-09-04's real case: NFP/AHE/Unemployment Rate co-released, US30 bullish/bullish/bearish → confirms `conflict=True` under strict unanimity, matching what actually happened (the real Dukascopy move was bearish, agreeing with the dissenting minority title, not the higher-combined-confidence bullish pair).
 - No change needed to `tests/test_webapp_history.py` — explicit assertion added there that History's per-title behavior is unaffected by this spec (belt-and-suspenders, since the module is untouched).
