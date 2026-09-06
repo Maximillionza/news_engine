@@ -31,11 +31,13 @@ from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 from scoring.backtest_store import (
     get_connection as get_backtest_connection, get_latest_two_predictions,
     get_latest_print_prediction, get_latest_kalshi_read, get_last_check_utc,
+    Prediction,
     # Aliased — webapp/app.py already has its own route handler FUNCTION
     # named get_prediction_history() (the essence-only one, further down
     # this file) which would otherwise shadow this import at module scope.
     get_prediction_history as get_article_prediction_history,
 )
+from webapp.reconciliation import reconcile_group
 
 app = Flask(__name__, static_folder="static")
 
@@ -289,6 +291,7 @@ def get_predictions():
     for ticker in symbols:
         symbol_class = classify_symbol(ticker)
         entry = {"symbol": ticker, "symbol_class": symbol_class.symbol_class, "events": []}
+        accumulator_predictions_by_time_and_title: dict[str, dict[str, "Prediction"]] = {}
         for event in events:
             runs = get_latest_two(conn, ticker, event["title"])
             latest = runs[0] if runs else None
@@ -321,6 +324,9 @@ def get_predictions():
             # That's exactly what the frontend's diff strip needs.
             accumulator_runs = get_latest_two_predictions(backtest_conn, event["title"], ticker)
             accumulator_prediction = accumulator_runs[0] if accumulator_runs else None
+            accumulator_predictions_by_time_and_title.setdefault(event["event_time_utc"], {})
+            if accumulator_prediction is not None:
+                accumulator_predictions_by_time_and_title[event["event_time_utc"]][event["title"]] = accumulator_prediction
             accumulator_previous = accumulator_runs[1] if len(accumulator_runs) > 1 else None
             article_prediction = None
             if accumulator_prediction is not None:
@@ -418,11 +424,37 @@ def get_predictions():
                 "previous_direction": previous.direction if previous else None,
                 "article_count": accumulator_prediction.article_count if accumulator_prediction else None,
                 "article_prediction": article_prediction,
+                "article_prediction_conflict": None,
                 "previous_article_prediction": previous_article_prediction,
                 "print_prediction": print_prediction,
                 "trend_signal": trend_signal,
                 "kalshi_read": kalshi_read,
             })
+
+        for time_key, predictions_by_title in accumulator_predictions_by_time_and_title.items():
+            if len(predictions_by_title) < 2:
+                continue
+            try:
+                reconciled = reconcile_group(predictions_by_title)
+            except Exception as exc:  # noqa: BLE001 — a reconciliation bug must not crash the whole route
+                print(f"[webapp.app] WARNING: reconciliation failed for {time_key}: {exc}")
+                continue
+            if reconciled is None:
+                continue
+            for ev in entry["events"]:
+                if ev["event_time_utc"] != time_key:
+                    continue
+                if reconciled.conflict:
+                    ev["article_prediction"] = None
+                    ev["article_prediction_conflict"] = {"titles": reconciled.conflicting_titles}
+                else:
+                    ev["article_prediction"] = {
+                        "direction": reconciled.prediction.direction,
+                        "probability": reconciled.prediction.probability,
+                        "article_count": reconciled.prediction.article_count,
+                        "top_contributions": reconciled.prediction.top_contributions,
+                    }
+                    ev["article_prediction_conflict"] = None
 
         # A FRESHLY resolved score outranks a still-pending one, regardless
         # of which is chronologically closer — a real BUY/SELL/HOLD call is

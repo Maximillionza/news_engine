@@ -328,6 +328,70 @@ def test_predictions_includes_article_count_from_accumulator_db():
     print("PASS\n")
 
 
+def test_predictions_route_flags_co_released_conflict_and_leaves_singleton_events_alone():
+    print("=== app: /api/predictions flags contradictory co-released accumulator calls with article_prediction_conflict; a lone event is untouched ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            event_time = dt.datetime(2026, 9, 4, 12, 30, tzinfo=UTC_TZ)
+            solo_event_time = dt.datetime(2026, 9, 5, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="Non-Farm Employment Change", country="USD", impact="High",
+                               event_time_utc=event_time, forecast="55K", previous="-23K", actual="162K"),
+                EconomicEvent(title="Average Hourly Earnings m/m", country="USD", impact="High",
+                               event_time_utc=event_time, forecast="0.3%", previous="0.1%", actual="0.3%"),
+                EconomicEvent(title="Unemployment Rate", country="USD", impact="High",
+                               event_time_utc=event_time, forecast="4.1%", previous="4.1%", actual="4.1%"),
+                EconomicEvent(title="PPI m/m", country="USD", impact="High",
+                               event_time_utc=solo_event_time, forecast="0.2%", previous="0.1%", actual=None),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "US30")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            # Real recorded values from this exact live occurrence.
+            backtest_store.record_prediction(
+                bconn, "Non-Farm Employment Change", "US30", event_time,
+                0.4697793269246527, "bullish", 0.5314798614615047, 136, False,
+            )
+            backtest_store.record_prediction(
+                bconn, "Average Hourly Earnings m/m", "US30", event_time,
+                0.46705663115758544, "bullish", 0.536405991676083, 136, False,
+            )
+            backtest_store.record_prediction(
+                bconn, "Unemployment Rate", "US30", event_time,
+                0.4495123783660442, "bearish", 0.3705108141070306, 90, False,
+            )
+            backtest_store.record_prediction(
+                bconn, "PPI m/m", "US30", solo_event_time,
+                0.65, "bullish", 0.40, 50, False,
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            by_title = {e["event_title"]: e for e in events}
+
+            # All three co-released titles get the SAME conflict marker,
+            # regardless of which one the existing sort would otherwise
+            # feature -- and article_prediction is nulled out on every one.
+            for title in ["Non-Farm Employment Change", "Average Hourly Earnings m/m", "Unemployment Rate"]:
+                assert by_title[title]["article_prediction"] is None, f"{title} should be nulled on conflict"
+                assert by_title[title]["article_prediction_conflict"] is not None
+                assert set(by_title[title]["article_prediction_conflict"]["titles"]) == {
+                    "Non-Farm Employment Change", "Average Hourly Earnings m/m", "Unemployment Rate",
+                }
+
+            # The solo event (no co-released siblings) is completely untouched.
+            assert by_title["PPI m/m"]["article_prediction"]["direction"] == "bullish"
+            assert by_title["PPI m/m"]["article_prediction_conflict"] is None
+    print("PASS\n")
+
+
 def test_predictions_includes_accumulator_staleness_seconds():
     print("=== app: /api/predictions includes accumulator_staleness_seconds, computed from the accumulator's last logged check ===")
     with tempfile.TemporaryDirectory() as tmp:
