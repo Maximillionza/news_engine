@@ -413,6 +413,133 @@ def test_predictions_route_flags_co_released_conflict_and_leaves_singleton_event
     print("PASS\n")
 
 
+def test_predictions_route_excludes_stale_prior_occurrence_prediction_from_reconciliation():
+    print("=== app: /api/predictions never lets a stale prior-occurrence prediction (get_latest_two_predictions not scoped to THIS occurrence) vote in reconciliation ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            prior_event_time = dt.datetime(2026, 8, 4, 12, 30, tzinfo=UTC_TZ)
+            event_time = dt.datetime(2026, 9, 4, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="Non-Farm Employment Change", country="USD", impact="High",
+                               event_time_utc=event_time, forecast="55K", previous="-23K", actual="162K"),
+                EconomicEvent(title="Average Hourly Earnings m/m", country="USD", impact="High",
+                               event_time_utc=event_time, forecast="0.3%", previous="0.1%", actual="0.3%"),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "US30")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            # "Non-Farm Employment Change" simulates the accumulator having
+            # SKIPPED writing a fresh row for this occurrence because the
+            # freshly-computed score wasn't a "material change" from last
+            # month's — its newest predictions row still carries the PRIOR
+            # occurrence's event_time_utc, indefinitely, per
+            # scoring/backtest_accumulator.py's material-change gate. This
+            # stale row is bearish; if it were wrongly admitted into
+            # reconciliation, it would create a false conflict with the
+            # fresh, unanimous "Average Hourly Earnings m/m" bullish call.
+            backtest_store.record_prediction(
+                bconn, "Non-Farm Employment Change", "US30", prior_event_time,
+                0.40, "bearish", 0.55, 80, False,
+            )
+            # The genuinely fresh co-released sibling, correctly scoped to
+            # THIS occurrence's event_time_utc.
+            backtest_store.record_prediction(
+                bconn, "Average Hourly Earnings m/m", "US30", event_time,
+                0.62, "bullish", 0.50, 40, False,
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            by_title = {e["event_title"]: e for e in events}
+
+            # With the stale row excluded, there are fewer than 2 real
+            # co-released predictions for this event_time_utc, so
+            # reconcile_group() never runs — no false conflict, no false
+            # agreement. Each title keeps its own, untouched call.
+            assert by_title["Non-Farm Employment Change"]["article_prediction_conflict"] is None
+            assert by_title["Average Hourly Earnings m/m"]["article_prediction_conflict"] is None
+            assert by_title["Average Hourly Earnings m/m"]["article_prediction"] == {
+                "direction": "bullish", "probability": 0.62, "article_count": 40, "top_contributions": [],
+            }, "the fresh sibling's own card must be untouched by reconciliation"
+            # The stale row's own values still surface on its OWN card
+            # (unaffected by this fix — get_latest_two_predictions still
+            # feeds article_prediction directly outside of reconciliation),
+            # it's only the reconciliation *group* that must exclude it.
+            assert by_title["Non-Farm Employment Change"]["article_prediction"] == {
+                "direction": "bearish", "probability": 0.40, "article_count": 80, "top_contributions": [],
+            }
+    print("PASS\n")
+
+
+def test_predictions_route_reconciles_unanimous_co_released_calls_to_highest_confidence():
+    print("=== app: /api/predictions' agreement branch shows the highest-confidence unanimous title's call on every co-released member, and nulls the non-dominant member's previous_article_prediction ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            event_time = dt.datetime(2026, 9, 4, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="Non-Farm Employment Change", country="USD", impact="High",
+                               event_time_utc=event_time, forecast="55K", previous="-23K", actual="162K"),
+                EconomicEvent(title="Average Hourly Earnings m/m", country="USD", impact="High",
+                               event_time_utc=event_time, forecast="0.3%", previous="0.1%", actual="0.3%"),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "US30")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            # Both unanimous (bullish) but different confidence -- NFP is
+            # the higher-confidence one and must win. Give NFP its own
+            # prior snapshot too, to prove that ONLY the dominant title's
+            # previous_article_prediction survives reconciliation.
+            t1 = dt.datetime(2026, 9, 3, 10, 0, tzinfo=dt.timezone.utc)
+            backtest_store.record_prediction(
+                bconn, "Non-Farm Employment Change", "US30", event_time,
+                0.55, "bullish", 0.60, 90, False, scored_at_utc=t1,
+            )
+            backtest_store.record_prediction(
+                bconn, "Non-Farm Employment Change", "US30", event_time,
+                0.70, "bullish", 0.80, 120, False,
+            )
+            backtest_store.record_prediction(
+                bconn, "Average Hourly Earnings m/m", "US30", event_time,
+                0.58, "bullish", 0.45, 50, False,
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            by_title = {e["event_title"]: e for e in events}
+
+            for title in ["Non-Farm Employment Change", "Average Hourly Earnings m/m"]:
+                assert by_title[title]["article_prediction_conflict"] is None
+                assert by_title[title]["article_prediction"]["direction"] == "bullish"
+                assert by_title[title]["article_prediction"]["probability"] == 0.70
+                assert by_title[title]["article_prediction"]["article_count"] == 120
+
+            # Finding 2: the non-dominant title's previous_article_prediction
+            # must be nulled -- it was a DIFFERENT title's prior snapshot,
+            # and comparing it against the dominant title's own numbers
+            # would fabricate a "shift" that never happened.
+            assert by_title["Average Hourly Earnings m/m"]["previous_article_prediction"] is None
+            # The dominant title's own previous_article_prediction is left
+            # exactly as it was -- its own genuine prior snapshot.
+            assert by_title["Non-Farm Employment Change"]["previous_article_prediction"] == {
+                "direction": "bullish", "probability": 0.55, "article_count": 90, "top_contributions": [],
+            }
+    print("PASS\n")
+
+
 def test_predictions_includes_accumulator_staleness_seconds():
     print("=== app: /api/predictions includes accumulator_staleness_seconds, computed from the accumulator's last logged check ===")
     with tempfile.TemporaryDirectory() as tmp:

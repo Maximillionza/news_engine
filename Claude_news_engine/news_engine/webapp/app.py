@@ -44,6 +44,23 @@ app = Flask(__name__, static_folder="static")
 DEFAULT_SYMBOLS = ["XAUUSD", "US30"]
 
 
+def _article_prediction_dict(pred: "Prediction") -> dict:
+    """
+    The shared article_prediction/previous_article_prediction shape built
+    from a scoring.backtest_store.Prediction row — direction, probability,
+    article_count, and its "why did this call change" top_contributions
+    (2026-08-17). Extracted (final whole-branch review, 2026-09-06 —
+    Finding 4) so the per-title construction and the reconciliation
+    agreement branch in get_predictions() can't drift apart.
+    """
+    return {
+        "direction": pred.direction,
+        "probability": pred.probability,
+        "article_count": pred.article_count,
+        "top_contributions": pred.top_contributions,
+    }
+
+
 def _trend_instrument_lean(event_title: str, trend_direction: str, usd_relationship: Optional[str]) -> Optional[str]:
     """
     Translates a trend streak's raw forecast-relative direction ('higher'/
@@ -325,31 +342,35 @@ def get_predictions():
             accumulator_runs = get_latest_two_predictions(backtest_conn, event["title"], ticker)
             accumulator_prediction = accumulator_runs[0] if accumulator_runs else None
             accumulator_predictions_by_time_and_title.setdefault(event["event_time_utc"], {})
-            if accumulator_prediction is not None:
+            # Finding 1 (final whole-branch review, 2026-09-06): the row
+            # get_latest_two_predictions() returns is scoped only to
+            # (event_title, instrument) — NOT to this occurrence's own
+            # event_time_utc. scoring/backtest_accumulator.py only writes a
+            # fresh predictions row on a "material change," so the newest
+            # row for a title can still carry a PRIOR occurrence's
+            # event_time_utc indefinitely. Admitting that stale row into
+            # the reconciliation group would let it vote alongside genuinely
+            # fresh co-released siblings, producing a false conflict or a
+            # false agreement. Compare parsed datetimes, not raw strings —
+            # this codebase has more than one producer of event_time_utc
+            # strings and their formatting isn't guaranteed identical.
+            if (accumulator_prediction is not None
+                    and dt.datetime.fromisoformat(accumulator_prediction.event_time_utc)
+                    == dt.datetime.fromisoformat(event["event_time_utc"])):
                 accumulator_predictions_by_time_and_title[event["event_time_utc"]][event["title"]] = accumulator_prediction
             accumulator_previous = accumulator_runs[1] if len(accumulator_runs) > 1 else None
             article_prediction = None
             if accumulator_prediction is not None:
-                article_prediction = {
-                    "direction": accumulator_prediction.direction,
-                    "probability": accumulator_prediction.probability,
-                    "article_count": accumulator_prediction.article_count,
-                    # "Why did this call change" context (2026-08-17) — up
-                    # to TOP_CONTRIBUTIONS_LIMIT article contributions
-                    # ranked by weight share, computed and persisted
-                    # alongside this exact prediction row at scoring time
-                    # (scoring/backtest_accumulator.py's
-                    # _build_top_contributions()) — never recomputed here.
-                    "top_contributions": accumulator_prediction.top_contributions,
-                }
+                # "Why did this call change" context (2026-08-17) —
+                # top_contributions are up to TOP_CONTRIBUTIONS_LIMIT
+                # article contributions ranked by weight share, computed
+                # and persisted alongside this exact prediction row at
+                # scoring time (scoring/backtest_accumulator.py's
+                # _build_top_contributions()) — never recomputed here.
+                article_prediction = _article_prediction_dict(accumulator_prediction)
             previous_article_prediction = None
             if accumulator_previous is not None:
-                previous_article_prediction = {
-                    "direction": accumulator_previous.direction,
-                    "probability": accumulator_previous.probability,
-                    "article_count": accumulator_previous.article_count,
-                    "top_contributions": accumulator_previous.top_contributions,
-                }
+                previous_article_prediction = _article_prediction_dict(accumulator_previous)
             print_call = get_latest_print_prediction(
                 backtest_conn, event["title"], dt.datetime.fromisoformat(event["event_time_utc"]),
             )
@@ -448,13 +469,23 @@ def get_predictions():
                     ev["article_prediction"] = None
                     ev["article_prediction_conflict"] = {"titles": reconciled.conflicting_titles}
                 else:
-                    ev["article_prediction"] = {
-                        "direction": reconciled.prediction.direction,
-                        "probability": reconciled.prediction.probability,
-                        "article_count": reconciled.prediction.article_count,
-                        "top_contributions": reconciled.prediction.top_contributions,
-                    }
+                    ev["article_prediction"] = _article_prediction_dict(reconciled.prediction)
                     ev["article_prediction_conflict"] = None
+                    # Finding 2 (final whole-branch review, 2026-09-06): a
+                    # non-dominant title's own previous_article_prediction
+                    # is a DIFFERENT title's prior snapshot. Leaving it in
+                    # place while article_prediction is overwritten with
+                    # the dominant title's numbers lets the frontend's diff
+                    # strip (buildDiffStripHtml) compare two different
+                    # titles' predictions as if one title shifted between
+                    # them — a fabricated "shift" that never happened.
+                    # reconcile_group() doesn't expose the dominant title's
+                    # own previous snapshot, so null it out for everyone
+                    # except the dominant title itself, whose
+                    # previous_article_prediction is already correctly its
+                    # own prior snapshot and is left untouched.
+                    if ev["event_title"] != reconciled.prediction.event_title:
+                        ev["previous_article_prediction"] = None
 
         # A FRESHLY resolved score outranks a still-pending one, regardless
         # of which is chronologically closer — a real BUY/SELL/HOLD call is
