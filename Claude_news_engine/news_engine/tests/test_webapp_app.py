@@ -346,6 +346,10 @@ def test_predictions_route_flags_co_released_conflict_and_leaves_singleton_event
                                event_time_utc=event_time, forecast="4.1%", previous="4.1%", actual="4.1%"),
                 EconomicEvent(title="PPI m/m", country="USD", impact="High",
                                event_time_utc=solo_event_time, forecast="0.2%", previous="0.1%", actual=None),
+                # Co-released with the NFP group at the exact same timestamp, but never
+                # got an accumulator call of its own -- must stay untouched by reconciliation.
+                EconomicEvent(title="Wholesale Inventories m/m", country="USD", impact="High",
+                               event_time_utc=event_time, forecast="0.2%", previous="0.1%", actual=None),
             ])
             conn = store.get_connection(db_path)
             store.add_tracked_symbol(conn, "US30")
@@ -369,6 +373,16 @@ def test_predictions_route_flags_co_released_conflict_and_leaves_singleton_event
                 bconn, "PPI m/m", "US30", solo_event_time,
                 0.65, "bullish", 0.40, 50, False,
             )
+            # "Wholesale Inventories m/m" gets NO accumulator prediction at all --
+            # only a Kalshi read, so it still has "something to say" (and thus
+            # isn't dropped from the response entirely) while article_prediction
+            # stays None going in, exactly as it should stay coming out.
+            bconn.execute(
+                "INSERT INTO kalshi_reads (event_title, event_time_utc, strike, implied_direction, implied_probability, open_interest, read_at_utc) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ("Wholesale Inventories m/m", event_time.isoformat(), 0.0, "bullish", 0.55, 100, dt.datetime.now(dt.timezone.utc).isoformat()),
+            )
+            bconn.commit()
             bconn.close()
 
             client = webapp_app.app.test_client()
@@ -389,6 +403,13 @@ def test_predictions_route_flags_co_released_conflict_and_leaves_singleton_event
             # The solo event (no co-released siblings) is completely untouched.
             assert by_title["PPI m/m"]["article_prediction"]["direction"] == "bullish"
             assert by_title["PPI m/m"]["article_prediction_conflict"] is None
+
+            # A co-released title at the SAME timestamp as the conflicting group, but
+            # with no accumulator prediction of its own, must be left in its original
+            # (untouched) state -- not borrow a prediction or a conflict marker from
+            # its siblings just because it shares their event_time_utc.
+            assert by_title["Wholesale Inventories m/m"]["article_prediction"] is None
+            assert by_title["Wholesale Inventories m/m"]["article_prediction_conflict"] is None
     print("PASS\n")
 
 

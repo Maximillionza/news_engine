@@ -442,7 +442,7 @@ def get_predictions():
             if reconciled is None:
                 continue
             for ev in entry["events"]:
-                if ev["event_time_utc"] != time_key:
+                if ev["event_time_utc"] != time_key or ev["event_title"] not in predictions_by_title:
                     continue
                 if reconciled.conflict:
                     ev["article_prediction"] = None
