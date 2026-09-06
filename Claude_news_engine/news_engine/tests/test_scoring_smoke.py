@@ -11,6 +11,8 @@ import os
 import tempfile
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import UTC_TZ
@@ -31,11 +33,32 @@ from scoring.sentiment import score_article_text
 # contacts the HF Hub on first load) the first time scoring runs in a
 # process — forcing it off here keeps this file testing what it always
 # tested; tests/test_contextual_sentiment.py is where FinBERT's own
-# scoring behavior gets validated. A plain reassignment, not
-# unittest.mock.patch, is enough — this file's own process never needs
-# the original value restored.
-probability_engine.ENABLE_FINBERT_SENTIMENT = False
-probability_engine.ENABLE_LLM_SENTIMENT = False
+# scoring behavior gets validated.
+#
+# 2026-09-XX fix: this used to be a bare top-level reassignment with no
+# restore, on the stated assumption that "this file's own process never
+# needs the original value restored" — false for how pytest actually
+# runs: every test module in a session shares ONE process and ONE import
+# of scoring.probability_engine, so the plain assignment silently
+# disabled FinBERT for every test that ran afterward in the same pytest
+# session, not just this file's own. Confirmed root cause of
+# tests/test_probability_engine.py::test_redundancy_discount_works_across_sentiment_tiers_not_just_lexicon
+# intermittently failing only when the full suite ran (passing in
+# isolation) — that test genuinely needs FinBERT on to prove its point.
+# An autouse, module-scoped fixture restores the real value once this
+# file's own tests are done, so later modules in the same session see
+# the default again.
+_ORIGINAL_ENABLE_FINBERT_SENTIMENT = probability_engine.ENABLE_FINBERT_SENTIMENT
+_ORIGINAL_ENABLE_LLM_SENTIMENT = probability_engine.ENABLE_LLM_SENTIMENT
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _disable_contextual_sentiment_tiers():
+    probability_engine.ENABLE_FINBERT_SENTIMENT = False
+    probability_engine.ENABLE_LLM_SENTIMENT = False
+    yield
+    probability_engine.ENABLE_FINBERT_SENTIMENT = _ORIGINAL_ENABLE_FINBERT_SENTIMENT
+    probability_engine.ENABLE_LLM_SENTIMENT = _ORIGINAL_ENABLE_LLM_SENTIMENT
 
 
 def make_article(title, summary, hours_before_event, source_type="alpha_vantage_news", native_sentiment=None):
