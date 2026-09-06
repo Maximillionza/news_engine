@@ -303,7 +303,27 @@ function renderCard(symbolEntry) {
       ${diffHtml}
     </div>`;
   }
-  const articlePredictionLine = articlePredictionHtml(next.article_prediction, next.previous_article_prediction);
+  // article_prediction_conflict (2026-09-04): set when co-released
+  // titles (same event_time_utc, e.g. NFP + Unemployment Rate + AHE
+  // from one BLS report) did NOT unanimously agree on direction for
+  // this instrument -- webapp/reconciliation.py's reconcile_group()
+  // requires every non-neutral co-released title to point the same way;
+  // even one real dissenter is a conflict, no confidence contest
+  // decides a winner. Renders as a distinct warning state, never as "no
+  // data" (the plain absent-article_prediction case) and never as a
+  // real directional read -- a contradictory signal is worth
+  // surfacing, not hiding or silently resolving.
+  function articlePredictionConflictHtml(conflict) {
+    if (!conflict) return '';
+    const titles = conflict.titles.map(escapeHtml).join(', ');
+    return `<div class="article-prediction-conflict">
+      ⚠ Conflicting signals across co-released events
+      <span style="font-size:12px;color:#888">(${titles})</span>
+    </div>`;
+  }
+  const articlePredictionLine = next.article_prediction
+    ? articlePredictionHtml(next.article_prediction, next.previous_article_prediction)
+    : articlePredictionConflictHtml(next.article_prediction_conflict);
 
   // print_prediction is the accumulator's separate "will THIS number beat
   // or miss forecast" call (scoring/print_direction.py), distinct from
