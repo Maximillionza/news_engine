@@ -325,6 +325,32 @@ function renderCard(symbolEntry) {
     ? articlePredictionHtml(next.article_prediction, next.previous_article_prediction)
     : articlePredictionConflictHtml(next.article_prediction_conflict);
 
+  // tier1_prediction (2026-09-07): a Causation-Matrix Tier 1 causation-
+  // matrix prediction for this exact occurrence, if one has been
+  // manually researched and logged (webapp/reconciliation.py has no
+  // role here -- this is a separate, independently-populated signal,
+  // currently CPI/PPI only). Rendered directly beneath whatever the
+  // sentiment line above already shows, using the SAME bullish/bearish/
+  // neutral color classes -- shared color language is what makes "do
+  // these two calls visually agree" readable at a glance, deliberately
+  // without any computed agree/disagree badge (that stays a
+  // backtest-only concept, scoring/backtest.py's BacktestReport.
+  // agreement_rate() -- never live). confidence is rendered as its own
+  // plain text tag (Certain/Likely/Guessing), never turned into a
+  // percentage or a bar -- doing that would recreate exactly the
+  // flattening Tier1Prediction's own design exists to avoid.
+  function tier1PredictionHtml(tier1) {
+    if (!tier1) return '';
+    const dClass = directionClass(tier1.predicted_direction);
+    return `<div class="tier1-prediction ${dClass}">
+      🧮 Tier 1: <b>${directionLabel(tier1.predicted_direction)}</b>
+      <span style="font-size:12px;color:#888">(${escapeHtml(tier1.confidence)})</span>
+      <div style="font-size:12px;margin-top:4px">${escapeHtml(tier1.value)}</div>
+      <div style="font-size:11px;color:#888;margin-top:2px">${escapeHtml(tier1.source)}</div>
+    </div>`;
+  }
+  const tier1PredictionLine = tier1PredictionHtml(next.tier1_prediction);
+
   // print_prediction is the accumulator's separate "will THIS number beat
   // or miss forecast" call (scoring/print_direction.py), distinct from
   // article_prediction's price-direction call above. Absent (null) for
@@ -445,13 +471,13 @@ function renderCard(symbolEntry) {
     // The event/when data is already in the response — showing it here
     // instead of a generic placeholder tells the user WHAT they're
     // actually waiting on, not just that something is pending.
-    const hasAnySignal = articlePredictionLine || printPredictionLine || kalshiReadLine || trendSignalLine;
+    const hasAnySignal = articlePredictionLine || tier1PredictionLine || printPredictionLine || kalshiReadLine || trendSignalLine;
     const heading = hasAnySignal
       ? `Awaiting essence score: ${escapeHtml(next.event_title)}`
       : `Awaiting: ${escapeHtml(next.event_title)}`;
     body += `<div class="pending">${heading}<br>
       <span style="font-size:12px;color:#888">${formatEventDateTime(next.event_time_utc)}</span></div>
-      ${articlePredictionLine}${printPredictionLine}${kalshiReadLine}${trendSignalLine}${otherEventsLine}`;
+      ${articlePredictionLine}${tier1PredictionLine}${printPredictionLine}${kalshiReadLine}${trendSignalLine}${otherEventsLine}`;
     // Real, live-observed case this branch must NOT skip (2026-08-17):
     // FOMC-style events whose essence-only score can never resolve
     // (title has no EVENT_SURPRISE_DIRECTION entry — see
@@ -491,7 +517,7 @@ function renderCard(symbolEntry) {
   body += `<div class="gauge-row">${gaugeSvg(pct, next.direction)}
     <div><div class="gauge-label ${dirClass}">${directionLabel(next.direction)} ${pct}%</div>
     <div style="font-size:12px;color:#888">${escapeHtml(next.event_title)}</div>
-    ${articlePredictionLine}${printPredictionLine}${kalshiReadLine}</div></div>
+    ${articlePredictionLine}${tier1PredictionLine}${printPredictionLine}${kalshiReadLine}</div></div>
     <div class="bull-bear-scale">${bullBearScaleSvg(next.probability)}</div>`;
   body += otherEventsLine;
   body += dayStripHtml(next.event_time_utc);

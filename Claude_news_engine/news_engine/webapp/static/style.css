@@ -81,6 +81,10 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .article-prediction.neutral { background: rgba(136, 136, 136, 0.10); color: var(--neutral); border: 1px solid rgba(136, 136, 136, 0.3); }
 .bull-bear-scale { margin-top: 6px; display: flex; justify-content: center; }
 .article-prediction-conflict { margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 13px; text-align: center; background: rgba(255, 152, 0, 0.12); border: 1px solid rgba(255, 152, 0, 0.4); color: #ef6c00; }
+.tier1-prediction { margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 13px; text-align: center; }
+.tier1-prediction.bullish { background: rgba(46, 125, 50, 0.10); color: var(--bullish); border: 1px solid rgba(46, 125, 50, 0.3); }
+.tier1-prediction.bearish { background: rgba(198, 40, 40, 0.10); color: var(--bearish); border: 1px solid rgba(198, 40, 40, 0.3); }
+.tier1-prediction.neutral { background: rgba(136, 136, 136, 0.10); color: var(--neutral); border: 1px solid rgba(136, 136, 136, 0.3); }
 
 .other-events { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
 .other-events-heading { font-size: 11px; color: #888; margin-bottom: 4px; }
