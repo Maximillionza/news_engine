@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 import os
+import logging
 import datetime as dt
 from typing import Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -41,6 +42,8 @@ from scoring.backtest_store import (
 from webapp.reconciliation import reconcile_group
 
 app = Flask(__name__, static_folder="static")
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_SYMBOLS = ["XAUUSD", "US30"]
 
@@ -416,7 +419,20 @@ def get_predictions():
                     "open_interest": kalshi_row.open_interest,
                 }
 
-            tier1_row = get_latest_tier1_prediction_for_occurrence(backtest_conn, event["title"], ticker, event_time)
+            # Fail open (final whole-branch review, 2026-09-07 — Finding 2):
+            # this lookup must never take down the whole /api/predictions
+            # route -- a broken/missing row for one occurrence is not worth
+            # 500ing every symbol's dashboard card. Scoped to ONLY this
+            # lookup; the other per-event lookups above it are a separate,
+            # pre-existing pattern left untouched.
+            try:
+                tier1_row = get_latest_tier1_prediction_for_occurrence(backtest_conn, event["title"], ticker, event_time)
+            except Exception:
+                logger.warning(
+                    "get_latest_tier1_prediction_for_occurrence failed for title=%r ticker=%r event_time=%r",
+                    event["title"], ticker, event_time, exc_info=True,
+                )
+                tier1_row = None
             tier1_prediction = None
             if tier1_row is not None:
                 tier1_prediction = {

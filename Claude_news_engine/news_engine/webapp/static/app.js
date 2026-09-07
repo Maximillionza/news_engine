@@ -339,17 +339,29 @@ function renderCard(symbolEntry) {
   // plain text tag (Certain/Likely/Guessing), never turned into a
   // percentage or a bar -- doing that would recreate exactly the
   // flattening Tier1Prediction's own design exists to avoid.
-  function tier1PredictionHtml(tier1) {
+  // tier1DirectionLabel (final whole-branch review, 2026-09-07 — Finding
+  // 5): a Tier 1 row with confidence "Guessing" and direction "neutral"
+  // means NO confident call was ever attempted (e.g. the logged CPI m/m
+  // case) -- a genuinely different claim from sentiment's own
+  // directionLabel('neutral') = "INDECISIVE", which means a call WAS
+  // computed and it came out balanced. directionLabel() itself stays
+  // untouched (shared with sentiment's rendering); this special-cases
+  // just the Tier 1 line, in both places it renders.
+  function tier1DirectionLabel(tier1) {
+    if (tier1.confidence === 'Guessing' && tier1.predicted_direction === 'neutral') return 'NO CALL';
+    return directionLabel(tier1.predicted_direction);
+  }
+  function tier1PredictionHtml(tier1, symbolForCard) {
     if (!tier1) return '';
     const dClass = directionClass(tier1.predicted_direction);
     return `<div class="tier1-prediction ${dClass}">
-      🧮 Tier 1: <b>${directionLabel(tier1.predicted_direction)}</b>
+      🧮 Tier 1 (${escapeHtml(symbolForCard)}): <b>${tier1DirectionLabel(tier1)}</b>
       <span style="font-size:12px;color:#888">(${escapeHtml(tier1.confidence)})</span>
       <div style="font-size:12px;margin-top:4px">${escapeHtml(tier1.value)}</div>
       <div style="font-size:11px;color:#888;margin-top:2px">${escapeHtml(tier1.source)}</div>
     </div>`;
   }
-  const tier1PredictionLine = tier1PredictionHtml(next.tier1_prediction);
+  const tier1PredictionLine = tier1PredictionHtml(next.tier1_prediction, symbol);
 
   // print_prediction is the accumulator's separate "will THIS number beat
   // or miss forecast" call (scoring/print_direction.py), distinct from
@@ -438,7 +450,21 @@ function renderCard(symbolEntry) {
   // article/print/trend/Kalshi breakdown `next` gets — that keeps a
   // 4-event cluster from ballooning the card, while still making the
   // other calls visible instead of silently invisible.
-  function otherEventsHtml(events) {
+  // otherEventTier1MarkerHtml (final whole-branch review, 2026-09-07 —
+  // Finding 1): a co-released sibling can carry its OWN logged Tier 1
+  // row even when the featured event (events[0]) has none — confirmed
+  // live on 2026-09-10, where "Core PPI m/m" is featured with no Tier 1
+  // row, while its sibling "PPI m/m" has a real one that was otherwise
+  // never rendered anywhere. Deliberately compact (icon + instrument +
+  // direction label only, no source/value text) — this is a list of
+  // sibling events, not a full card; tier1PredictionHtml() above stays
+  // the full-detail rendering for the featured event only.
+  function otherEventTier1MarkerHtml(tier1, symbolForCard) {
+    if (!tier1) return '';
+    const dClass = directionClass(tier1.predicted_direction);
+    return `<span class="other-event-tier1 ${dClass}">🧮 Tier 1 (${escapeHtml(symbolForCard)}): <b>${tier1DirectionLabel(tier1)}</b></span>`;
+  }
+  function otherEventsHtml(events, symbolForCard) {
     // Only genuinely SIMULTANEOUS events (identical event_time_utc to the
     // featured one) belong here — `events` also carries other upcoming/
     // recent events for this symbol that just happen to sort near the
@@ -447,10 +473,12 @@ function renderCard(symbolEntry) {
     const simultaneous = events.slice(1).filter((e) => e.event_time_utc === events[0].event_time_utc);
     if (simultaneous.length === 0) return '';
     const rows = simultaneous.map((e) => {
+      const tier1Marker = otherEventTier1MarkerHtml(e.tier1_prediction, symbolForCard);
       if (e.direction === "pending") {
         return `<div class="other-event-row">
           <span class="other-event-title">${escapeHtml(e.event_title)}</span>
           <span class="other-event-pending">Pending</span>
+          ${tier1Marker}
         </div>`;
       }
       const pct = directionPct(e.probability, e.direction);
@@ -458,6 +486,7 @@ function renderCard(symbolEntry) {
       return `<div class="other-event-row">
         <span class="other-event-title">${escapeHtml(e.event_title)}</span>
         <span class="other-event-call ${dClass}">${directionLabel(e.direction)} ${pct}%</span>
+        ${tier1Marker}
       </div>`;
     }).join('');
     return `<div class="other-events">
@@ -465,7 +494,7 @@ function renderCard(symbolEntry) {
       ${rows}
     </div>`;
   }
-  const otherEventsLine = otherEventsHtml(events);
+  const otherEventsLine = otherEventsHtml(events, symbol);
 
   if (next.direction === "pending") {
     // The event/when data is already in the response — showing it here

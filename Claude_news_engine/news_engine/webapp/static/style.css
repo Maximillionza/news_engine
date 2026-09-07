@@ -88,13 +88,20 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 
 .other-events { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
 .other-events-heading { font-size: 11px; color: #888; margin-bottom: 4px; }
-.other-event-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; padding: 3px 0; }
+.other-event-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; font-size: 12px; padding: 3px 0; }
 .other-event-title { color: #555; }
 .other-event-pending { color: #999; }
 .other-event-call { font-weight: bold; }
 .other-event-call.bullish { color: var(--bullish); }
 .other-event-call.bearish { color: var(--bearish); }
 .other-event-call.neutral { color: var(--neutral); }
+/* Final whole-branch review, 2026-09-07 — Finding 1: compact Tier 1
+   marker on a co-released sibling row. Forced to its own line (flex-basis:
+   100%) so it never fights the title/call pair for space on one row. */
+.other-event-tier1 { flex-basis: 100%; font-size: 11px; margin-top: 2px; }
+.other-event-tier1.bullish { color: var(--bullish); }
+.other-event-tier1.bearish { color: var(--bearish); }
+.other-event-tier1.neutral { color: var(--neutral); }
 
 .day-strip { display: flex; gap: 4px; margin-top: 14px; overflow-x: auto; }
 .day-cell { flex: 0 0 auto; padding: 6px 8px; font-size: 11px; text-align: center; border-radius: 6px; border: 1px solid transparent; background: #f0f0f0; }

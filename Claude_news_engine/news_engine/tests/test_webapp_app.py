@@ -1727,6 +1727,14 @@ def test_predictions_route_includes_tier1_prediction_for_logged_occurrence():
             ])
             conn = store.get_connection(db_path)
             store.add_tracked_symbol(conn, "XAUUSD")
+            # Final whole-branch review, 2026-09-07 — Finding 3: also track
+            # US30 and log a SECOND, DIFFERENT-DIRECTION Tier 1 row for it
+            # on the same PPI occurrence. Nothing before this asserted the
+            # route threads the REAL per-symbol ticker into
+            # get_latest_tier1_prediction_for_occurrence() rather than a
+            # hardcoded one — two instruments genuinely disagreeing is the
+            # only way a hardcoded-ticker bug would show up as a failure.
+            store.add_tracked_symbol(conn, "US30")
             conn.close()
 
             bconn = backtest_store.get_connection(backtest_db_path)
@@ -1740,6 +1748,15 @@ def test_predictions_route_includes_tier1_prediction_for_logged_occurrence():
                 predicted_direction="bullish",
             )
             backtest_store.record_prediction(
+                bconn, "PPI m/m", "US30", ppi_time, 0.55, "bearish", 0.4, 60, False,
+            )
+            backtest_store.record_tier1_prediction(
+                bconn, "PPI m/m", "US30", ppi_time,
+                value="Muted, non-reaccelerating call", confidence="Certain",
+                source="BLS July 2026 PPI release; ISM Manufacturing Prices Paid Aug 2026",
+                predicted_direction="bearish",
+            )
+            backtest_store.record_prediction(
                 bconn, "CPI m/m", "XAUUSD", cpi_time, 0.51, "neutral", 0.05, 70, False,
             )
             # No tier1_predictions row logged for CPI -- must read back as null.
@@ -1747,16 +1764,19 @@ def test_predictions_route_includes_tier1_prediction_for_logged_occurrence():
 
             client = webapp_app.app.test_client()
             resp = client.get("/api/predictions")
-            events = resp.get_json()["predictions"][0]["events"]
-            by_title = {e["event_title"]: e for e in events}
+            predictions_by_symbol = {p["symbol"]: p for p in resp.get_json()["predictions"]}
+            xauusd_events = {e["event_title"]: e for e in predictions_by_symbol["XAUUSD"]["events"]}
+            us30_events = {e["event_title"]: e for e in predictions_by_symbol["US30"]["events"]}
 
-            assert by_title["PPI m/m"]["tier1_prediction"] == {
+            assert xauusd_events["PPI m/m"]["tier1_prediction"] == {
                 "value": "Muted, non-reaccelerating call",
                 "confidence": "Certain",
                 "source": "BLS July 2026 PPI release; ISM Manufacturing Prices Paid Aug 2026",
                 "predicted_direction": "bullish",
             }
-            assert by_title["CPI m/m"]["tier1_prediction"] is None
+            assert xauusd_events["CPI m/m"]["tier1_prediction"] is None
+            assert us30_events["PPI m/m"]["tier1_prediction"]["predicted_direction"] == "bearish"
+            assert xauusd_events["PPI m/m"]["tier1_prediction"]["predicted_direction"] == "bullish"
     print("PASS\n")
 
 
