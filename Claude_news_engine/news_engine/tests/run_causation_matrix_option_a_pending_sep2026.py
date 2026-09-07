@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.settings import UTC_TZ
 from scoring.backtest import Tier1Prediction
 from scoring.probability_engine import Direction
+from scoring.backtest_store import get_connection, record_tier1_prediction
 
 # --- PPI (August 2026 data), releases 2026-09-10T12:30 UTC ---
 #
@@ -111,4 +112,21 @@ if __name__ == "__main__":
           "the July cases -- XAUUSD_USD_News_400Pip_Analysis workbook or a fresh equivalent "
           "pull), pull the real, latest sentiment prediction for each occurrence from "
           "scoring.backtest_store, build each BacktestCase the same way "
-          "tests/run_causation_matrix_option_a_backtest.py does, and run the comparison.")
+          "tests/run_causation_matrix_option_a_backtest.py does, and run the comparison.\n")
+
+    conn = get_connection()
+    for instrument in ("XAUUSD", "US30"):
+        record_tier1_prediction(
+            conn, "PPI m/m", instrument, PPI_EVENT_TIME_SEP2026,
+            value=TIER1_PPI_SEP2026.value, confidence=TIER1_PPI_SEP2026.confidence,
+            source=TIER1_PPI_SEP2026.source,
+            predicted_direction=TIER1_PPI_SEP2026.predicted_direction.value,
+        )
+        record_tier1_prediction(
+            conn, "CPI m/m", instrument, CPI_EVENT_TIME_SEP2026,
+            value=TIER1_CPI_SEP2026.value, confidence=TIER1_CPI_SEP2026.confidence,
+            source=TIER1_CPI_SEP2026.source,
+            predicted_direction=TIER1_CPI_SEP2026.predicted_direction.value,
+        )
+    conn.close()
+    print("Persisted both cases to scoring/backtest_log.db's tier1_predictions table (XAUUSD + US30).")
