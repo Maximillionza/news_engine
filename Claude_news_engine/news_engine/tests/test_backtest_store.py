@@ -19,6 +19,7 @@ from scoring.backtest_store import (
     get_predictions_awaiting_outcome, record_outcome, get_all_confirmed_cases,
     record_dismissal, get_latest_prediction, get_latest_two_predictions,
     record_check, count_recent_checks, get_prediction_history, get_last_check_utc,
+    record_tier1_prediction, get_latest_tier1_prediction_for_occurrence,
 )
 
 
@@ -707,6 +708,150 @@ def test_get_prediction_history_respects_limit():
     print("PASS\n")
 
 
+def test_record_and_get_tier1_prediction_round_trip():
+    print("=== backtest_store: record_tier1_prediction + get_latest_tier1_prediction_for_occurrence round-trip ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=dt.timezone.utc)
+
+        assert get_latest_tier1_prediction_for_occurrence(conn, "PPI m/m", "XAUUSD", event_time) is None
+
+        record_tier1_prediction(
+            conn, "PPI m/m", "XAUUSD", event_time,
+            value="Muted, non-reaccelerating call", confidence="Certain",
+            source="BLS July 2026 PPI release; ISM Manufacturing Prices Paid Aug 2026",
+            predicted_direction="bullish",
+        )
+
+        row = get_latest_tier1_prediction_for_occurrence(conn, "PPI m/m", "XAUUSD", event_time)
+        assert row is not None
+        assert row.event_title == "PPI m/m"
+        assert row.instrument == "XAUUSD"
+        assert row.value == "Muted, non-reaccelerating call"
+        assert row.confidence == "Certain"
+        assert row.source == "BLS July 2026 PPI release; ISM Manufacturing Prices Paid Aug 2026"
+        assert row.predicted_direction == "bullish"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_tier1_prediction_returns_none_when_never_logged():
+    print("=== backtest_store: get_latest_tier1_prediction_for_occurrence returns None for an occurrence with no logged row, not an error ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 9, 11, 12, 30, tzinfo=dt.timezone.utc)
+        assert get_latest_tier1_prediction_for_occurrence(conn, "CPI m/m", "XAUUSD", event_time) is None
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_tier1_prediction_rejects_invalid_confidence():
+    print("=== backtest_store: record_tier1_prediction rejects a confidence tag outside Certain/Likely/Guessing ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=dt.timezone.utc)
+        try:
+            record_tier1_prediction(
+                conn, "PPI m/m", "XAUUSD", event_time,
+                value="v", confidence="High", source="s", predicted_direction="bullish",
+            )
+            assert False, "expected a ValueError for an invalid confidence tag"
+        except ValueError as exc:
+            assert "High" in str(exc)
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_tier1_prediction_rejects_invalid_direction():
+    print("=== backtest_store: record_tier1_prediction rejects a predicted_direction outside the Direction enum's values ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=dt.timezone.utc)
+        try:
+            record_tier1_prediction(
+                conn, "PPI m/m", "XAUUSD", event_time,
+                value="v", confidence="Certain", source="s", predicted_direction="up",
+            )
+            assert False, "expected a ValueError for an invalid predicted_direction"
+        except ValueError as exc:
+            assert "up" in str(exc)
+        conn.close()
+    print("PASS\n")
+
+
+def test_tier1_prediction_scoped_per_instrument():
+    print("=== backtest_store: two instruments for the same event/occurrence get independent rows, neither overwrites the other ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 9, 11, 12, 30, tzinfo=dt.timezone.utc)
+
+        record_tier1_prediction(
+            conn, "CPI m/m", "XAUUSD", event_time,
+            value="v", confidence="Guessing", source="s", predicted_direction="neutral",
+        )
+        record_tier1_prediction(
+            conn, "CPI m/m", "US30", event_time,
+            value="v", confidence="Guessing", source="s", predicted_direction="bearish",
+        )
+
+        xauusd_row = get_latest_tier1_prediction_for_occurrence(conn, "CPI m/m", "XAUUSD", event_time)
+        us30_row = get_latest_tier1_prediction_for_occurrence(conn, "CPI m/m", "US30", event_time)
+        assert xauusd_row.predicted_direction == "neutral"
+        assert us30_row.predicted_direction == "bearish"
+        conn.close()
+    print("PASS\n")
+
+
+def test_tier1_prediction_scoped_per_occurrence_not_just_title():
+    print("=== backtest_store: get_latest_tier1_prediction_for_occurrence scopes to the exact event_time_utc, same reasoning as get_latest_prediction_for_occurrence ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        july_time = dt.datetime(2026, 8, 13, 12, 30, tzinfo=dt.timezone.utc)
+        sept_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=dt.timezone.utc)
+
+        record_tier1_prediction(
+            conn, "PPI m/m", "XAUUSD", july_time,
+            value="July call", confidence="Certain", source="s", predicted_direction="bullish",
+        )
+        # No row logged yet for the September occurrence.
+        row = get_latest_tier1_prediction_for_occurrence(conn, "PPI m/m", "XAUUSD", sept_time)
+        assert row is None, "must not leak the July occurrence's row onto an unrelated later one"
+        conn.close()
+    print("PASS\n")
+
+
+def test_latest_tier1_prediction_wins_on_multiple_logs():
+    print("=== backtest_store: get_latest_tier1_prediction_for_occurrence returns the most recently logged row when the same occurrence is logged twice (a revised call) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=dt.timezone.utc)
+
+        record_tier1_prediction(
+            conn, "PPI m/m", "XAUUSD", event_time,
+            value="first pass", confidence="Likely", source="s", predicted_direction="neutral",
+            logged_at_utc=dt.datetime(2026, 9, 6, 9, 0, tzinfo=dt.timezone.utc),
+        )
+        record_tier1_prediction(
+            conn, "PPI m/m", "XAUUSD", event_time,
+            value="revised after ISM confirmed", confidence="Certain", source="s2", predicted_direction="bullish",
+            logged_at_utc=dt.datetime(2026, 9, 7, 10, 0, tzinfo=dt.timezone.utc),
+        )
+
+        row = get_latest_tier1_prediction_for_occurrence(conn, "PPI m/m", "XAUUSD", event_time)
+        assert row.value == "revised after ISM confirmed"
+        assert row.confidence == "Certain"
+        assert row.predicted_direction == "bullish"
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_record_and_count_predictions()
     test_count_predictions_scoped_to_event_occurrence_not_just_title()
@@ -746,4 +891,11 @@ if __name__ == "__main__":
     test_record_prediction_without_top_contributions_round_trips_empty_list()
     test_get_prediction_history_returns_full_progression_most_recent_first()
     test_get_prediction_history_respects_limit()
+    test_record_and_get_tier1_prediction_round_trip()
+    test_get_tier1_prediction_returns_none_when_never_logged()
+    test_record_tier1_prediction_rejects_invalid_confidence()
+    test_record_tier1_prediction_rejects_invalid_direction()
+    test_tier1_prediction_scoped_per_instrument()
+    test_tier1_prediction_scoped_per_occurrence_not_just_title()
+    test_latest_tier1_prediction_wins_on_multiple_logs()
     print("All backtest_store tests passed.")

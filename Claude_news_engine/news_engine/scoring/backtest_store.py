@@ -78,6 +78,17 @@ CREATE TABLE IF NOT EXISTS kalshi_reads (
     open_interest REAL NOT NULL,
     read_at_utc TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS tier1_predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_title TEXT NOT NULL,
+    instrument TEXT NOT NULL,
+    event_time_utc TEXT NOT NULL,
+    value TEXT NOT NULL,
+    confidence TEXT NOT NULL,
+    source TEXT NOT NULL,
+    predicted_direction TEXT NOT NULL,
+    logged_at_utc TEXT NOT NULL
+);
 """
 
 
@@ -149,6 +160,19 @@ class KalshiReadRecord:
     implied_probability: float
     open_interest: float
     read_at_utc: str
+
+
+@dataclass
+class Tier1PredictionRow:
+    id: int
+    event_title: str
+    instrument: str
+    event_time_utc: str
+    value: str
+    confidence: str          # 'Certain' | 'Likely' | 'Guessing'
+    source: str
+    predicted_direction: str  # 'bullish' | 'bearish' | 'neutral' -- Direction enum's own string values
+    logged_at_utc: str
 
 
 def _migrate_add_source_columns(conn: sqlite3.Connection) -> None:
@@ -677,3 +701,84 @@ def record_kalshi_read_if_changed(
     )
     conn.commit()
     return True
+
+
+_VALID_TIER1_CONFIDENCE = ("Certain", "Likely", "Guessing")
+
+
+def record_tier1_prediction(
+    conn: sqlite3.Connection,
+    event_title: str,
+    instrument: str,
+    event_time_utc: dt.datetime,
+    value: str,
+    confidence: str,
+    source: str,
+    predicted_direction: str,
+    logged_at_utc: Optional[dt.datetime] = None,
+) -> int:
+    """
+    Persists a Causation-Matrix Tier 1 prediction (scoring.backtest.Tier1Prediction)
+    for one (event_title, instrument, event_time_utc) occurrence -- a
+    human-researched value/confidence/source/predicted_direction, never
+    auto-derived (see Tier1Prediction's own docstring). One row per
+    instrument, same as record_prediction() -- a Tier 1 finding's raw
+    value/confidence/source don't change per instrument, but
+    predicted_direction can (XAUUSD is inverse-mapped, US30 is
+    risk-sentiment-dampened), so each instrument gets its own row.
+
+    confidence and predicted_direction are validated here, not just by
+    callers -- same reasoning as record_outcome()'s Direction validation:
+    an unrecognized value must never sit silently in the DB until
+    something crashes on it much later, for every reader, not just the
+    one bad write.
+    """
+    if confidence not in _VALID_TIER1_CONFIDENCE:
+        raise ValueError(
+            f"confidence={confidence!r} is not valid — must be one of: "
+            f"{', '.join(_VALID_TIER1_CONFIDENCE)}"
+        )
+    try:
+        Direction(predicted_direction)
+    except ValueError:
+        valid = ", ".join(d.value for d in Direction)
+        raise ValueError(
+            f"predicted_direction={predicted_direction!r} is not valid — must be one of: {valid}"
+        )
+
+    logged_at = logged_at_utc or dt.datetime.now(dt.timezone.utc)
+    cursor = conn.execute(
+        "INSERT INTO tier1_predictions (event_title, instrument, event_time_utc, value, "
+        "confidence, source, predicted_direction, logged_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (event_title, instrument, event_time_utc.isoformat(), value, confidence, source,
+         predicted_direction, logged_at.isoformat()),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def get_latest_tier1_prediction_for_occurrence(
+    conn: sqlite3.Connection, event_title: str, instrument: str, event_time_utc: dt.datetime,
+) -> Optional[Tier1PredictionRow]:
+    """
+    Most recent Tier 1 prediction logged for this EXACT (event_title,
+    instrument, event_time_utc) occurrence -- same occurrence-scoping
+    reasoning as get_latest_prediction_for_occurrence(): a title recurs
+    monthly with the SAME title but a DIFFERENT event_time_utc each time,
+    so a title-only lookup would leak a prior occurrence's Tier 1 call
+    onto an unrelated later one.
+    """
+    row = conn.execute(
+        "SELECT * FROM tier1_predictions WHERE event_title = ? AND instrument = ? AND event_time_utc = ? "
+        "ORDER BY logged_at_utc DESC, id DESC LIMIT 1",
+        (event_title, instrument, event_time_utc.isoformat()),
+    ).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    return Tier1PredictionRow(
+        id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
+        event_time_utc=d["event_time_utc"], value=d["value"], confidence=d["confidence"],
+        source=d["source"], predicted_direction=d["predicted_direction"],
+        logged_at_utc=d["logged_at_utc"],
+    )
