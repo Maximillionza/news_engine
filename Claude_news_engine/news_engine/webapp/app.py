@@ -31,6 +31,7 @@ from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 from scoring.backtest_store import (
     get_connection as get_backtest_connection, get_latest_two_predictions,
     get_latest_print_prediction, get_latest_kalshi_read, get_last_check_utc,
+    get_latest_tier1_prediction_for_occurrence,
     Prediction,
     # Aliased — webapp/app.py already has its own route handler FUNCTION
     # named get_prediction_history() (the essence-only one, further down
@@ -415,6 +416,16 @@ def get_predictions():
                     "open_interest": kalshi_row.open_interest,
                 }
 
+            tier1_row = get_latest_tier1_prediction_for_occurrence(backtest_conn, event["title"], ticker, event_time)
+            tier1_prediction = None
+            if tier1_row is not None:
+                tier1_prediction = {
+                    "value": tier1_row.value,
+                    "confidence": tier1_row.confidence,
+                    "source": tier1_row.source,
+                    "predicted_direction": tier1_row.predicted_direction,
+                }
+
             # An event is only worth including in this symbol's list at
             # all if SOME layer has something to say about it — an event
             # with zero essence score AND zero article prediction AND zero
@@ -425,7 +436,7 @@ def get_predictions():
             # recompute counts as "something to say" even when `latest`
             # itself is still the stale pending row).
             if (latest is None and recomputed is None and article_prediction is None and print_prediction is None
-                    and trend_signal is None and kalshi_read is None):
+                    and trend_signal is None and kalshi_read is None and tier1_prediction is None):
                 continue
 
             if recomputed is not None:
@@ -450,6 +461,7 @@ def get_predictions():
                 "print_prediction": print_prediction,
                 "trend_signal": trend_signal,
                 "kalshi_read": kalshi_read,
+                "tier1_prediction": tier1_prediction,
             })
 
         for time_key, predictions_by_title in accumulator_predictions_by_time_and_title.items():

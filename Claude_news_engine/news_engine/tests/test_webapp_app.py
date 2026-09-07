@@ -1710,6 +1710,56 @@ def test_article_history_route_empty_for_unknown_event():
     print("PASS\n")
 
 
+def test_predictions_route_includes_tier1_prediction_for_logged_occurrence():
+    print("=== app: /api/predictions includes tier1_prediction for an event with a logged Tier 1 row, null otherwise ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+            cpi_time = dt.datetime(2026, 9, 11, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="PPI m/m", country="USD", impact="High",
+                               event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual=None),
+                EconomicEvent(title="CPI m/m", country="USD", impact="High",
+                               event_time_utc=cpi_time, forecast="0.3%", previous="-0.4%", actual=None),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time, 0.55, "bullish", 0.4, 60, False,
+            )
+            backtest_store.record_tier1_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time,
+                value="Muted, non-reaccelerating call", confidence="Certain",
+                source="BLS July 2026 PPI release; ISM Manufacturing Prices Paid Aug 2026",
+                predicted_direction="bullish",
+            )
+            backtest_store.record_prediction(
+                bconn, "CPI m/m", "XAUUSD", cpi_time, 0.51, "neutral", 0.05, 70, False,
+            )
+            # No tier1_predictions row logged for CPI -- must read back as null.
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = resp.get_json()["predictions"][0]["events"]
+            by_title = {e["event_title"]: e for e in events}
+
+            assert by_title["PPI m/m"]["tier1_prediction"] == {
+                "value": "Muted, non-reaccelerating call",
+                "confidence": "Certain",
+                "source": "BLS July 2026 PPI release; ISM Manufacturing Prices Paid Aug 2026",
+                "predicted_direction": "bullish",
+            }
+            assert by_title["CPI m/m"]["tier1_prediction"] is None
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
@@ -1763,4 +1813,5 @@ if __name__ == "__main__":
     test_recently_resolved_backfill_excludes_low_impact_event()
     test_recently_resolved_backfill_still_includes_medium_impact_event()
     test_predictions_excludes_low_impact_event_from_the_live_snapshot()
+    test_predictions_route_includes_tier1_prediction_for_logged_occurrence()
     print("All webapp.app tests passed.")
