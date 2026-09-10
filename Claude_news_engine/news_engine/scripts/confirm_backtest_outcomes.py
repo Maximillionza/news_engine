@@ -30,6 +30,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scoring.backtest_store import (
     get_connection, get_predictions_awaiting_outcome, record_outcome, record_dismissal,
 )
+from scoring.tier1_comparison import compute_and_record_tier1_comparison
+
+
+def _try_record_tier1_comparison(conn, event_title, instrument, event_time, direction, note) -> None:
+    """
+    Fail-open wrapper around compute_and_record_tier1_comparison() -- a
+    comparison failing to build must never block the outcome that was
+    just successfully recorded. No-op for the overwhelming majority of
+    occurrences (no Tier 1 prediction was ever logged for them).
+    """
+    try:
+        from scoring.probability_engine import Direction
+        compute_and_record_tier1_comparison(
+            conn, event_title, instrument, event_time, Direction(direction), note,
+        )
+    except Exception as exc:  # noqa: BLE001 — never let a comparison failure block outcome recording
+        print(f"[confirm_backtest_outcomes] WARNING: tier1 comparison failed for {instrument}/{event_title}: {exc}")
 
 
 def run_auto_confirm_phase(conn) -> dict:
@@ -66,6 +83,7 @@ def run_auto_confirm_phase(conn) -> dict:
             continue
         if result.direction is not None:
             record_outcome(conn, p.event_title, p.instrument, event_time, result.direction.value, result.note)
+            _try_record_tier1_comparison(conn, p.event_title, p.instrument, event_time, result.direction.value, result.note)
             auto_confirmed += 1
             print(f"  [auto] {p.instrument} / {p.event_title}: {result.note}")
         else:
@@ -128,6 +146,7 @@ def main():
                 continue
             note = input("    real outcome note (what actually happened, with source): ").strip()
             record_outcome(conn, p.event_title, p.instrument, event_time, direction, note)
+            _try_record_tier1_comparison(conn, p.event_title, p.instrument, event_time, direction, note)
             print("    recorded.\n")
 
 

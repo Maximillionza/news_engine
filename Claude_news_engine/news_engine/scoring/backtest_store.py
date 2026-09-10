@@ -89,6 +89,21 @@ CREATE TABLE IF NOT EXISTS tier1_predictions (
     predicted_direction TEXT NOT NULL,
     logged_at_utc TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS tier1_comparisons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_title TEXT NOT NULL,
+    instrument TEXT NOT NULL,
+    event_time_utc TEXT NOT NULL,
+    sentiment_direction TEXT NOT NULL,
+    sentiment_correct INTEGER,          -- NULL = sentiment made no call (neutral), same convention as BacktestCase
+    tier1_direction TEXT NOT NULL,
+    tier1_confidence TEXT NOT NULL,
+    tier1_correct INTEGER,              -- NULL = Tier 1 made no call (neutral, e.g. a Guessing "no confident call")
+    actual_direction TEXT NOT NULL,
+    actual_move_note TEXT NOT NULL,
+    compared_at_utc TEXT NOT NULL,
+    UNIQUE(event_title, instrument, event_time_utc)
+);
 """
 
 
@@ -173,6 +188,22 @@ class Tier1PredictionRow:
     source: str
     predicted_direction: str  # 'bullish' | 'bearish' | 'neutral' -- Direction enum's own string values
     logged_at_utc: str
+
+
+@dataclass
+class Tier1ComparisonRow:
+    id: int
+    event_title: str
+    instrument: str
+    event_time_utc: str
+    sentiment_direction: str
+    sentiment_correct: Optional[bool]
+    tier1_direction: str
+    tier1_confidence: str
+    tier1_correct: Optional[bool]
+    actual_direction: str
+    actual_move_note: str
+    compared_at_utc: str
 
 
 def _migrate_add_source_columns(conn: sqlite3.Connection) -> None:
@@ -923,4 +954,72 @@ def get_latest_tier1_prediction_for_occurrence(
         event_time_utc=d["event_time_utc"], value=d["value"], confidence=d["confidence"],
         source=d["source"], predicted_direction=d["predicted_direction"],
         logged_at_utc=d["logged_at_utc"],
+    )
+
+
+def record_tier1_comparison(
+    conn: sqlite3.Connection,
+    event_title: str,
+    instrument: str,
+    event_time_utc: dt.datetime,
+    sentiment_direction: str,
+    sentiment_correct: Optional[bool],
+    tier1_direction: str,
+    tier1_confidence: str,
+    tier1_correct: Optional[bool],
+    actual_direction: str,
+    actual_move_note: str,
+    compared_at_utc: Optional[dt.datetime] = None,
+) -> int:
+    """
+    Persists the result of comparing a real, already-recorded sentiment
+    prediction against a real, already-logged Tier 1 prediction for one
+    occurrence, once a real outcome exists -- the durable version of what
+    tests/run_causation_matrix_option_a_*.py's one-off scripts print to a
+    console. sentiment_correct/tier1_correct are None when that side made
+    no directional call (neutral) -- same "no call, not wrong" convention
+    scoring/backtest.py's BacktestCase.evaluate() already uses; SQLite
+    stores a Python None as NULL automatically, no extra handling needed.
+
+    UNIQUE(event_title, instrument, event_time_utc) means a re-run for the
+    same occurrence replaces the prior row (INSERT OR REPLACE) rather than
+    accumulating duplicates -- this is a derived, recomputable result, not
+    an append-only log like predictions/outcomes/tier1_predictions.
+    """
+    compared_at = compared_at_utc or dt.datetime.now(dt.timezone.utc)
+    conn.execute(
+        "INSERT OR REPLACE INTO tier1_comparisons (event_title, instrument, event_time_utc, "
+        "sentiment_direction, sentiment_correct, tier1_direction, tier1_confidence, tier1_correct, "
+        "actual_direction, actual_move_note, compared_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (event_title, instrument, event_time_utc.isoformat(), sentiment_direction,
+         sentiment_correct, tier1_direction, tier1_confidence, tier1_correct,
+         actual_direction, actual_move_note, compared_at.isoformat()),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT id FROM tier1_comparisons WHERE event_title = ? AND instrument = ? AND event_time_utc = ?",
+        (event_title, instrument, event_time_utc.isoformat()),
+    ).fetchone()
+    return row["id"]
+
+
+def get_tier1_comparison_for_occurrence(
+    conn: sqlite3.Connection, event_title: str, instrument: str, event_time_utc: dt.datetime,
+) -> Optional[Tier1ComparisonRow]:
+    """The recorded comparison for this exact occurrence, or None if never computed."""
+    row = conn.execute(
+        "SELECT * FROM tier1_comparisons WHERE event_title = ? AND instrument = ? AND event_time_utc = ?",
+        (event_title, instrument, event_time_utc.isoformat()),
+    ).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    return Tier1ComparisonRow(
+        id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
+        event_time_utc=d["event_time_utc"], sentiment_direction=d["sentiment_direction"],
+        sentiment_correct=None if d["sentiment_correct"] is None else bool(d["sentiment_correct"]),
+        tier1_direction=d["tier1_direction"], tier1_confidence=d["tier1_confidence"],
+        tier1_correct=None if d["tier1_correct"] is None else bool(d["tier1_correct"]),
+        actual_direction=d["actual_direction"], actual_move_note=d["actual_move_note"],
+        compared_at_utc=d["compared_at_utc"],
     )
