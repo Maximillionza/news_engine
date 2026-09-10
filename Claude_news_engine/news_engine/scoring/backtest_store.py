@@ -360,6 +360,148 @@ def get_latest_two_predictions(
     return predictions
 
 
+def get_latest_two_predictions_bulk(
+    conn: sqlite3.Connection, event_titles: list[str], instruments: list[str],
+) -> dict[tuple[str, str], list[Prediction]]:
+    """
+    Batched version of get_latest_two_predictions() — one query for the
+    whole `event_titles` x `instruments` cross product, instead of
+    webapp/app.py's /api/predictions issuing one query per (event, symbol)
+    pair. Returns a dict keyed by (event_title, instrument); a pair with
+    no rows is simply absent. Same most-recent-first, `id`-breaks-ties
+    ordering as get_latest_two_predictions().
+    """
+    if not event_titles or not instruments:
+        return {}
+    title_placeholders = ",".join("?" for _ in event_titles)
+    instrument_placeholders = ",".join("?" for _ in instruments)
+    rows = conn.execute(
+        f"SELECT * FROM predictions WHERE event_title IN ({title_placeholders}) "
+        f"AND instrument IN ({instrument_placeholders}) "
+        "ORDER BY event_title, instrument, scored_at_utc DESC, id DESC",
+        (*event_titles, *instruments),
+    ).fetchall()
+    grouped: dict[tuple[str, str], list[Prediction]] = {}
+    for row in rows:
+        d = dict(row)
+        prediction = Prediction(
+            id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
+            event_time_utc=d["event_time_utc"], scored_at_utc=d["scored_at_utc"],
+            probability=d["probability"], direction=d["direction"], confidence=d["confidence"],
+            article_count=d["article_count"], contradiction_flag=bool(d["contradiction_flag"]),
+            source=d["source"], top_contributions_json=d.get("top_contributions_json"),
+        )
+        bucket = grouped.setdefault((prediction.event_title, prediction.instrument), [])
+        if len(bucket) < 2:
+            bucket.append(prediction)
+    return grouped
+
+
+def get_latest_print_predictions_bulk(
+    conn: sqlite3.Connection, event_titles: list[str],
+) -> dict[tuple[str, str], PrintPrediction]:
+    """
+    Batched version of get_latest_print_prediction() — one query covering
+    every title in `event_titles` (all of that title's occurrences, since
+    a title recurs monthly/quarterly with a different event_time_utc each
+    time — see get_latest_print_prediction()'s own docstring) instead of
+    one query per occurrence. Returns a dict keyed by
+    (event_title, event_time_utc); an occurrence with no row is absent.
+    """
+    if not event_titles:
+        return {}
+    placeholders = ",".join("?" for _ in event_titles)
+    rows = conn.execute(
+        f"SELECT * FROM print_predictions WHERE event_title IN ({placeholders}) "
+        "ORDER BY event_title, event_time_utc, scored_at_utc DESC, id DESC",
+        event_titles,
+    ).fetchall()
+    latest: dict[tuple[str, str], PrintPrediction] = {}
+    for row in rows:
+        d = dict(row)
+        # Normalized via parse+isoformat, not the raw stored string — same
+        # reasoning as webapp/app.py's own "compare parsed datetimes, not
+        # raw strings" rule (Finding 1, 2026-09-06): this codebase has more
+        # than one producer of event_time_utc strings, and their formatting
+        # isn't guaranteed byte-identical even for the same instant.
+        key = (d["event_title"], dt.datetime.fromisoformat(d["event_time_utc"]).isoformat())
+        if key in latest:
+            continue  # first row seen per key is already the latest, per the ORDER BY above
+        latest[key] = PrintPrediction(
+            id=d["id"], event_title=d["event_title"], event_time_utc=d["event_time_utc"],
+            predicted_vs_forecast=d["predicted_vs_forecast"], confidence=d["confidence"],
+            article_count=d["article_count"], scored_at_utc=d["scored_at_utc"],
+            source=d["source"],
+        )
+    return latest
+
+
+def get_latest_kalshi_reads_bulk(
+    conn: sqlite3.Connection, event_titles: list[str],
+) -> dict[tuple[str, str], KalshiReadRecord]:
+    """Batched version of get_latest_kalshi_read() — same approach and occurrence-keying as get_latest_print_predictions_bulk()."""
+    if not event_titles:
+        return {}
+    placeholders = ",".join("?" for _ in event_titles)
+    rows = conn.execute(
+        f"SELECT * FROM kalshi_reads WHERE event_title IN ({placeholders}) "
+        "ORDER BY event_title, event_time_utc, read_at_utc DESC, id DESC",
+        event_titles,
+    ).fetchall()
+    latest: dict[tuple[str, str], KalshiReadRecord] = {}
+    for row in rows:
+        d = dict(row)
+        key = (d["event_title"], dt.datetime.fromisoformat(d["event_time_utc"]).isoformat())  # normalized, see get_latest_print_predictions_bulk()
+        if key in latest:
+            continue
+        latest[key] = KalshiReadRecord(
+            id=d["id"], event_title=d["event_title"], event_time_utc=d["event_time_utc"],
+            strike=d["strike"], implied_direction=d["implied_direction"],
+            implied_probability=d["implied_probability"], open_interest=d["open_interest"],
+            read_at_utc=d["read_at_utc"],
+        )
+    return latest
+
+
+def get_latest_tier1_predictions_bulk(
+    conn: sqlite3.Connection, event_titles: list[str], instruments: list[str],
+) -> dict[tuple[str, str, str], Tier1PredictionRow]:
+    """
+    Batched version of get_latest_tier1_prediction_for_occurrence() — one
+    query covering every (event_title, instrument) combination in
+    `event_titles` x `instruments` (all occurrences of each) instead of
+    one query per occurrence. Returns a dict keyed by
+    (event_title, instrument, event_time_utc); an occurrence with no row
+    is absent. Callers should still wrap this in try/except — a bulk
+    failure must not take down the whole /api/predictions route, same
+    "fail open" reasoning as the per-occurrence call this replaces
+    (final whole-branch review, 2026-09-07 — Finding 2).
+    """
+    if not event_titles or not instruments:
+        return {}
+    title_placeholders = ",".join("?" for _ in event_titles)
+    instrument_placeholders = ",".join("?" for _ in instruments)
+    rows = conn.execute(
+        f"SELECT * FROM tier1_predictions WHERE event_title IN ({title_placeholders}) "
+        f"AND instrument IN ({instrument_placeholders}) "
+        "ORDER BY event_title, instrument, event_time_utc, logged_at_utc DESC, id DESC",
+        (*event_titles, *instruments),
+    ).fetchall()
+    latest: dict[tuple[str, str, str], Tier1PredictionRow] = {}
+    for row in rows:
+        d = dict(row)
+        key = (d["event_title"], d["instrument"], dt.datetime.fromisoformat(d["event_time_utc"]).isoformat())  # normalized, see get_latest_print_predictions_bulk()
+        if key in latest:
+            continue
+        latest[key] = Tier1PredictionRow(
+            id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
+            event_time_utc=d["event_time_utc"], value=d["value"], confidence=d["confidence"],
+            source=d["source"], predicted_direction=d["predicted_direction"],
+            logged_at_utc=d["logged_at_utc"],
+        )
+    return latest
+
+
 def get_prediction_history(
     conn: sqlite3.Connection, event_title: str, instrument: str, limit: int = 10,
 ) -> list[Prediction]:
