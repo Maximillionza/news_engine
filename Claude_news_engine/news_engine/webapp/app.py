@@ -21,9 +21,9 @@ from webapp.scheduler import start_scheduler
 from webapp.actuals_sync import start_actuals_sync
 from webapp.scoring_service import score_event_for_symbol
 from webapp.store import (
-    get_connection, get_latest_two, get_history,
+    get_connection, get_latest_two, get_latest_two_bulk, get_history,
     add_tracked_symbol, remove_tracked_symbol, list_tracked_symbols,
-    get_calendar_snapshot, get_event_history, EventHistoryRow,
+    get_calendar_snapshot, get_event_history, get_event_history_bulk, EventHistoryRow,
     get_macro_calendar_events, get_resolved_event_history,
 )
 from webapp.trend import summarize_trend, compute_trend_signal, MIN_CONFIRMED_ROWS_FOR_A_TREND
@@ -31,6 +31,8 @@ from webapp.history import build_print_call_history
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 from scoring.backtest_store import (
     get_connection as get_backtest_connection, get_latest_two_predictions,
+    get_latest_two_predictions_bulk, get_latest_print_predictions_bulk,
+    get_latest_kalshi_reads_bulk, get_latest_tier1_predictions_bulk,
     get_latest_print_prediction, get_latest_kalshi_read, get_last_check_utc,
     get_latest_tier1_prediction_for_occurrence,
     Prediction,
@@ -308,22 +310,53 @@ def get_predictions():
     ]
     events = events + recently_resolved
 
+    # Batched, once per request — replaces what used to be up to 6 separate
+    # DB round trips per (symbol, event) pair (an N+1 query pattern that
+    # scaled with len(symbols) * len(events), re-run on every 60s poll).
+    # Each dict below is keyed exactly the way its per-pair predecessor was
+    # scoped, so every lookup inside the loop below is now a plain dict.get()
+    # instead of a query.
+    event_titles = list({event["title"] for event in events})
+    latest_two_by_symbol_title = get_latest_two_bulk(conn, symbols, event_titles)
+    event_history_by_title = get_event_history_bulk(conn, event_titles)
+    accumulator_latest_two_by_title_symbol = get_latest_two_predictions_bulk(backtest_conn, event_titles, symbols)
+    print_predictions_by_occurrence = get_latest_print_predictions_bulk(backtest_conn, event_titles)
+    kalshi_reads_by_occurrence = get_latest_kalshi_reads_bulk(backtest_conn, event_titles)
+    # Fail open (same reasoning as the per-occurrence try/except this
+    # replaces, final whole-branch review 2026-09-07 — Finding 2): a
+    # broken Tier 1 lookup must never take down the whole route.
+    try:
+        tier1_by_occurrence = get_latest_tier1_predictions_bulk(backtest_conn, event_titles, symbols)
+    except Exception:
+        logger.warning("get_latest_tier1_predictions_bulk failed for this cycle", exc_info=True)
+        tier1_by_occurrence = {}
+
     predictions = []
     for ticker in symbols:
         symbol_class = classify_symbol(ticker)
         entry = {"symbol": ticker, "symbol_class": symbol_class.symbol_class, "events": []}
         accumulator_predictions_by_time_and_title: dict[str, dict[str, "Prediction"]] = {}
         for event in events:
-            runs = get_latest_two(conn, ticker, event["title"])
+            # Normalized via parse+isoformat, not the raw event_time_utc
+            # string, before use as a dict key below — this codebase has
+            # more than one producer of event_time_utc strings and their
+            # formatting isn't guaranteed byte-identical for the same
+            # instant (same "compare parsed datetimes" rule Finding 1,
+            # 2026-09-06 already established a few lines below). Computed
+            # once here (moved up from its old position, where it only fed
+            # the trend signal) since print_call/kalshi/tier1 all need it now too.
+            event_time = dt.datetime.fromisoformat(event["event_time_utc"])
+            event_time_key = event_time.isoformat()
+            runs = latest_two_by_symbol_title.get((ticker, event["title"]), [])
             latest = runs[0] if runs else None
             previous = runs[1] if len(runs) > 1 else None
 
             # R1 fix (docs/fundamental-analysis-swot-2026-08-14.md): fetched
             # here (moved up from its old position further below, where it
             # only fed the trend signal) so it can ALSO drive the
-            # stale-pending recompute immediately below — one query serves
+            # stale-pending recompute immediately below — one lookup serves
             # both, removing what used to be a duplicate fetch.
-            prior_occurrences = get_event_history(conn, event["title"])
+            prior_occurrences = event_history_by_title.get(event["title"], [])
             recomputed = None
             if latest is None or latest.direction == "pending":
                 recomputed = _recompute_stale_pending(event, symbol_class, prior_occurrences)
@@ -343,7 +376,7 @@ def get_predictions():
             # essence-only score's every-cycle rows, any two consecutive
             # article predictions represent a genuine shift, not noise.
             # That's exactly what the frontend's diff strip needs.
-            accumulator_runs = get_latest_two_predictions(backtest_conn, event["title"], ticker)
+            accumulator_runs = accumulator_latest_two_by_title_symbol.get((event["title"], ticker), [])
             accumulator_prediction = accumulator_runs[0] if accumulator_runs else None
             accumulator_predictions_by_time_and_title.setdefault(event["event_time_utc"], {})
             # Finding 1 (final whole-branch review, 2026-09-06): the row
@@ -375,9 +408,7 @@ def get_predictions():
             previous_article_prediction = None
             if accumulator_previous is not None:
                 previous_article_prediction = _article_prediction_dict(accumulator_previous)
-            print_call = get_latest_print_prediction(
-                backtest_conn, event["title"], dt.datetime.fromisoformat(event["event_time_utc"]),
-            )
+            print_call = print_predictions_by_occurrence.get((event["title"], event_time_key))
             print_prediction = None
             if print_call is not None:
                 print_prediction = {"direction": print_call.predicted_vs_forecast, "confidence": print_call.confidence}
@@ -396,7 +427,6 @@ def get_predictions():
             # _analyze_trend()'s tally branch saturates strength at 1.0
             # (maximum conviction from a single data point), same failure
             # summarize_trend() already guards against.
-            event_time = dt.datetime.fromisoformat(event["event_time_utc"])
             confirmed_occurrences = [r for r in prior_occurrences if r.surprise_direction is not None]
             trend = (
                 compute_trend_signal(confirmed_occurrences)
@@ -410,7 +440,7 @@ def get_predictions():
                     "instrument_lean": _trend_instrument_lean(event["title"], trend.direction, symbol_class.usd_relationship),
                 }
 
-            kalshi_row = get_latest_kalshi_read(backtest_conn, event["title"], event_time)
+            kalshi_row = kalshi_reads_by_occurrence.get((event["title"], event_time_key))
             kalshi_read = None
             if kalshi_row is not None:
                 kalshi_read = {
@@ -419,20 +449,10 @@ def get_predictions():
                     "open_interest": kalshi_row.open_interest,
                 }
 
-            # Fail open (final whole-branch review, 2026-09-07 — Finding 2):
-            # this lookup must never take down the whole /api/predictions
-            # route -- a broken/missing row for one occurrence is not worth
-            # 500ing every symbol's dashboard card. Scoped to ONLY this
-            # lookup; the other per-event lookups above it are a separate,
-            # pre-existing pattern left untouched.
-            try:
-                tier1_row = get_latest_tier1_prediction_for_occurrence(backtest_conn, event["title"], ticker, event_time)
-            except Exception:
-                logger.warning(
-                    "get_latest_tier1_prediction_for_occurrence failed for title=%r ticker=%r event_time=%r",
-                    event["title"], ticker, event_time, exc_info=True,
-                )
-                tier1_row = None
+            # tier1_by_occurrence was fetched in bulk above (with its own
+            # fail-open try/except around the whole batch) — a plain lookup
+            # here, no per-occurrence try/except needed any more.
+            tier1_row = tier1_by_occurrence.get((event["title"], ticker, event_time_key))
             tier1_prediction = None
             if tier1_row is not None:
                 tier1_prediction = {

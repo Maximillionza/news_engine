@@ -268,6 +268,66 @@ def get_latest_two(conn: sqlite3.Connection, symbol: str, event_title: str) -> l
     return [PredictionRun(**dict(row)) for row in rows]
 
 
+def get_latest_two_bulk(
+    conn: sqlite3.Connection, symbols: list[str], event_titles: list[str],
+) -> dict[tuple[str, str], list[PredictionRun]]:
+    """
+    Batched version of get_latest_two() — one query for the whole
+    `symbols` x `event_titles` cross product, instead of webapp/app.py's
+    /api/predictions issuing one query per (symbol, event) pair (an N+1
+    pattern that scaled with symbols * events, every 60s poll). Returns a
+    dict keyed by (symbol, event_title); a pair with no rows is simply
+    absent from the dict — callers already treat that the same as an
+    empty list. Same most-recent-first, `id`-breaks-ties ordering as
+    get_latest_two(), applied per group via the ORDER BY below.
+    """
+    if not symbols or not event_titles:
+        return {}
+    symbol_placeholders = ",".join("?" for _ in symbols)
+    title_placeholders = ",".join("?" for _ in event_titles)
+    rows = conn.execute(
+        f"SELECT * FROM prediction_runs WHERE symbol IN ({symbol_placeholders}) "
+        f"AND event_title IN ({title_placeholders}) "
+        "ORDER BY symbol, event_title, scored_at_utc DESC, id DESC",
+        (*symbols, *event_titles),
+    ).fetchall()
+    grouped: dict[tuple[str, str], list[PredictionRun]] = {}
+    for row in rows:
+        run = PredictionRun(**dict(row))
+        bucket = grouped.setdefault((run.symbol, run.event_title), [])
+        if len(bucket) < 2:  # rows already arrive most-recent-first per group, per the ORDER BY above
+            bucket.append(run)
+    return grouped
+
+
+def get_event_history_bulk(
+    conn: sqlite3.Connection, event_titles: list[str], limit: int = 6,
+) -> dict[str, list[EventHistoryRow]]:
+    """
+    Batched version of get_event_history() — one query covering every
+    title in `event_titles`, instead of one query per title. Returns a
+    dict keyed by event_title; a title with no rows is simply absent.
+    Same most-recent-first ordering and per-title `limit` cap as
+    get_event_history().
+    """
+    if not event_titles:
+        return {}
+    placeholders = ",".join("?" for _ in event_titles)
+    rows = conn.execute(
+        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source, impact, country "
+        f"FROM event_history WHERE event_title IN ({placeholders}) "
+        "ORDER BY event_title, event_time_utc DESC",
+        event_titles,
+    ).fetchall()
+    grouped: dict[str, list[EventHistoryRow]] = {}
+    for row in rows:
+        history_row = EventHistoryRow(**dict(row))
+        bucket = grouped.setdefault(history_row.event_title, [])
+        if len(bucket) < limit:
+            bucket.append(history_row)
+    return grouped
+
+
 def get_history(conn: sqlite3.Connection, symbol: str, event_title: str) -> list[PredictionRun]:
     """Full run history for a (symbol, event) pair, oldest first. `id` breaks scored_at_utc ties, same reasoning as get_latest_two()."""
     rows = conn.execute(

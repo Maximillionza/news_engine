@@ -20,6 +20,7 @@ from scoring.backtest_store import (
     record_dismissal, get_latest_prediction, get_latest_two_predictions,
     record_check, count_recent_checks, get_prediction_history, get_last_check_utc,
     record_tier1_prediction, get_latest_tier1_prediction_for_occurrence,
+    record_tier1_comparison, get_tier1_comparison_for_occurrence,
 )
 
 
@@ -848,6 +849,91 @@ def test_latest_tier1_prediction_wins_on_multiple_logs():
         assert row.value == "revised after ISM confirmed"
         assert row.confidence == "Certain"
         assert row.predicted_direction == "bullish"
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_and_get_tier1_comparison_round_trip():
+    print("=== backtest_store: record_tier1_comparison + get_tier1_comparison_for_occurrence round-trip, including None for a no-call side ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=dt.timezone.utc)
+
+        record_tier1_comparison(
+            conn, "PPI m/m", "XAUUSD", event_time,
+            sentiment_direction="bearish", sentiment_correct=True,
+            tier1_direction="bullish", tier1_confidence="Certain", tier1_correct=False,
+            actual_direction="bearish", actual_move_note="Dukascopy: -0.54% in 30min (auto)",
+        )
+        row = get_tier1_comparison_for_occurrence(conn, "PPI m/m", "XAUUSD", event_time)
+        assert row.sentiment_direction == "bearish"
+        assert row.sentiment_correct is True
+        assert row.tier1_direction == "bullish"
+        assert row.tier1_correct is False
+        assert row.actual_direction == "bearish"
+        conn.close()
+    print("PASS\n")
+
+
+def test_tier1_comparison_none_correct_round_trips_as_none_not_false():
+    print("=== backtest_store: a None (no-call) correctness value round-trips as None, not as False — SQLite NULL must not be misread as a boolean ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 9, 11, 12, 30, tzinfo=dt.timezone.utc)
+
+        record_tier1_comparison(
+            conn, "CPI m/m", "XAUUSD", event_time,
+            sentiment_direction="neutral", sentiment_correct=None,
+            tier1_direction="neutral", tier1_confidence="Guessing", tier1_correct=None,
+            actual_direction="bearish", actual_move_note="Dukascopy: -0.20% in 30min (auto)",
+        )
+        row = get_tier1_comparison_for_occurrence(conn, "CPI m/m", "XAUUSD", event_time)
+        assert row.sentiment_correct is None
+        assert row.tier1_correct is None
+        conn.close()
+    print("PASS\n")
+
+
+def test_tier1_comparison_get_returns_none_when_never_computed():
+    print("=== backtest_store: get_tier1_comparison_for_occurrence returns None, never fabricated, when nothing was ever recorded ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=dt.timezone.utc)
+        assert get_tier1_comparison_for_occurrence(conn, "PPI m/m", "XAUUSD", event_time) is None
+        conn.close()
+    print("PASS\n")
+
+
+def test_tier1_comparison_rerun_for_same_occurrence_replaces_not_duplicates():
+    print("=== backtest_store: recording a comparison twice for the same occurrence replaces the row (derived/recomputable), not accumulates duplicates ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=dt.timezone.utc)
+
+        record_tier1_comparison(
+            conn, "PPI m/m", "XAUUSD", event_time,
+            sentiment_direction="bullish", sentiment_correct=False,
+            tier1_direction="bullish", tier1_confidence="Certain", tier1_correct=False,
+            actual_direction="bearish", actual_move_note="first pass, later corrected",
+        )
+        record_tier1_comparison(
+            conn, "PPI m/m", "XAUUSD", event_time,
+            sentiment_direction="bearish", sentiment_correct=True,
+            tier1_direction="bullish", tier1_confidence="Certain", tier1_correct=False,
+            actual_direction="bearish", actual_move_note="corrected outcome",
+        )
+        count = conn.execute(
+            "SELECT COUNT(*) AS n FROM tier1_comparisons WHERE event_title = ? AND instrument = ? AND event_time_utc = ?",
+            ("PPI m/m", "XAUUSD", event_time.isoformat()),
+        ).fetchone()["n"]
+        assert count == 1
+        row = get_tier1_comparison_for_occurrence(conn, "PPI m/m", "XAUUSD", event_time)
+        assert row.sentiment_direction == "bearish"
+        assert row.actual_move_note == "corrected outcome"
         conn.close()
     print("PASS\n")
 
