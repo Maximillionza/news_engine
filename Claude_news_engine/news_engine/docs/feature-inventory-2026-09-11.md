@@ -36,7 +36,7 @@ The 2026-09-10 PPI miss (Tier 1 called `Certain`/bullish, wrong) is a direct sym
 | Country-scoped precursor lookups (fixes foreign-release title collisions) | **Shipped** (2026-09-03, commit `b985c3e`) | `data_layer/event_context.py` — **caveat:** any precursor-linked call scored before this fix is unverifiable, not necessarily wrong |
 | Graduated thin-sample probability cap (n=1 → 0.60, n=2 → 0.70, n=3+ unchanged) | **Shipped** (2026-09-11, Batch 1) | `config/settings.py`'s `THIN_SAMPLE_PROBABILITY_CAP_BY_SIGNAL_COUNT`, `scoring/probability_engine.py`'s `_apply_thin_sample_cap()`; targets the diagnosed FOMC 0/2 failure |
 | Confidence floor independent of agreement×coverage (`min(1.0, signal_count / MIN_CONFIDENT_SAMPLE_SIZE)`) | **Shipped** (2026-09-11, Batch 1) | `config/settings.py`'s `MIN_CONFIDENT_SAMPLE_SIZE = 4`, applied in `score_bundle()` alongside the existing confidence multipliers |
-| CPI zero-signal diagnosis (89 articles, zero registered as a contribution) | **Outstanding — P0** | review §4: not yet determined whether it's topic-filter dilution or a lexicon/FinBERT framing gap specific to CPI headlines |
+| CPI zero-signal diagnosis + fix (89 articles, zero registered as a contribution) | **Shipped** (2026-09-11, Batch 2) | Diagnosed as topic-filter dilution, not a lexicon/FinBERT gap — confirmed via the live Aug-12 top_contributions (3 "contributions", all sentiment=0.0, all unrelated to CPI) and a live re-fetch showing the same noise pattern reproducing today. Fixed by extending `EVENT_RELEVANCE_KEYWORDS_BY_TITLE` (`config/settings.py`) to CPI's 4 title variants — live-verified: 13 genuine CPI/inflation articles now surface vs. 3 irrelevant ones before |
 | Per-multiplier audit trail (which of macro-backdrop/COT/equity-risk/oil-shock fired on a call) | **Outstanding — P2** | review §6.9 |
 
 ### 2b. Tier 1 — Causation-Matrix numeric methodology (Option A)
@@ -130,10 +130,10 @@ Grouped by touched files/area and dependency order, not just priority — the go
 - Confidence floor independent of agreement×coverage
 Both are isolated, scoped changes inside `scoring/probability_engine.py`'s existing confidence/probability math, both directly fix the diagnosed FOMC 0/2 failure. No shared work with any other batch. 5 new tests added (`tests/test_probability_engine.py`), full suite 552/552 passing. Not yet re-validated against a live FOMC re-score (prospective fix — the historical 0/2 calls stay in the DB as-is; only future calls benefit).
 
-**Batch 2 — CPI zero-signal, investigate-then-fix (P0, sequenced on its own)**
-- Pull raw article titles from the 89-article Aug-12 window
-- Fix topic-filter dilution (extend `EVENT_RELEVANCE_KEYWORDS_BY_TITLE` to CPI/Core CPI) **or** a lexicon/FinBERT framing gap — diagnosis decides which, don't guess both at once
-Kept separate from Batch 1 because scope is genuinely unknown until the diagnosis step runs — bundling it with Batch 1 risks scope creep on a PR that was supposed to be small.
+**Batch 2 — CPI zero-signal, investigate-then-fix (P0, sequenced on its own) — ✅ SHIPPED 2026-09-11**
+- Pulled the live Aug-12 top_contributions (3 entries, all sentiment=0.0, all unrelated to CPI: a UAE-Germany investment deal, a Nubank product launch, an OpenAI product launch) — confirmed topic-filter dilution, not a lexicon/FinBERT framing gap.
+- Extended `EVENT_RELEVANCE_KEYWORDS_BY_TITLE` to `CPI m/m`/`CPI y/y`/`Core CPI m/m`/`Core CPI y/y`, same pattern as the existing FOMC entries.
+- Live-verified: re-fetching today's real news window shows 13 genuine CPI/inflation articles surviving the filter vs. 3 irrelevant ones before the fix. 2 new tests in `tests/test_event_context.py`, full suite 554/554 passing.
 
 **Batch 3 — Dashboard backend debt paydown (no new features, same files Tier 2/3 will also need to touch)**
 - `get_predictions()` extraction into a testable service module

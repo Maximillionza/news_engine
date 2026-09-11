@@ -103,9 +103,41 @@ def test_relevance_filter_runs_before_dedup_but_does_not_break_it():
     print("PASS\n")
 
 
+def test_cpi_off_topic_article_is_dropped_reproducing_the_diagnosed_dilution():
+    print("=== event_context: P0 #3 fix (fundamental-analysis-review-2026-09-11.md) — CPI m/m now filters off-topic noise, same class of bug already fixed for FOMC ===")
+    on_topic = _article("US CPI cools to 3.3% y/y, core inflation steady", "Consumer price index data shows disinflation continuing")
+    # Reproduces the exact noise found in the live Aug-12 2026 diagnosis —
+    # real headlines that scored zero USD sentiment because they have
+    # nothing to do with CPI/inflation at all.
+    off_topic_a = _article("UAE to invest $40 billion in Germany amid slew of business deals")
+    off_topic_b = _article("OpenAI launches ChatGPT for financial services industry")
+    source = _StubSource([on_topic, off_topic_a, off_topic_b])
+    bundle = _build(_event("CPI m/m"), source)
+    titles = [a.title for a in bundle.articles]
+    assert on_topic.title in titles
+    assert off_topic_a.title not in titles
+    assert off_topic_b.title not in titles
+    print("PASS\n")
+
+
+def test_cpi_keyword_list_shared_across_all_four_title_variants():
+    print("=== event_context: CPI m/m, CPI y/y, Core CPI m/m, Core CPI y/y all get the same relevance filter — framing variants of the same BLS release ===")
+    on_topic = _article("Inflation data due Wednesday, CPI expected to ease")
+    off_topic = _article("Nubank launches US high-yield savings account, credit cards")
+    for title in ("CPI m/m", "CPI y/y", "Core CPI m/m", "Core CPI y/y"):
+        source = _StubSource([on_topic, off_topic])
+        bundle = _build(_event(title), source)
+        result_titles = [a.title for a in bundle.articles]
+        assert on_topic.title in result_titles, f"{title}: on-topic article was wrongly dropped"
+        assert off_topic.title not in result_titles, f"{title}: off-topic article was wrongly kept"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_off_topic_article_is_dropped_for_an_event_with_configured_keywords()
     test_relevance_keyword_match_is_case_insensitive_and_checks_summary_too()
     test_event_with_no_configured_keywords_is_not_filtered_at_all()
     test_relevance_filter_runs_before_dedup_but_does_not_break_it()
+    test_cpi_off_topic_article_is_dropped_reproducing_the_diagnosed_dilution()
+    test_cpi_keyword_list_shared_across_all_four_title_variants()
     print("All event_context tests passed.")

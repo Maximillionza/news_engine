@@ -599,10 +599,27 @@ PRINT_SURPRISE_LEXICON = {
 # coverage, worse than the noise it would remove. Config-only to extend to
 # another event title, no code changes required.
 #
-# Only the FOMC family is populated for now (the one confirmed to actually
-# need it) — "Federal Funds Rate" and "FOMC Statement" are Forex Factory's
-# other FOMC-decision title variants (see KALSHI_RATE_DECISION_SERIES /
-# EVENT_SURPRISE_DIRECTION's comments on this same title family).
+# CPI's four Forex Factory title variants (headline/core x m/m/y/y) added
+# 2026-09-11 (docs/fundamental-analysis-review-2026-09-11.md P0 #3): the
+# same class of bug already fixed for FOMC — CPI had zero topic filtering,
+# so the live Aug-12 2026 run's top-weighted "contributions" turned out to
+# be pure noise unrelated to CPI (UAE-Germany investment deal, a Nubank
+# product launch, an OpenAI product launch — none scored any real USD
+# sentiment, confirming dilution, not a lexicon/FinBERT framing gap, per
+# the diagnosis this fix is based on). Same list across all four titles —
+# they're framing variants of the same underlying BLS release, same
+# reasoning as the FOMC family below sharing one list across its variants.
+_CPI_RELEVANCE_KEYWORDS = [
+    "cpi", "consumer price index", "consumer prices", "inflation", "core inflation",
+    "headline inflation", "price index", "cost of living", "disinflation",
+    "bureau of labor statistics", "core cpi", "consumer inflation",
+]
+
+# Only the FOMC family and CPI are populated for now (the ones confirmed
+# to actually need it) — "Federal Funds Rate" and "FOMC Statement" are
+# Forex Factory's other FOMC-decision title variants (see
+# KALSHI_RATE_DECISION_SERIES / EVENT_SURPRISE_DIRECTION's comments on
+# this same title family).
 EVENT_RELEVANCE_KEYWORDS_BY_TITLE = {
     "FOMC Meeting Minutes": [
         "fomc", "federal reserve", "federal funds rate", "fed rate", "fed chair",
@@ -619,6 +636,10 @@ EVENT_RELEVANCE_KEYWORDS_BY_TITLE = {
         "fed meeting", "fed minutes", "interest rate decision", "monetary policy",
         "rate hike", "rate cut", "powell", "dot plot", "central bank",
     ],
+    "CPI m/m": _CPI_RELEVANCE_KEYWORDS,
+    "CPI y/y": _CPI_RELEVANCE_KEYWORDS,
+    "Core CPI m/m": _CPI_RELEVANCE_KEYWORDS,
+    "Core CPI y/y": _CPI_RELEVANCE_KEYWORDS,
 }
 
 # Trust weight for a precursor's structured surprise contribution — high,
