@@ -683,7 +683,7 @@ function articleProgressionEntryHtml(entry, isLatest) {
       <span class="gauge-label ${dClass}">${directionLabel(entry.direction)} ${pct}%</span>
       <span class="progression-entry-when">${when} · ${entry.article_count} articles</span>
     </div>
-    ${contribsHtml || '<div style="font-size:11px;color:#888">No individual article stood out — this read came from broad, low-signal coverage.</div>'}
+    ${contribsHtml || '<div class="low-signal-warning">⚠ No individual article stood out — this read came from broad, low-signal coverage, not a genuinely on-topic signal.</div>'}
   </div>`;
 }
 

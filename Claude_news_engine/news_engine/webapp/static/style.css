@@ -90,6 +90,7 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
    question (Tier 1 vs sentiment itself, not co-released sentiment
    titles vs each other). */
 .tier1-sentiment-conflict { margin-top: 6px; padding: 6px 10px; border-radius: 8px; font-size: 12px; text-align: center; background: rgba(255, 152, 0, 0.12); border: 1px solid rgba(255, 152, 0, 0.4); color: #ef6c00; }
+.low-signal-warning { margin-top: 4px; padding: 4px 8px; border-radius: 6px; font-size: 11px; background: rgba(255, 152, 0, 0.12); border: 1px solid rgba(255, 152, 0, 0.4); color: #ef6c00; }
 
 .other-events { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
 .other-events-heading { font-size: 11px; color: #888; margin-bottom: 4px; }
