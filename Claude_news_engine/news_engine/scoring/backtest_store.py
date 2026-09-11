@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS predictions (
     article_count INTEGER NOT NULL,
     contradiction_flag INTEGER NOT NULL,
     source TEXT NOT NULL DEFAULT 'live',
-    top_contributions_json TEXT
+    top_contributions_json TEXT,
+    confidence_multipliers_json TEXT
 );
 CREATE TABLE IF NOT EXISTS outcomes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,6 +122,7 @@ class Prediction:
     contradiction_flag: bool
     source: str
     top_contributions_json: Optional[str] = None
+    confidence_multipliers_json: Optional[str] = None
 
     @property
     def top_contributions(self) -> list[dict]:
@@ -139,6 +141,50 @@ class Prediction:
             return json.loads(self.top_contributions_json)
         except (ValueError, TypeError):
             return []
+
+    @property
+    def confidence_multipliers(self) -> dict:
+        """
+        Parsed confidence_multipliers_json (2026-09-11, P2 — fundamental-
+        analysis-review-2026-09-11.md #9): which of
+        scoring.probability_engine.py's confidence-only modifiers fired on
+        this exact call — macro_backdrop_agrees, cot_crowding_flag,
+        equity_risk_agrees, oil_shock_flag, chain_conflict_flag, mirroring
+        ProbabilityResult's own field names exactly. Without this, the
+        next miss in one of these newer signal paths would be as
+        undiagnosable as the August 2026 PPI miss was for
+        top_contributions before THAT column existed. {} — never
+        fabricated — for any row written before this feature existed
+        (confidence_multipliers_json is NULL) or with an empty/malformed
+        value.
+        """
+        if not self.confidence_multipliers_json:
+            return {}
+        try:
+            return json.loads(self.confidence_multipliers_json)
+        except (ValueError, TypeError):
+            return {}
+
+
+def _prediction_from_row(d: dict) -> Prediction:
+    """
+    Builds a Prediction from a sqlite3.Row-turned-dict — centralized
+    (2026-09-11) so every read site gets both JSON columns consistently.
+    Before this, two of the four construction sites never passed
+    top_contributions_json at all (a real, pre-existing gap this
+    centralization fixes as a side effect, not a new feature) — .get()
+    on both JSON columns so a pre-migration row (column simply absent
+    from an older schema in a stale in-memory dict) degrades to None
+    rather than a KeyError.
+    """
+    return Prediction(
+        id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
+        event_time_utc=d["event_time_utc"], scored_at_utc=d["scored_at_utc"],
+        probability=d["probability"], direction=d["direction"], confidence=d["confidence"],
+        article_count=d["article_count"], contradiction_flag=bool(d["contradiction_flag"]),
+        source=d["source"], top_contributions_json=d.get("top_contributions_json"),
+        confidence_multipliers_json=d.get("confidence_multipliers_json"),
+    )
 
 
 @dataclass
@@ -229,6 +275,14 @@ def _migrate_add_top_contributions_column(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+def _migrate_add_confidence_multipliers_column(conn: sqlite3.Connection) -> None:
+    """Same reasoning as _migrate_add_top_contributions_column() — a pre-existing DB file from before this feature (2026-09-11, P2) needs the column added, not just declared in _SCHEMA."""
+    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(predictions)").fetchall()}
+    if "confidence_multipliers_json" not in existing_columns:
+        conn.execute("ALTER TABLE predictions ADD COLUMN confidence_multipliers_json TEXT")
+        conn.commit()
+
+
 _schema_ready_paths: set[str] = set()
 
 
@@ -248,12 +302,14 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
         conn.executescript(_SCHEMA)
         _migrate_add_source_columns(conn)
         _migrate_add_top_contributions_column(conn)
+        _migrate_add_confidence_multipliers_column(conn)
         return conn
     path_key = str(Path(path).resolve())
     if path_key not in _schema_ready_paths:
         conn.executescript(_SCHEMA)
         _migrate_add_source_columns(conn)
         _migrate_add_top_contributions_column(conn)
+        _migrate_add_confidence_multipliers_column(conn)
         _schema_ready_paths.add(path_key)
     return conn
 
@@ -271,6 +327,7 @@ def record_prediction(
     scored_at_utc: Optional[dt.datetime] = None,
     source: str = "live",
     top_contributions: Optional[list[dict]] = None,
+    confidence_multipliers: Optional[dict] = None,
 ) -> int:
     """
     top_contributions (2026-08-17): the "why did this call change"
@@ -284,15 +341,26 @@ def record_prediction(
     child table for what's always exactly one row's own detail. None/[]
     (never fabricated) when the caller has nothing to attach — e.g. no
     articles carried any real signal this round.
+
+    confidence_multipliers (2026-09-11, P2 — fundamental-analysis-
+    review-2026-09-11.md #9): which confidence-only modifiers fired on
+    this exact ProbabilityResult — macro_backdrop_agrees, cot_crowding_flag,
+    equity_risk_agrees, oil_shock_flag, chain_conflict_flag — same field
+    names as ProbabilityResult itself, passed through verbatim by the
+    caller (scoring.backtest_accumulator.py). Same "JSON blob, None when
+    empty" contract as top_contributions above.
     """
     scored_at = scored_at_utc or dt.datetime.now(dt.timezone.utc)
     top_contributions_json = json.dumps(top_contributions) if top_contributions else None
+    confidence_multipliers_json = json.dumps(confidence_multipliers) if confidence_multipliers else None
     cursor = conn.execute(
         "INSERT INTO predictions (event_title, instrument, event_time_utc, scored_at_utc, "
-        "probability, direction, confidence, article_count, contradiction_flag, source, top_contributions_json) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "probability, direction, confidence, article_count, contradiction_flag, source, "
+        "top_contributions_json, confidence_multipliers_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (event_title, instrument, event_time_utc.isoformat(), scored_at.isoformat(),
-         probability, direction, confidence, article_count, int(contradiction_flag), source, top_contributions_json),
+         probability, direction, confidence, article_count, int(contradiction_flag), source,
+         top_contributions_json, confidence_multipliers_json),
     )
     conn.commit()
     return cursor.lastrowid
@@ -395,16 +463,7 @@ def get_latest_two_predictions(
         "ORDER BY scored_at_utc DESC, id DESC LIMIT 2",
         (event_title, instrument),
     ).fetchall()
-    predictions = []
-    for row in rows:
-        d = dict(row)
-        predictions.append(Prediction(
-            id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
-            event_time_utc=d["event_time_utc"], scored_at_utc=d["scored_at_utc"],
-            probability=d["probability"], direction=d["direction"], confidence=d["confidence"],
-            article_count=d["article_count"], contradiction_flag=bool(d["contradiction_flag"]),
-            source=d["source"], top_contributions_json=d.get("top_contributions_json"),
-        ))
+    predictions = [_prediction_from_row(dict(row)) for row in rows]
     return predictions
 
 
@@ -431,14 +490,7 @@ def get_latest_two_predictions_bulk(
     ).fetchall()
     grouped: dict[tuple[str, str], list[Prediction]] = {}
     for row in rows:
-        d = dict(row)
-        prediction = Prediction(
-            id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
-            event_time_utc=d["event_time_utc"], scored_at_utc=d["scored_at_utc"],
-            probability=d["probability"], direction=d["direction"], confidence=d["confidence"],
-            article_count=d["article_count"], contradiction_flag=bool(d["contradiction_flag"]),
-            source=d["source"], top_contributions_json=d.get("top_contributions_json"),
-        )
+        prediction = _prediction_from_row(dict(row))
         bucket = grouped.setdefault((prediction.event_title, prediction.instrument), [])
         if len(bucket) < 2:
             bucket.append(prediction)
@@ -715,13 +767,7 @@ def get_all_confirmed_cases(conn: sqlite3.Connection) -> list[tuple[Prediction, 
     cases = []
     for row in rows:
         d = dict(row)
-        prediction = Prediction(
-            id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
-            event_time_utc=d["event_time_utc"], scored_at_utc=d["scored_at_utc"],
-            probability=d["probability"], direction=d["direction"], confidence=d["confidence"],
-            article_count=d["article_count"], contradiction_flag=bool(d["contradiction_flag"]),
-            source=d["source"],
-        )
+        prediction = _prediction_from_row(d)
         outcome = Outcome(
             id=d["outcome_id"], event_title=d["event_title"], instrument=d["instrument"],
             event_time_utc=d["event_time_utc"], actual_direction=d["actual_direction"],
@@ -809,14 +855,7 @@ def get_latest_prediction_for_occurrence(
     ).fetchone()
     if row is None:
         return None
-    d = dict(row)
-    return Prediction(
-        id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
-        event_time_utc=d["event_time_utc"], scored_at_utc=d["scored_at_utc"],
-        probability=d["probability"], direction=d["direction"], confidence=d["confidence"],
-        article_count=d["article_count"], contradiction_flag=bool(d["contradiction_flag"]),
-        source=d["source"],
-    )
+    return _prediction_from_row(dict(row))
 
 
 def get_outcome(

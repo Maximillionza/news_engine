@@ -669,6 +669,36 @@ def test_record_prediction_without_top_contributions_round_trips_empty_list():
     print("PASS\n")
 
 
+def test_record_prediction_stores_and_round_trips_confidence_multipliers():
+    print("=== backtest_store: record_prediction stores confidence_multipliers, round-trips via .confidence_multipliers (P2, fundamental-analysis-review-2026-09-11.md #9) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 19, 18, 0, tzinfo=UTC_TZ)
+        multipliers = {"macro_backdrop_agrees": False, "oil_shock_flag": True}
+        record_prediction(
+            conn, "FOMC Meeting Minutes", "XAUUSD", event_time,
+            0.52, "bearish", 0.4, 130, False, confidence_multipliers=multipliers,
+        )
+        latest = get_latest_prediction(conn, "FOMC Meeting Minutes", "XAUUSD")
+        assert latest.confidence_multipliers == multipliers
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_prediction_without_confidence_multipliers_round_trips_empty_dict():
+    print("=== backtest_store: record_prediction without confidence_multipliers -> .confidence_multipliers is {} (not None, not a crash) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        event_time = dt.datetime(2026, 8, 19, 18, 0, tzinfo=UTC_TZ)
+        record_prediction(conn, "FOMC Meeting Minutes", "XAUUSD", event_time, 0.5, "neutral", 0.3, 0, False)
+        latest = get_latest_prediction(conn, "FOMC Meeting Minutes", "XAUUSD")
+        assert latest.confidence_multipliers == {}
+        conn.close()
+    print("PASS\n")
+
+
 def test_get_prediction_history_returns_full_progression_most_recent_first():
     print("=== backtest_store: get_prediction_history returns every recorded snapshot, most recent first ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -1016,6 +1046,8 @@ if __name__ == "__main__":
     test_get_connection_migrates_all_four_source_columns()
     test_record_prediction_stores_and_round_trips_top_contributions()
     test_record_prediction_without_top_contributions_round_trips_empty_list()
+    test_record_prediction_stores_and_round_trips_confidence_multipliers()
+    test_record_prediction_without_confidence_multipliers_round_trips_empty_dict()
     test_get_prediction_history_returns_full_progression_most_recent_first()
     test_get_prediction_history_respects_limit()
     test_record_and_get_tier1_prediction_round_trip()

@@ -335,6 +335,35 @@ def test_build_top_contributions_returns_empty_list_when_total_weight_is_zero():
     print("PASS\n")
 
 
+def test_build_confidence_multipliers_includes_only_real_signals():
+    print("=== accumulator: _build_confidence_multipliers includes only real (non-None, non-default-False) signals — P2, fundamental-analysis-review-2026-09-11.md #9 ===")
+    result = ProbabilityResult(
+        instrument="XAUUSD", as_of_utc=dt.datetime.now(UTC_TZ),
+        aggregate_usd_sentiment=0.3, instrument_score=-0.3,
+        probability=0.7, direction=Direction.BULLISH, confidence=0.5,
+        article_count=5, contradiction_flag=False, contradiction_note=None,
+        macro_backdrop_agrees=False, cot_crowding_flag=None,
+        equity_risk_agrees=None, oil_shock_flag=True, chain_conflict_flag=False,
+    )
+    assert accumulator._build_confidence_multipliers(result) == {
+        "macro_backdrop_agrees": False,
+        "oil_shock_flag": True,
+    }
+    print("PASS\n")
+
+
+def test_build_confidence_multipliers_empty_when_nothing_fired():
+    print("=== accumulator: _build_confidence_multipliers returns {} when every multiplier is at its no-signal default ===")
+    result = ProbabilityResult(
+        instrument="XAUUSD", as_of_utc=dt.datetime.now(UTC_TZ),
+        aggregate_usd_sentiment=0.3, instrument_score=-0.3,
+        probability=0.7, direction=Direction.BULLISH, confidence=0.5,
+        article_count=5, contradiction_flag=False, contradiction_note=None,
+    )
+    assert accumulator._build_confidence_multipliers(result) == {}
+    print("PASS\n")
+
+
 def test_is_material_change_threshold_boundary():
     print("=== accumulator: _is_material_change — same-direction moves at/above 10pp are material, below are not ===")
     # Article counts held equal and well above THIN_SAMPLE_SIGNAL_THRESHOLD
@@ -1144,7 +1173,7 @@ def test_score_and_record_event_passes_cot_positioning_through_to_score_bundle()
          patch.object(accumulator, "_read_trend_signal", return_value=None), \
          patch.object(accumulator, "_read_kalshi_signal", return_value=(None, None)), \
          patch.object(accumulator, "get_latest_prediction", return_value=None), \
-         patch.object(accumulator, "score_bundle") as mock_score_bundle, \
+         patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score_bundle, \
          patch.object(accumulator, "_is_material_change", return_value=False):
         accumulator.score_and_record_event(
             conn=MagicMock(), event=event, all_events=[event], instruments=["XAUUSD"],
@@ -1171,6 +1200,8 @@ if __name__ == "__main__":
     test_build_top_contributions_includes_usd_sentiment_and_url()
     test_build_top_contributions_returns_empty_list_for_no_contributions()
     test_build_top_contributions_returns_empty_list_when_total_weight_is_zero()
+    test_build_confidence_multipliers_includes_only_real_signals()
+    test_build_confidence_multipliers_empty_when_nothing_fired()
     test_is_material_change_threshold_boundary()
     test_is_material_change_crossing_thin_sample_threshold_is_material()
     test_precursor_events_found_via_graph_and_passed_to_score_bundle()

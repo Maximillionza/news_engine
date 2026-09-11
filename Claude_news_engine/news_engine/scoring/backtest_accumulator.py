@@ -170,6 +170,33 @@ def _build_top_contributions(contributions: list, limit: int = TOP_CONTRIBUTIONS
     ]
 
 
+def _build_confidence_multipliers(result) -> dict:
+    """
+    Which of ProbabilityResult's confidence-only modifiers fired on this
+    exact call (2026-09-11, P2 — fundamental-analysis-review-2026-09-11.md
+    #9): without this, the next miss in one of these newer signal paths
+    would be as undiagnosable as the August 2026 PPI miss was for
+    top_contributions before THAT column existed (that miss's
+    top_contributions_json was simply NULL — it predates the column). Only
+    includes a key when there's something real to say — a None value
+    (no macro backdrop data, not a risk_sentiment instrument, etc.) is
+    the overwhelmingly common case and isn't worth a JSON key that's
+    always null; a real True/False/True-flag is.
+    """
+    multipliers = {}
+    if result.macro_backdrop_agrees is not None:
+        multipliers["macro_backdrop_agrees"] = result.macro_backdrop_agrees
+    if result.cot_crowding_flag:
+        multipliers["cot_crowding_flag"] = True
+    if result.equity_risk_agrees is not None:
+        multipliers["equity_risk_agrees"] = result.equity_risk_agrees
+    if result.oil_shock_flag:
+        multipliers["oil_shock_flag"] = True
+    if result.chain_conflict_flag:
+        multipliers["chain_conflict_flag"] = True
+    return multipliers
+
+
 def _is_material_change(
     new_direction: str, new_probability: float, new_article_count: int,
     current_direction: str, current_probability: float, current_article_count: int,
@@ -529,6 +556,7 @@ def score_and_record_event(
             result.probability, result.direction.value, result.confidence,
             result.article_count, result.contradiction_flag,
             top_contributions=_build_top_contributions(result.contributions),
+            confidence_multipliers=_build_confidence_multipliers(result),
         )
         print(f"[backtest_accumulator] recorded {instrument} / {event.title}: {result.summary()}")
 
