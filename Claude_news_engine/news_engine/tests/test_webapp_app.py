@@ -2084,6 +2084,45 @@ def test_predictions_no_tier1_confidence_downgrade_without_a_real_shock():
     print("PASS\n")
 
 
+def test_predictions_no_tier1_confidence_downgrade_for_an_already_resolved_event():
+    print("=== app: /api/predictions: tier1_confidence_downgrade is null for an event whose actual has already printed, even when a real shock is logged today -- a settled result must never get today's speculative exogenous context stamped on it ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+            # actual is set -- this event has already resolved.
+            _seed_calendar(db_path, [
+                EconomicEvent(title="PPI m/m", country="USD", impact="High",
+                               event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual="0.4%"),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time, 0.60, "bearish", 0.5, 100, False,
+            )
+            backtest_store.record_tier1_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time,
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+            )
+            today = dt.datetime.now(dt.timezone.utc).date()
+            backtest_store.record_exogenous_shock(
+                bconn, "DXY", today, move_pct=5.0, stdev_move=3.0,
+                headline_cause="Real researched cause", source="Reuters",
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
+            assert events["PPI m/m"]["tier1_confidence_downgrade"] is None
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
@@ -2144,4 +2183,5 @@ if __name__ == "__main__":
     test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_today()
     test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_yesterday()
     test_predictions_no_tier1_confidence_downgrade_without_a_real_shock()
+    test_predictions_no_tier1_confidence_downgrade_for_an_already_resolved_event()
     print("All webapp.app tests passed.")

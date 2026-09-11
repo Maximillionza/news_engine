@@ -409,8 +409,14 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
             # exogenous shock today — deliberately applies to EVERY
             # tracked instrument's Tier 1 row today, not just the shock's
             # own series' instrument (approved spec rule).
+            # event["actual"] is None is this function's existing signal
+            # for "still pending/current" (see _recompute_stale_pending()'s
+            # own match filter above) -- an event whose actual has already
+            # printed is a settled result, and stamping today's speculative
+            # exogenous-shock context onto it would be fabricating
+            # relevance for something no longer live.
             tier1_confidence_downgrade = None
-            if tier1_prediction is not None and todays_shock is not None:
+            if tier1_prediction is not None and todays_shock is not None and event["actual"] is None:
                 tier1_confidence_downgrade = {
                     "original_confidence": tier1_prediction["confidence"],
                     "displayed_confidence": _downgrade_one_tier(tier1_prediction["confidence"]),
