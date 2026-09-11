@@ -10,6 +10,8 @@ for the full design and rationale.
 from __future__ import annotations
 
 import datetime as dt
+import statistics
+from dataclasses import dataclass
 from typing import Optional
 
 import dukascopy_python
@@ -91,3 +93,53 @@ def _fetch_tick(instrument: str, when_utc: dt.datetime) -> Optional[float]:
     except Exception as exc:  # noqa: BLE001 — a failed fetch/parse must degrade to None, never crash the caller
         print(f"[discovery_detector] WARNING: fetch failed for {when_utc.isoformat()}: {exc}")
         return None
+
+
+@dataclass
+class AnomalyResult:
+    """
+    Encapsulates the result of anomaly detection for a single market series
+    on a given date: the raw move percentage, the rolling baseline mean and
+    stdev, and the standardized move (how many baseline stdevs away from
+    baseline mean the actual move landed).
+    """
+    series: str
+    move_pct: float
+    baseline_mean: float
+    baseline_stdev: float
+    stdev_move: float  # (move_pct - baseline_mean) / baseline_stdev
+    date: dt.date
+
+
+def rolling_baseline(
+    series: str, as_of_date: dt.date, window_days: int = 20,
+) -> Optional[tuple[float, float]]:
+    """
+    Mean and stdev of the `window_days` daily moves immediately BEFORE
+    as_of_date -- as_of_date itself is never included, same no-lookahead
+    discipline data_layer/event_context.py's build_event_news_bundle()
+    already enforces elsewhere in this codebase (a prediction must never
+    see data from after the instant it's supposed to represent).
+
+    Returns None -- never a fabricated partial baseline -- if fewer than
+    `window_days` real moves are available in that lookback (a market
+    holiday, a data gap, or simply too early in this feature's own life
+    for 20 real trading days to exist yet).
+    """
+    moves = []
+    check_date = as_of_date - dt.timedelta(days=1)
+    days_checked = 0
+    # Walks back one calendar day at a time (skipping weekends implicitly
+    # via compute_daily_move returning None for a non-trading day) until
+    # window_days REAL moves are collected or a reasonable calendar-day
+    # budget is exhausted -- 2x window_days covers weekends without
+    # risking an unbounded loop on a genuinely broken feed.
+    while len(moves) < window_days and days_checked < window_days * 2:
+        move = compute_daily_move(series, check_date)
+        if move is not None:
+            moves.append(move)
+        check_date -= dt.timedelta(days=1)
+        days_checked += 1
+    if len(moves) < window_days:
+        return None
+    return statistics.mean(moves), statistics.stdev(moves)
