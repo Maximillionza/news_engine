@@ -1191,6 +1191,24 @@ def test_history_endpoint_empty_when_nothing_resolved():
     print("PASS\n")
 
 
+def test_history_stats_route_returns_overall_and_per_title_keys():
+    print("=== GET /api/history/stats: response has overall and by_event_title keys ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        store.get_connection(dash_db).close()
+        backtest_store.get_connection(backtest_db).close()
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/history/stats")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert "overall" in data
+            assert set(data["overall"].keys()) == {"correct", "wrong", "no_call", "accuracy"}
+            assert data["by_event_title"] == {}  # empty DBs -> no rows -> no per-title entries
+    print("PASS\n")
+
+
 def test_calendar_date_route_returns_events_and_calls_for_that_date_only():
     print("=== GET /api/calendar/date/<date>: returns only that date's events, with each tracked symbol's call ===")
     with tempfile.TemporaryDirectory() as tmp:

@@ -858,6 +858,81 @@ def test_fallback_row_recognizes_cloud_web_fallback_source():
     print("PASS\n")
 
 
+# --- compute_history_stats() ---
+
+def test_compute_history_stats_overall_and_per_title_breakdown():
+    print("=== compute_history_stats: overall and per-event-title counts are correct ===")
+    rows = [
+        history.HistoryRow(
+            event_title="CPI m/m", event_time_utc="2026-08-12T12:30:00+00:00", instrument="XAUUSD",
+            previous="0.1%", forecast="0.2%", actual="0.2%", unchanged_vs_previous=False,
+            ne_prediction="bullish", ne_confidence=0.5, outcome="Confirmed", unjudged_reason=None, source="live",
+        ),
+        history.HistoryRow(
+            event_title="CPI m/m", event_time_utc="2026-09-11T12:30:00+00:00", instrument="XAUUSD",
+            previous="0.2%", forecast="0.4%", actual="0.1%", unchanged_vs_previous=False,
+            ne_prediction="bullish", ne_confidence=0.5, outcome="Missed", unjudged_reason=None, source="live",
+        ),
+        history.HistoryRow(
+            event_title="CPI m/m", event_time_utc="2026-09-11T12:30:00+00:00", instrument="US30",
+            previous="0.2%", forecast="0.4%", actual="0.1%", unchanged_vs_previous=False,
+            ne_prediction="neutral", ne_confidence=0.01, outcome=None, unjudged_reason="shrug", source="live",
+        ),
+        history.HistoryRow(
+            event_title="PPI m/m", event_time_utc="2026-09-10T12:30:00+00:00", instrument="XAUUSD",
+            previous="0.0%", forecast="0.4%", actual="0.4%", unchanged_vs_previous=False,
+            ne_prediction="bearish", ne_confidence=0.33, outcome="Confirmed", unjudged_reason=None, source="live",
+        ),
+    ]
+
+    stats = history.compute_history_stats(rows)
+
+    assert stats.overall.correct == 2
+    assert stats.overall.wrong == 1
+    assert stats.overall.no_call == 1
+    assert stats.overall.calls_made == 3
+    assert abs(stats.overall.accuracy - (2 / 3)) < 1e-9
+
+    cpi = stats.by_event_title["CPI m/m"]
+    assert cpi.correct == 1 and cpi.wrong == 1 and cpi.no_call == 1
+    assert abs(cpi.accuracy - 0.5) < 1e-9
+
+    ppi = stats.by_event_title["PPI m/m"]
+    assert ppi.correct == 1 and ppi.wrong == 0 and ppi.no_call == 0
+    assert ppi.accuracy == 1.0
+    print("PASS\n")
+
+
+def test_compute_history_stats_accuracy_none_when_zero_calls_made():
+    print("=== compute_history_stats: accuracy is None (never fabricated as 0) when a category made zero calls ===")
+    rows = [
+        history.HistoryRow(
+            event_title="FOMC Meeting Minutes", event_time_utc="2026-08-19T18:00:00+00:00", instrument="XAUUSD",
+            previous=None, forecast=None, actual=None, unchanged_vs_previous=False,
+            ne_prediction="neutral", ne_confidence=0.01, outcome=None, unjudged_reason="shrug", source="live",
+        ),
+    ]
+
+    stats = history.compute_history_stats(rows)
+
+    assert stats.overall.calls_made == 0
+    assert stats.overall.accuracy is None
+    assert stats.by_event_title["FOMC Meeting Minutes"].accuracy is None
+    print("PASS\n")
+
+
+def test_compute_history_stats_empty_rows_returns_empty_stats():
+    print("=== compute_history_stats: an empty rows list produces zeroed overall stats and no per-title entries ===")
+    stats = history.compute_history_stats([])
+
+    assert stats.overall.correct == 0
+    assert stats.overall.wrong == 0
+    assert stats.overall.no_call == 0
+    assert stats.overall.accuracy is None
+    assert stats.by_event_title == {}
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_resolved_event_with_real_call_is_judged()
     test_resolved_event_with_shrug_call_excluded_from_judging()
@@ -883,4 +958,7 @@ if __name__ == "__main__":
     test_empty_result_when_nothing_resolved()
     test_numeric_row_recognizes_cloud_web_fallback_source()
     test_fallback_row_recognizes_cloud_web_fallback_source()
+    test_compute_history_stats_overall_and_per_title_breakdown()
+    test_compute_history_stats_accuracy_none_when_zero_calls_made()
+    test_compute_history_stats_empty_rows_returns_empty_stats()
     print("All webapp_history tests passed.")

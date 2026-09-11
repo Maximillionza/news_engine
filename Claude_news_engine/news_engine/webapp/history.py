@@ -66,6 +66,69 @@ PRE_FILTER_LIMIT = 200
 # metric (score_bundle()'s agreement×coverage, not a lexicon hit-count).
 MIN_TEXT_EVENT_CONFIDENCE = NO_HIT_CONFIDENCE
 
+# How many rows compute_history_stats() reads from, independent of the
+# History table's own display DEFAULT_HISTORY_LIMIT (50) — the rollup
+# should reflect the real track record the underlying tables can show,
+# not an arbitrarily smaller display page. Matches PRE_FILTER_LIMIT, the
+# same bound build_print_call_history() already applies internally before
+# its own final display-limit truncation, so this introduces no new
+# assumption about how much history the source tables realistically hold.
+STATS_LOOKBACK_LIMIT = PRE_FILTER_LIMIT
+
+
+@dataclass
+class CategoryStats:
+    """Confirmed/Missed/no-call tally for one grouping (overall, or one event_title)."""
+    correct: int
+    wrong: int
+    no_call: int
+
+    @property
+    def calls_made(self) -> int:
+        return self.correct + self.wrong
+
+    @property
+    def accuracy(self) -> Optional[float]:
+        """None — never fabricated as 0 — when this grouping made zero calls."""
+        if self.calls_made == 0:
+            return None
+        return self.correct / self.calls_made
+
+
+@dataclass
+class HistoryStats:
+    overall: CategoryStats
+    by_event_title: dict[str, CategoryStats]
+
+
+def compute_history_stats(rows: list[HistoryRow]) -> HistoryStats:
+    """
+    Aggregate Confirmed/Missed/no-call counts across `rows` — the same
+    manual eyeball-the-table exercise fundamental-analysis-review-2026-09-11.md
+    already did twice by hand via direct SQL against scoring/backtest_log.db.
+    Grouped by each row's exact event_title, never a fuzzy category (e.g.
+    "CPI m/m" and "CPI y/y" stay separate rows) — see this plan's Global
+    Constraints for why a new taxonomy isn't introduced here.
+
+    A row counts as correct (outcome == "Confirmed"), wrong
+    (outcome == "Missed"), or no_call (outcome is None, regardless of
+    which unjudged_reason) — no further split here; unjudged_reason is
+    already visible per-row in the History table itself for anyone who
+    wants that detail.
+    """
+    overall = CategoryStats(correct=0, wrong=0, no_call=0)
+    by_title: dict[str, CategoryStats] = {}
+    for row in rows:
+        bucket = by_title.setdefault(row.event_title, CategoryStats(correct=0, wrong=0, no_call=0))
+        for stats in (overall, bucket):
+            if row.outcome == "Confirmed":
+                stats.correct += 1
+            elif row.outcome == "Missed":
+                stats.wrong += 1
+            else:
+                stats.no_call += 1
+    return HistoryStats(overall=overall, by_event_title=by_title)
+
 
 def _implied_surprise_direction(event_title: str, instrument: str, direction: str) -> Optional[str]:
     """
