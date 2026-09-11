@@ -46,7 +46,7 @@ The 2026-09-10 PPI miss (Tier 1 called `Certain`/bullish, wrong) is a direct sym
 | `Tier1Prediction` interface (value/confidence/source/predicted_direction) | **Shipped** | `scoring/backtest.py` |
 | CPI methodology (Cleveland Fed nowcast only) | **Shipped**, live-tested | 3 real cases logged; currently a confirmed no-call (genuinely split headline y/y vs m/m) |
 | PPI methodology (BLS prior actual + ISM Prices Paid) | **Shipped**, live-tested | 3 real cases: 2 correct (July CPI, July PPI), 1 wrong (Sep PPI — see §1 above) |
-| NFP / FOMC / GDP / Core PCE / ISM Manufacturing / ISM Services / Retail Sales methodologies | **Outstanding** | Documented as POC sheets in the workbook (`POC_NFP_Leading_Indicators` etc., 7 more event types), never coded as `Tier1Prediction` sources |
+| NFP / FOMC / GDP / Core PCE / ISM Manufacturing / ISM Services / Retail Sales methodologies | **Automation ready (2026-09-11, Batch 7), no real prediction yet — see note** | Each event's own documented POC methodology (jobless claims for NFP, CME FedWatch for FOMC, GDPNow+yield-curve for GDP, etc.) wired into the scheduled `tier1-cpi-ppi-autoresearch` task's prompt (renamed `tier1-multi-event-autoresearch`). No real occurrence for any of these 7 types was in the 3-day lookahead as of this check — nothing to log without fabricating, so nothing is logged yet. Will fire opportunistically the next time a real one appears |
 | Live persistence (`tier1_predictions` table) | **Shipped** | `scoring/backtest_store.py` |
 | Live dashboard display, per-instrument, alongside sentiment's own call | **Shipped** | `webapp/app.py`, `webapp/static/app.js` |
 | Automatic outcome grading (Dukascopy, scheduled every 15 min) | **Shipped** | `scripts/confirm_backtest_outcomes.py` + Windows Scheduled Task `NewsEngine_OutcomeConfirm` |
@@ -163,8 +163,10 @@ Both deferred items are real refactors of code with **zero automated test covera
 - Resolve the two open design questions from this session (fixed checklist vs. open-ended; log-only context vs. override-capable)
 Sequenced last on purpose: it's the largest, most novel piece, it's the "next signal source" both debt-paydown batches above are explicitly clearing room for, and its own design questions aren't resolved yet — don't start this until Batches 3 and 5 land, or it inherits the exact technical debt those batches exist to remove.
 
-**Batch 7 — Remaining Tier1 per-event methodologies (independent, incremental, no urgency)**
-- NFP / FOMC / GDP / Core PCE / ISM Manufacturing / ISM Services / Retail Sales, one event type at a time, mirroring the CPI/PPI pattern already shipped
+**Batch 7 — Remaining Tier1 per-event methodologies (independent, incremental, no urgency) — automation shipped 2026-09-11, real predictions still pending real occurrences**
+- Checked the live calendar for all 7 remaining event types — none had a real occurrence in the 3-day lookahead as of 2026-09-11. Per this project's own "predict-then-check against real events only" discipline, nothing was logged (fabricating one would violate the same rule this project has held everywhere else).
+- Instead: read each event's own already-documented POC methodology (`POC_NFP_Leading_Indicators`, `POC_FOMC_Rate_Decision`, `POC_GDP_Nowcast`, `POC_Core_PCE`, `POC_ISM_Manufacturing_PMI`, `POC_ISM_Services_PMI`, `POC_Retail_Sales`) and wired the specific sourced methodology for each — including which candidate indicators were already tested and REJECTED (ADP for NFP, unadjusted same-month CPI for PCE, consumer confidence for Retail Sales) — into the scheduled `tier1-cpi-ppi-autoresearch` task, renamed `tier1-multi-event-autoresearch`, extending its daily 3-day lookahead from CPI/PPI-only to all 9 event types.
+- Real predictions for these 7 types will log automatically the first time a real occurrence enters the lookahead window — same opportunistic, no-fabrication discipline as CPI/PPI, just not yet triggered by a real event.
 Each is independent of every other batch and of each other — ship opportunistically whenever there's a real upcoming release to predict-then-check against, same discipline as CPI/PPI.
 
 **Batch 8 — Remaining P1/P2 items, no batching needed (small, independent, low urgency)**
