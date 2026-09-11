@@ -12,6 +12,13 @@ const addForm = document.getElementById("add-symbol-form");
 const addInput = document.getElementById("add-symbol-input");
 const calendarStaleNoticeEl = document.getElementById("calendar-stale-notice");
 const predictionsStaleNoticeEl = document.getElementById("predictions-stale-notice");
+// Distinct from the two notices above (which mean "the backend has no
+// data yet") — these mean "the browser itself failed to reach the server
+// on the last poll" (dashboard-review-2026-09-11.md: a transient network
+// blip used to throw an unhandled rejection and silently freeze the
+// dashboard on stale data with no visible sign anything was wrong).
+const predictionsPollErrorEl = document.getElementById("predictions-poll-error-notice");
+const calendarPollErrorEl = document.getElementById("calendar-poll-error-notice");
 const feedStalenessEl = document.getElementById("feed-staleness-indicator");
 const accumulatorStalenessEl = document.getElementById("accumulator-staleness-indicator");
 
@@ -257,7 +264,13 @@ function renderCard(symbolEntry) {
   // top-3 articles that drove each step. Only meaningful once real
   // `events` exist with a `next` article_prediction to explain — the
   // fx_cross/no-events early returns below stay simple, unflippable.
-  let body = `<div class="card-header"><h3 class="symbol-flip-trigger" data-symbol="${symbol}" title="Click for why this call changed">${symbol}</h3><button class="remove-btn" data-symbol="${symbol}">Remove</button></div>`;
+  // dashboard-review-2026-09-11.md: symbol is server-validated via
+  // classify_symbol() today (not currently exploitable), but escaping it
+  // here anyway makes the discipline structural rather than incidental —
+  // every other interpolated string in this file goes through
+  // escapeHtml(), and `symbol` was the one exception.
+  const safeSymbol = escapeHtml(symbol);
+  let body = `<div class="card-header"><h3 class="symbol-flip-trigger" data-symbol="${safeSymbol}" title="Click for why this call changed">${safeSymbol}</h3><button class="remove-btn" data-symbol="${safeSymbol}">Remove</button></div>`;
 
   if (symbol_class === "fx_cross") {
     body += `<div class="not-applicable">No USD exposure for tracked events</div>`;
@@ -684,10 +697,11 @@ function articleProgressionEntryHtml(entry, isLatest) {
 // Every branch that reaches a `next` event must call this, not just the
 // resolved-score path.
 function finalizeCardFlip(el, body, symbol, next) {
-  const backBodyId = `card-back-${symbol}-${next.event_title.replace(/[^a-zA-Z0-9]/g, '')}`;
+  const safeSymbol = escapeHtml(symbol);
+  const backBodyId = `card-back-${safeSymbol}-${next.event_title.replace(/[^a-zA-Z0-9]/g, '')}`;
   const backBody = `<div class="card-header">
-      <h3>${symbol} — why this changed</h3>
-      <button class="flip-back-btn" data-symbol="${symbol}">✕ Back</button>
+      <h3>${safeSymbol} — why this changed</h3>
+      <button class="flip-back-btn" data-symbol="${safeSymbol}">✕ Back</button>
     </div>
     <div class="article-progression" id="${backBodyId}" data-event-title="${escapeHtml(next.event_title)}" data-loaded="false">Loading…</div>`;
 
@@ -739,8 +753,26 @@ function wireCardFlip(el, symbol) {
 }
 
 async function refreshDashboard() {
-  const resp = await fetch("/api/predictions");
-  const data = await resp.json();
+  // dashboard-review-2026-09-11.md: a transient network blip here used to
+  // throw an unhandled rejection out of this function and silently freeze
+  // the dashboard on stale data every subsequent poll, with no visible
+  // sign anything was wrong (unlike the Add-Symbol form, which already
+  // checked resp.ok). Caught here instead: leaves whatever's already
+  // rendered in place (never wipes cardsEl on a failed poll) and surfaces
+  // a visible, distinct-from-"no data yet" notice. Cleared on the next
+  // successful poll, same as every other transient indicator in this file.
+  let data;
+  try {
+    const resp = await fetch("/api/predictions");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    data = await resp.json();
+  } catch (err) {
+    console.error("refreshDashboard: poll failed", err);
+    predictionsPollErrorEl.textContent = "Couldn't reach the server — showing the last data received.";
+    predictionsPollErrorEl.style.display = "";
+    return;
+  }
+  predictionsPollErrorEl.style.display = "none";
 
   // "error" here means the background loop (webapp/scheduler.py) hasn't
   // completed its first successful fetch yet — not "a live request just
@@ -793,8 +825,21 @@ async function refreshDashboard() {
 }
 
 async function refreshCalendar() {
-  const resp = await fetch("/api/calendar");
-  const data = await resp.json();
+  // Same reasoning as refreshDashboard()'s guard — a transient network
+  // blip must not throw an unhandled rejection and silently freeze this
+  // tab on stale data.
+  let data;
+  try {
+    const resp = await fetch("/api/calendar");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    data = await resp.json();
+  } catch (err) {
+    console.error("refreshCalendar: poll failed", err);
+    calendarPollErrorEl.textContent = "Couldn't reach the server — showing the last data received.";
+    calendarPollErrorEl.style.display = "";
+    return;
+  }
+  calendarPollErrorEl.style.display = "none";
   const events = data.events || [];
   renderFeedStaleness(data.feed_staleness_seconds);
 

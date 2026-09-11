@@ -81,11 +81,11 @@ The 2026-09-10 PPI miss (Tier 1 called `Certain`/bullish, wrong) is a direct sym
 
 | Feature | Status | Where |
 |---|---|---|
-| Keyed/targeted re-render (vs. full DOM teardown every 60s poll) | **Outstanding** | root cause of the existing card-state-restoration hacks (expanded History panels, flipped cards) |
+| Keyed/targeted re-render (vs. full DOM teardown every 60s poll) | **Outstanding — deliberately deferred, see Batch 5** | root cause of the existing card-state-restoration hacks (expanded History panels, flipped cards); needs its own dedicated pass, no JS test suite exists to verify a rewrite against |
 | Only `events[0]` and its exact-timestamp siblings ever render on the Dashboard tab — every other event for a tracked symbol (a different day/cluster) is completely invisible there, regardless of signal type | **Outstanding — found 2026-09-11 during Batch 4 live verification** | Confirmed live: the real Sep 10 PPI Tier1-vs-sentiment conflict has no visibility path on the Dashboard tab once CPI's cluster became current the next day — same root cause as the pre-existing "only events[0] was ever rendered" note, just bigger than previously scoped (this affects ANY past-but-recent event, not only same-timestamp siblings) |
-| Component boundaries in `app.js` (~1000 lines, hand-rolled string templates) | **Outstanding** | `renderCard()` alone ~300 lines |
-| Consistent HTML escaping (ticker symbol interpolated raw in a couple of places) | **Outstanding**, not currently exploitable (server-validated) but not structurally enforced | `app.js:260`, `:465` |
-| Fetch error handling on the 60s poll path | **Outstanding** | a transient network blip silently freezes the dashboard on stale data, no visible indicator |
+| Component boundaries in `app.js` (~1000 lines, hand-rolled string templates) | **Outstanding — deliberately deferred, see Batch 5** | `renderCard()` alone ~400 lines; needs its own dedicated pass, no JS test suite exists to verify a rewrite against |
+| Consistent HTML escaping (ticker symbol interpolated raw in a couple of places) | **Shipped** (2026-09-11, Batch 5) | `symbol` now escaped in `renderCard()`'s header and `finalizeCardFlip()`'s back-face — not previously exploitable (server-validated) but now structurally enforced like every other string in the file |
+| Fetch error handling on the 60s poll path | **Shipped** (2026-09-11, Batch 5) | `refreshDashboard()`/`refreshCalendar()` now catch fetch failures, show a distinct notice, never wipe already-rendered cards; live-verified by simulating a failure |
 | Accessibility (ARIA roles, `aria-expanded`, hit targets, meta-text via CSS class not inline style) | **Outstanding** | minor, color has a text fallback already |
 | Responsive/mobile layout | **Outstanding**, low priority unless mobile viewing becomes a real use case | hard 7-column calendar grid, zero media queries |
 
@@ -150,12 +150,12 @@ Both are isolated, scoped changes inside `scoring/probability_engine.py`'s exist
 - 3 new tests, full suite 561/561. Live-verified: the real Sep 10 PPI conflict (bearish sentiment vs bullish Tier1) round-trips correctly through `/api/predictions`; CSS/markup independently confirmed correct via direct DOM injection.
 - **Real gap found, not fixed here:** that same real conflict doesn't currently render anywhere on the Dashboard tab, because it's neither the featured event nor timestamp-simultaneous with today's cluster — logged as its own outstanding row in §2e, out of scope for this batch.
 
-**Batch 5 — Frontend debt paydown (same file Tier 2/3's new card content will also need, do before it lands)**
-- Keyed/targeted re-render (replaces full-DOM-rebuild + state-restoration hacks)
-- Component boundaries in `app.js`
-- Consistent HTML escaping
-- Fetch error handling on the poll path
-Bundle these — all touch `app.js`, none are behavior-visible features on their own, and same "next signal source" argument as Batch 3: Tier 2/3 will add another card element, and every element added to the current hand-rolled template makes the eventual refactor more expensive. Accessibility and responsive/mobile are real but lower-priority — fold into this batch only if it's convenient, don't let them block it.
+**Batch 5 — Frontend debt paydown — split 2026-09-11, only the small half shipped**
+- ✅ **Consistent HTML escaping** — `symbol` is now `escapeHtml()`-ed everywhere it's interpolated (`renderCard()`'s header, `finalizeCardFlip()`'s back-face header/button/id), matching the discipline every other string in this file already follows. Live-verified via console + rendered text, no behavior change.
+- ✅ **Fetch error handling on the poll path** — `refreshDashboard()`/`refreshCalendar()` now wrap their `fetch`/`.json()` in try/catch, checking `resp.ok` too. On failure: logs to console, shows a new distinct notice (`#predictions-poll-error-notice` / `#calendar-poll-error-notice`, `index.html`) reading "Couldn't reach the server — showing the last data received," and — critically — **does NOT wipe `cardsEl`**, so a transient blip no longer destroys what's already rendered. Clears automatically on the next successful poll. Live-verified by monkey-patching `window.fetch` to reject and confirming: notice appears, existing card count unchanged, notice clears on recovery.
+- ⏸️ **Keyed/targeted re-render** (replaces full-DOM-rebuild + state-restoration hacks) — **deferred**, not built. A rewrite of the full-teardown pattern in `refreshDashboard()` and its restoration hacks.
+- ⏸️ **Component boundaries in `app.js`** (~1000 lines, `renderCard()` alone ~400) — **deferred**, not built.
+Both deferred items are real refactors of code with **zero automated test coverage in this codebase** (no JS test suite exists) — the only verification path is manual browser inspection. Given that risk profile, doing them properly needs its own dedicated pass with careful manual verification, not a fold-in alongside three other batches. Flagging honestly rather than rushing a large, unverified rewrite of the file every other frontend feature (including Tier 2/3's eventual card content) depends on. Still recommended to land before Batch 6, per the original reasoning — just not bundled with the two small, safe items above.
 
 **Batch 6 — Tier 2/3 exogenous-context architecture (the big one — needs its own brainstorm→spec→plan cycle first)**
 - Build from `AdHoc_Category_Taxonomy` + `Discovery_Detector_Spec` (already-designed, not a blank page)

@@ -17,6 +17,11 @@
 
 <section id="view-dashboard">
   <div id="predictions-stale-notice" class="stale-notice" style="display:none"></div>
+  <!-- dashboard-review-2026-09-11.md: distinct from predictions-stale-notice
+       above (which means "the backend has no data yet") — this means "the
+       browser itself failed to reach the server on the last poll," a
+       different failure the existing staleness badges never covered. -->
+  <div id="predictions-poll-error-notice" class="stale-notice" style="display:none"></div>
   <div id="accumulator-staleness-indicator" class="feed-staleness"></div>
   <form id="add-symbol-form">
     <input id="add-symbol-input" placeholder="Add symbol e.g. EURUSD" maxlength="6" />
@@ -27,6 +32,7 @@
 
 <section id="view-calendar" style="display:none">
   <div id="calendar-stale-notice" class="stale-notice" style="display:none"></div>
+  <div id="calendar-poll-error-notice" class="stale-notice" style="display:none"></div>
   <div id="feed-staleness-indicator" class="feed-staleness"></div>
   <div id="calendar-grid"></div>
   <div id="calendar-legend" class="calendar-legend">
