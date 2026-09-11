@@ -75,10 +75,76 @@ def test_rolling_baseline_returns_none_with_fewer_than_window_days_of_real_data(
     print("PASS\n")
 
 
+from data_layer.calendar_feed import EconomicEvent, UTC_TZ
+
+
+def _usd_event(title, impact, event_time_utc):
+    return EconomicEvent(title=title, country="USD", impact=impact, event_time_utc=event_time_utc)
+
+
+def test_detect_anomaly_flags_a_real_stdev_breach_with_no_calendar_event():
+    print("=== discovery_detector: detect_anomaly flags a real >2 stdev move with no matching USD Medium+ calendar event ===")
+    as_of = dt.date(2026, 9, 10)
+    with patch.object(discovery_detector, "compute_daily_move", return_value=10.0), \
+         patch.object(discovery_detector, "rolling_baseline", return_value=(0.0, 1.0)):
+        result = discovery_detector.detect_anomaly("XAUUSD", as_of, calendar_events=[])
+    assert result is not None
+    assert result.series == "XAUUSD"
+    assert result.stdev_move == 10.0
+    print("PASS\n")
+
+
+def test_detect_anomaly_none_when_move_within_threshold():
+    print("=== discovery_detector: detect_anomaly returns None when the move is within the 2-stdev threshold, regardless of calendar ===")
+    as_of = dt.date(2026, 9, 10)
+    with patch.object(discovery_detector, "compute_daily_move", return_value=0.5), \
+         patch.object(discovery_detector, "rolling_baseline", return_value=(0.0, 1.0)):
+        result = discovery_detector.detect_anomaly("XAUUSD", as_of, calendar_events=[])
+    assert result is None
+    print("PASS\n")
+
+
+def test_detect_anomaly_none_when_a_real_calendar_event_already_explains_it():
+    print("=== discovery_detector: detect_anomaly returns None for a real >2 stdev move that a USD Medium+ calendar event on the same day already explains ===")
+    as_of = dt.date(2026, 9, 10)
+    ppi_event = _usd_event("PPI m/m", "High", dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ))
+    with patch.object(discovery_detector, "compute_daily_move", return_value=10.0), \
+         patch.object(discovery_detector, "rolling_baseline", return_value=(0.0, 1.0)):
+        result = discovery_detector.detect_anomaly("XAUUSD", as_of, calendar_events=[ppi_event])
+    assert result is None
+    print("PASS\n")
+
+
+def test_detect_anomaly_low_impact_calendar_event_does_not_explain_a_real_move():
+    print("=== discovery_detector: a Low-impact calendar event does NOT gate a real anomaly -- only Medium+ counts, same IMPACT_RANK threshold this codebase already uses elsewhere ===")
+    as_of = dt.date(2026, 9, 10)
+    low_impact_event = _usd_event("Some Minor Release", "Low", dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ))
+    with patch.object(discovery_detector, "compute_daily_move", return_value=10.0), \
+         patch.object(discovery_detector, "rolling_baseline", return_value=(0.0, 1.0)):
+        result = discovery_detector.detect_anomaly("XAUUSD", as_of, calendar_events=[low_impact_event])
+    assert result is not None
+    print("PASS\n")
+
+
+def test_detect_anomaly_none_when_daily_move_unavailable():
+    print("=== discovery_detector: detect_anomaly returns None (never fabricated) when compute_daily_move itself has no real data ===")
+    as_of = dt.date(2026, 9, 10)
+    with patch.object(discovery_detector, "compute_daily_move", return_value=None), \
+         patch.object(discovery_detector, "rolling_baseline", return_value=(0.0, 1.0)):
+        result = discovery_detector.detect_anomaly("XAUUSD", as_of, calendar_events=[])
+    assert result is None
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_detector_series_is_exactly_four_series()
     test_compute_daily_move_unknown_series_raises_value_error()
     test_compute_daily_move_returns_a_real_percentage_for_a_real_past_date()
     test_rolling_baseline_computes_mean_and_stdev_from_prior_days_only()
     test_rolling_baseline_returns_none_with_fewer_than_window_days_of_real_data()
+    test_detect_anomaly_flags_a_real_stdev_breach_with_no_calendar_event()
+    test_detect_anomaly_none_when_move_within_threshold()
+    test_detect_anomaly_none_when_a_real_calendar_event_already_explains_it()
+    test_detect_anomaly_low_impact_calendar_event_does_not_explain_a_real_move()
+    test_detect_anomaly_none_when_daily_move_unavailable()
     print("All discovery_detector tests passed.")

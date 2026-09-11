@@ -22,6 +22,8 @@ from dukascopy_python.instruments import (
     INSTRUMENT_IDX_AMERICA_E_D_J_IND,
 )
 
+from data_layer.calendar_feed import EconomicEvent, IMPACT_RANK
+
 # Verified 2026-09-11 against dukascopy_python's real instrument catalog
 # (1380 entries): 10Y and 30Y Treasury yields do NOT exist as separate
 # Dukascopy instruments -- only one generic US T-Bond CFD does. Per
@@ -143,3 +145,49 @@ def rolling_baseline(
     if len(moves) < window_days:
         return None
     return statistics.mean(moves), statistics.stdev(moves)
+
+
+ANOMALY_STDEV_THRESHOLD = 2.0  # Discovery_Detector_Spec's own number, verbatim
+
+
+def detect_anomaly(
+    series: str, date: dt.date, calendar_events: list[EconomicEvent],
+) -> Optional[AnomalyResult]:
+    """
+    None -- the overwhelmingly common, expected result -- if: today's
+    move or the rolling baseline itself has no real data (never
+    guessed), the move is within ANOMALY_STDEV_THRESHOLD standard
+    deviations of the baseline, OR a real USD Medium+ impact calendar
+    event already covers `date` (an expected move from a known release
+    is not an anomaly -- same "the calendar already explains this" gate
+    Discovery_Detector_Spec itself specifies). `calendar_events` is the
+    caller's responsibility to fetch and filter to `date` and
+    country == "USD" -- this function does no fetching of its own, kept
+    a pure function of its inputs like every other function in this
+    module.
+    """
+    move = compute_daily_move(series, date)
+    if move is None:
+        return None
+    baseline = rolling_baseline(series, date)
+    if baseline is None:
+        return None
+    mean, stdev = baseline
+    if stdev == 0:
+        return None  # a real but degenerate (zero-variance) baseline can't produce a meaningful stdev_move
+    stdev_move = (move - mean) / stdev
+    if abs(stdev_move) < ANOMALY_STDEV_THRESHOLD:
+        return None
+
+    has_explaining_event = any(
+        e.country == "USD" and IMPACT_RANK.get(e.impact, 0) >= IMPACT_RANK["Medium"]
+        and e.event_time_utc.date() == date
+        for e in calendar_events
+    )
+    if has_explaining_event:
+        return None
+
+    return AnomalyResult(
+        series=series, move_pct=move, baseline_mean=mean, baseline_stdev=stdev,
+        stdev_move=stdev_move, date=date,
+    )
