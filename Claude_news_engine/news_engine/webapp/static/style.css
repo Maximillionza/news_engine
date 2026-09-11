@@ -119,6 +119,7 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .other-event-tier1.bearish { color: var(--bearish); }
 .other-event-tier1.neutral { color: var(--neutral); }
 .other-event-tier1-conflict { flex-basis: 100%; font-size: 11px; margin-top: 2px; color: #ef6c00; }
+.other-event-tier1-downgrade { flex-basis: 100%; font-size: 11px; margin-top: 2px; color: #ef6c00; }
 
 .day-strip { display: flex; gap: 4px; margin-top: 14px; overflow-x: auto; }
 .day-cell { flex: 0 0 auto; padding: 6px 8px; font-size: 11px; text-align: center; border-radius: 6px; border: 1px solid transparent; background: #f0f0f0; }

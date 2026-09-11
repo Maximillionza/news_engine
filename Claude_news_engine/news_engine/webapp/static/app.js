@@ -538,6 +538,21 @@ function renderCard(symbolEntry) {
     if (!conflict) return '';
     return `<span class="other-event-tier1-conflict">⚠ Tier 1 vs. sentiment disagree</span>`;
   }
+  // otherEventTier1DowngradeMarkerHtml (final whole-branch review,
+  // 2026-09-11 — Fix 2): same gap as otherEventTier1MarkerHtml/
+  // otherEventTier1ConflictMarkerHtml above, for the SAME event shape --
+  // tier1ConfidenceDowngradeHtml() was wired only into the featured
+  // event's tier1PredictionLine, so a sibling event carrying its own
+  // tier1_confidence_downgrade (a co-released sibling can have one even
+  // when the featured event doesn't — the real Sep 10 2026 PPI/Core-PPI
+  // incident already documented above is exactly this shape) never
+  // rendered anywhere. Compact <span> marker, matching the sibling-row
+  // convention the two functions above already use, not the full-card
+  // <div> tier1ConfidenceDowngradeHtml uses for the featured event.
+  function otherEventTier1DowngradeMarkerHtml(downgrade) {
+    if (!downgrade) return '';
+    return `<span class="other-event-tier1-downgrade">⚠ Confidence downgraded to <b>${escapeHtml(downgrade.displayed_confidence)}</b></span>`;
+  }
   function otherEventsHtml(events, symbolForCard) {
     // Only genuinely SIMULTANEOUS events (identical event_time_utc to the
     // featured one) belong here — `events` also carries other upcoming/
@@ -548,7 +563,8 @@ function renderCard(symbolEntry) {
     if (simultaneous.length === 0) return '';
     const rows = simultaneous.map((e) => {
       const tier1Marker = otherEventTier1MarkerHtml(e.tier1_prediction, symbolForCard)
-        + otherEventTier1ConflictMarkerHtml(e.tier1_sentiment_conflict);
+        + otherEventTier1ConflictMarkerHtml(e.tier1_sentiment_conflict)
+        + otherEventTier1DowngradeMarkerHtml(e.tier1_confidence_downgrade);
       if (e.direction === "pending") {
         return `<div class="other-event-row">
           <span class="other-event-title">${escapeHtml(e.event_title)}</span>
@@ -607,7 +623,8 @@ function renderCard(symbolEntry) {
     if (rest.length === 0) return '';
     const rows = rest.map((e) => {
       const tier1Marker = otherEventTier1MarkerHtml(e.tier1_prediction, symbolForCard)
-        + otherEventTier1ConflictMarkerHtml(e.tier1_sentiment_conflict);
+        + otherEventTier1ConflictMarkerHtml(e.tier1_sentiment_conflict)
+        + otherEventTier1DowngradeMarkerHtml(e.tier1_confidence_downgrade);
       const whenLabel = formatEventDateTime(e.event_time_utc);
       if (e.direction === "pending") {
         return `<div class="other-event-row">
