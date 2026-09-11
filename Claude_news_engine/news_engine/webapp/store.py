@@ -218,16 +218,41 @@ def _migrate_add_country_column(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+_schema_ready_paths: set[str] = set()
+
+
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     # db_path resolved inside the body (not as a default arg value) so
     # tests can patch module-level DB_PATH and have it take effect.
     path = db_path if db_path is not None else DB_PATH
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
-    conn.executescript(_SCHEMA)
-    _migrate_add_source_column(conn)
-    _migrate_add_impact_column(conn)
-    _migrate_add_country_column(conn)
+    # Dashboard-review-2026-09-11.md: executescript + 3 PRAGMA table_info
+    # migration checks used to re-run on EVERY call — 3+ metadata queries
+    # per request just to re-verify migrations that already ran once.
+    # Schema/migrations are idempotent (CREATE TABLE IF NOT EXISTS, ALTER
+    # only when a column is missing), so once this exact path has been
+    # prepared in this process, skip straight to returning a connection.
+    # Keyed by the resolved path string (not just "has this ever run"),
+    # so a test opening a fresh temp-file path still gets a real first-run
+    # migration — this cache is a per-path fact, not a global one-shot flag.
+    # ":memory:" is NEVER cached: every sqlite3.connect(":memory:") call
+    # creates a genuinely separate, empty database (no shared state across
+    # connections, unlike a real file path) — caching it would leave every
+    # connection after the first with no tables at all.
+    if path == ":memory:":
+        conn.executescript(_SCHEMA)
+        _migrate_add_source_column(conn)
+        _migrate_add_impact_column(conn)
+        _migrate_add_country_column(conn)
+        return conn
+    path_key = str(Path(path).resolve())
+    if path_key not in _schema_ready_paths:
+        conn.executescript(_SCHEMA)
+        _migrate_add_source_column(conn)
+        _migrate_add_impact_column(conn)
+        _migrate_add_country_column(conn)
+        _schema_ready_paths.add(path_key)
     return conn
 
 

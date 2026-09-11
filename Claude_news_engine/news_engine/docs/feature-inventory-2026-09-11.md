@@ -71,11 +71,11 @@ The 2026-09-10 PPI miss (Tier 1 called `Certain`/bullish, wrong) is a direct sym
 | Feature | Status | Where |
 |---|---|---|
 | `/api/predictions` N+1 query batching | **Shipped** (2026-09-11, `7f596bc`) | `webapp/store.py`, `scoring/backtest_store.py` bulk lookups |
-| Per-request DB connection pooling / one-time schema migration | **Outstanding** | dashboard-review: schema + 3 `PRAGMA table_info` checks re-run on every request |
-| `get_predictions()` extraction into a testable service module | **Outstanding** | 800+ line `app.py`, one 230-line route function |
+| One-time schema/migration (was: 3 `PRAGMA table_info` checks re-run every request) | **Shipped** (2026-09-11, Batch 3) | `webapp/store.py`/`scoring/backtest_store.py`'s `get_connection()` — cached per resolved path, `:memory:` deliberately never cached (each call is a genuinely separate DB). Full `g`-scoped connection pooling itself still not done — SQLite is a local file, the real cost was the repeated migration overhead, not the connect() call |
+| `get_predictions()` extraction into a testable service module | **Shipped** (2026-09-11, Batch 3) | `webapp/predictions_service.py`'s `build_predictions_payload()` — moved verbatim, route is now a thin open/call/close/serialize wrapper. Live-verified via a process restart + browser check, not just tests |
 | Indexed/partial calendar snapshot storage (currently one JSON blob) | **Outstanding** | fine at current volume, no path to scale |
-| Production WSGI server (currently Flask dev server, single-threaded, shares process with scheduler + actuals-sync threads) | **Outstanding** | `app.py:808` |
-| Shared serialization helper across article/print/tier1 prediction dict-shaping | **Outstanding** | only article prediction got the shared-helper treatment |
+| Production WSGI server (was: Flask dev server, single-threaded) | **Shipped** (2026-09-11, Batch 3) | `webapp/app.py`'s `__main__` now calls `waitress.serve()`; `requirements.txt` updated. Live-verified: `Server: waitress` response header |
+| Shared serialization helper across article/print/tier1 prediction dict-shaping | **Shipped** (2026-09-11, Batch 3) | `webapp/predictions_service.py`'s `_print_prediction_dict()`/`_tier1_prediction_dict()`, alongside the existing `_article_prediction_dict()` — `_print_prediction_dict()` now also used by `/api/calendar/date/<date>`, the actual literal duplicate the review found |
 
 ### 2e. Dashboard — frontend
 
@@ -135,12 +135,12 @@ Both are isolated, scoped changes inside `scoring/probability_engine.py`'s exist
 - Extended `EVENT_RELEVANCE_KEYWORDS_BY_TITLE` to `CPI m/m`/`CPI y/y`/`Core CPI m/m`/`Core CPI y/y`, same pattern as the existing FOMC entries.
 - Live-verified: re-fetching today's real news window shows 13 genuine CPI/inflation articles surviving the filter vs. 3 irrelevant ones before the fix. 2 new tests in `tests/test_event_context.py`, full suite 554/554 passing.
 
-**Batch 3 — Dashboard backend debt paydown (no new features, same files Tier 2/3 will also need to touch)**
-- `get_predictions()` extraction into a testable service module
-- One-time schema/migration + connection pooling
-- Shared serialization helper across article/print/tier1 dicts
-- Production WSGI server swap
-Bundle these four: they're all refactor/ops work against `webapp/app.py`/`store.py` with no behavior change, and the dashboard-review explicitly flags `get_predictions()` as needing extraction "before the next signal source gets added" — Tier 2/3 (Batch 6) is that next signal source. Doing this now means Tier 2/3 lands in a service module, not a 230-line route function that's already past readable.
+**Batch 3 — Dashboard backend debt paydown (no new features, same files Tier 2/3 will also need to touch) — ✅ SHIPPED 2026-09-11**
+- `get_predictions()` extracted into `webapp/predictions_service.py`'s `build_predictions_payload()` — moved verbatim, route is now a thin wrapper. Live-verified via a process restart + browser check.
+- One-time schema/migration caching in both `get_connection()`s (`webapp/store.py`, `scoring/backtest_store.py`) — `:memory:` deliberately excluded (each call is a genuinely separate DB; caching it would leave every connection after the first with no tables). Full `g`-scoped connection pooling scoped OUT — SQLite is a local file, the actual cost was the repeated migration overhead, not the connect() call itself; noting this as a deliberate scope reduction, not a silent drop.
+- Shared `_print_prediction_dict()`/`_tier1_prediction_dict()` helpers alongside the existing `_article_prediction_dict()` — `_print_prediction_dict()` now used by both `/api/predictions` and `/api/calendar/date/<date>`, the actual literal duplicate the review found.
+- Production WSGI server: `waitress.serve()` replaces `app.run()`. Live-verified: `Server: waitress` response header.
+8 new/updated tests (2 migration-caching tests each in `test_webapp_store.py`/`test_backtest_store.py`). Full suite: 558/558 passing throughout.
 
 **Batch 4 — Tier1-vs-sentiment contradiction detection (P0, contained blast radius)**
 - Extend `reconcile_group()`'s pattern to flag Tier 1 vs. sentiment disagreement, same way it already flags co-released sentiment titles

@@ -229,15 +229,32 @@ def _migrate_add_top_contributions_column(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+_schema_ready_paths: set[str] = set()
+
+
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     # db_path resolved inside the body (not as a default arg value) so
     # tests can patch module-level DB_PATH and have it take effect.
     path = db_path if db_path is not None else DB_PATH
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
-    conn.executescript(_SCHEMA)
-    _migrate_add_source_columns(conn)
-    _migrate_add_top_contributions_column(conn)
+    # Dashboard-review-2026-09-11.md: executescript + migration checks used
+    # to re-run on EVERY call — pure overhead once a path's schema is
+    # already current. Same fix and same ":memory:" exception as
+    # webapp/store.py's get_connection() — see its comment for why
+    # ":memory:" must never be cached (every connection to it is a
+    # genuinely separate, empty database).
+    if path == ":memory:":
+        conn.executescript(_SCHEMA)
+        _migrate_add_source_columns(conn)
+        _migrate_add_top_contributions_column(conn)
+        return conn
+    path_key = str(Path(path).resolve())
+    if path_key not in _schema_ready_paths:
+        conn.executescript(_SCHEMA)
+        _migrate_add_source_columns(conn)
+        _migrate_add_top_contributions_column(conn)
+        _schema_ready_paths.add(path_key)
     return conn
 
 

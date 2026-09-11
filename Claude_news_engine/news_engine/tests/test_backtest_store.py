@@ -938,6 +938,47 @@ def test_tier1_comparison_rerun_for_same_occurrence_replaces_not_duplicates():
     print("PASS\n")
 
 
+def test_get_connection_skips_migration_on_second_open_of_same_path():
+    print("=== dashboard-review-2026-09-11.md: backtest_store.get_connection() only runs executescript+migrations ONCE per resolved path ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        event_time = dt.datetime(2026, 9, 11, 12, 30, tzinfo=dt.timezone.utc)
+        path_key = str(db_path.resolve())
+        assert path_key not in store._schema_ready_paths
+        conn1 = store.get_connection(db_path)
+        assert path_key in store._schema_ready_paths
+        conn1.close()
+        conn2 = store.get_connection(db_path)
+        # Second open must still be a fully usable connection — round-trip
+        # a real write/read to prove the cache only skips schema/migration,
+        # never the connect() itself.
+        record_prediction(
+            conn2, "CPI m/m", "XAUUSD", event_time,
+            probability=0.5, direction="neutral", confidence=0.3,
+            article_count=1, contradiction_flag=False,
+        )
+        assert count_predictions(conn2, "CPI m/m", "XAUUSD", event_time) == 1
+        conn2.close()
+    print("PASS\n")
+
+
+def test_get_connection_memory_path_never_cached_stays_isolated_per_call():
+    print("=== backtest_store.get_connection(':memory:') must NEVER be cached — every call is a genuinely separate, empty database ===")
+    event_time = dt.datetime(2026, 9, 11, 12, 30, tzinfo=dt.timezone.utc)
+    conn1 = store.get_connection(":memory:")
+    record_prediction(
+        conn1, "CPI m/m", "XAUUSD", event_time,
+        probability=0.5, direction="neutral", confidence=0.3,
+        article_count=1, contradiction_flag=False,
+    )
+    assert count_predictions(conn1, "CPI m/m", "XAUUSD", event_time) == 1
+    conn1.close()
+    conn2 = store.get_connection(":memory:")
+    assert count_predictions(conn2, "CPI m/m", "XAUUSD", event_time) == 0
+    conn2.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_record_and_count_predictions()
     test_count_predictions_scoped_to_event_occurrence_not_just_title()
@@ -984,4 +1025,10 @@ if __name__ == "__main__":
     test_tier1_prediction_scoped_per_instrument()
     test_tier1_prediction_scoped_per_occurrence_not_just_title()
     test_latest_tier1_prediction_wins_on_multiple_logs()
+    test_record_and_get_tier1_comparison_round_trip()
+    test_tier1_comparison_none_correct_round_trips_as_none_not_false()
+    test_tier1_comparison_get_returns_none_when_never_computed()
+    test_tier1_comparison_rerun_for_same_occurrence_replaces_not_duplicates()
+    test_get_connection_skips_migration_on_second_open_of_same_path()
+    test_get_connection_memory_path_never_cached_stays_isolated_per_call()
     print("All backtest_store tests passed.")

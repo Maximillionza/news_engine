@@ -665,6 +665,40 @@ def test_get_connection_fresh_db_has_source_column_no_error():
     print("PASS\n")
 
 
+def test_get_connection_skips_migration_on_second_open_of_same_path():
+    print("=== dashboard-review-2026-09-11.md: get_connection() only runs executescript+migrations ONCE per resolved path — second open for the same path is a plain sqlite3.connect(), no re-verification ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        path_key = str(db_path.resolve())
+        assert path_key not in store._schema_ready_paths
+        conn1 = store.get_connection(db_path)
+        assert path_key in store._schema_ready_paths, "first open must record this path as schema-ready"
+        conn1.close()
+        # Second open for the SAME path must still return a fully usable
+        # connection (the cache only skips re-running schema/migrations,
+        # never the connect() itself) — round-trip a real write/read.
+        conn2 = store.get_connection(db_path)
+        store.add_tracked_symbol(conn2, "XAUUSD")
+        assert store.list_tracked_symbols(conn2) == ["XAUUSD"]
+        conn2.close()
+    print("PASS\n")
+
+
+def test_get_connection_memory_path_never_cached_stays_isolated_per_call():
+    print("=== get_connection(':memory:') must NEVER be cached — every call is a genuinely separate, empty database, unlike a real file path ===")
+    conn1 = store.get_connection(":memory:")
+    store.add_tracked_symbol(conn1, "XAUUSD")
+    assert store.list_tracked_symbols(conn1) == ["XAUUSD"]
+    conn1.close()
+    # A second, independent :memory: connection must NOT see the first
+    # one's data, and must NOT skip schema creation (it would otherwise
+    # come back with no tables at all if ':memory:' were wrongly cached).
+    conn2 = store.get_connection(":memory:")
+    assert store.list_tracked_symbols(conn2) == []
+    conn2.close()
+    print("PASS\n")
+
+
 def test_get_events_with_stale_missing_actual_respects_grace_period():
     print("=== webapp/store: get_events_with_stale_missing_actual only returns events past the grace period with actual still None ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -931,6 +965,8 @@ if __name__ == "__main__":
     test_upsert_event_history_accepts_explicit_seeded_source()
     test_get_connection_migrates_preexisting_db_missing_source_column()
     test_get_connection_fresh_db_has_source_column_no_error()
+    test_get_connection_skips_migration_on_second_open_of_same_path()
+    test_get_connection_memory_path_never_cached_stays_isolated_per_call()
     test_get_events_with_stale_missing_actual_respects_grace_period()
     test_upsert_event_history_seeded_source_survives_a_later_live_upsert_with_real_actual()
     test_upsert_event_history_does_not_overwrite_an_already_stored_real_actual()
