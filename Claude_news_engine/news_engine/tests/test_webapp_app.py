@@ -1947,7 +1947,7 @@ def test_predictions_no_tier1_sentiment_conflict_when_tier1_made_no_call():
 
 
 def test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_today():
-    print("=== app: /api/predictions downgrades a Tier 1 row's DISPLAYED confidence (never the stored row) when an exogenous_shocks row exists for today, across ANY detector series ===")
+    print("=== app: /api/predictions downgrades a Tier 1 row's DISPLAYED confidence (never the stored row) when an exogenous_shocks row exists for TODAY, across ANY detector series (the unrealistic same-day case -- see the sibling YESTERDAY test below for the actual production case) ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         backtest_db_path = Path(tmp) / "backtest_log.db"
@@ -1982,6 +1982,55 @@ def test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_tod
             today = dt.datetime.now(dt.timezone.utc).date()
             backtest_store.record_exogenous_shock(
                 bconn, "DXY", today, move_pct=5.0, stdev_move=3.0,
+                headline_cause="Real researched cause", source="Reuters",
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
+            downgrade = events["PPI m/m"]["tier1_confidence_downgrade"]
+            assert downgrade is not None
+            assert downgrade["original_confidence"] == "Certain"
+            assert downgrade["displayed_confidence"] == "Likely"
+            assert downgrade["series"] == "DXY"
+            # The stored row itself is untouched.
+            bconn = backtest_store.get_connection(backtest_db_path)
+            stored = backtest_store.get_latest_tier1_prediction_for_occurrence(bconn, "PPI m/m", "XAUUSD", ppi_time)
+            assert stored.confidence == "Certain"
+            bconn.close()
+    print("PASS\n")
+
+
+def test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_yesterday():
+    print("=== app: /api/predictions downgrades a Tier 1 row's DISPLAYED confidence when an exogenous_shocks row exists for YESTERDAY -- the actual production case: Task 7's scheduled research task records shock_date = yesterday (it runs detect_anomaly() for yesterday's completed session), so a shock detected this morning is always logged under yesterday's date, never today's ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="PPI m/m", country="USD", impact="High",
+                               event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual=None),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time, 0.60, "bearish", 0.5, 100, False,
+            )
+            backtest_store.record_tier1_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time,
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+            )
+            # Recorded under YESTERDAY's date, not today's -- this is the
+            # real shape Task 7's scheduled task writes in production.
+            yesterday = dt.datetime.now(dt.timezone.utc).date() - dt.timedelta(days=1)
+            backtest_store.record_exogenous_shock(
+                bconn, "DXY", yesterday, move_pct=5.0, stdev_move=3.0,
                 headline_cause="Real researched cause", source="Reuters",
             )
             bconn.close()
@@ -2093,5 +2142,6 @@ if __name__ == "__main__":
     test_predictions_excludes_low_impact_event_from_the_live_snapshot()
     test_predictions_route_includes_tier1_prediction_for_logged_occurrence()
     test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_today()
+    test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_yesterday()
     test_predictions_no_tier1_confidence_downgrade_without_a_real_shock()
     print("All webapp.app tests passed.")

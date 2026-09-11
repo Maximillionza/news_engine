@@ -50,20 +50,35 @@ def _downgrade_one_tier(confidence: str) -> str:
 
 def _get_todays_exogenous_shock(backtest_conn: sqlite3.Connection):
     """
-    First unresolved shock found today across DETECTOR_SERIES, or None.
-    Fail-open (same pattern as build_predictions_payload()'s existing
-    get_latest_tier1_predictions_bulk() try/except) -- a broken lookup
-    must never take down /api/predictions. "First found" is sufficient:
-    per the spec, multiple same-day shocks still only downgrade ONE
-    tier, so which specific shock's series/reason gets shown when
-    several exist the same day is not a load-bearing distinction.
+    First unresolved shock found for today OR yesterday across
+    DETECTOR_SERIES, or None. Fail-open (same pattern as
+    build_predictions_payload()'s existing get_latest_tier1_predictions_bulk()
+    try/except) -- a broken lookup must never take down /api/predictions.
+    "First found" is sufficient: per the spec, multiple same-day shocks
+    still only downgrade ONE tier, so which specific shock's series/reason
+    gets shown when several exist the same day is not a load-bearing
+    distinction.
+
+    Both today's AND yesterday's date are checked (today preferred first)
+    because of a real write/read mismatch discovered in final whole-branch
+    review: Task 7's scheduled research task (already deployed to the
+    user's scheduler, not in this repo) runs detect_anomaly() for
+    YESTERDAY's completed session and persists shock_date = yesterday --
+    a shock detected on the morning of day N is logged under N-1. A
+    lookup keyed only on today's date (N) never matches that row, so the
+    feature was inert in production: the writer produced a row the reader
+    never asked for. Checking yesterday's date too makes this the actual
+    production case this function needs to serve; today's date is still
+    checked first in case a shock is ever logged same-day.
     """
     today = dt.datetime.now(dt.timezone.utc).date()
+    yesterday = today - dt.timedelta(days=1)
     try:
-        for series in DETECTOR_SERIES:
-            shock = get_exogenous_shock_for_date(backtest_conn, series, today)
-            if shock is not None:
-                return shock
+        for shock_date in (today, yesterday):
+            for series in DETECTOR_SERIES:
+                shock = get_exogenous_shock_for_date(backtest_conn, series, shock_date)
+                if shock is not None:
+                    return shock
     except Exception:
         logger.warning("exogenous shock lookup failed for this cycle", exc_info=True)
     return None
