@@ -71,7 +71,7 @@ def compute_daily_move(series: str, date: dt.date) -> Optional[float]:
     return (close_price - open_price) / open_price * 100
 
 
-def _fetch_tick(instrument, when_utc: dt.datetime) -> Optional[float]:
+def _fetch_tick(instrument: str, when_utc: dt.datetime) -> Optional[float]:
     """
     Thin wrapper around dukascopy_python.fetch(), same BID-consistent,
     first-tick-at-or-after convention data_layer/dukascopy_feed.py's
