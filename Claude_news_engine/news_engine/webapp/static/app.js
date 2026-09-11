@@ -560,9 +560,23 @@ function renderCard(symbolEntry) {
   const OTHER_TRACKED_EVENTS_LIMIT = 3;
   function otherTrackedEventsHtml(allEvents, symbolForCard) {
     const featuredTime = allEvents[0].event_time_utc;
-    const rest = allEvents.slice(1)
-      .filter((e) => e.event_time_utc !== featuredTime)
-      .slice(0, OTHER_TRACKED_EVENTS_LIMIT);
+    const candidates = allEvents.slice(1)
+      .filter((e) => e.event_time_utc !== featuredTime);
+    // Reviewer fix (2026-09-11): `candidates` is still in the backend's
+    // pure temporal-proximity-to-now order (_sort_key() in
+    // predictions_service.py), which only ever moves an already-resolved
+    // event FARTHER from the top as time passes — it never comes back.
+    // Slicing that order directly meant an aging resolved Tier1/sentiment
+    // conflict (the real Sep 10 PPI case this task exists to surface)
+    // would keep losing ground to newer resolved events and could go
+    // permanently unseen once no longer featured, defeating the point of
+    // this list. Promote conflict-flagged events to the front (preserving
+    // their relative order) before bounding, so a real conflict outranks
+    // recency; backend sort order is otherwise left untouched (out of
+    // scope here — it also drives primary card selection elsewhere).
+    const conflicts = candidates.filter((e) => e.tier1_sentiment_conflict);
+    const nonConflicts = candidates.filter((e) => !e.tier1_sentiment_conflict);
+    const rest = conflicts.concat(nonConflicts).slice(0, OTHER_TRACKED_EVENTS_LIMIT);
     if (rest.length === 0) return '';
     const rows = rest.map((e) => {
       const tier1Marker = otherEventTier1MarkerHtml(e.tier1_prediction, symbolForCard)
