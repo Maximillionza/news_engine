@@ -32,6 +32,7 @@ from scoring.backtest_store import (
     get_last_check_utc, Prediction,
 )
 from webapp.reconciliation import reconcile_group
+from webapp.conflict import compute_tier1_sentiment_conflict
 
 logger = logging.getLogger(__name__)
 
@@ -452,15 +453,9 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
             tier1_pred = ev["tier1_prediction"]
             if article_pred is None or tier1_pred is None:
                 continue
-            sentiment_direction = article_pred["direction"]
-            tier1_direction = tier1_pred["predicted_direction"]
-            if sentiment_direction not in ("bullish", "bearish") or tier1_direction not in ("bullish", "bearish"):
-                continue
-            if sentiment_direction != tier1_direction:
-                ev["tier1_sentiment_conflict"] = {
-                    "sentiment_direction": sentiment_direction,
-                    "tier1_direction": tier1_direction,
-                }
+            ev["tier1_sentiment_conflict"] = compute_tier1_sentiment_conflict(
+                article_pred["direction"], tier1_pred["predicted_direction"],
+            )
 
         # A FRESHLY resolved score outranks a still-pending one, regardless
         # of which is chronologically closer — a real BUY/SELL/HOLD call is

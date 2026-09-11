@@ -544,6 +544,66 @@ function renderCard(symbolEntry) {
   }
   const otherEventsLine = otherEventsHtml(events, symbol);
 
+  // Batch 9 (2026-09-11 UI review): `events` also carries this symbol's
+  // OTHER upcoming/recent tracked events — a different day/cluster, not
+  // just same-instant siblings, which otherEventsHtml() above
+  // deliberately excludes (see its own comment) to keep that list scoped
+  // to a genuine release-time cluster. Those other events were always
+  // computed and shipped in the API response but never shown anywhere —
+  // confirmed live 2026-09-10: the real PPI Tier1-vs-sentiment conflict
+  // had no visibility path on the Dashboard tab once CPI's cluster became
+  // the featured one the next day. Bounded at OTHER_TRACKED_EVENTS_LIMIT,
+  // same "don't let this grow unboundedly" reasoning otherEventsHtml()'s
+  // own comment gives for staying simultaneous-only — this takes the next
+  // few by the same proximity sort the backend already applies
+  // (webapp/predictions_service.py's _sort_key()), not everything queued.
+  const OTHER_TRACKED_EVENTS_LIMIT = 3;
+  function otherTrackedEventsHtml(allEvents, symbolForCard) {
+    const featuredTime = allEvents[0].event_time_utc;
+    const candidates = allEvents.slice(1)
+      .filter((e) => e.event_time_utc !== featuredTime);
+    // Reviewer fix (2026-09-11): `candidates` is still in the backend's
+    // pure temporal-proximity-to-now order (_sort_key() in
+    // predictions_service.py), which only ever moves an already-resolved
+    // event FARTHER from the top as time passes — it never comes back.
+    // Slicing that order directly meant an aging resolved Tier1/sentiment
+    // conflict (the real Sep 10 PPI case this task exists to surface)
+    // would keep losing ground to newer resolved events and could go
+    // permanently unseen once no longer featured, defeating the point of
+    // this list. Promote conflict-flagged events to the front (preserving
+    // their relative order) before bounding, so a real conflict outranks
+    // recency; backend sort order is otherwise left untouched (out of
+    // scope here — it also drives primary card selection elsewhere).
+    const conflicts = candidates.filter((e) => e.tier1_sentiment_conflict);
+    const nonConflicts = candidates.filter((e) => !e.tier1_sentiment_conflict);
+    const rest = conflicts.concat(nonConflicts).slice(0, OTHER_TRACKED_EVENTS_LIMIT);
+    if (rest.length === 0) return '';
+    const rows = rest.map((e) => {
+      const tier1Marker = otherEventTier1MarkerHtml(e.tier1_prediction, symbolForCard)
+        + otherEventTier1ConflictMarkerHtml(e.tier1_sentiment_conflict);
+      const whenLabel = formatEventDateTime(e.event_time_utc);
+      if (e.direction === "pending") {
+        return `<div class="other-event-row">
+          <span class="other-event-title">${escapeHtml(e.event_title)} <span style="font-size:11px;color:#888">(${whenLabel})</span></span>
+          <span class="other-event-pending">Pending</span>
+          ${tier1Marker}
+        </div>`;
+      }
+      const pct = directionPct(e.probability, e.direction);
+      const dClass = directionClass(e.direction);
+      return `<div class="other-event-row">
+        <span class="other-event-title">${escapeHtml(e.event_title)} <span style="font-size:11px;color:#888">(${whenLabel})</span></span>
+        <span class="other-event-call ${dClass}">${directionLabel(e.direction)} ${pct}%</span>
+        ${tier1Marker}
+      </div>`;
+    }).join('');
+    return `<div class="other-events">
+      <div class="other-events-heading">Other tracked events</div>
+      ${rows}
+    </div>`;
+  }
+  const otherTrackedEventsLine = otherTrackedEventsHtml(events, symbol);
+
   if (next.direction === "pending") {
     // The event/when data is already in the response — showing it here
     // instead of a generic placeholder tells the user WHAT they're
@@ -554,7 +614,7 @@ function renderCard(symbolEntry) {
       : `Awaiting: ${escapeHtml(next.event_title)}`;
     body += `<div class="pending">${heading}<br>
       <span style="font-size:12px;color:#888">${formatEventDateTime(next.event_time_utc)}</span></div>
-      ${articlePredictionLine}${tier1PredictionLine}${printPredictionLine}${kalshiReadLine}${trendSignalLine}${otherEventsLine}`;
+      ${articlePredictionLine}${tier1PredictionLine}${printPredictionLine}${kalshiReadLine}${trendSignalLine}${otherEventsLine}${otherTrackedEventsLine}`;
     // Real, live-observed case this branch must NOT skip (2026-08-17):
     // FOMC-style events whose essence-only score can never resolve
     // (title has no EVENT_SURPRISE_DIRECTION entry — see
@@ -597,6 +657,7 @@ function renderCard(symbolEntry) {
     ${articlePredictionLine}${tier1PredictionLine}${printPredictionLine}${kalshiReadLine}</div></div>
     <div class="bull-bear-scale">${bullBearScaleSvg(next.probability)}</div>`;
   body += otherEventsLine;
+  body += otherTrackedEventsLine;
   body += dayStripHtml(next.event_time_utc);
   const historyToggleId = `history-${symbol}-${next.event_title.replace(/[^a-zA-Z0-9]/g, '')}`;
   body += `<div class="history-toggle">
@@ -683,7 +744,7 @@ function articleProgressionEntryHtml(entry, isLatest) {
       <span class="gauge-label ${dClass}">${directionLabel(entry.direction)} ${pct}%</span>
       <span class="progression-entry-when">${when} · ${entry.article_count} articles</span>
     </div>
-    ${contribsHtml || '<div style="font-size:11px;color:#888">No individual article stood out — this read came from broad, low-signal coverage.</div>'}
+    ${contribsHtml || '<div class="low-signal-warning">⚠ No individual article stood out — this read came from broad, low-signal coverage, not a genuinely on-topic signal.</div>'}
   </div>`;
 }
 
@@ -1023,6 +1084,39 @@ async function loadHistoryIfNeeded() {
   const resp = await fetch("/api/history");
   const data = await resp.json();
   renderHistoryTable(data.rows || []);
+  await loadHistoryStatsIfNeeded();
+}
+
+function renderHistoryStats(stats) {
+  const container = document.getElementById("history-stats");
+  const overall = stats.overall;
+  const overallLabel = overall.accuracy === null
+    ? `${overall.correct + overall.wrong} calls made, ${overall.no_call} no-call`
+    : `${overall.correct}/${overall.correct + overall.wrong} correct (${Math.round(overall.accuracy * 100)}%), ${overall.no_call} no-call`;
+
+  const titles = Object.keys(stats.by_event_title).sort();
+  const rows = titles.map((title) => {
+    const s = stats.by_event_title[title];
+    const label = s.accuracy === null
+      ? `${s.no_call} no-call, 0 calls made`
+      : `${s.correct}/${s.correct + s.wrong} (${Math.round(s.accuracy * 100)}%)${s.no_call ? `, ${s.no_call} no-call` : ""}`;
+    return `<tr><td>${escapeHtml(title)}</td><td>${label}</td></tr>`;
+  }).join("");
+
+  const windowLabel = typeof stats.window_limit === "number" ? ` (last ${stats.window_limit} events)` : "";
+
+  container.innerHTML = `
+    <div id="history-stats-overall"><b>Overall${escapeHtml(windowLabel)}:</b> ${overallLabel}</div>
+    <details id="history-stats-detail">
+      <summary>By event type</summary>
+      <table id="history-stats-table"><tbody>${rows}</tbody></table>
+    </details>`;
+}
+
+async function loadHistoryStatsIfNeeded() {
+  const resp = await fetch("/api/history/stats");
+  const data = await resp.json();
+  renderHistoryStats(data);
 }
 
 function renderHistoryTable(rows) {
@@ -1052,6 +1146,9 @@ function renderHistoryTable(rows) {
       : "";
     // Numeric rows use higher/lower/in_line; text-event fallback rows use bullish/bearish/neutral.
     const predictionLabel = { higher: "Higher", lower: "Lower", in_line: "In-line", bullish: "Bullish", bearish: "Bearish", neutral: "Neutral" }[r.ne_prediction] || escapeHtml(r.ne_prediction);
+    const tier1ConflictBadge = r.tier1_conflict
+      ? ` <span style="color:#ef6c00;font-size:11px;font-weight:bold">⚠ Tier 1: ${escapeHtml(r.tier1_conflict.tier1_direction)}</span>`
+      : "";
     const outcomeLabel = r.outcome === null
       ? `<span style="color:#888">${
           r.unjudged_reason === "pending" ? "Awaiting confirmation"
@@ -1067,7 +1164,7 @@ function renderHistoryTable(rows) {
       <td>${escapeHtml(r.previous ?? "—")}</td>
       <td>${escapeHtml(r.forecast ?? "—")}</td>
       <td>${actualCell}</td>
-      <td>${predictionLabel} <span style="font-size:11px;color:#888">(${Math.round(r.ne_confidence * 100)}% conf.)</span></td>
+      <td>${predictionLabel} <span style="font-size:11px;color:#888">(${Math.round(r.ne_confidence * 100)}% conf.)</span>${tier1ConflictBadge}</td>
       <td>${outcomeLabel}</td>
     </tr>`;
   }).join("");

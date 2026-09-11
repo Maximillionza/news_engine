@@ -47,6 +47,7 @@ from typing import Optional
 from config.settings import EVENT_SURPRISE_DIRECTION, INSTRUMENTS
 from scoring.print_direction import NO_HIT_CONFIDENCE
 from webapp.store import get_connection, get_resolved_event_history, get_text_only_resolved_events
+from webapp.conflict import compute_tier1_sentiment_conflict
 
 DEFAULT_HISTORY_LIMIT = 50
 
@@ -65,6 +66,80 @@ PRE_FILTER_LIMIT = 200
 # value as NO_HIT_CONFIDENCE for consistency, even though it's a different
 # metric (score_bundle()'s agreement×coverage, not a lexicon hit-count).
 MIN_TEXT_EVENT_CONFIDENCE = NO_HIT_CONFIDENCE
+
+# Passed as build_print_call_history()'s `limit`, independent of the
+# History table's own display DEFAULT_HISTORY_LIMIT (50) — the rollup
+# should reflect the real track record the underlying tables can show,
+# not an arbitrarily smaller display page. Matches PRE_FILTER_LIMIT, the
+# same bound build_print_call_history() already applies internally to the
+# number of EVENTS it pre-filters from event_history/get_text_only_resolved_events,
+# BEFORE its own final display-limit truncation of the ROWS it emits.
+# Those are not the same unit (final whole-branch review, 2026-09-11 —
+# Finding 3): both of build_print_call_history()'s branches (the
+# fallback-numeric branch and the text-only branch) can emit ONE ROW PER
+# INSTRUMENT for a single event, so with INSTRUMENTS at 2 entries today,
+# total rows can run up to roughly 2x the event count. That means this
+# limit's true row-level coverage can silently shrink to roughly half of
+# STATS_LOOKBACK_LIMIT once real event volume (that produces a row for
+# every instrument) exceeds half this number — the rollup would then stop
+# reflecting the full window without any visible sign of it. Raise this
+# (and PRE_FILTER_LIMIT, since they're intentionally kept equal) if that
+# ever becomes a real problem in practice.
+STATS_LOOKBACK_LIMIT = PRE_FILTER_LIMIT
+
+
+@dataclass
+class CategoryStats:
+    """Confirmed/Missed/no-call tally for one grouping (overall, or one event_title)."""
+    correct: int
+    wrong: int
+    no_call: int
+
+    @property
+    def calls_made(self) -> int:
+        return self.correct + self.wrong
+
+    @property
+    def accuracy(self) -> Optional[float]:
+        """None — never fabricated as 0 — when this grouping made zero calls."""
+        if self.calls_made == 0:
+            return None
+        return self.correct / self.calls_made
+
+
+@dataclass
+class HistoryStats:
+    overall: CategoryStats
+    by_event_title: dict[str, CategoryStats]
+
+
+def compute_history_stats(rows: list[HistoryRow]) -> HistoryStats:
+    """
+    Aggregate Confirmed/Missed/no-call counts across `rows` — the same
+    manual eyeball-the-table exercise fundamental-analysis-review-2026-09-11.md
+    already did twice by hand via direct SQL against scoring/backtest_log.db.
+    Grouped by each row's exact event_title, never a fuzzy category (e.g.
+    "CPI m/m" and "CPI y/y" stay separate rows) — see this plan's Global
+    Constraints for why a new taxonomy isn't introduced here.
+
+    A row counts as correct (outcome == "Confirmed"), wrong
+    (outcome == "Missed"), or no_call (outcome is None, regardless of
+    which unjudged_reason) — no further split here; unjudged_reason is
+    already visible per-row in the History table itself for anyone who
+    wants that detail.
+    """
+    overall = CategoryStats(correct=0, wrong=0, no_call=0)
+    by_title: dict[str, CategoryStats] = {}
+    for row in rows:
+        bucket = by_title.setdefault(row.event_title, CategoryStats(correct=0, wrong=0, no_call=0))
+        for stats in (overall, bucket):
+            if row.outcome == "Confirmed":
+                stats.correct += 1
+            elif row.outcome == "Missed":
+                stats.wrong += 1
+            else:
+                stats.no_call += 1
+    return HistoryStats(overall=overall, by_event_title=by_title)
 
 
 def _implied_surprise_direction(event_title: str, instrument: str, direction: str) -> Optional[str]:
@@ -109,6 +184,7 @@ class HistoryRow:
     outcome: Optional[str]          # 'Confirmed' | 'Missed' | None
     unjudged_reason: Optional[str]  # None when outcome is a real verdict; else 'shrug' | 'unknown_surprise' | 'pending'
     source: str                     # 'live' | 'seeded' | 'live_web_fallback' | 'fred' — for numeric rows, 'seeded' wins if either side of the join disagrees, else 'live_web_fallback' wins if either side is 'live_web_fallback', else 'fred' wins if either side is 'fred', else 'live'
+    tier1_conflict: Optional[dict] = None  # {"sentiment_direction": str, "tier1_direction": str} when Tier 1 and this occurrence's own sentiment call genuinely disagree; None otherwise — see build_print_call_history() for which row shapes this applies to
 
 
 def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[dt.datetime] = None) -> list[HistoryRow]:
@@ -139,11 +215,16 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
     # Imported here, not at module level, to avoid a hard import-time
     # dependency cycle risk between webapp and scoring — matches the
     # existing lazy-import style already used for cross-pipeline reads in
-    # scoring/backtest_accumulator.py's _read_trend_signal().
+    # scoring/backtest_accumulator.py's _read_trend_signal(). (This
+    # reasoning is scoped to scoring.backtest_store only — the
+    # Tier1-vs-sentiment conflict helper used elsewhere in this function
+    # lives in webapp.conflict, a zero-dependency leaf module imported at
+    # module level above; it was never part of this cycle concern.)
     from scoring.backtest_store import (
         get_connection as get_backtest_connection,
         get_latest_print_prediction,
         get_latest_prediction_for_occurrence,
+        get_latest_tier1_predictions_bulk,
         get_outcome,
     )
 
@@ -162,6 +243,24 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
     except Exception as exc:  # noqa: BLE001 — an unreachable backtest DB must not crash the route
         print(f"[webapp.history] WARNING: could not read backtest data: {exc}")
         return []
+
+    # Batched, once per call (final whole-branch review, 2026-09-11 —
+    # Finding 2): replaces what used to be up to one
+    # get_latest_tier1_prediction_for_occurrence() query per (event,
+    # instrument) pair in each of the two loops below — up to ~800
+    # individual single-row queries per call, doubled since this function
+    # runs twice per History-tab load (/api/history and
+    # /api/history/stats). event_titles covers both branches' events, so
+    # one bulk call serves both loops. Fail-open, same reasoning as the
+    # per-lookup try/except calls already used throughout this function —
+    # a broken Tier 1 bulk lookup must not take down the whole History
+    # build.
+    event_titles = list({event.event_title for event in numeric_resolved} | {event.event_title for event in text_only_resolved})
+    try:
+        tier1_by_occurrence = get_latest_tier1_predictions_bulk(bt_conn, event_titles, list(INSTRUMENTS.keys()))
+    except Exception as exc:  # noqa: BLE001 — one bad bulk lookup must not crash the whole build
+        print(f"[webapp.history] WARNING: could not read tier1 bulk data: {exc}")
+        tier1_by_occurrence = {}
 
     rows: list[HistoryRow] = []
     try:
@@ -191,6 +290,11 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                         continue
                     if prediction is None:
                         continue  # never scored for this instrument at this occurrence — no row, not shown with blanks
+
+                    tier1_row = tier1_by_occurrence.get((event.event_title, instrument, event_time.isoformat()))
+                    fallback_tier1_conflict = compute_tier1_sentiment_conflict(
+                        prediction.direction, tier1_row.predicted_direction if tier1_row is not None else None,
+                    )
 
                     fallback_outcome: Optional[str] = None
                     fallback_unjudged_reason: Optional[str] = None
@@ -246,9 +350,16 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                             else "fred" if "fred" in (event.source, prediction.source)
                             else "live"
                         ),
+                        tier1_conflict=fallback_tier1_conflict,
                     ))
                 continue  # resolved event, no print-direction call — either shown via the fallback above or excluded per-instrument, never with blanks
 
+            # tier1_conflict deliberately not computed here: this row
+            # has instrument=None (a print-call is about the NUMBER,
+            # not a specific instrument's price direction), and
+            # Tier 1's predicted_direction is on the bullish/bearish
+            # PRICE axis — there is no single per-instrument sentiment
+            # call attached to this row to compare it against.
             outcome: Optional[str] = None
             unjudged_reason: Optional[str] = None
             if call.confidence <= NO_HIT_CONFIDENCE:
@@ -313,6 +424,11 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                     print(f"[webapp.history] WARNING: could not read outcome for {event.event_title}/{instrument}: {exc}")
                     outcome_row = None
 
+                tier1_row = tier1_by_occurrence.get((event.event_title, instrument, event_time.isoformat()))
+                text_tier1_conflict = compute_tier1_sentiment_conflict(
+                    prediction.direction, tier1_row.predicted_direction if tier1_row is not None else None,
+                )
+
                 text_outcome: Optional[str] = None
                 text_unjudged_reason: Optional[str] = None
                 if prediction.confidence <= MIN_TEXT_EVENT_CONFIDENCE:
@@ -335,6 +451,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                     outcome=text_outcome,
                     unjudged_reason=text_unjudged_reason,
                     source=prediction.source,
+                    tier1_conflict=text_tier1_conflict,
                 ))
     finally:
         bt_conn.close()

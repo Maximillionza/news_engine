@@ -1191,6 +1191,62 @@ def test_history_endpoint_empty_when_nothing_resolved():
     print("PASS\n")
 
 
+def test_history_endpoint_includes_tier1_conflict_key_when_conflict_exists():
+    print("=== app: /api/history's rows[].tier1_conflict carries a real Tier1-vs-sentiment conflict ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dashboard.db"
+        backtest_db_path = Path(tmp) / "backtest.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+            event = EconomicEvent(
+                title="PPI m/m", country="USD", impact="High", event_time_utc=event_time,
+                forecast="0.4%", previous="0.0%", actual="0.4%",
+            )
+            conn = store.get_connection(db_path)
+            store.upsert_event_history(conn, event, "higher_bullish", now=event_time)
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_prediction(
+                bconn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
+                probability=0.44, direction="bearish", confidence=0.33, article_count=142,
+                contradiction_flag=False, source="live", scored_at_utc=event_time,
+            )
+            backtest_store.record_tier1_prediction(
+                bconn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
+                value="Muted, non-reaccelerating call", confidence="Certain", source="ISM Prices Paid",
+                predicted_direction="bullish", logged_at_utc=event_time,
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/history")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert len(data["rows"]) == 1
+            assert data["rows"][0]["tier1_conflict"] == {"sentiment_direction": "bearish", "tier1_direction": "bullish"}
+    print("PASS\n")
+
+
+def test_history_stats_route_returns_overall_and_per_title_keys():
+    print("=== GET /api/history/stats: response has overall and by_event_title keys ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        store.get_connection(dash_db).close()
+        backtest_store.get_connection(backtest_db).close()
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/history/stats")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert "overall" in data
+            assert set(data["overall"].keys()) == {"correct", "wrong", "no_call", "accuracy"}
+            assert data["by_event_title"] == {}  # empty DBs -> no rows -> no per-title entries
+    print("PASS\n")
+
+
 def test_calendar_date_route_returns_events_and_calls_for_that_date_only():
     print("=== GET /api/calendar/date/<date>: returns only that date's events, with each tracked symbol's call ===")
     with tempfile.TemporaryDirectory() as tmp:

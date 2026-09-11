@@ -24,7 +24,7 @@ from webapp.store import (
     get_macro_calendar_events,
 )
 from webapp.trend import summarize_trend
-from webapp.history import build_print_call_history
+from webapp.history import build_print_call_history, compute_history_stats, STATS_LOOKBACK_LIMIT
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 from scoring.backtest_store import (
     get_connection as get_backtest_connection, get_latest_two_predictions,
@@ -358,9 +358,32 @@ def get_print_call_history():
                 "ne_prediction": r.ne_prediction, "ne_confidence": r.ne_confidence,
                 "outcome": r.outcome, "unjudged_reason": r.unjudged_reason,
                 "source": r.source,
+                "tier1_conflict": r.tier1_conflict,
             }
             for r in rows
         ],
+    })
+
+
+@app.route("/api/history/stats", methods=["GET"])
+def get_history_stats():
+    rows = build_print_call_history(limit=STATS_LOOKBACK_LIMIT)
+    stats = compute_history_stats(rows)
+
+    def _stats_dict(s):
+        return {"correct": s.correct, "wrong": s.wrong, "no_call": s.no_call, "accuracy": s.accuracy}
+
+    return jsonify({
+        "overall": _stats_dict(stats.overall),
+        "by_event_title": {
+            title: _stats_dict(s)
+            for title, s in sorted(stats.by_event_title.items(), key=lambda kv: kv[0])
+        },
+        # Final whole-branch review, 2026-09-11 — Finding 3: lets the
+        # frontend disclose the rollup's real window instead of implying
+        # unbounded history. The number must come from the real constant,
+        # not be hardcoded client-side.
+        "window_limit": STATS_LOOKBACK_LIMIT,
     })
 
 
