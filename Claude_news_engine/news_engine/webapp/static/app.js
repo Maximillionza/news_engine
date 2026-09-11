@@ -407,8 +407,23 @@ function renderCard(symbolEntry) {
       ⚠ Tier 1 vs. sentiment disagree: <b>${directionLabel(conflict.tier1_direction)}</b> vs <b>${directionLabel(conflict.sentiment_direction)}</b>
     </div>`;
   }
+  // tier1_confidence_downgrade (Tier 2/3 exogenous-context spec,
+  // 2026-09-11): a real, detected market-wide anomaly (DXY/UST_BOND/
+  // XAUUSD/US30) with no calendar event explaining it downgrades this
+  // Tier 1 row's DISPLAYED confidence one tier — never its direction,
+  // never the stored value (original_confidence is shown alongside so
+  // nothing is silently hidden).
+  function tier1ConfidenceDowngradeHtml(downgrade) {
+    if (!downgrade) return '';
+    const reasonText = downgrade.reason ? `: ${escapeHtml(downgrade.reason)}` : '';
+    return `<div class="tier1-confidence-downgrade">
+      ⚠ Confidence downgraded to <b>${escapeHtml(downgrade.displayed_confidence)}</b>
+      (was ${escapeHtml(downgrade.original_confidence)}) — unexplained ${escapeHtml(downgrade.series)} move${reasonText}
+    </div>`;
+  }
   const tier1PredictionLine = tier1PredictionHtml(next.tier1_prediction, symbol)
-    + tier1SentimentConflictHtml(next.tier1_sentiment_conflict);
+    + tier1SentimentConflictHtml(next.tier1_sentiment_conflict)
+    + tier1ConfidenceDowngradeHtml(next.tier1_confidence_downgrade);
 
   // print_prediction is the accumulator's separate "will THIS number beat
   // or miss forecast" call (scoring/print_direction.py), distinct from
