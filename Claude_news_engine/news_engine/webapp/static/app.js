@@ -544,6 +544,52 @@ function renderCard(symbolEntry) {
   }
   const otherEventsLine = otherEventsHtml(events, symbol);
 
+  // Batch 9 (2026-09-11 UI review): `events` also carries this symbol's
+  // OTHER upcoming/recent tracked events — a different day/cluster, not
+  // just same-instant siblings, which otherEventsHtml() above
+  // deliberately excludes (see its own comment) to keep that list scoped
+  // to a genuine release-time cluster. Those other events were always
+  // computed and shipped in the API response but never shown anywhere —
+  // confirmed live 2026-09-10: the real PPI Tier1-vs-sentiment conflict
+  // had no visibility path on the Dashboard tab once CPI's cluster became
+  // the featured one the next day. Bounded at OTHER_TRACKED_EVENTS_LIMIT,
+  // same "don't let this grow unboundedly" reasoning otherEventsHtml()'s
+  // own comment gives for staying simultaneous-only — this takes the next
+  // few by the same proximity sort the backend already applies
+  // (webapp/predictions_service.py's _sort_key()), not everything queued.
+  const OTHER_TRACKED_EVENTS_LIMIT = 3;
+  function otherTrackedEventsHtml(allEvents, symbolForCard) {
+    const featuredTime = allEvents[0].event_time_utc;
+    const rest = allEvents.slice(1)
+      .filter((e) => e.event_time_utc !== featuredTime)
+      .slice(0, OTHER_TRACKED_EVENTS_LIMIT);
+    if (rest.length === 0) return '';
+    const rows = rest.map((e) => {
+      const tier1Marker = otherEventTier1MarkerHtml(e.tier1_prediction, symbolForCard)
+        + otherEventTier1ConflictMarkerHtml(e.tier1_sentiment_conflict);
+      const whenLabel = formatEventDateTime(e.event_time_utc);
+      if (e.direction === "pending") {
+        return `<div class="other-event-row">
+          <span class="other-event-title">${escapeHtml(e.event_title)} <span style="font-size:11px;color:#888">(${whenLabel})</span></span>
+          <span class="other-event-pending">Pending</span>
+          ${tier1Marker}
+        </div>`;
+      }
+      const pct = directionPct(e.probability, e.direction);
+      const dClass = directionClass(e.direction);
+      return `<div class="other-event-row">
+        <span class="other-event-title">${escapeHtml(e.event_title)} <span style="font-size:11px;color:#888">(${whenLabel})</span></span>
+        <span class="other-event-call ${dClass}">${directionLabel(e.direction)} ${pct}%</span>
+        ${tier1Marker}
+      </div>`;
+    }).join('');
+    return `<div class="other-events">
+      <div class="other-events-heading">Other tracked events</div>
+      ${rows}
+    </div>`;
+  }
+  const otherTrackedEventsLine = otherTrackedEventsHtml(events, symbol);
+
   if (next.direction === "pending") {
     // The event/when data is already in the response — showing it here
     // instead of a generic placeholder tells the user WHAT they're
@@ -554,7 +600,7 @@ function renderCard(symbolEntry) {
       : `Awaiting: ${escapeHtml(next.event_title)}`;
     body += `<div class="pending">${heading}<br>
       <span style="font-size:12px;color:#888">${formatEventDateTime(next.event_time_utc)}</span></div>
-      ${articlePredictionLine}${tier1PredictionLine}${printPredictionLine}${kalshiReadLine}${trendSignalLine}${otherEventsLine}`;
+      ${articlePredictionLine}${tier1PredictionLine}${printPredictionLine}${kalshiReadLine}${trendSignalLine}${otherEventsLine}${otherTrackedEventsLine}`;
     // Real, live-observed case this branch must NOT skip (2026-08-17):
     // FOMC-style events whose essence-only score can never resolve
     // (title has no EVENT_SURPRISE_DIRECTION entry — see
@@ -597,6 +643,7 @@ function renderCard(symbolEntry) {
     ${articlePredictionLine}${tier1PredictionLine}${printPredictionLine}${kalshiReadLine}</div></div>
     <div class="bull-bear-scale">${bullBearScaleSvg(next.probability)}</div>`;
   body += otherEventsLine;
+  body += otherTrackedEventsLine;
   body += dayStripHtml(next.event_time_utc);
   const historyToggleId = `history-${symbol}-${next.event_title.replace(/[^a-zA-Z0-9]/g, '')}`;
   body += `<div class="history-toggle">
