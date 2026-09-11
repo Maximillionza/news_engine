@@ -314,9 +314,9 @@ def test_kalshi_trust_weight_above_precursor_trust_weight():
 
 
 def test_thin_sample_caps_extreme_probability():
-    print("=== R3: score_bundle: a thin (2-article) strongly-agreeing sample has probability capped, not near-certain ===")
+    print("=== R3: score_bundle: a thin (2-article) strongly-agreeing sample has probability capped at the GRADUATED n=2 ceiling, not the flat one ===")
     from data_layer.news_feed import NewsArticle
-    from config.settings import THIN_SAMPLE_PROBABILITY_CAP
+    from config.settings import THIN_SAMPLE_PROBABILITY_CAP_BY_SIGNAL_COUNT
     event = _cpi_event()  # "CPI m/m", higher_bullish
     # Two strongly bullish-USD articles, reproducing BACKTEST_REPORT.md's
     # documented failure shape: a thin (2-3 article) sample that agrees
@@ -336,10 +336,38 @@ def test_thin_sample_caps_extreme_probability():
     bundle = EventNewsBundle(event=event, articles=articles, as_of_utc=EVENT_TIME)
     result = score_bundle(bundle, "XAUUSD")  # inverse mapping — bullish USD -> bearish gold
     assert result.thin_sample is True
-    lower_bound = 1.0 - THIN_SAMPLE_PROBABILITY_CAP
-    assert lower_bound <= result.probability <= THIN_SAMPLE_PROBABILITY_CAP, (
-        f"expected probability capped within [{lower_bound}, {THIN_SAMPLE_PROBABILITY_CAP}], got {result.probability}"
+    cap = THIN_SAMPLE_PROBABILITY_CAP_BY_SIGNAL_COUNT[2]
+    lower_bound = 1.0 - cap
+    assert lower_bound <= result.probability <= cap, (
+        f"expected probability capped within [{lower_bound}, {cap}] (n=2's own cap, not the flat fallback), got {result.probability}"
     )
+    print("PASS\n")
+
+
+def test_thin_sample_n1_caps_tighter_than_n2():
+    print("=== P0 #1 (fundamental-analysis-review-2026-09-11.md): a single-article sample caps TIGHTER than a two-article sample — n=1 and n=2 no longer share the same ceiling ===")
+    from data_layer.news_feed import NewsArticle
+    from config.settings import THIN_SAMPLE_PROBABILITY_CAP_BY_SIGNAL_COUNT
+    event = _cpi_event()
+    # Reproduces the FOMC Meeting Minutes failure shape: exactly one
+    # strongly-worded article, previously reaching the same 0.80 ceiling
+    # a two-article sample got.
+    articles = [
+        NewsArticle(
+            title="Fed seen hawkish, rate hike bets surge", summary="Dollar strength widely expected.",
+            source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+            url="https://example.test/single-1",
+        ),
+    ]
+    bundle = EventNewsBundle(event=event, articles=articles, as_of_utc=EVENT_TIME)
+    result = score_bundle(bundle, "XAUUSD")
+    assert result.thin_sample is True
+    cap = THIN_SAMPLE_PROBABILITY_CAP_BY_SIGNAL_COUNT[1]
+    lower_bound = 1.0 - cap
+    assert lower_bound <= result.probability <= cap, (
+        f"expected probability capped within [{lower_bound}, {cap}] (n=1's own, tighter cap), got {result.probability}"
+    )
+    assert cap < THIN_SAMPLE_PROBABILITY_CAP_BY_SIGNAL_COUNT[2], "n=1's cap must be strictly tighter than n=2's"
     print("PASS\n")
 
 
@@ -368,6 +396,58 @@ def test_sufficient_signal_count_is_not_capped():
     assert result.thin_sample is False
     assert result.probability < (1.0 - THIN_SAMPLE_PROBABILITY_CAP), (
         f"expected an uncapped, near-extreme probability, got {result.probability}"
+    )
+    print("PASS\n")
+
+
+def test_confidence_sample_size_floor_discounts_a_single_agreeing_article():
+    print("=== P0 #2 (fundamental-analysis-review-2026-09-11.md): confidence sample-size floor — one signal-bearing article agreeing with itself trivially hits agreement=1.0/coverage=1.0, but the floor must still pull confidence well below ceiling ===")
+    from data_layer.news_feed import NewsArticle
+    from config.settings import MIN_CONFIDENT_SAMPLE_SIZE
+    event = _cpi_event()
+    articles = [
+        NewsArticle(
+            title="Fed seen hawkish, rate hike bets surge", summary="Dollar strength widely expected.",
+            source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+            url="https://example.test/floor-1",
+        ),
+    ]
+    bundle = EventNewsBundle(event=event, articles=articles, as_of_utc=EVENT_TIME)
+    result = score_bundle(bundle, "XAUUSD")
+    # signal_count=1 -> floor multiplier is 1/MIN_CONFIDENT_SAMPLE_SIZE;
+    # agreement*coverage alone would be 1.0 here (a single article
+    # trivially agrees with itself and is the whole bundle) — reproduces
+    # the exact FOMC Meeting Minutes shape (article_count=1, 100% confidence).
+    assert result.confidence <= 1.0 / MIN_CONFIDENT_SAMPLE_SIZE + 1e-9, (
+        f"expected the sample-size floor to cap confidence at ~{1.0 / MIN_CONFIDENT_SAMPLE_SIZE:.2f} "
+        f"for a single signal-bearing article, got {result.confidence}"
+    )
+    print("PASS\n")
+
+
+def test_confidence_sample_size_floor_does_not_discount_at_or_above_threshold():
+    print("=== confidence sample-size floor: signal_count >= MIN_CONFIDENT_SAMPLE_SIZE applies no discount at all ===")
+    from data_layer.news_feed import NewsArticle
+    from config.settings import MIN_CONFIDENT_SAMPLE_SIZE
+    event = _cpi_event()
+    # MIN_CONFIDENT_SAMPLE_SIZE strongly, unanimously agreeing articles —
+    # signal_count meets the floor's own threshold exactly.
+    articles = [
+        NewsArticle(
+            title=f"Fed seen hawkish, rate hike bets surge #{i}", summary="Dollar strength widely expected.",
+            source="Test Wire", source_type="test", published_utc=EVENT_TIME - dt.timedelta(hours=1),
+            url=f"https://example.test/floor-sufficient-{i}",
+        )
+        for i in range(MIN_CONFIDENT_SAMPLE_SIZE)
+    ]
+    bundle = EventNewsBundle(event=event, articles=articles, as_of_utc=EVENT_TIME)
+    result = score_bundle(bundle, "XAUUSD")
+    # Unanimous agreement + full coverage -> agreement*coverage == 1.0,
+    # and at signal_count == MIN_CONFIDENT_SAMPLE_SIZE the floor multiplier
+    # is exactly 1.0 too, so confidence should sit at (or very near) 1.0,
+    # not discounted the way a thinner sample would be.
+    assert result.confidence > 1.0 / MIN_CONFIDENT_SAMPLE_SIZE, (
+        f"expected no sample-size-floor discount at signal_count == MIN_CONFIDENT_SAMPLE_SIZE, got {result.confidence}"
     )
     print("PASS\n")
 
@@ -1091,7 +1171,10 @@ if __name__ == "__main__":
     test_kalshi_and_print_call_and_trend_signal_all_present_all_contribute()
     test_kalshi_trust_weight_above_precursor_trust_weight()
     test_thin_sample_caps_extreme_probability()
+    test_thin_sample_n1_caps_tighter_than_n2()
     test_sufficient_signal_count_is_not_capped()
+    test_confidence_sample_size_floor_discounts_a_single_agreeing_article()
+    test_confidence_sample_size_floor_does_not_discount_at_or_above_threshold()
     test_macro_backdrop_agrees_when_lean_matches_aggregate_sign()
     test_macro_backdrop_disagreement_discounts_confidence_not_probability_or_direction()
     test_macro_backdrop_none_contributes_nothing()

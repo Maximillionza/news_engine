@@ -34,8 +34,8 @@ The 2026-09-10 PPI miss (Tier 1 called `Certain`/bullish, wrong) is a direct sym
 | Kalshi prediction-market integration | **Shipped**, partially extended | `data_layer/kalshi_feed.py` — date-ticketed series extension still open (SWOT R4) |
 | Macro-backdrop / COT / equity-risk / oil-shock confidence dampeners | **Shipped** | `data_layer/macro_backdrop.py`, `data_layer/cot_positioning.py` |
 | Country-scoped precursor lookups (fixes foreign-release title collisions) | **Shipped** (2026-09-03, commit `b985c3e`) | `data_layer/event_context.py` — **caveat:** any precursor-linked call scored before this fix is unverifiable, not necessarily wrong |
-| Graduated thin-sample probability cap (n=1 vs n=2 vs n=3+) | **Outstanding — P0** | fundamental-analysis-review §6.1: FOMC's 0/2 record traces directly to a flat 0.80 cap regardless of how thin the sample is |
-| Confidence floor independent of agreement×coverage (n=1 shouldn't hit 1.0 confidence) | **Outstanding — P0** | same review §6.2 |
+| Graduated thin-sample probability cap (n=1 → 0.60, n=2 → 0.70, n=3+ unchanged) | **Shipped** (2026-09-11, Batch 1) | `config/settings.py`'s `THIN_SAMPLE_PROBABILITY_CAP_BY_SIGNAL_COUNT`, `scoring/probability_engine.py`'s `_apply_thin_sample_cap()`; targets the diagnosed FOMC 0/2 failure |
+| Confidence floor independent of agreement×coverage (`min(1.0, signal_count / MIN_CONFIDENT_SAMPLE_SIZE)`) | **Shipped** (2026-09-11, Batch 1) | `config/settings.py`'s `MIN_CONFIDENT_SAMPLE_SIZE = 4`, applied in `score_bundle()` alongside the existing confidence multipliers |
 | CPI zero-signal diagnosis (89 articles, zero registered as a contribution) | **Outstanding — P0** | review §4: not yet determined whether it's topic-filter dilution or a lexicon/FinBERT framing gap specific to CPI headlines |
 | Per-multiplier audit trail (which of macro-backdrop/COT/equity-risk/oil-shock fired on a call) | **Outstanding — P2** | review §6.9 |
 
@@ -125,10 +125,10 @@ See §5 below — grouped into shippable batches by touched files and dependency
 
 Grouped by touched files/area and dependency order, not just priority — the goal is fewer, more coherent deploys instead of one PR per row above. Each batch is independently shippable; do them in this order because later batches build on top of files earlier batches clean up or extend.
 
-**Batch 1 — Scoring engine, two small fixes, same file, ship together (P0, low risk, ~1 PR)**
+**Batch 1 — Scoring engine, two small fixes, same file, ship together (P0, low risk, ~1 PR) — ✅ SHIPPED 2026-09-11**
 - Graduated thin-sample probability cap (n=1/n=2/n=3+)
 - Confidence floor independent of agreement×coverage
-Both are isolated, scoped changes inside `scoring/probability_engine.py`'s existing confidence/probability math, both directly fix the diagnosed FOMC 0/2 failure. No shared work with any other batch — do first, smallest blast radius, immediately testable against the real FOMC misses already in the DB.
+Both are isolated, scoped changes inside `scoring/probability_engine.py`'s existing confidence/probability math, both directly fix the diagnosed FOMC 0/2 failure. No shared work with any other batch. 5 new tests added (`tests/test_probability_engine.py`), full suite 552/552 passing. Not yet re-validated against a live FOMC re-score (prospective fix — the historical 0/2 calls stay in the DB as-is; only future calls benefit).
 
 **Batch 2 — CPI zero-signal, investigate-then-fix (P0, sequenced on its own)**
 - Pull raw article titles from the 89-article Aug-12 window

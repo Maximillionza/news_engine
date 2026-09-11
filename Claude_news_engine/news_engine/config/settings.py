@@ -773,7 +773,31 @@ SURPRISE_SENSITIVITY = 3.0
 # Untuned starting values, same honesty as every other constant in this
 # file — needs revisiting once real backtest data exists (see R8).
 THIN_SAMPLE_SIGNAL_THRESHOLD = 3     # fewer than this many signal-bearing contributions is "thin"
-THIN_SAMPLE_PROBABILITY_CAP = 0.80   # max/min probability allowed on a thin sample — still directional, never near-certain
+THIN_SAMPLE_PROBABILITY_CAP = 0.80   # fallback cap for any thin count not explicitly graduated below
+
+# Graduated thin-sample cap (docs/fundamental-analysis-review-2026-09-11.md
+# P0 #1): the flat THIN_SAMPLE_PROBABILITY_CAP above gave n=1 and n=2 the
+# SAME 0.80 ceiling — root cause of the FOMC Meeting Minutes miss
+# (2026-08-19, article_count=1, hit 80% probability AND 100% confidence,
+# both at their ceilings, and was wrong). n=1 is a materially thinner read
+# than n=2; the cap should reflect that, not treat them identically.
+# Untuned starting values, same honesty as THIN_SAMPLE_PROBABILITY_CAP —
+# needs revisiting once real backtest data exists at each count.
+THIN_SAMPLE_PROBABILITY_CAP_BY_SIGNAL_COUNT = {
+    1: 0.60,
+    2: 0.70,
+}
+
+# Confidence sample-size floor (same review, P0 #2): agreement x coverage
+# alone can't distinguish "1 of 1 signal-bearing contribution agrees" from
+# "10 of 10 agree" — both trivially hit 1.0. This multiplies confidence by
+# a saturating function of raw signal count so a single-article call can
+# no longer reach ceiling confidence purely because that one article
+# agreed with itself. Applied alongside the existing confidence
+# multipliers (MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER etc.),
+# never touches probability or direction — same discipline every other
+# confidence-only modifier in this file already follows.
+MIN_CONFIDENT_SAMPLE_SIZE = 4   # signal count at which this floor stops discounting confidence at all
 
 # --- Macro-backdrop cross-check (R5, docs/fundamental-analysis-swot-2026-08-14.md) ---
 # The engine's single biggest identified design gap: every prior signal

@@ -43,6 +43,7 @@ from config.settings import (
     INSTRUMENTS,
     KALSHI_TRUST_WEIGHT,
     MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER,
+    MIN_CONFIDENT_SAMPLE_SIZE,
     OIL_SHOCK_CONFIDENCE_MULTIPLIER,
     PRECURSOR_CHAIN_CONFLICT_CONFIDENCE_MULTIPLIER,
     PRE_EVENT_WINDOW_HOURS,
@@ -56,6 +57,7 @@ from config.settings import (
     RISK_SENTIMENT_DAMPENING,
     SOURCE_TRUST_WEIGHTS,
     THIN_SAMPLE_PROBABILITY_CAP,
+    THIN_SAMPLE_PROBABILITY_CAP_BY_SIGNAL_COUNT,
     THIN_SAMPLE_SIGNAL_THRESHOLD,
     TIME_DECAY_HALF_LIFE_MINUTES,
     TREND_STREAK_TRUST_WEIGHT,
@@ -617,9 +619,16 @@ def _apply_thin_sample_cap(probability: float, signal_count: int) -> tuple[float
     """
     Returns (possibly-capped probability, whether it was actually thin).
     Below THIN_SAMPLE_SIGNAL_THRESHOLD signal-bearing contributions, caps
-    probability's distance from 50% at THIN_SAMPLE_PROBABILITY_CAP - 0.5 —
-    see the constants' comments in config.settings for the BACKTEST_REPORT
-    finding this targets (near-certain probabilities from 2-3 articles).
+    probability's distance from 50% — see the constants' comments in
+    config.settings for the BACKTEST_REPORT finding this targets
+    (near-certain probabilities from 2-3 articles) and the graduated-cap
+    finding (fundamental-analysis-review-2026-09-11.md P0 #1): n=1 and n=2
+    are materially different thinness, so each gets its own, tighter cap
+    via THIN_SAMPLE_PROBABILITY_CAP_BY_SIGNAL_COUNT rather than sharing
+    THIN_SAMPLE_PROBABILITY_CAP's flat ceiling — a single article no
+    longer reaches the same 80% ceiling a two-article sample does.
+    THIN_SAMPLE_PROBABILITY_CAP itself stays as the fallback for any thin
+    count not explicitly listed there (e.g. signal_count == 0).
     Deliberately independent of the agreement x coverage confidence
     discount already applied upstream: a thin sample that unanimously
     agrees still passes THAT discount untouched (agreement=1.0), so
@@ -627,7 +636,8 @@ def _apply_thin_sample_cap(probability: float, signal_count: int) -> tuple[float
     """
     if signal_count >= THIN_SAMPLE_SIGNAL_THRESHOLD:
         return probability, False
-    max_distance = THIN_SAMPLE_PROBABILITY_CAP - 0.5
+    cap = THIN_SAMPLE_PROBABILITY_CAP_BY_SIGNAL_COUNT.get(signal_count, THIN_SAMPLE_PROBABILITY_CAP)
+    max_distance = cap - 0.5
     distance = probability - 0.5
     clamped_distance = max(-max_distance, min(max_distance, distance))
     return 0.5 + clamped_distance, True
@@ -1057,6 +1067,16 @@ def score_bundle(
     # agreement alone lets a single signal-bearing article among a dozen
     # silent ones report 100% confidence — it trivially agrees with itself.
     confidence = agreement * coverage
+
+    # P0 #2 (fundamental-analysis-review-2026-09-11.md): agreement x
+    # coverage alone can't distinguish "1 of 1 signal-bearing contribution
+    # agrees" from "10 of 10 agree" — both trivially hit 1.0, which is
+    # exactly how the FOMC Meeting Minutes miss reached 100% confidence
+    # from a single article. This multiplies confidence by a saturating
+    # function of raw signal count, independent of agreement/coverage —
+    # same "never touches probability or direction, only discounts
+    # confidence" discipline every multiplier below already follows.
+    confidence *= min(1.0, signal_count / MIN_CONFIDENT_SAMPLE_SIZE)
 
     # R5: independent dollar/rates backdrop check — measured on aggregate_usd
     # (the raw USD-directional axis), same reasoning as agreement/coverage
