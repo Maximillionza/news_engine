@@ -52,7 +52,7 @@ The 2026-09-10 PPI miss (Tier 1 called `Certain`/bullish, wrong) is a direct sym
 | Automatic outcome grading (Dukascopy, scheduled every 15 min) | **Shipped** | `scripts/confirm_backtest_outcomes.py` + Windows Scheduled Task `NewsEngine_OutcomeConfirm` |
 | Automatic Tier1-vs-sentiment-vs-actual comparison, persisted | **Shipped** | `scoring/tier1_comparison.py`, `tier1_comparisons` table |
 | Automatic pre-release research trigger (daily check, logs a call if a gap exists) | **Shipped**, not yet run | scheduled task `tier1-cpi-ppi-autoresearch` (this app's own scheduler) |
-| Contradiction detection between Tier 1 and sentiment's own call | **Outstanding — P0** | fundamental-analysis-review §6.5: `reconcile_group()` exists for co-released sentiment titles but doesn't look at Tier 1 at all — the Sep 10 divergence (Tier 1 `Certain`/wrong vs sentiment/right) shipped with zero flag on the dashboard |
+| Contradiction detection between Tier 1 and sentiment's own call | **Shipped** (2026-09-11, Batch 4) | `webapp/predictions_service.py`'s new `tier1_sentiment_conflict` field, computed after reconciliation settles the final `article_prediction`. Revises the original live-tier1-dashboard-display spec's "no agree/disagree computation on the live path" constraint — explicit user ruling, documented here. Rendered via `webapp/static/app.js`'s `tier1SentimentConflictHtml()`/`otherEventTier1ConflictMarkerHtml()`. **Real limitation found during live verification, not fixed in this batch:** the Sep 10 PPI conflict (the one real occurrence with live data) does NOT currently render on the Dashboard tab — it's neither `events[0]` nor timestamp-simultaneous with the currently-featured cluster, and the card only ever renders those. This is a bigger, pre-existing structural limit (every signal type on this dashboard is invisible once its event scrolls out of the featured cluster), not something introduced by or scoped to this batch — flagging as a real follow-up, not silently claiming full visibility |
 | `POC_Sub_Event_Consolidation` standardized-surprise heuristic wired into an actual calculation | **Outstanding** | Currently a documented, `predicted_direction`-stays-manual heuristic only (explicit warning comment on `Tier1Prediction`); "Option B" in this project's own terms, explicitly deferred until real comparison data existed — it now does (n=3, 1 wrong) |
 
 ### 2c. Tier 2/3 — exogenous market context (never built)
@@ -82,6 +82,7 @@ The 2026-09-10 PPI miss (Tier 1 called `Certain`/bullish, wrong) is a direct sym
 | Feature | Status | Where |
 |---|---|---|
 | Keyed/targeted re-render (vs. full DOM teardown every 60s poll) | **Outstanding** | root cause of the existing card-state-restoration hacks (expanded History panels, flipped cards) |
+| Only `events[0]` and its exact-timestamp siblings ever render on the Dashboard tab — every other event for a tracked symbol (a different day/cluster) is completely invisible there, regardless of signal type | **Outstanding — found 2026-09-11 during Batch 4 live verification** | Confirmed live: the real Sep 10 PPI Tier1-vs-sentiment conflict has no visibility path on the Dashboard tab once CPI's cluster became current the next day — same root cause as the pre-existing "only events[0] was ever rendered" note, just bigger than previously scoped (this affects ANY past-but-recent event, not only same-timestamp siblings) |
 | Component boundaries in `app.js` (~1000 lines, hand-rolled string templates) | **Outstanding** | `renderCard()` alone ~300 lines |
 | Consistent HTML escaping (ticker symbol interpolated raw in a couple of places) | **Outstanding**, not currently exploitable (server-validated) but not structurally enforced | `app.js:260`, `:465` |
 | Fetch error handling on the 60s poll path | **Outstanding** | a transient network blip silently freezes the dashboard on stale data, no visible indicator |
@@ -142,9 +143,12 @@ Both are isolated, scoped changes inside `scoring/probability_engine.py`'s exist
 - Production WSGI server: `waitress.serve()` replaces `app.run()`. Live-verified: `Server: waitress` response header.
 8 new/updated tests (2 migration-caching tests each in `test_webapp_store.py`/`test_backtest_store.py`). Full suite: 558/558 passing throughout.
 
-**Batch 4 — Tier1-vs-sentiment contradiction detection (P0, contained blast radius)**
-- Extend `reconcile_group()`'s pattern to flag Tier 1 vs. sentiment disagreement, same way it already flags co-released sentiment titles
-Touches `webapp/reconciliation.py` + the same dashboard card rendering Batch 3 will have just cleaned up — sequence after Batch 3 so this doesn't get written twice (once against the messy route, once against the extracted service).
+**Batch 4 — Tier1-vs-sentiment contradiction detection (P0, contained blast radius) — ✅ SHIPPED 2026-09-11**
+- New `tier1_sentiment_conflict` field in `webapp/predictions_service.py` (not `reconcile_group()` itself — a genuinely different comparison: two SOURCES for the same title, not co-released titles disagreeing with each other), computed after reconciliation settles the final `article_prediction` value.
+- Explicit user ruling revising the original "no agree/disagree on the live path" constraint (asked before building, not routed around).
+- Frontend: `tier1SentimentConflictHtml()` (featured card) + `otherEventTier1ConflictMarkerHtml()` (sibling row), same warning palette as the existing co-released-conflict badge.
+- 3 new tests, full suite 561/561. Live-verified: the real Sep 10 PPI conflict (bearish sentiment vs bullish Tier1) round-trips correctly through `/api/predictions`; CSS/markup independently confirmed correct via direct DOM injection.
+- **Real gap found, not fixed here:** that same real conflict doesn't currently render anywhere on the Dashboard tab, because it's neither the featured event nor timestamp-simultaneous with today's cluster — logged as its own outstanding row in §2e, out of scope for this batch.
 
 **Batch 5 — Frontend debt paydown (same file Tier 2/3's new card content will also need, do before it lands)**
 - Keyed/targeted re-render (replaces full-DOM-rebuild + state-restoration hacks)

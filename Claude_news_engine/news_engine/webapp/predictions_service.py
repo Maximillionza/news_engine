@@ -388,6 +388,7 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
                 "trend_signal": trend_signal,
                 "kalshi_read": kalshi_read,
                 "tier1_prediction": tier1_prediction,
+                "tier1_sentiment_conflict": None,  # computed below, after reconciliation settles article_prediction's final value
             })
 
         for time_key, predictions_by_title in accumulator_predictions_by_time_and_title.items():
@@ -424,6 +425,42 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
                     # own prior snapshot and is left untouched.
                     if ev["event_title"] != reconciled.prediction.event_title:
                         ev["previous_article_prediction"] = None
+
+        # Tier 1 vs. sentiment contradiction detection
+        # (fundamental-analysis-review-2026-09-11.md P0 #5) — the Sep 10
+        # PPI divergence (Tier 1 logged Certain/bullish, wrong; sentiment
+        # called bearish, right) shipped to the dashboard with zero flag
+        # anywhere, even though reconcile_group() already exists for
+        # exactly this class of problem, just scoped to co-released
+        # sentiment titles rather than a cross-system disagreement. This
+        # REVISES the live-tier1-dashboard-display spec's original "no
+        # agree/disagree computation on the live path" constraint
+        # (2026-09-07) — kept BacktestReport.agreement_rate() itself
+        # untouched (still backtest-only), but a live flag is now real
+        # product intent, not scope creep.
+        #
+        # Computed here, AFTER reconciliation above, since reconciliation
+        # can overwrite article_prediction for a co-released title — this
+        # must compare the FINAL value the card actually shows, not a
+        # pre-reconciliation snapshot. "No call" (neutral, or either side
+        # simply absent) is never a conflict — same convention
+        # scoring/backtest.py's BacktestCase.evaluate() already uses for
+        # Tier 1's own accuracy metric: only a REAL, opposing directional
+        # call from both sides counts as a contradiction.
+        for ev in entry["events"]:
+            article_pred = ev["article_prediction"]
+            tier1_pred = ev["tier1_prediction"]
+            if article_pred is None or tier1_pred is None:
+                continue
+            sentiment_direction = article_pred["direction"]
+            tier1_direction = tier1_pred["predicted_direction"]
+            if sentiment_direction not in ("bullish", "bearish") or tier1_direction not in ("bullish", "bearish"):
+                continue
+            if sentiment_direction != tier1_direction:
+                ev["tier1_sentiment_conflict"] = {
+                    "sentiment_direction": sentiment_direction,
+                    "tier1_direction": tier1_direction,
+                }
 
         # A FRESHLY resolved score outranks a still-pending one, regardless
         # of which is chronologically closer — a real BUY/SELL/HOLD call is

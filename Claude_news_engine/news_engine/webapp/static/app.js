@@ -332,13 +332,20 @@ function renderCard(symbolEntry) {
   // currently CPI/PPI only). Rendered directly beneath whatever the
   // sentiment line above already shows, using the SAME bullish/bearish/
   // neutral color classes -- shared color language is what makes "do
-  // these two calls visually agree" readable at a glance, deliberately
-  // without any computed agree/disagree badge (that stays a
-  // backtest-only concept, scoring/backtest.py's BacktestReport.
-  // agreement_rate() -- never live). confidence is rendered as its own
-  // plain text tag (Certain/Likely/Guessing), never turned into a
+  // these two calls visually agree" readable at a glance even before
+  // the explicit conflict badge below. confidence is rendered as its
+  // own plain text tag (Certain/Likely/Guessing), never turned into a
   // percentage or a bar -- doing that would recreate exactly the
   // flattening Tier1Prediction's own design exists to avoid.
+  //
+  // tier1_sentiment_conflict (2026-09-11, fundamental-analysis-review
+  // P0 #5): revises this feature's original "no agree/disagree
+  // computation on the live path" constraint (2026-09-07 spec) — the
+  // Sep 10 2026 PPI divergence (Tier 1 Certain/wrong vs. sentiment
+  // right) shipped with zero flag anywhere, so a live badge is now real
+  // product intent. BacktestReport.agreement_rate() itself stays
+  // untouched (still backtest-only); this is a separate, additive
+  // signal computed server-side in webapp/predictions_service.py.
   // tier1DirectionLabel (final whole-branch review, 2026-09-07 — Finding
   // 5): a Tier 1 row with confidence "Guessing" and direction "neutral"
   // means NO confident call was ever attempted (e.g. the logged CPI m/m
@@ -361,7 +368,22 @@ function renderCard(symbolEntry) {
       <div style="font-size:11px;color:#888;margin-top:2px">${escapeHtml(tier1.source)}</div>
     </div>`;
   }
-  const tier1PredictionLine = tier1PredictionHtml(next.tier1_prediction, symbol);
+  // tier1_sentiment_conflict (2026-09-11): a real, opposing directional
+  // call from both sides for the SAME occurrence — never rendered for a
+  // no-call on either side (server already excludes that case, see
+  // webapp/predictions_service.py). Distinct styling from
+  // article-prediction-conflict (that one's about co-released SENTIMENT
+  // titles disagreeing with each other; this one's about Tier 1
+  // disagreeing with sentiment itself) — same warning-badge visual
+  // language, different underlying question.
+  function tier1SentimentConflictHtml(conflict) {
+    if (!conflict) return '';
+    return `<div class="tier1-sentiment-conflict">
+      ⚠ Tier 1 vs. sentiment disagree: <b>${directionLabel(conflict.tier1_direction)}</b> vs <b>${directionLabel(conflict.sentiment_direction)}</b>
+    </div>`;
+  }
+  const tier1PredictionLine = tier1PredictionHtml(next.tier1_prediction, symbol)
+    + tier1SentimentConflictHtml(next.tier1_sentiment_conflict);
 
   // print_prediction is the accumulator's separate "will THIS number beat
   // or miss forecast" call (scoring/print_direction.py), distinct from
@@ -464,6 +486,18 @@ function renderCard(symbolEntry) {
     const dClass = directionClass(tier1.predicted_direction);
     return `<span class="other-event-tier1 ${dClass}">🧮 Tier 1 (${escapeHtml(symbolForCard)}): <b>${tier1DirectionLabel(tier1)}</b></span>`;
   }
+  // otherEventTier1ConflictMarkerHtml (2026-09-11): same reasoning as
+  // otherEventTier1MarkerHtml above — the real Sep 10 2026 PPI conflict
+  // is exactly this kind of sibling row (featured event "Core PPI m/m"
+  // has no Tier 1 row; sibling "PPI m/m" does, and disagreed with
+  // sentiment), so this badge must be visible here too, not only on a
+  // featured card, or it recreates the same "only visible on the one
+  // real occurrence that never happens to be featured" gap already
+  // fixed once for tier1_prediction itself.
+  function otherEventTier1ConflictMarkerHtml(conflict) {
+    if (!conflict) return '';
+    return `<span class="other-event-tier1-conflict">⚠ Tier 1 vs. sentiment disagree</span>`;
+  }
   function otherEventsHtml(events, symbolForCard) {
     // Only genuinely SIMULTANEOUS events (identical event_time_utc to the
     // featured one) belong here — `events` also carries other upcoming/
@@ -473,7 +507,8 @@ function renderCard(symbolEntry) {
     const simultaneous = events.slice(1).filter((e) => e.event_time_utc === events[0].event_time_utc);
     if (simultaneous.length === 0) return '';
     const rows = simultaneous.map((e) => {
-      const tier1Marker = otherEventTier1MarkerHtml(e.tier1_prediction, symbolForCard);
+      const tier1Marker = otherEventTier1MarkerHtml(e.tier1_prediction, symbolForCard)
+        + otherEventTier1ConflictMarkerHtml(e.tier1_sentiment_conflict);
       if (e.direction === "pending") {
         return `<div class="other-event-row">
           <span class="other-event-title">${escapeHtml(e.event_title)}</span>

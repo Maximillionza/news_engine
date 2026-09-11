@@ -1780,6 +1780,116 @@ def test_predictions_route_includes_tier1_prediction_for_logged_occurrence():
     print("PASS\n")
 
 
+def test_predictions_flags_tier1_sentiment_conflict_when_directions_disagree():
+    print("=== app: /api/predictions flags tier1_sentiment_conflict when Tier 1 and sentiment make opposing real calls (P0 #5, fundamental-analysis-review-2026-09-11.md) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="PPI m/m", country="USD", impact="High",
+                               event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual=None),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            # Reproduces the real Sep 10 2026 PPI case: sentiment called
+            # bearish, Tier 1 logged bullish/Certain — opposing real calls.
+            backtest_store.record_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time, 0.44, "bearish", 0.33, 142, False,
+            )
+            backtest_store.record_tier1_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time,
+                value="Muted, non-reaccelerating call", confidence="Certain",
+                source="BLS/ISM", predicted_direction="bullish",
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
+            assert events["PPI m/m"]["tier1_sentiment_conflict"] == {
+                "sentiment_direction": "bearish",
+                "tier1_direction": "bullish",
+            }
+    print("PASS\n")
+
+
+def test_predictions_no_tier1_sentiment_conflict_when_directions_agree():
+    print("=== app: /api/predictions: tier1_sentiment_conflict is null when Tier 1 and sentiment agree ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="PPI m/m", country="USD", impact="High",
+                               event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual=None),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time, 0.60, "bearish", 0.5, 100, False,
+            )
+            backtest_store.record_tier1_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time,
+                value="Some call", confidence="Certain",
+                source="BLS/ISM", predicted_direction="bearish",
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
+            assert events["PPI m/m"]["tier1_sentiment_conflict"] is None
+    print("PASS\n")
+
+
+def test_predictions_no_tier1_sentiment_conflict_when_tier1_made_no_call():
+    print("=== app: /api/predictions: tier1_sentiment_conflict is null when Tier 1's own call is a no-call (Guessing/neutral) — no call is never a conflict ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            cpi_time = dt.datetime(2026, 9, 11, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="CPI m/m", country="USD", impact="High",
+                               event_time_utc=cpi_time, forecast="0.3%", previous="-0.4%", actual=None),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            # Real sentiment call exists and is directional...
+            backtest_store.record_prediction(
+                bconn, "CPI m/m", "XAUUSD", cpi_time, 0.55, "bearish", 0.3, 93, False,
+            )
+            # ...but Tier 1's own logged call is an honest no-call, same
+            # shape as the real Sep 2026 CPI case (Guessing/neutral).
+            backtest_store.record_tier1_prediction(
+                bconn, "CPI m/m", "XAUUSD", cpi_time,
+                value="NO CONFIDENT DIRECTIONAL CALL", confidence="Guessing",
+                source="Cleveland Fed nowcast", predicted_direction="neutral",
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
+            assert events["CPI m/m"]["tier1_sentiment_conflict"] is None
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
@@ -1820,6 +1930,9 @@ if __name__ == "__main__":
     test_calendar_date_route_invalid_date_returns_400()
     test_history_endpoint_returns_numeric_and_text_rows()
     test_history_endpoint_empty_when_nothing_resolved()
+    test_predictions_flags_tier1_sentiment_conflict_when_directions_disagree()
+    test_predictions_no_tier1_sentiment_conflict_when_directions_agree()
+    test_predictions_no_tier1_sentiment_conflict_when_tier1_made_no_call()
     test_predictions_recomputes_stale_pending_direction_from_event_history()
     test_predictions_stale_pending_without_resolved_history_stays_pending()
     test_calendar_route_includes_feed_staleness_seconds()
