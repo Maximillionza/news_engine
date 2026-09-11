@@ -1023,6 +1023,37 @@ async function loadHistoryIfNeeded() {
   const resp = await fetch("/api/history");
   const data = await resp.json();
   renderHistoryTable(data.rows || []);
+  await loadHistoryStatsIfNeeded();
+}
+
+function renderHistoryStats(stats) {
+  const container = document.getElementById("history-stats");
+  const overall = stats.overall;
+  const overallLabel = overall.accuracy === null
+    ? `${overall.correct + overall.wrong} calls made, ${overall.no_call} no-call`
+    : `${overall.correct}/${overall.correct + overall.wrong} correct (${Math.round(overall.accuracy * 100)}%), ${overall.no_call} no-call`;
+
+  const titles = Object.keys(stats.by_event_title).sort();
+  const rows = titles.map((title) => {
+    const s = stats.by_event_title[title];
+    const label = s.accuracy === null
+      ? `${s.no_call} no-call, 0 calls made`
+      : `${s.correct}/${s.correct + s.wrong} (${Math.round(s.accuracy * 100)}%)${s.no_call ? `, ${s.no_call} no-call` : ""}`;
+    return `<tr><td>${escapeHtml(title)}</td><td>${label}</td></tr>`;
+  }).join("");
+
+  container.innerHTML = `
+    <div id="history-stats-overall"><b>Overall:</b> ${overallLabel}</div>
+    <details id="history-stats-detail">
+      <summary>By event type</summary>
+      <table id="history-stats-table"><tbody>${rows}</tbody></table>
+    </details>`;
+}
+
+async function loadHistoryStatsIfNeeded() {
+  const resp = await fetch("/api/history/stats");
+  const data = await resp.json();
+  renderHistoryStats(data);
 }
 
 function renderHistoryTable(rows) {

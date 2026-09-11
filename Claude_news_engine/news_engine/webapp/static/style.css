@@ -158,6 +158,11 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .history-toggle-btn:hover, .breakdown-toggle-btn:hover { text-decoration: underline; }
 .history-panel { font-size: 12px; color: #555; margin-top: 4px; padding-left: 8px; border-left: 2px solid #ddd; }
 
+#history-stats { margin-bottom: 12px; font-size: 13px; }
+#history-stats-overall { margin-bottom: 4px; }
+#history-stats-table { border-collapse: collapse; font-size: 12px; }
+#history-stats-table td { padding: 2px 10px 2px 0; }
+
 #history-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
 #history-table th, #history-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #ddd; font-size: 13px; }
 #history-table th { color: #666; font-weight: 600; }
