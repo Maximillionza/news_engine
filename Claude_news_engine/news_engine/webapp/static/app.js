@@ -553,6 +553,34 @@ function renderCard(symbolEntry) {
     if (!downgrade) return '';
     return `<span class="other-event-tier1-downgrade">⚠ Confidence downgraded to <b>${escapeHtml(downgrade.displayed_confidence)}</b></span>`;
   }
+  // otherEventEssenceArticleHtml (2026-09-11, user-reported confusion):
+  // this row used to show ONE unlabeled number -- `e.direction`/
+  // `e.probability`, which is webapp/scoring_service.py's essence/
+  // surprise score (a pure forecast-vs-actual reflex that only exists
+  // AFTER the print, computed live, never persisted) -- with nothing
+  // distinguishing it from the featured card's separately-labeled
+  // "Article-based read" line (the accumulator's real, pre-event,
+  // article-based forecast). The two can flatly disagree (verified
+  // live, Core CPI m/m 2026-09-11: essence read SELL, the article-based
+  // accumulator had called BULLISH pre-event and was graded correct)
+  // with no way to tell which was which. Explicit user decision: label
+  // both, hide neither -- essence stays visible even where article_prediction
+  // also exists, since it's real information, just previously mislabeled
+  // as if it were the only number.
+  function otherEventEssenceArticleHtml(e) {
+    const essenceHtml = e.direction === "pending"
+      ? `<span class="other-event-pending">Essence: Pending</span>`
+      : (() => {
+          const pct = directionPct(e.probability, e.direction);
+          const dClass = directionClass(e.direction);
+          return `<span class="other-event-call ${dClass}">Essence: ${directionLabel(e.direction)} ${pct}%</span>`;
+        })();
+    if (!e.article_prediction) return essenceHtml;
+    const articlePct = directionPct(e.article_prediction.probability, e.article_prediction.direction);
+    const articleClass = directionClass(e.article_prediction.direction);
+    const articleHtml = `<span class="other-event-article ${articleClass}">Article: ${directionLabel(e.article_prediction.direction)} ${articlePct}%</span>`;
+    return `${essenceHtml} ${articleHtml}`;
+  }
   function otherEventsHtml(events, symbolForCard) {
     // Only genuinely SIMULTANEOUS events (identical event_time_utc to the
     // featured one) belong here — `events` also carries other upcoming/
@@ -565,18 +593,9 @@ function renderCard(symbolEntry) {
       const tier1Marker = otherEventTier1MarkerHtml(e.tier1_prediction, symbolForCard)
         + otherEventTier1ConflictMarkerHtml(e.tier1_sentiment_conflict)
         + otherEventTier1DowngradeMarkerHtml(e.tier1_confidence_downgrade);
-      if (e.direction === "pending") {
-        return `<div class="other-event-row">
-          <span class="other-event-title">${escapeHtml(e.event_title)}</span>
-          <span class="other-event-pending">Pending</span>
-          ${tier1Marker}
-        </div>`;
-      }
-      const pct = directionPct(e.probability, e.direction);
-      const dClass = directionClass(e.direction);
       return `<div class="other-event-row">
         <span class="other-event-title">${escapeHtml(e.event_title)}</span>
-        <span class="other-event-call ${dClass}">${directionLabel(e.direction)} ${pct}%</span>
+        ${otherEventEssenceArticleHtml(e)}
         ${tier1Marker}
       </div>`;
     }).join('');
@@ -626,18 +645,9 @@ function renderCard(symbolEntry) {
         + otherEventTier1ConflictMarkerHtml(e.tier1_sentiment_conflict)
         + otherEventTier1DowngradeMarkerHtml(e.tier1_confidence_downgrade);
       const whenLabel = formatEventDateTime(e.event_time_utc);
-      if (e.direction === "pending") {
-        return `<div class="other-event-row">
-          <span class="other-event-title">${escapeHtml(e.event_title)} <span style="font-size:11px;color:#888">(${whenLabel})</span></span>
-          <span class="other-event-pending">Pending</span>
-          ${tier1Marker}
-        </div>`;
-      }
-      const pct = directionPct(e.probability, e.direction);
-      const dClass = directionClass(e.direction);
       return `<div class="other-event-row">
         <span class="other-event-title">${escapeHtml(e.event_title)} <span style="font-size:11px;color:#888">(${whenLabel})</span></span>
-        <span class="other-event-call ${dClass}">${directionLabel(e.direction)} ${pct}%</span>
+        ${otherEventEssenceArticleHtml(e)}
         ${tier1Marker}
       </div>`;
     }).join('');
@@ -695,8 +705,13 @@ function renderCard(symbolEntry) {
     body += buildDiffStripHtml(next.previous_direction, next.previous_probability, next.direction, next.probability);
   }
 
+  // Labeled explicitly (2026-09-11, user-reported confusion): this gauge
+  // is webapp/scoring_service.py's essence/surprise score, distinct from
+  // the separately-labeled "Article-based read" line below it -- leaving
+  // this one unlabeled is what made the sibling-row version of the same
+  // number look unexplained. See otherEventEssenceArticleHtml()'s comment.
   body += `<div class="gauge-row">${gaugeSvg(pct, next.direction)}
-    <div><div class="gauge-label ${dirClass}">${directionLabel(next.direction)} ${pct}%</div>
+    <div><div class="gauge-label ${dirClass}">Essence: ${directionLabel(next.direction)} ${pct}%</div>
     <div style="font-size:12px;color:#888">${escapeHtml(next.event_title)}</div>
     ${articlePredictionLine}${tier1PredictionLine}${printPredictionLine}${kalshiReadLine}</div></div>
     <div class="bull-bear-scale">${bullBearScaleSvg(next.probability)}</div>`;

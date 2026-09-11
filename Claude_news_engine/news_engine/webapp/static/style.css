@@ -111,6 +111,15 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .other-event-call.bullish { color: var(--bullish); }
 .other-event-call.bearish { color: var(--bearish); }
 .other-event-call.neutral { color: var(--neutral); }
+/* .other-event-article (2026-09-11, user-reported confusion): the
+   article-based accumulator's own pre-event forecast, shown alongside
+   .other-event-call's essence/surprise score now that both are labeled
+   -- italic, not bold, so it reads as a second distinct number rather
+   than competing with the essence score for visual weight. */
+.other-event-article { font-style: italic; }
+.other-event-article.bullish { color: var(--bullish); }
+.other-event-article.bearish { color: var(--bearish); }
+.other-event-article.neutral { color: var(--neutral); }
 /* Final whole-branch review, 2026-09-07 — Finding 1: compact Tier 1
    marker on a co-released sibling row. Forced to its own line (flex-basis:
    100%) so it never fights the title/call pair for space on one row. */
