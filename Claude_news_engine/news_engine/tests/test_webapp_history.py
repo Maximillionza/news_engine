@@ -858,6 +858,108 @@ def test_fallback_row_recognizes_cloud_web_fallback_source():
     print("PASS\n")
 
 
+# --- tier1_conflict on fallback/text-only rows ---
+
+def test_fallback_row_flags_tier1_sentiment_conflict():
+    print("=== build_print_call_history: a fallback numeric row flags a real Tier1-vs-sentiment conflict ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.upsert_event_history(
+            dash_conn, _resolved_event("PPI m/m", event_time, "0.4%", "0.0%", "0.4%"),
+            "higher_bullish", now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
+            probability=0.44, direction="bearish", confidence=0.33, article_count=142,
+            contradiction_flag=False, source="live", scored_at_utc=event_time,
+        )
+        backtest_store.record_tier1_prediction(
+            bt_conn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
+            value="Muted, non-reaccelerating call", confidence="Certain", source="ISM Prices Paid",
+            predicted_direction="bullish", logged_at_utc=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].tier1_conflict == {"sentiment_direction": "bearish", "tier1_direction": "bullish"}
+    print("PASS\n")
+
+
+def test_fallback_row_no_conflict_when_tier1_agrees():
+    print("=== build_print_call_history: no tier1_conflict when Tier 1 and sentiment agree ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.upsert_event_history(
+            dash_conn, _resolved_event("PPI m/m", event_time, "0.4%", "0.0%", "0.4%"),
+            "higher_bullish", now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
+            probability=0.56, direction="bullish", confidence=0.4, article_count=142,
+            contradiction_flag=False, source="live", scored_at_utc=event_time,
+        )
+        backtest_store.record_tier1_prediction(
+            bt_conn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
+            value="Muted, non-reaccelerating call", confidence="Certain", source="ISM Prices Paid",
+            predicted_direction="bullish", logged_at_utc=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].tier1_conflict is None
+    print("PASS\n")
+
+
+def test_fallback_row_no_tier1_conflict_field_when_no_tier1_row_exists():
+    print("=== build_print_call_history: tier1_conflict stays None when no Tier 1 row was ever logged for this occurrence ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 4, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.upsert_event_history(
+            dash_conn, _resolved_event("Unemployment Rate", event_time, "4.1%", "4.1%", "4.1%"),
+            "in_line", now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, event_title="Unemployment Rate", instrument="XAUUSD", event_time_utc=event_time,
+            probability=0.46, direction="bearish", confidence=0.35, article_count=89,
+            contradiction_flag=False, source="live", scored_at_utc=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].tier1_conflict is None
+    print("PASS\n")
+
+
 # --- compute_history_stats() ---
 
 def test_compute_history_stats_overall_and_per_title_breakdown():

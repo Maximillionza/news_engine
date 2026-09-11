@@ -47,6 +47,7 @@ from typing import Optional
 from config.settings import EVENT_SURPRISE_DIRECTION, INSTRUMENTS
 from scoring.print_direction import NO_HIT_CONFIDENCE
 from webapp.store import get_connection, get_resolved_event_history, get_text_only_resolved_events
+from webapp.predictions_service import compute_tier1_sentiment_conflict
 
 DEFAULT_HISTORY_LIMIT = 50
 
@@ -172,6 +173,7 @@ class HistoryRow:
     outcome: Optional[str]          # 'Confirmed' | 'Missed' | None
     unjudged_reason: Optional[str]  # None when outcome is a real verdict; else 'shrug' | 'unknown_surprise' | 'pending'
     source: str                     # 'live' | 'seeded' | 'live_web_fallback' | 'fred' — for numeric rows, 'seeded' wins if either side of the join disagrees, else 'live_web_fallback' wins if either side is 'live_web_fallback', else 'fred' wins if either side is 'fred', else 'live'
+    tier1_conflict: Optional[dict] = None  # {"sentiment_direction": str, "tier1_direction": str} when Tier 1 and this occurrence's own sentiment call genuinely disagree; None otherwise — see build_print_call_history() for which row shapes this applies to
 
 
 def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[dt.datetime] = None) -> list[HistoryRow]:
@@ -207,6 +209,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
         get_connection as get_backtest_connection,
         get_latest_print_prediction,
         get_latest_prediction_for_occurrence,
+        get_latest_tier1_prediction_for_occurrence,
         get_outcome,
     )
 
@@ -254,6 +257,15 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                         continue
                     if prediction is None:
                         continue  # never scored for this instrument at this occurrence — no row, not shown with blanks
+
+                    try:
+                        tier1_row = get_latest_tier1_prediction_for_occurrence(bt_conn, event.event_title, instrument, event_time)
+                    except Exception as exc:  # noqa: BLE001 — one bad lookup must not crash the whole build
+                        print(f"[webapp.history] WARNING: could not read tier1 for {event.event_title}/{instrument}: {exc}")
+                        tier1_row = None
+                    fallback_tier1_conflict = compute_tier1_sentiment_conflict(
+                        prediction.direction, tier1_row.predicted_direction if tier1_row is not None else None,
+                    )
 
                     fallback_outcome: Optional[str] = None
                     fallback_unjudged_reason: Optional[str] = None
@@ -309,9 +321,16 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                             else "fred" if "fred" in (event.source, prediction.source)
                             else "live"
                         ),
+                        tier1_conflict=fallback_tier1_conflict,
                     ))
                 continue  # resolved event, no print-direction call — either shown via the fallback above or excluded per-instrument, never with blanks
 
+            # tier1_conflict deliberately not computed here: this row
+            # has instrument=None (a print-call is about the NUMBER,
+            # not a specific instrument's price direction), and
+            # Tier 1's predicted_direction is on the bullish/bearish
+            # PRICE axis — there is no single per-instrument sentiment
+            # call attached to this row to compare it against.
             outcome: Optional[str] = None
             unjudged_reason: Optional[str] = None
             if call.confidence <= NO_HIT_CONFIDENCE:
@@ -376,6 +395,15 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                     print(f"[webapp.history] WARNING: could not read outcome for {event.event_title}/{instrument}: {exc}")
                     outcome_row = None
 
+                try:
+                    tier1_row = get_latest_tier1_prediction_for_occurrence(bt_conn, event.event_title, instrument, event_time)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[webapp.history] WARNING: could not read tier1 for {event.event_title}/{instrument}: {exc}")
+                    tier1_row = None
+                text_tier1_conflict = compute_tier1_sentiment_conflict(
+                    prediction.direction, tier1_row.predicted_direction if tier1_row is not None else None,
+                )
+
                 text_outcome: Optional[str] = None
                 text_unjudged_reason: Optional[str] = None
                 if prediction.confidence <= MIN_TEXT_EVENT_CONFIDENCE:
@@ -398,6 +426,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                     outcome=text_outcome,
                     unjudged_reason=text_unjudged_reason,
                     source=prediction.source,
+                    tier1_conflict=text_tier1_conflict,
                 ))
     finally:
         bt_conn.close()

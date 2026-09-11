@@ -358,6 +358,7 @@ def get_print_call_history():
                 "ne_prediction": r.ne_prediction, "ne_confidence": r.ne_confidence,
                 "outcome": r.outcome, "unjudged_reason": r.unjudged_reason,
                 "source": r.source,
+                "tier1_conflict": r.tier1_conflict,
             }
             for r in rows
         ],

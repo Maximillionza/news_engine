@@ -105,6 +105,27 @@ def _trend_instrument_lean(event_title: str, trend_direction: str, usd_relations
     return "bullish" if instrument_bullish else "bearish"
 
 
+def compute_tier1_sentiment_conflict(
+    sentiment_direction: Optional[str], tier1_direction: Optional[str],
+) -> Optional[dict]:
+    """
+    Shared by build_predictions_payload() (Dashboard card) and
+    webapp/history.py (History tab) — the exact comparison rule
+    build_predictions_payload() originally computed inline
+    (fundamental-analysis-review-2026-09-11.md P0 #5), extracted so
+    History can apply the identical rule instead of re-deriving it.
+    "No call" on either side (None, or 'neutral') is never a conflict —
+    only a REAL, opposing directional call from both sides counts, same
+    convention scoring/backtest.py's BacktestCase.evaluate() already uses
+    for Tier 1's own accuracy metric.
+    """
+    if sentiment_direction not in ("bullish", "bearish") or tier1_direction not in ("bullish", "bearish"):
+        return None
+    if sentiment_direction == tier1_direction:
+        return None
+    return {"sentiment_direction": sentiment_direction, "tier1_direction": tier1_direction}
+
+
 def _recompute_stale_pending(
     event: dict, symbol_class, history_rows: list[EventHistoryRow],
 ):
@@ -452,15 +473,9 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
             tier1_pred = ev["tier1_prediction"]
             if article_pred is None or tier1_pred is None:
                 continue
-            sentiment_direction = article_pred["direction"]
-            tier1_direction = tier1_pred["predicted_direction"]
-            if sentiment_direction not in ("bullish", "bearish") or tier1_direction not in ("bullish", "bearish"):
-                continue
-            if sentiment_direction != tier1_direction:
-                ev["tier1_sentiment_conflict"] = {
-                    "sentiment_direction": sentiment_direction,
-                    "tier1_direction": tier1_direction,
-                }
+            ev["tier1_sentiment_conflict"] = compute_tier1_sentiment_conflict(
+                article_pred["direction"], tier1_pred["predicted_direction"],
+            )
 
         # A FRESHLY resolved score outranks a still-pending one, regardless
         # of which is chronologically closer — a real BUY/SELL/HOLD call is
