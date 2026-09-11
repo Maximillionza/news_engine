@@ -379,6 +379,11 @@ def get_history_stats():
             title: _stats_dict(s)
             for title, s in sorted(stats.by_event_title.items(), key=lambda kv: kv[0])
         },
+        # Final whole-branch review, 2026-09-11 — Finding 3: lets the
+        # frontend disclose the rollup's real window instead of implying
+        # unbounded history. The number must come from the real constant,
+        # not be hardcoded client-side.
+        "window_limit": STATS_LOOKBACK_LIMIT,
     })
 
 

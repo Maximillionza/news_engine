@@ -47,7 +47,7 @@ from typing import Optional
 from config.settings import EVENT_SURPRISE_DIRECTION, INSTRUMENTS
 from scoring.print_direction import NO_HIT_CONFIDENCE
 from webapp.store import get_connection, get_resolved_event_history, get_text_only_resolved_events
-from webapp.predictions_service import compute_tier1_sentiment_conflict
+from webapp.conflict import compute_tier1_sentiment_conflict
 
 DEFAULT_HISTORY_LIMIT = 50
 
@@ -67,13 +67,24 @@ PRE_FILTER_LIMIT = 200
 # metric (score_bundle()'s agreement×coverage, not a lexicon hit-count).
 MIN_TEXT_EVENT_CONFIDENCE = NO_HIT_CONFIDENCE
 
-# How many rows compute_history_stats() reads from, independent of the
+# Passed as build_print_call_history()'s `limit`, independent of the
 # History table's own display DEFAULT_HISTORY_LIMIT (50) — the rollup
 # should reflect the real track record the underlying tables can show,
 # not an arbitrarily smaller display page. Matches PRE_FILTER_LIMIT, the
-# same bound build_print_call_history() already applies internally before
-# its own final display-limit truncation, so this introduces no new
-# assumption about how much history the source tables realistically hold.
+# same bound build_print_call_history() already applies internally to the
+# number of EVENTS it pre-filters from event_history/get_text_only_resolved_events,
+# BEFORE its own final display-limit truncation of the ROWS it emits.
+# Those are not the same unit (final whole-branch review, 2026-09-11 —
+# Finding 3): both of build_print_call_history()'s branches (the
+# fallback-numeric branch and the text-only branch) can emit ONE ROW PER
+# INSTRUMENT for a single event, so with INSTRUMENTS at 2 entries today,
+# total rows can run up to roughly 2x the event count. That means this
+# limit's true row-level coverage can silently shrink to roughly half of
+# STATS_LOOKBACK_LIMIT once real event volume (that produces a row for
+# every instrument) exceeds half this number — the rollup would then stop
+# reflecting the full window without any visible sign of it. Raise this
+# (and PRE_FILTER_LIMIT, since they're intentionally kept equal) if that
+# ever becomes a real problem in practice.
 STATS_LOOKBACK_LIMIT = PRE_FILTER_LIMIT
 
 
@@ -204,12 +215,16 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
     # Imported here, not at module level, to avoid a hard import-time
     # dependency cycle risk between webapp and scoring — matches the
     # existing lazy-import style already used for cross-pipeline reads in
-    # scoring/backtest_accumulator.py's _read_trend_signal().
+    # scoring/backtest_accumulator.py's _read_trend_signal(). (This
+    # reasoning is scoped to scoring.backtest_store only — the
+    # Tier1-vs-sentiment conflict helper used elsewhere in this function
+    # lives in webapp.conflict, a zero-dependency leaf module imported at
+    # module level above; it was never part of this cycle concern.)
     from scoring.backtest_store import (
         get_connection as get_backtest_connection,
         get_latest_print_prediction,
         get_latest_prediction_for_occurrence,
-        get_latest_tier1_prediction_for_occurrence,
+        get_latest_tier1_predictions_bulk,
         get_outcome,
     )
 
@@ -228,6 +243,24 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
     except Exception as exc:  # noqa: BLE001 — an unreachable backtest DB must not crash the route
         print(f"[webapp.history] WARNING: could not read backtest data: {exc}")
         return []
+
+    # Batched, once per call (final whole-branch review, 2026-09-11 —
+    # Finding 2): replaces what used to be up to one
+    # get_latest_tier1_prediction_for_occurrence() query per (event,
+    # instrument) pair in each of the two loops below — up to ~800
+    # individual single-row queries per call, doubled since this function
+    # runs twice per History-tab load (/api/history and
+    # /api/history/stats). event_titles covers both branches' events, so
+    # one bulk call serves both loops. Fail-open, same reasoning as the
+    # per-lookup try/except calls already used throughout this function —
+    # a broken Tier 1 bulk lookup must not take down the whole History
+    # build.
+    event_titles = list({event.event_title for event in numeric_resolved} | {event.event_title for event in text_only_resolved})
+    try:
+        tier1_by_occurrence = get_latest_tier1_predictions_bulk(bt_conn, event_titles, list(INSTRUMENTS.keys()))
+    except Exception as exc:  # noqa: BLE001 — one bad bulk lookup must not crash the whole build
+        print(f"[webapp.history] WARNING: could not read tier1 bulk data: {exc}")
+        tier1_by_occurrence = {}
 
     rows: list[HistoryRow] = []
     try:
@@ -258,11 +291,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                     if prediction is None:
                         continue  # never scored for this instrument at this occurrence — no row, not shown with blanks
 
-                    try:
-                        tier1_row = get_latest_tier1_prediction_for_occurrence(bt_conn, event.event_title, instrument, event_time)
-                    except Exception as exc:  # noqa: BLE001 — one bad lookup must not crash the whole build
-                        print(f"[webapp.history] WARNING: could not read tier1 for {event.event_title}/{instrument}: {exc}")
-                        tier1_row = None
+                    tier1_row = tier1_by_occurrence.get((event.event_title, instrument, event_time.isoformat()))
                     fallback_tier1_conflict = compute_tier1_sentiment_conflict(
                         prediction.direction, tier1_row.predicted_direction if tier1_row is not None else None,
                     )
@@ -395,11 +424,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                     print(f"[webapp.history] WARNING: could not read outcome for {event.event_title}/{instrument}: {exc}")
                     outcome_row = None
 
-                try:
-                    tier1_row = get_latest_tier1_prediction_for_occurrence(bt_conn, event.event_title, instrument, event_time)
-                except Exception as exc:  # noqa: BLE001
-                    print(f"[webapp.history] WARNING: could not read tier1 for {event.event_title}/{instrument}: {exc}")
-                    tier1_row = None
+                tier1_row = tier1_by_occurrence.get((event.event_title, instrument, event_time.isoformat()))
                 text_tier1_conflict = compute_tier1_sentiment_conflict(
                     prediction.direction, tier1_row.predicted_direction if tier1_row is not None else None,
                 )

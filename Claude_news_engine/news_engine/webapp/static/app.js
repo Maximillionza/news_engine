@@ -1103,8 +1103,10 @@ function renderHistoryStats(stats) {
     return `<tr><td>${escapeHtml(title)}</td><td>${label}</td></tr>`;
   }).join("");
 
+  const windowLabel = typeof stats.window_limit === "number" ? ` (last ${stats.window_limit} events)` : "";
+
   container.innerHTML = `
-    <div id="history-stats-overall"><b>Overall:</b> ${overallLabel}</div>
+    <div id="history-stats-overall"><b>Overall${escapeHtml(windowLabel)}:</b> ${overallLabel}</div>
     <details id="history-stats-detail">
       <summary>By event type</summary>
       <table id="history-stats-table"><tbody>${rows}</tbody></table>

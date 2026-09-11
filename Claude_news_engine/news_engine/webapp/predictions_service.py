@@ -32,6 +32,7 @@ from scoring.backtest_store import (
     get_last_check_utc, Prediction,
 )
 from webapp.reconciliation import reconcile_group
+from webapp.conflict import compute_tier1_sentiment_conflict
 
 logger = logging.getLogger(__name__)
 
@@ -103,27 +104,6 @@ def _trend_instrument_lean(event_title: str, trend_direction: str, usd_relations
     else:
         return None
     return "bullish" if instrument_bullish else "bearish"
-
-
-def compute_tier1_sentiment_conflict(
-    sentiment_direction: Optional[str], tier1_direction: Optional[str],
-) -> Optional[dict]:
-    """
-    Shared by build_predictions_payload() (Dashboard card) and
-    webapp/history.py (History tab) — the exact comparison rule
-    build_predictions_payload() originally computed inline
-    (fundamental-analysis-review-2026-09-11.md P0 #5), extracted so
-    History can apply the identical rule instead of re-deriving it.
-    "No call" on either side (None, or 'neutral') is never a conflict —
-    only a REAL, opposing directional call from both sides counts, same
-    convention scoring/backtest.py's BacktestCase.evaluate() already uses
-    for Tier 1's own accuracy metric.
-    """
-    if sentiment_direction not in ("bullish", "bearish") or tier1_direction not in ("bullish", "bearish"):
-        return None
-    if sentiment_direction == tier1_direction:
-        return None
-    return {"sentiment_direction": sentiment_direction, "tier1_direction": tier1_direction}
 
 
 def _recompute_stale_pending(
