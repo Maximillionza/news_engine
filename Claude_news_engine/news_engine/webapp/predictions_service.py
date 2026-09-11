@@ -29,12 +29,44 @@ from webapp.symbols import classify_symbol
 from scoring.backtest_store import (
     get_latest_two_predictions_bulk, get_latest_print_predictions_bulk,
     get_latest_kalshi_reads_bulk, get_latest_tier1_predictions_bulk,
-    get_last_check_utc, Prediction,
+    get_last_check_utc, get_exogenous_shock_for_date, Prediction,
 )
 from webapp.reconciliation import reconcile_group
 from webapp.conflict import compute_tier1_sentiment_conflict
+from data_layer.discovery_detector import DETECTOR_SERIES
 
 logger = logging.getLogger(__name__)
+
+_CONFIDENCE_DOWNGRADE_ORDER = ["Certain", "Likely", "Guessing"]
+
+
+def _downgrade_one_tier(confidence: str) -> str:
+    """Certain->Likely, Likely->Guessing, Guessing->Guessing (floor). Display-only — never mutates a stored Tier1PredictionRow."""
+    if confidence not in _CONFIDENCE_DOWNGRADE_ORDER:
+        return confidence  # unrecognized tag — leave untouched rather than guess
+    idx = _CONFIDENCE_DOWNGRADE_ORDER.index(confidence)
+    return _CONFIDENCE_DOWNGRADE_ORDER[min(idx + 1, len(_CONFIDENCE_DOWNGRADE_ORDER) - 1)]
+
+
+def _get_todays_exogenous_shock(backtest_conn: sqlite3.Connection):
+    """
+    First unresolved shock found today across DETECTOR_SERIES, or None.
+    Fail-open (same pattern as build_predictions_payload()'s existing
+    get_latest_tier1_predictions_bulk() try/except) -- a broken lookup
+    must never take down /api/predictions. "First found" is sufficient:
+    per the spec, multiple same-day shocks still only downgrade ONE
+    tier, so which specific shock's series/reason gets shown when
+    several exist the same day is not a load-bearing distinction.
+    """
+    today = dt.datetime.now(dt.timezone.utc).date()
+    try:
+        for series in DETECTOR_SERIES:
+            shock = get_exogenous_shock_for_date(backtest_conn, series, today)
+            if shock is not None:
+                return shock
+    except Exception:
+        logger.warning("exogenous shock lookup failed for this cycle", exc_info=True)
+    return None
 
 
 def _article_prediction_dict(pred: "Prediction") -> dict:
@@ -230,6 +262,9 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
     except Exception:
         logger.warning("get_latest_tier1_predictions_bulk failed for this cycle", exc_info=True)
         tier1_by_occurrence = {}
+    # Same single-shot-per-request, fail-open shape as tier1_by_occurrence
+    # above — computed once here, reused for every symbol/event pair below.
+    todays_shock = _get_todays_exogenous_shock(backtest_conn)
 
     predictions = []
     for ticker in symbols:
@@ -353,6 +388,21 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
             tier1_row = tier1_by_occurrence.get((event["title"], ticker, event_time_key))
             tier1_prediction = _tier1_prediction_dict(tier1_row) if tier1_row is not None else None
 
+            # Confidence-only downgrade (never predicted_direction, never
+            # the stored Tier1Prediction row) applied fresh per request
+            # when ANY of the 4 DETECTOR_SERIES logged an unresolved
+            # exogenous shock today — deliberately applies to EVERY
+            # tracked instrument's Tier 1 row today, not just the shock's
+            # own series' instrument (approved spec rule).
+            tier1_confidence_downgrade = None
+            if tier1_prediction is not None and todays_shock is not None:
+                tier1_confidence_downgrade = {
+                    "original_confidence": tier1_prediction["confidence"],
+                    "displayed_confidence": _downgrade_one_tier(tier1_prediction["confidence"]),
+                    "reason": todays_shock.headline_cause,
+                    "series": todays_shock.series,
+                }
+
             # An event is only worth including in this symbol's list at
             # all if SOME layer has something to say about it — an event
             # with zero essence score AND zero article prediction AND zero
@@ -390,6 +440,7 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
                 "kalshi_read": kalshi_read,
                 "tier1_prediction": tier1_prediction,
                 "tier1_sentiment_conflict": None,  # computed below, after reconciliation settles article_prediction's final value
+                "tier1_confidence_downgrade": tier1_confidence_downgrade,
             })
 
         for time_key, predictions_by_title in accumulator_predictions_by_time_and_title.items():
