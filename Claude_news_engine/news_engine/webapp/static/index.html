@@ -49,9 +49,25 @@
 <section id="view-history" style="display:none">
   <div id="history-stats"></div>
   <div id="history-empty-notice" class="stale-notice" style="display:none">No confirmed calls yet.</div>
+  <div id="history-legend" class="calendar-legend">
+    <span><b>Correct</b> / <b>Wrong</b>: the prediction vs. the real outcome</span>
+    <span><b>Awaiting confirmation</b>: event hasn't happened yet, or the outcome isn't in yet</span>
+    <span><b>Actual not comparable</b>: the real print can't be graded against this prediction (e.g. it landed at consensus)</span>
+    <span><b>No strong call</b>: no confident directional call was ever made</span>
+  </div>
+  <div id="history-controls">
+    <label>Event <select id="history-filter-title"><option value="">All</option></select></label>
+    <label>Instrument <select id="history-filter-instrument"><option value="">All</option></select></label>
+    <label>Outcome <select id="history-filter-outcome">
+      <option value="">All</option>
+      <option value="Correct">Correct</option>
+      <option value="Wrong">Wrong</option>
+      <option value="no_call">No strong call / awaiting / not comparable</option>
+    </select></label>
+  </div>
   <table id="history-table" style="display:none">
     <thead>
-      <tr><th>Event</th><th>Instr.</th><th>Previous</th><th>Forecast</th><th>Actual</th><th>NE Prediction</th><th>Outcome</th></tr>
+      <tr><th id="history-th-event">Event</th><th id="history-th-instrument">Instr.</th><th>Previous</th><th>Forecast</th><th>Actual</th><th id="history-th-confidence">NE Prediction</th><th>Outcome</th></tr>
     </thead>
     <tbody id="history-tbody"></tbody>
   </table>

@@ -6,6 +6,18 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Batch 10 (dashboard-review-2026-09-11.md live UI walkthrough): "1% and
+// 100% render as identical plain text" — no threshold treatment
+// distinguished a genuinely strong call from a noise-level one anywhere in
+// the UI. Not a new scale — a visual rendering of the 3-tier split this
+// codebase's own confidence language already uses elsewhere (Tier 1's
+// Certain/Likely/Guessing tags).
+function confidenceColorClass(pct) {
+  if (pct >= 66) return "confidence-high";
+  if (pct >= 33) return "confidence-medium";
+  return "confidence-low";
+}
+
 const cardsEl = document.getElementById("cards");
 const calendarGridEl = document.getElementById("calendar-grid");
 const addForm = document.getElementById("add-symbol-form");
@@ -409,7 +421,7 @@ function renderCard(symbolEntry) {
       : printPred.direction === 'lower' ? 'LOWER than forecast' : 'IN LINE with forecast';
     const confPct = Math.round(printPred.confidence * 100);
     return `<div class="print-prediction">
-      📊 Print call: likely <b>${label}</b> <span style="font-size:12px;color:#888">(${confPct}% confidence)</span>
+      📊 Print call: likely <b>${label}</b> <span class="${confidenceColorClass(confPct)}">(${confPct}% confidence)</span>
     </div>`;
   }
   const printPredictionLine = printPredictionHtml(next.print_prediction);
@@ -1040,7 +1052,10 @@ async function showDatePanel(dateStr) {
         ? `<div style="font-size:12px;color:#666">📰 ${directionLabel(call.article_prediction.direction)} ${directionPct(call.article_prediction.probability, call.article_prediction.direction)}% (${call.article_prediction.article_count} articles)</div>`
         : "";
       const printLine = call.print_prediction
-        ? `<div style="font-size:12px;color:#666">📊 ${escapeHtml(call.print_prediction.direction)} (${Math.round(call.print_prediction.confidence * 100)}% conf.)</div>`
+        ? (() => {
+            const pct = Math.round(call.print_prediction.confidence * 100);
+            return `<div style="font-size:12px">📊 ${escapeHtml(call.print_prediction.direction)} <span class="${confidenceColorClass(pct)}">(${pct}% conf.)</span></div>`;
+          })()
         : "";
       return `<div class="date-panel-call">${escapeHtml(symbol)}: ${essenceLine}${articleLine}${printLine}</div>`;
     }).join("");
@@ -1077,24 +1092,150 @@ refreshAll();
 setInterval(refreshAll, POLL_INTERVAL_MS);
 
 let historyLoaded = false;
+// Batch 10: the whole table is small (~35 rows per the live review), so
+// filter/sort stay entirely client-side against one fetched snapshot —
+// no server round trip per filter change. allHistoryRows is the fetched,
+// unfiltered set; renderHistoryTable() below always derives its view from
+// it plus the current filter/sort state, never mutates it.
+let allHistoryRows = [];
+const historySort = { column: "event_time_utc", ascending: false };  // most recent first, matches the API's own default order
 
 async function loadHistoryIfNeeded() {
   if (historyLoaded) return;  // fetched once per page load, not on the dashboard's poll cycle
   historyLoaded = true;
   const resp = await fetch("/api/history");
   const data = await resp.json();
-  renderHistoryTable(data.rows || []);
-  await loadHistoryStatsIfNeeded();
+  allHistoryRows = data.rows || [];
+  _populateHistoryFilterOptions(allHistoryRows);
+  renderHistoryTable(_filterAndSortHistoryRows(allHistoryRows));
+  await loadHistoryStats();
+}
+
+function _populateHistoryFilterOptions(rows) {
+  const titleSelect = document.getElementById("history-filter-title");
+  const instrumentSelect = document.getElementById("history-filter-instrument");
+  const titles = [...new Set(rows.map((r) => r.event_title))].sort();
+  const instruments = [...new Set(rows.map((r) => r.instrument).filter(Boolean))].sort();
+  for (const t of titles) {
+    const opt = document.createElement("option");
+    opt.value = t; opt.textContent = t;
+    titleSelect.appendChild(opt);
+  }
+  for (const i of instruments) {
+    const opt = document.createElement("option");
+    opt.value = i; opt.textContent = i;
+    instrumentSelect.appendChild(opt);
+  }
+}
+
+// A row's "graded" outcome for filtering purposes — 'Correct'/'Wrong' map
+// directly from the real backend outcome; every no-call/awaiting/not-
+// comparable state (r.outcome === null) collapses to one 'no_call' filter
+// value, since the History-tab controls this session added group them as
+// one filter option (see index.html's #history-filter-outcome) rather
+// than exposing the 3 separate unjudged_reason values as 3 more dropdown
+// entries — the underlying data keeps the distinction (still shown per-row
+// via unjudged_reason), only the FILTER groups them.
+function _historyOutcomeFilterValue(row) {
+  if (row.outcome === "Confirmed") return "Correct";
+  if (row.outcome === "Missed") return "Wrong";
+  return "no_call";
+}
+
+function _filterAndSortHistoryRows(rows) {
+  const titleFilter = document.getElementById("history-filter-title").value;
+  const instrumentFilter = document.getElementById("history-filter-instrument").value;
+  const outcomeFilter = document.getElementById("history-filter-outcome").value;
+
+  let filtered = rows.filter((r) =>
+    (!titleFilter || r.event_title === titleFilter)
+    && (!instrumentFilter || r.instrument === instrumentFilter)
+    && (!outcomeFilter || _historyOutcomeFilterValue(r) === outcomeFilter)
+  );
+
+  const { column, ascending } = historySort;
+  const direction = ascending ? 1 : -1;
+  filtered = filtered.slice().sort((a, b) => {
+    let av, bv;
+    if (column === "event_time_utc") { av = a.event_time_utc; bv = b.event_time_utc; }
+    else if (column === "event_title") { av = a.event_title; bv = b.event_title; }
+    else if (column === "instrument") { av = a.instrument ?? ""; bv = b.instrument ?? ""; }
+    else if (column === "ne_confidence") { av = a.ne_confidence; bv = b.ne_confidence; }
+    else { av = a.event_time_utc; bv = b.event_time_utc; }
+    if (av < bv) return -1 * direction;
+    if (av > bv) return 1 * direction;
+    return 0;
+  });
+  return filtered;
+}
+
+function _applyHistoryFilterAndSort() {
+  renderHistoryTable(_filterAndSortHistoryRows(allHistoryRows));
+}
+
+for (const id of ["history-filter-title", "history-filter-instrument", "history-filter-outcome"]) {
+  document.getElementById(id).addEventListener("change", _applyHistoryFilterAndSort);
+}
+
+// Column-header click-to-sort — toggles ascending/descending on repeat
+// clicks of the same column, defaults to ascending on a new column. A
+// small ▲/▼ arrow on the active column's own header is the only visual
+// indicator (no separate sort-state UI needed).
+const HISTORY_SORTABLE_COLUMNS = {
+  "history-th-event": "event_title",
+  "history-th-instrument": "instrument",
+  "history-th-confidence": "ne_confidence",
+};
+for (const [id, column] of Object.entries(HISTORY_SORTABLE_COLUMNS)) {
+  const th = document.getElementById(id);
+  if (!th) continue;
+  th.style.cursor = "pointer";
+  th.addEventListener("click", () => {
+    if (historySort.column === column) {
+      historySort.ascending = !historySort.ascending;
+    } else {
+      historySort.column = column;
+      historySort.ascending = true;
+    }
+    _renderHistorySortIndicators();
+    _applyHistoryFilterAndSort();
+  });
+}
+
+function _renderHistorySortIndicators() {
+  for (const [id, column] of Object.entries(HISTORY_SORTABLE_COLUMNS)) {
+    const th = document.getElementById(id);
+    if (!th) continue;
+    const base = th.dataset.label || th.textContent.replace(/ [▲▼]$/, "");
+    th.dataset.label = base;
+    th.textContent = column === historySort.column ? `${base} ${historySort.ascending ? "▲" : "▼"}` : base;
+  }
 }
 
 function renderHistoryStats(stats) {
   const container = document.getElementById("history-stats");
   const overall = stats.overall;
+  // Batch 9 final-review Minor finding, fixed here: an empty DB rendered
+  // a placeholder ("Overall: 0 calls made, 0 no-call" + an empty
+  // collapsed detail) instead of nothing — a real conflict with this
+  // project's own "render nothing, not a placeholder, when absent"
+  // convention every other optional signal on this dashboard follows.
+  if (overall.correct + overall.wrong + overall.no_call === 0) {
+    container.innerHTML = "";
+    return;
+  }
   const overallLabel = overall.accuracy === null
     ? `${overall.correct + overall.wrong} calls made, ${overall.no_call} no-call`
     : `${overall.correct}/${overall.correct + overall.wrong} correct (${Math.round(overall.accuracy * 100)}%), ${overall.no_call} no-call`;
 
-  const titles = Object.keys(stats.by_event_title).sort();
+  // Batch 9 final-review Minor finding, fixed here: this was re-sorted
+  // client-side on top of an already server-sorted response
+  // (webapp/app.py's /api/history/stats sorts by_event_title itself) —
+  // redundant, and Python's sorted() vs JS's default Array.sort() can
+  // disagree on non-ASCII collation. Object.keys() preserves a JSON
+  // object's own (server-decided) key order for string keys, so this
+  // just trusts it instead of re-deriving it.
+  const titles = Object.keys(stats.by_event_title);
   const rows = titles.map((title) => {
     const s = stats.by_event_title[title];
     const label = s.accuracy === null
@@ -1113,10 +1254,22 @@ function renderHistoryStats(stats) {
     </details>`;
 }
 
-async function loadHistoryStatsIfNeeded() {
-  const resp = await fetch("/api/history/stats");
-  const data = await resp.json();
-  renderHistoryStats(data);
+// Batch 9 final-review Minor finding, fixed here: renamed from
+// loadHistoryStatsIfNeeded — that name promised the same
+// historyLoaded-style idempotence guard loadHistoryIfNeeded() actually
+// implements; this function has none of its own (only idempotent
+// because its sole caller already sits behind that guard). Also adds
+// the try/catch + resp.ok check refreshDashboard() already established
+// — a failure here used to throw an unhandled rejection and never
+// retry (since historyLoaded is already true by the time this runs).
+async function loadHistoryStats() {
+  try {
+    const resp = await fetch("/api/history/stats");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    renderHistoryStats(await resp.json());
+  } catch (err) {
+    console.error("loadHistoryStats: fetch failed", err);
+  }
 }
 
 function renderHistoryTable(rows) {
@@ -1132,7 +1285,7 @@ function renderHistoryTable(rows) {
 
   emptyNotice.style.display = "none";
   table.style.display = "";
-  tbody.innerHTML = rows.map((r) => {
+  tbody.innerHTML = rows.map((r, idx) => {
     const dateLabel = new Date(r.event_time_utc).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
     const actualCell = r.unchanged_vs_previous
       ? `${escapeHtml(r.actual ?? "—")} <span style="color:#888;font-size:11px">(= prev)</span>`
@@ -1149,6 +1302,12 @@ function renderHistoryTable(rows) {
     const tier1ConflictBadge = r.tier1_conflict
       ? ` <span style="color:#ef6c00;font-size:11px;font-weight:bold">⚠ Tier 1: ${escapeHtml(r.tier1_conflict.tier1_direction)}</span>`
       : "";
+    // Batch 10 (dashboard-review-2026-09-11.md live UI walkthrough):
+    // "Confirmed" read ambiguously as "the actual print is confirmed"
+    // rather than "the prediction was correct" — display-only relabel,
+    // the backend outcome value ('Confirmed'/'Missed') is untouched, it's
+    // a real data contract scoring/comparison logic already depends on.
+    // See #history-legend for what each of the 5 states means.
     const outcomeLabel = r.outcome === null
       ? `<span style="color:#888">${
           r.unjudged_reason === "pending" ? "Awaiting confirmation"
@@ -1156,16 +1315,55 @@ function renderHistoryTable(rows) {
           : "No strong call"
         }</span>`
       : r.outcome === "Confirmed"
-        ? '<span style="color:#2e7d32;font-weight:bold">Confirmed</span>'
-        : '<span style="color:#c62828;font-weight:bold">Missed</span>';
+        ? '<span style="color:#2e7d32;font-weight:bold">Correct</span>'
+        : '<span style="color:#c62828;font-weight:bold">Wrong</span>';
+    // Batch 10: "drill-down exists only for pending Dashboard cards, not
+    // resolved History rows — exactly when you'd want to see which
+    // articles drove a wrong call, the UI removes that view." Reuses the
+    // SAME endpoint and rendering (articleProgressionEntryHtml) the
+    // Dashboard flip-card already fetches — only a symbol (instrument) to
+    // key it, which a print-call-backed numeric row (no specific
+    // instrument, by design — see webapp/history.py's HistoryRow
+    // docstring) doesn't have, so the toggle is simply absent there
+    // rather than fetching against a symbol that isn't real.
+    const drillId = `history-drill-${idx}`;
+    const drillToggle = r.instrument
+      ? ` <button class="history-drill-toggle-btn" data-target="${drillId}" data-event-title="${escapeHtml(r.event_title)}" data-instrument="${escapeHtml(r.instrument)}" style="font-size:11px">why ▾</button>`
+      : "";
     return `<tr>
-      <td>${escapeHtml(r.event_title)}${sourceBadge}<br><span style="font-size:11px;color:#888">${dateLabel}</span></td>
+      <td>${escapeHtml(r.event_title)}${sourceBadge}<br><span style="font-size:11px;color:#888">${dateLabel}</span>${drillToggle}</td>
       <td>${escapeHtml(r.instrument ?? "")}</td>
       <td>${escapeHtml(r.previous ?? "—")}</td>
       <td>${escapeHtml(r.forecast ?? "—")}</td>
       <td>${actualCell}</td>
-      <td>${predictionLabel} <span style="font-size:11px;color:#888">(${Math.round(r.ne_confidence * 100)}% conf.)</span>${tier1ConflictBadge}</td>
+      <td>${predictionLabel} <span class="${confidenceColorClass(Math.round(r.ne_confidence * 100))}" style="font-size:11px">(${Math.round(r.ne_confidence * 100)}% conf.)</span>${tier1ConflictBadge}</td>
       <td>${outcomeLabel}</td>
-    </tr>`;
+    </tr>${r.instrument ? `<tr class="history-drill-row" id="${drillId}" style="display:none"><td colspan="7"><div class="history-panel" data-loaded="false">Loading…</div></td></tr>` : ""}`;
   }).join("");
 }
+
+// Delegated (attached once, not per-render, since renderHistoryTable()
+// rebuilds #history-tbody's innerHTML on every filter/sort change) — an
+// expanded panel collapses on the next re-render, same as the rest of
+// this table's state; acceptable here since filter/sort is a deliberate
+// user action, not the silent 60s background poll refreshDashboard()
+// guards against.
+document.getElementById("history-tbody").addEventListener("click", async (e) => {
+  const btn = e.target.closest(".history-drill-toggle-btn");
+  if (!btn) return;
+  const row = document.getElementById(btn.dataset.target);
+  const panel = row.querySelector(".history-panel");
+  if (row.style.display !== "none") {
+    row.style.display = "none";
+    return;
+  }
+  row.style.display = "";
+  if (panel.dataset.loaded === "true") return;
+  const resp = await fetch(`/api/predictions/${btn.dataset.instrument}/article_history?event_title=${encodeURIComponent(btn.dataset.eventTitle)}`);
+  const data = await resp.json();
+  panel.dataset.loaded = "true";
+  const progression = data.progression || [];
+  panel.innerHTML = progression.length === 0
+    ? "<div style=\"font-size:12px;color:#888\">No article-based read recorded for this event yet.</div>"
+    : progression.map((entry, i) => articleProgressionEntryHtml(entry, i === 0)).join("");
+});

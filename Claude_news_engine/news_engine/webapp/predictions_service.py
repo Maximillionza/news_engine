@@ -427,27 +427,13 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
                     if ev["event_title"] != reconciled.prediction.event_title:
                         ev["previous_article_prediction"] = None
 
-        # Tier 1 vs. sentiment contradiction detection
-        # (fundamental-analysis-review-2026-09-11.md P0 #5) — the Sep 10
-        # PPI divergence (Tier 1 logged Certain/bullish, wrong; sentiment
-        # called bearish, right) shipped to the dashboard with zero flag
-        # anywhere, even though reconcile_group() already exists for
-        # exactly this class of problem, just scoped to co-released
-        # sentiment titles rather than a cross-system disagreement. This
-        # REVISES the live-tier1-dashboard-display spec's original "no
-        # agree/disagree computation on the live path" constraint
-        # (2026-09-07) — kept BacktestReport.agreement_rate() itself
-        # untouched (still backtest-only), but a live flag is now real
-        # product intent, not scope creep.
-        #
+        # Tier 1 vs. sentiment contradiction detection — see
+        # webapp/conflict.py's compute_tier1_sentiment_conflict() for the
+        # full rationale (why this exists, what counts as a conflict).
         # Computed here, AFTER reconciliation above, since reconciliation
         # can overwrite article_prediction for a co-released title — this
         # must compare the FINAL value the card actually shows, not a
-        # pre-reconciliation snapshot. "No call" (neutral, or either side
-        # simply absent) is never a conflict — same convention
-        # scoring/backtest.py's BacktestCase.evaluate() already uses for
-        # Tier 1's own accuracy metric: only a REAL, opposing directional
-        # call from both sides counts as a contradiction.
+        # pre-reconciliation snapshot.
         for ev in entry["events"]:
             article_pred = ev["article_prediction"]
             tier1_pred = ev["tier1_prediction"]

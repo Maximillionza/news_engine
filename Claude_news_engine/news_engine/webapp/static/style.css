@@ -9,7 +9,12 @@
 * { box-sizing: border-box; }
 body { font-family: system-ui, sans-serif; margin: 0; padding: 0 16px 40px; background: #fafafa; color: #222; }
 
-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; }
+/* Batch 10 (dashboard-review-2026-09-11.md live UI walkthrough):
+   "nav buttons crowd/overlap at the pane's default width" — header had no
+   wrap at all (h1 + 3 tab buttons fighting for one row), the same missing-
+   responsive-handling gap already flagged for the calendar grid. flex-wrap
+   lets the nav drop to its own row instead of overlapping the title. */
+header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 16px 0; gap: 8px; }
 header h1 { font-size: 18px; margin: 0; }
 nav .tab-btn { background: none; border: 1px solid var(--border); padding: 6px 14px; margin-left: 8px; border-radius: 6px; cursor: pointer; }
 nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
@@ -135,8 +140,14 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .cal-cell[data-date]:hover { background: #f5f5f5; }
 .cal-cell.has-estimated-only { background: #f4f8ff; }
 
-.calendar-legend { display: flex; gap: 16px; font-size: 11px; color: #666; margin-bottom: 12px; align-items: center; }
-.calendar-legend .cal-dot { margin-right: 4px; }
+.calendar-legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 11px; color: #666; margin-bottom: 12px; align-items: center; }
+/* Batch 10: the legend's own dots had no explicit size — .cal-cell .cal-dot's
+   width/height only applied inside an actual calendar cell, so a legend dot
+   (no .cal-cell ancestor) fell back to a zero-size inline span with just a
+   background color — effectively invisible, not merely "too small to read."
+   Explicit size here, independent of that ancestor-scoped rule. */
+.calendar-legend .cal-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.calendar-legend .cal-dot.cal-dot-estimated { width: 9px; height: 9px; }
 
 .estimated-badge { font-size: 10px; color: #1565c0; border: 1px solid #1565c0; border-radius: 4px; padding: 1px 5px; vertical-align: middle; }
 
@@ -164,6 +175,23 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 #history-stats-table { border-collapse: collapse; font-size: 12px; }
 #history-stats-table td { padding: 2px 10px 2px 0; }
 
+/* Batch 10: legend explaining the 5 outcome states (dashboard-review-
+   2026-09-11.md — "inconsistent and unexplained... no legend"). Reuses
+   .calendar-legend's own layout rather than a second near-duplicate rule. */
+#history-legend { margin-bottom: 10px; }
+#history-controls { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; margin-bottom: 10px; align-items: center; }
+#history-controls select { font-size: 12px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; }
+
 #history-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
 #history-table th, #history-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #ddd; font-size: 13px; }
 #history-table th { color: #666; font-weight: 600; }
+#history-th-event, #history-th-instrument, #history-th-confidence { user-select: none; }
+
+/* Batch 10: "confidence has no visual weighting... 1% and 100% render as
+   identical plain text" — a 3-tier threshold treatment, same split this
+   codebase's own confidence language already uses (Tier 1's Certain/
+   Likely/Guessing). Not a new judgment, a visible rendering of the
+   existing one. */
+.confidence-high { color: var(--bullish); font-size: 11px; font-weight: 600; }
+.confidence-medium { color: #f9a825; font-size: 11px; font-weight: 600; }
+.confidence-low { color: #888; font-size: 11px; }
