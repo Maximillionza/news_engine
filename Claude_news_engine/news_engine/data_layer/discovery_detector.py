@@ -47,11 +47,13 @@ def compute_daily_move(series: str, date: dt.date) -> Optional[float]:
     Real percentage move from session open to session close for `date`,
     using the same get_price_at() Dukascopy tick fetch
     scoring/outcome_classifier.py already relies on -- no new fetch
-    mechanism, just a new instrument map. Session open/close are UTC
-    00:00 and 23:59:59 for `date` -- a coarse but real and consistent
-    definition, matching this project's existing "before/after" tick
-    convention rather than inventing a market-hours-aware session
-    boundary this codebase doesn't otherwise track.
+    mechanism, just a new instrument map. Session open is UTC 00:00 for
+    `date` -- a coarse but real and consistent definition, matching this
+    project's existing "before/after" tick convention rather than
+    inventing a market-hours-aware session boundary this codebase
+    doesn't otherwise track. Session close is resolved by
+    _fetch_session_close_tick() below, NOT a fixed 23:59:59 instant (see
+    its own docstring for why).
 
     Returns None -- never fabricated -- if either tick fetch fails for
     any reason (market closed, feed gap, bad tick). Raises ValueError
@@ -66,13 +68,46 @@ def compute_daily_move(series: str, date: dt.date) -> Optional[float]:
         )
     instrument = _DETECTOR_INSTRUMENT_MAP[series]
     session_start = dt.datetime.combine(date, dt.time(0, 0), tzinfo=dt.timezone.utc)
-    session_end = dt.datetime.combine(date, dt.time(23, 59, 59), tzinfo=dt.timezone.utc)
 
     open_price = _fetch_tick(instrument, session_start)
-    close_price = _fetch_tick(instrument, session_end)
+    close_price = _fetch_session_close_tick(instrument, date)
     if open_price is None or close_price is None:
         return None
     return (close_price - open_price) / open_price * 100
+
+
+# How many 1-hour steps _fetch_session_close_tick walks backward from
+# 23:59:59 before giving up. 8 steps reaches 15:59:59 UTC -- comfortable
+# margin below the real, documented FX/metals/index-CFD Friday close
+# (~21:00-22:00 UTC) while never crossing into the previous calendar day.
+_SESSION_CLOSE_BACKWARD_STEPS = 8
+
+
+def _fetch_session_close_tick(instrument: str, date: dt.date) -> Optional[float]:
+    """
+    Real fix (2026-09-11, final whole-branch review's Important finding):
+    a fixed 23:59:59 UTC close instant assumes the market is still open
+    at midnight, which FX/metals/index CFDs are not on a Friday -- they
+    close around 21:00-22:00 UTC and don't reopen until Sunday evening.
+    Verified live: XAUUSD/DXY on multiple real Friday dates both returned
+    None under the old fixed-instant fetch, when a real Friday session
+    (and a real close price) genuinely existed.
+
+    Walks backward from 23:59:59 in 1-hour steps, within `date`'s own
+    calendar day only (never reaching into the previous day), and
+    returns the first real tick found -- the same "coarse but real"
+    session-boundary philosophy already used for session open, just no
+    longer assuming every market is still open at midnight UTC. A
+    genuinely closed day (weekend, market holiday) still correctly
+    returns None once every step in the budget has been tried -- this
+    never fabricates a close price for a day with no real trading.
+    """
+    for step in range(_SESSION_CLOSE_BACKWARD_STEPS + 1):
+        candidate = dt.datetime.combine(date, dt.time(23, 59, 59), tzinfo=dt.timezone.utc) - dt.timedelta(hours=step)
+        price = _fetch_tick(instrument, candidate)
+        if price is not None:
+            return price
+    return None
 
 
 def _fetch_tick(instrument: str, when_utc: dt.datetime) -> Optional[float]:

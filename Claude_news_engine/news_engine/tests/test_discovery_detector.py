@@ -38,6 +38,30 @@ def test_compute_daily_move_returns_a_real_percentage_for_a_real_past_date():
     print("PASS\n")
 
 
+def test_compute_daily_move_returns_a_real_percentage_for_a_real_friday():
+    print("=== discovery_detector: compute_daily_move returns a real move on a Friday, whose close falls before the fixed 23:59:59 UTC instant the market has already shut for the week ===")
+    # 2026-09-04 is a real Friday, live-verified during the final
+    # whole-branch review to return None under the old fixed-instant
+    # close fetch (the market had already closed for the week by
+    # 23:59:59 UTC). Confirms the backward-search fix in
+    # _fetch_session_close_tick() actually resolves the gap, not just
+    # that it doesn't crash.
+    move = discovery_detector.compute_daily_move("XAUUSD", dt.date(2026, 9, 4))
+    assert move is not None, "expected a real Friday move now that the close fetch searches backward from 23:59:59"
+    assert -20.0 < move < 20.0, f"expected a plausible single-day %% move, got {move}"
+    print("PASS\n")
+
+
+def test_compute_daily_move_returns_none_for_a_real_saturday():
+    print("=== discovery_detector: compute_daily_move still correctly returns None for a genuinely closed Saturday -- the backward search must not fabricate a close price when the market never traded that day ===")
+    # 2026-09-05 is the Saturday immediately after the Friday tested
+    # above -- the market is closed all day, so even walking back 8
+    # hours from 23:59:59 must never find a real tick.
+    move = discovery_detector.compute_daily_move("XAUUSD", dt.date(2026, 9, 5))
+    assert move is None, f"expected None for a fully closed Saturday, got {move}"
+    print("PASS\n")
+
+
 def test_rolling_baseline_computes_mean_and_stdev_from_prior_days_only():
     print("=== discovery_detector: rolling_baseline computes real mean/stdev from the window_days BEFORE as_of_date, never including as_of_date itself ===")
     as_of = dt.date(2026, 9, 10)
@@ -140,6 +164,8 @@ if __name__ == "__main__":
     test_detector_series_is_exactly_four_series()
     test_compute_daily_move_unknown_series_raises_value_error()
     test_compute_daily_move_returns_a_real_percentage_for_a_real_past_date()
+    test_compute_daily_move_returns_a_real_percentage_for_a_real_friday()
+    test_compute_daily_move_returns_none_for_a_real_saturday()
     test_rolling_baseline_computes_mean_and_stdev_from_prior_days_only()
     test_rolling_baseline_returns_none_with_fewer_than_window_days_of_real_data()
     test_detect_anomaly_flags_a_real_stdev_breach_with_no_calendar_event()
