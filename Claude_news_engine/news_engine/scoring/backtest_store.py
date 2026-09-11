@@ -105,6 +105,18 @@ CREATE TABLE IF NOT EXISTS tier1_comparisons (
     compared_at_utc TEXT NOT NULL,
     UNIQUE(event_title, instrument, event_time_utc)
 );
+CREATE TABLE IF NOT EXISTS exogenous_shocks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    series TEXT NOT NULL,
+    shock_date TEXT NOT NULL,
+    move_pct REAL NOT NULL,
+    stdev_move REAL NOT NULL,
+    taxonomy_category TEXT,
+    headline_cause TEXT,
+    source TEXT,
+    logged_at_utc TEXT NOT NULL,
+    UNIQUE(series, shock_date)
+);
 """
 
 
@@ -935,6 +947,31 @@ def record_kalshi_read_if_changed(
 _VALID_TIER1_CONFIDENCE = ("Certain", "Likely", "Guessing")
 
 
+_VALID_TAXONOMY_CATEGORIES = (
+    "Treasury buyback size/schedule change",
+    "US sovereign credit-rating action",
+    "Government shutdown / funding lapse",
+    "Fed-independence shock",
+    "Fed Chair transition",
+    "Tariff/trade policy executive action",
+    "OPEC+ supply decision",
+    "Geopolitical war-driven oil supply shock",
+)
+
+
+@dataclass
+class ExogenousShockRow:
+    id: int
+    series: str
+    shock_date: str
+    move_pct: float
+    stdev_move: float
+    taxonomy_category: Optional[str]
+    headline_cause: Optional[str]
+    source: Optional[str]
+    logged_at_utc: str
+
+
 def record_tier1_prediction(
     conn: sqlite3.Connection,
     event_title: str,
@@ -1078,4 +1115,61 @@ def get_tier1_comparison_for_occurrence(
         tier1_correct=None if d["tier1_correct"] is None else bool(d["tier1_correct"]),
         actual_direction=d["actual_direction"], actual_move_note=d["actual_move_note"],
         compared_at_utc=d["compared_at_utc"],
+    )
+
+
+def record_exogenous_shock(
+    conn: sqlite3.Connection,
+    series: str,
+    shock_date: dt.date,
+    move_pct: float,
+    stdev_move: float,
+    taxonomy_category: Optional[str] = None,
+    headline_cause: Optional[str] = None,
+    source: Optional[str] = None,
+    logged_at_utc: Optional[dt.datetime] = None,
+) -> int:
+    """
+    Persists a real detected anomaly (data_layer.discovery_detector.AnomalyResult)
+    plus its real, human/LLM-researched cause. taxonomy_category is
+    validated against AdHoc_Category_Taxonomy's exact 8 real category
+    names when set -- same rejection-on-typo discipline
+    record_tier1_prediction()'s confidence-tag validation already uses.
+    None is a fully valid, honest value for taxonomy_category (a real
+    anomaly with no fitting known category) and for headline_cause/source
+    (the research step hasn't run yet, or found nothing real to attach) --
+    never forced to a fabricated fit.
+    """
+    if taxonomy_category is not None and taxonomy_category not in _VALID_TAXONOMY_CATEGORIES:
+        raise ValueError(
+            f"taxonomy_category={taxonomy_category!r} is not valid — must be one of: "
+            f"{', '.join(_VALID_TAXONOMY_CATEGORIES)}, or None"
+        )
+    logged_at = logged_at_utc or dt.datetime.now(dt.timezone.utc)
+    cursor = conn.execute(
+        "INSERT INTO exogenous_shocks (series, shock_date, move_pct, stdev_move, "
+        "taxonomy_category, headline_cause, source, logged_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (series, shock_date.isoformat(), move_pct, stdev_move,
+         taxonomy_category, headline_cause, source, logged_at.isoformat()),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def get_exogenous_shock_for_date(
+    conn: sqlite3.Connection, series: str, shock_date: dt.date,
+) -> Optional[ExogenousShockRow]:
+    """The recorded shock for this exact (series, shock_date), or None if never logged — never fabricated."""
+    row = conn.execute(
+        "SELECT * FROM exogenous_shocks WHERE series = ? AND shock_date = ?",
+        (series, shock_date.isoformat()),
+    ).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    return ExogenousShockRow(
+        id=d["id"], series=d["series"], shock_date=d["shock_date"],
+        move_pct=d["move_pct"], stdev_move=d["stdev_move"],
+        taxonomy_category=d["taxonomy_category"], headline_cause=d["headline_cause"],
+        source=d["source"], logged_at_utc=d["logged_at_utc"],
     )

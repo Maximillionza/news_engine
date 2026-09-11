@@ -21,6 +21,7 @@ from scoring.backtest_store import (
     record_check, count_recent_checks, get_prediction_history, get_last_check_utc,
     record_tier1_prediction, get_latest_tier1_prediction_for_occurrence,
     record_tier1_comparison, get_tier1_comparison_for_occurrence,
+    record_exogenous_shock, get_exogenous_shock_for_date, ExogenousShockRow,
 )
 
 
@@ -1009,6 +1010,65 @@ def test_get_connection_memory_path_never_cached_stays_isolated_per_call():
     print("PASS\n")
 
 
+def test_record_and_get_exogenous_shock_round_trip():
+    print("=== backtest_store: record_exogenous_shock + get_exogenous_shock_for_date round-trip ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        shock_date = dt.date(2026, 9, 10)
+        record_exogenous_shock(
+            conn, "XAUUSD", shock_date, move_pct=8.5, stdev_move=3.2,
+            taxonomy_category="Geopolitical war-driven oil supply shock",
+            headline_cause="Real headline describing the event",
+            source="Reuters, 2026-09-10",
+        )
+        row = get_exogenous_shock_for_date(conn, "XAUUSD", shock_date)
+        assert row is not None
+        assert row.move_pct == 8.5
+        assert row.taxonomy_category == "Geopolitical war-driven oil supply shock"
+        conn.close()
+    print("PASS\n")
+
+
+def test_get_exogenous_shock_returns_none_when_never_logged():
+    print("=== backtest_store: get_exogenous_shock_for_date returns None (never fabricated) when nothing was ever recorded ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        assert get_exogenous_shock_for_date(conn, "XAUUSD", dt.date(2026, 9, 10)) is None
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_exogenous_shock_rejects_invalid_taxonomy_category():
+    print("=== backtest_store: record_exogenous_shock rejects a taxonomy_category that isn't one of AdHoc_Category_Taxonomy's 8 real categories ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        try:
+            record_exogenous_shock(
+                conn, "XAUUSD", dt.date(2026, 9, 10), move_pct=8.5, stdev_move=3.2,
+                taxonomy_category="Not A Real Category",
+            )
+            assert False, "expected ValueError"
+        except ValueError as exc:
+            assert "Not A Real Category" in str(exc)
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_exogenous_shock_allows_none_taxonomy_category():
+    print("=== backtest_store: record_exogenous_shock allows taxonomy_category=None -- a real anomaly with no fitting category is a real, honest outcome, not an error ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = get_connection(db_path)
+        record_exogenous_shock(conn, "XAUUSD", dt.date(2026, 9, 10), move_pct=8.5, stdev_move=3.2)
+        row = get_exogenous_shock_for_date(conn, "XAUUSD", dt.date(2026, 9, 10))
+        assert row.taxonomy_category is None
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_record_and_count_predictions()
     test_count_predictions_scoped_to_event_occurrence_not_just_title()
@@ -1063,4 +1123,8 @@ if __name__ == "__main__":
     test_tier1_comparison_rerun_for_same_occurrence_replaces_not_duplicates()
     test_get_connection_skips_migration_on_second_open_of_same_path()
     test_get_connection_memory_path_never_cached_stays_isolated_per_call()
+    test_record_and_get_exogenous_shock_round_trip()
+    test_get_exogenous_shock_returns_none_when_never_logged()
+    test_record_exogenous_shock_rejects_invalid_taxonomy_category()
+    test_record_exogenous_shock_allows_none_taxonomy_category()
     print("All backtest_store tests passed.")
