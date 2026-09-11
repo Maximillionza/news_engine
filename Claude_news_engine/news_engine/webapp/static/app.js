@@ -1083,6 +1083,9 @@ function renderHistoryTable(rows) {
       : "";
     // Numeric rows use higher/lower/in_line; text-event fallback rows use bullish/bearish/neutral.
     const predictionLabel = { higher: "Higher", lower: "Lower", in_line: "In-line", bullish: "Bullish", bearish: "Bearish", neutral: "Neutral" }[r.ne_prediction] || escapeHtml(r.ne_prediction);
+    const tier1ConflictBadge = r.tier1_conflict
+      ? ` <span style="color:#ef6c00;font-size:11px;font-weight:bold">⚠ Tier 1: ${escapeHtml(r.tier1_conflict.tier1_direction)}</span>`
+      : "";
     const outcomeLabel = r.outcome === null
       ? `<span style="color:#888">${
           r.unjudged_reason === "pending" ? "Awaiting confirmation"
@@ -1098,7 +1101,7 @@ function renderHistoryTable(rows) {
       <td>${escapeHtml(r.previous ?? "—")}</td>
       <td>${escapeHtml(r.forecast ?? "—")}</td>
       <td>${actualCell}</td>
-      <td>${predictionLabel} <span style="font-size:11px;color:#888">(${Math.round(r.ne_confidence * 100)}% conf.)</span></td>
+      <td>${predictionLabel} <span style="font-size:11px;color:#888">(${Math.round(r.ne_confidence * 100)}% conf.)</span>${tier1ConflictBadge}</td>
       <td>${outcomeLabel}</td>
     </tr>`;
   }).join("");
