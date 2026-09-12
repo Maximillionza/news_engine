@@ -1328,7 +1328,7 @@ export function createCardFlipHandlers(cardState, { onRender, onSymbolRemoved })
 }
 ```
 
-Note: `historyPanelContent`/`articleProgressionContent` here return plain strings, matched to `card.js`'s `cardTemplate()` interpolating them directly rather than as nested `lit-html` templates — an intentional, small simplification for this task (these two panels' own internal HTML is not converted to `lit-html` syntax in this refactor; they keep the original string-building approach, unescaped exactly as the original `articleProgressionEntryHtml`/inline history-row functions already were). `article-progression.js` (containing `articleProgressionEntryHtml`, moved verbatim from the current `app.js`, around its existing line 790) must be created as part of this task's Step 1 — add it as a new file `webapp/static/js/dashboard/article-progression.js` exporting that one function, moved byte-for-byte from `app.js`'s current definition.
+Note: `historyPanelContent`/`articleProgressionContent` here return plain strings, matched to `card.js`'s `cardTemplate()` interpolating them directly rather than as nested `lit-html` templates — an intentional, small simplification for this task (these two panels' own internal HTML is not converted to `lit-html` syntax in this refactor; they keep the original string-building approach, unescaped exactly as the original `articleProgressionEntryHtml`/inline history-row functions already were). `article-progression.js` (containing `articleProgressionEntryHtml`, moved verbatim from the current `app.js`, around its existing line 790) must be created as part of this task's Step 2 (alongside `card-flip.js`, which is what imports it) — add it as a new file `webapp/static/js/dashboard/article-progression.js` exporting that one function, moved byte-for-byte from `app.js`'s current definition.
 
 - [ ] **Step 3: Write card-flip.test.js**
 
@@ -1589,8 +1589,8 @@ Expected: all pass, including both new `dashboard-poll.test.js` cases proving st
 In `webapp/static/app.js`:
 1. Add to the top-of-file imports: `import { refreshDashboard } from "./js/dashboard/dashboard-poll.js";`
 2. Delete the entire old `refreshDashboard()` function (currently defined around line 875) — including its `expandedHistoryIds`/`flippedSymbols` capture-before-teardown logic and the `cardsEl.innerHTML = ""` line and the two `.forEach(...)` restoration blocks after it. All of that logic is now handled by `dashboard-poll.js`'s `renderDashboardNow()` + `cardState`.
-3. Delete the now-orphaned old `renderCard()`, `finalizeCardFlip()`, `wireCardFlip()`, `articleProgressionEntryHtml()` function definitions from `app.js` — but only if Task 5's Step 2 already moved `articleProgressionEntryHtml` into `dashboard/article-progression.js`; if any of these four are still referenced elsewhere in `app.js` at this point, leave them and note it for Task 9's cleanup pass instead of guessing.
-4. `removeSymbol(ticker)` — currently a standalone function calling `refreshDashboard()` after a delete — is superseded by `card-flip.js`'s `onRemoveClick`. Delete the old standalone `removeSymbol` function from `app.js` if nothing else still calls it (check with a search for `removeSymbol(` across `webapp/static/`) .
+3. **Do NOT delete `renderCard()`, `finalizeCardFlip()`, `wireCardFlip()`, or `articleProgressionEntryHtml()` in this task**, even though they are now unused — per the spec's own migration plan (`docs/superpowers/specs/2026-09-11-frontend-rendering-refactor-design.md`'s Migration plan, step 4): "removing it here would be an unrelated deletion bundled into the same commit as the rendering swap." They stay in place, dead, until Task 9's dedicated cleanup pass deletes them alongside every other now-orphaned helper in one focused commit.
+4. `removeSymbol(ticker)` — currently a standalone function calling the old `refreshDashboard()` after a delete — is superseded by `card-flip.js`'s `onRemoveClick`. Leave the old standalone `removeSymbol` function in place for the same reason as point 3 above, even if nothing calls it after this task — Task 9 deletes it alongside the others.
 
 - [ ] **Step 5: Live-verify — the actual point of this task**
 
@@ -1909,7 +1909,7 @@ Expected: all pass, including the new `grid-view-model.test.js` file.
 - [ ] **Step 7: Cut over app.js**
 
 1. Add to `app.js`'s imports: `import { refreshCalendar } from "./js/calendar/calendar-poll.js";`
-2. Delete the entire old `refreshCalendar()` function from `app.js` (currently around line 947), the old `showDatePanel()` function (around line 1065), the `let selectedCalendarDateStr = null; let calendarPanelClosed = false;` module-level state, and the old `calendar-date-panel-close` click listener (around line 1128) — all superseded by `calendar-poll.js`/`date-panel.js`.
+2. Delete ONLY the old `refreshCalendar()` function's body from `app.js` (currently around line 947) — this one is unavoidable: an ES module cannot both `import { refreshCalendar }` and declare `function refreshCalendar() {}` in the same scope (a real `SyntaxError: Identifier 'refreshCalendar' has already been declared`), unlike Task 6's `renderCard()`/etc., which have no import-name collision and can stay. **Do NOT delete `showDatePanel()`, the `selectedCalendarDateStr`/`calendarPanelClosed` module-level state, or the old `calendar-date-panel-close` click listener in this task** — none of these three collide with anything imported here, and per the spec's Migration plan (step 5, "repeat steps 3-4's shape"), dead code with no forced collision stays in place until Task 9's dedicated cleanup pass.
 
 - [ ] **Step 8: Live-verify**
 
@@ -1977,7 +1977,9 @@ git commit -m "refactor: move History tab functions to js/history/table.js (mech
 
 - [ ] **Step 1: Delete dead code**
 
-Confirm (via `grep -n "function renderCard\|function finalizeCardFlip\|function wireCardFlip\|function removeSymbol" webapp/static/app.js`) whether any of these four old functions are still present and now genuinely unused (Task 6 deleted `refreshDashboard`'s old body, which was their only caller). If any are still defined, delete them. Also search for and delete any now-orphaned helper that nothing calls: `grep -rn "articlePredictionHtml\|tier1PredictionHtml\|printPredictionHtml\|kalshiReadHtml\|trendSignalHtml\|breakdownPanelHtml\|otherEventsHtml\|otherTrackedEventsHtml" webapp/static/app.js` — every one of these was a nested closure inside the now-deleted `renderCard()`, so this search should return nothing; if it returns matches, `renderCard()` itself was not actually fully deleted in Task 6 and needs to be now.
+Per Task 6 Step 4 point 3 and Task 7 Step 7 point 2, the following were deliberately left in `app.js`, dead, until this task: `renderCard()` (and every nested closure inside it — `articlePredictionHtml`, `tier1PredictionHtml`, `printPredictionHtml`, `kalshiReadHtml`, `trendSignalHtml`, `breakdownPanelHtml`, `otherEventsHtml`, `otherTrackedEventsHtml`, and any others still nested there), `finalizeCardFlip()`, `wireCardFlip()`, `removeSymbol()`, `showDatePanel()`, the `selectedCalendarDateStr`/`calendarPanelClosed` module-level state, and the old `calendar-date-panel-close` click listener.
+
+Confirm each is genuinely unused now (via `grep -n "removeSymbol(\|showDatePanel(\|selectedCalendarDateStr\|calendarPanelClosed" webapp/static/app.js` to check for any lingering call site outside the dead function definitions themselves — there should be none, since every real caller was already migrated to the new modules in Tasks 5-7). Delete all of the above from `app.js`. If any grep-turned-up reference surprises you (a real, still-needed call site this plan didn't anticipate), stop and treat it as a real gap in Tasks 5-7 rather than guessing — leave that one function in place and note which task's boundary missed it.
 
 - [ ] **Step 2: Confirm app.js's final shape matches the spec**
 
