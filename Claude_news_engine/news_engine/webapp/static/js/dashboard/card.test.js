@@ -100,6 +100,45 @@ test("cardTemplate renders the no_events branch: header + fixed message", () => 
   assert.match(container.innerHTML, />XAUUSD</);
 });
 
+// Fix round 1, Finding 1 (regression vs. the original renderCard(), which
+// calls finalizeCardFlip() unconditionally for BOTH its pending and
+// resolved branches): the isPending branch must render the same flip
+// structure the resolved branch does, and its symbol <h3> must wire the
+// same onFlipClick handler the resolved branch's does — not just have the
+// right CSS class with no listener behind it.
+
+test("cardTemplate's isPending branch renders the flip structure (front/back) and wires the symbol click the same as the resolved branch", () => {
+  const vm = buildCardViewModel(
+    {
+      symbol: "XAUUSD", symbol_class: "metal",
+      events: [{ event_title: "FOMC Statement", event_time_utc: "2026-09-11T18:00:00Z", direction: "pending" }],
+    },
+    { flipped: true },
+  );
+  assert.equal(vm.isPending, true, "sanity check: this test must exercise the isPending branch");
+
+  let flippedSymbolArg = null;
+  const flipHandlers = {
+    ...noopFlipHandlers,
+    onFlipClick: (symbol) => { flippedSymbolArg = symbol; },
+    articleProgressionContent: () => "Loading…",
+  };
+  const container = document.createElement("div");
+  render(cardTemplate(vm, flipHandlers), container);
+
+  assert.ok(container.querySelector(".card-flip-inner"), "expected a .card-flip-inner wrapper, same as the resolved branch");
+  assert.ok(container.querySelector(".card-flip-front"), "expected a .card-flip-front, same as the resolved branch");
+  const back = container.querySelector(".card-flip-back");
+  assert.ok(back, "expected a .card-flip-back, same as the resolved branch");
+  assert.ok(back.querySelector(".article-progression"), "expected the back face to render the article-progression panel");
+  assert.ok(container.querySelector(".card").classList.contains("flipped"), "vm.uiState.flipped must drive the flipped class here too");
+
+  const trigger = container.querySelector(".symbol-flip-trigger");
+  assert.ok(trigger, "expected the symbol <h3> flip trigger");
+  trigger.click();
+  assert.equal(flippedSymbolArg, "XAUUSD", "the pending branch's symbol click must call flipHandlers.onFlipClick, same as the resolved branch");
+});
+
 // Fix round 1, Finding 2: a value that goes through card.js's normal
 // lit-html `${}` bindings must render its real characters once, not come
 // out double-escaped (entity-encoded text that's never decoded back,

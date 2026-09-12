@@ -194,17 +194,44 @@ export function cardTemplate(vm, flipHandlers) {
   }
 
   if (vm.isPending) {
-    return html`<div class="card">
-      <div class="card-header">
-        <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" @click=${() => flipHandlers.onFlipClick(vm.symbol)}>${vm.symbol}</h3>
-        <button class="remove-btn" @click=${() => flipHandlers.onRemoveClick(vm.symbol)}>Remove</button>
+    // Regression fix (fix round 1): the original renderCard() calls
+    // finalizeCardFlip() UNCONDITIONALLY at the end of both its pending
+    // AND resolved branches — a pending card (e.g. an FOMC-style event
+    // whose essence-only score can never resolve) is still flippable to
+    // show its article-based "why this changed" progression, which can
+    // change over time even while essence stays pending. This branch
+    // previously omitted the flip structure entirely, making pending
+    // cards unflippable — a real behavior regression from the original,
+    // not a deliberate simplification. Mirrors the resolved branch's
+    // flip structure below (card-has-flip/flipped classes, .card-flip-inner
+    // wrapping front/back, same back face shape) but with no History/
+    // "Why this call" toggles, since the original's pending branch never
+    // computed historyToggleId/breakdownToggleId (those variables didn't
+    // exist until the resolved branch's own code, below the `next.direction
+    // === "pending"` early return) — nothing to add here that the original
+    // didn't have.
+    return html`<div class="card ${vm.uiState.flipped ? "card-has-flip flipped" : ""}">
+      <div class="card-flip-inner">
+        <div class="card-flip-front">
+          <div class="card-header">
+            <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" @click=${() => flipHandlers.onFlipClick(vm.symbol)}>${vm.symbol}</h3>
+            <button class="remove-btn" @click=${() => flipHandlers.onRemoveClick(vm.symbol)}>Remove</button>
+          </div>
+          <div class="pending">${vm.pendingHeading}<br>
+            <span style="font-size:12px;color:#888">${new Date(vm.eventTimeUtc).toLocaleString()}</span></div>
+          ${articlePredictionTemplate(vm.articlePrediction)}${articlePredictionConflictTemplate(vm.articlePredictionConflict)}
+          ${tier1PredictionTemplate(vm.tier1Prediction)}${tier1SentimentConflictTemplate(vm.tier1SentimentConflict)}${tier1ConfidenceDowngradeTemplate(vm.tier1ConfidenceDowngrade)}
+          ${printPredictionTemplate(vm.printPrediction)}${kalshiReadTemplate(vm.kalshiRead)}${trendSignalTemplate(vm.trendSignal)}
+          ${otherEventsTemplate(vm.otherEvents)}${otherTrackedEventsTemplate(vm.otherTrackedEvents)}
+        </div>
+        <div class="card-flip-back">
+          <div class="card-header">
+            <h3>${vm.symbol} — why this changed</h3>
+            <button class="flip-back-btn" @click=${() => flipHandlers.onFlipClick(vm.symbol, false)}>✕ Back</button>
+          </div>
+          <div class="article-progression">${unsafeHTML(flipHandlers.articleProgressionContent(vm.uiState))}</div>
+        </div>
       </div>
-      <div class="pending">${vm.pendingHeading}<br>
-        <span style="font-size:12px;color:#888">${new Date(vm.eventTimeUtc).toLocaleString()}</span></div>
-      ${articlePredictionTemplate(vm.articlePrediction)}${articlePredictionConflictTemplate(vm.articlePredictionConflict)}
-      ${tier1PredictionTemplate(vm.tier1Prediction)}${tier1SentimentConflictTemplate(vm.tier1SentimentConflict)}${tier1ConfidenceDowngradeTemplate(vm.tier1ConfidenceDowngrade)}
-      ${printPredictionTemplate(vm.printPrediction)}${kalshiReadTemplate(vm.kalshiRead)}${trendSignalTemplate(vm.trendSignal)}
-      ${otherEventsTemplate(vm.otherEvents)}${otherTrackedEventsTemplate(vm.otherTrackedEvents)}
     </div>`;
   }
 
