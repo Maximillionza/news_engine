@@ -87,7 +87,7 @@ export function createCardFlipHandlers(cardState, { onRender, onSymbolRemoved })
   function articleProgressionContent(uiState) {
     if (!uiState.flipped) return "";
     if (!uiState.articleHistoryLoaded) return "Loading…";
-    if (uiState.articleHistory.length === 0) return "No article-based read recorded for this event yet.";
+    if (uiState.articleHistory.length === 0) return `<div style="font-size:12px;color:#888">No article-based read recorded for this event yet.</div>`;
     return uiState.articleHistory.map((entry, i) => articleProgressionEntryHtml(entry, i === 0)).join("");
   }
 

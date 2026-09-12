@@ -64,6 +64,13 @@ test("onFlipClick(symbol, false) without an eventTitle leaves an existing curren
   assert.equal(cardState.get("XAUUSD").currentEventTitle, "Existing Title");
 });
 
+test("articleProgressionContent wraps the empty-state message in its styled div", () => {
+  const cardState = new Map();
+  const handlers = createCardFlipHandlers(cardState, { onRender: () => {}, onSymbolRemoved: async () => {} });
+  const content = handlers.articleProgressionContent({ flipped: true, articleHistoryLoaded: true, articleHistory: [] });
+  assert.equal(content, `<div style="font-size:12px;color:#888">No article-based read recorded for this event yet.</div>`);
+});
+
 test("onRemoveClick calls onSymbolRemoved (a real re-fetch), not onRender (a cheap re-render of stale data)", async () => {
   const cardState = new Map();
   let renderCount = 0, removedCount = 0;
