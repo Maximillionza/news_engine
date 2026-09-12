@@ -3,6 +3,8 @@ import {
   directionLabel, directionClass, directionPct, gaugeSvg, bullBearScaleSvg,
   buildDiffStripHtml, diffPieSvg, dayStripHtml, tier1DirectionLabel,
 } from "./js/format.js";
+import { refreshDashboard } from "./js/dashboard/dashboard-poll.js";
+import { renderFeedStaleness } from "./js/staleness.js";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -13,66 +15,16 @@ const POLL_INTERVAL_MS = 60_000;
 // codebase's own confidence language already uses elsewhere (Tier 1's
 // Certain/Likely/Guessing tags).
 
-const cardsEl = document.getElementById("cards");
 const calendarGridEl = document.getElementById("calendar-grid");
 const addForm = document.getElementById("add-symbol-form");
 const addInput = document.getElementById("add-symbol-input");
 const calendarStaleNoticeEl = document.getElementById("calendar-stale-notice");
-const predictionsStaleNoticeEl = document.getElementById("predictions-stale-notice");
 // Distinct from the two notices above (which mean "the backend has no
 // data yet") — these mean "the browser itself failed to reach the server
 // on the last poll" (dashboard-review-2026-09-11.md: a transient network
 // blip used to throw an unhandled rejection and silently freeze the
 // dashboard on stale data with no visible sign anything was wrong).
-const predictionsPollErrorEl = document.getElementById("predictions-poll-error-notice");
 const calendarPollErrorEl = document.getElementById("calendar-poll-error-notice");
-const feedStalenessEl = document.getElementById("feed-staleness-indicator");
-const accumulatorStalenessEl = document.getElementById("accumulator-staleness-indicator");
-
-// Thresholds from docs/calendar-feed-staleness-policy.md's operational
-// policy table — display-only, no scoring impact.
-const FEED_STALENESS_FRESH_SECONDS = 3 * 60 * 60;
-const FEED_STALENESS_AGING_SECONDS = 24 * 60 * 60;
-
-function renderFeedStaleness(seconds) {
-  if (feedStalenessEl == null) return;
-  if (seconds == null) {
-    feedStalenessEl.textContent = "Calendar feed: never fetched yet";
-    feedStalenessEl.className = "feed-staleness stale";
-    return;
-  }
-  const minutes = Math.round(seconds / 60);
-  const label = minutes < 60 ? `${minutes}m ago` : `${(seconds / 3600).toFixed(1)}h ago`;
-  const level = seconds < FEED_STALENESS_FRESH_SECONDS ? "fresh" : seconds < FEED_STALENESS_AGING_SECONDS ? "aging" : "stale";
-  feedStalenessEl.textContent = `Forex Factory feed last checked: ${label}`;
-  feedStalenessEl.className = `feed-staleness ${level}`;
-}
-
-// The article-based accumulator (scripts/run_accumulator.py) is a
-// SEPARATE process from this Flask app — it can silently stop running
-// (crash, never started, sandbox reset) while the dashboard keeps
-// serving whatever article_prediction it last computed, with nothing
-// otherwise distinguishing that from a healthy "no new articles" quiet
-// period. Tighter thresholds than the calendar feed's — this pipeline is
-// meant to poll far more frequently near a live event (down to 5-minute
-// intervals, see webapp/scheduler.py's FINAL_INTERVAL_SECONDS), so an
-// hour of silence is already a real signal something's wrong, not routine.
-const ACCUMULATOR_STALENESS_FRESH_SECONDS = 20 * 60;
-const ACCUMULATOR_STALENESS_AGING_SECONDS = 60 * 60;
-
-function renderAccumulatorStaleness(seconds) {
-  if (accumulatorStalenessEl == null) return;
-  if (seconds == null) {
-    accumulatorStalenessEl.textContent = "Article accumulator: never run — start scripts/run_accumulator.py";
-    accumulatorStalenessEl.className = "feed-staleness stale";
-    return;
-  }
-  const minutes = Math.round(seconds / 60);
-  const label = minutes < 60 ? `${minutes}m ago` : `${(seconds / 3600).toFixed(1)}h ago`;
-  const level = seconds < ACCUMULATOR_STALENESS_FRESH_SECONDS ? "fresh" : seconds < ACCUMULATOR_STALENESS_AGING_SECONDS ? "aging" : "stale";
-  accumulatorStalenessEl.textContent = `Article accumulator last checked: ${label}`;
-  accumulatorStalenessEl.className = `feed-staleness ${level}`;
-}
 
 // Local-calendar-date ISO string (YYYY-MM-DD). NOT Date.toISOString() —
 // that converts to UTC first, which would shift the date for any
@@ -740,78 +692,6 @@ function wireCardFlip(el, symbol) {
       flipTo(false);
     });
   }
-}
-
-async function refreshDashboard() {
-  // dashboard-review-2026-09-11.md: a transient network blip here used to
-  // throw an unhandled rejection out of this function and silently freeze
-  // the dashboard on stale data every subsequent poll, with no visible
-  // sign anything was wrong (unlike the Add-Symbol form, which already
-  // checked resp.ok). Caught here instead: leaves whatever's already
-  // rendered in place (never wipes cardsEl on a failed poll) and surfaces
-  // a visible, distinct-from-"no data yet" notice. Cleared on the next
-  // successful poll, same as every other transient indicator in this file.
-  let data;
-  try {
-    const resp = await fetch("/api/predictions");
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    data = await resp.json();
-  } catch (err) {
-    console.error("refreshDashboard: poll failed", err);
-    predictionsPollErrorEl.textContent = "Couldn't reach the server — showing the last data received.";
-    predictionsPollErrorEl.style.display = "";
-    return;
-  }
-  predictionsPollErrorEl.style.display = "none";
-
-  // "error" here means the background loop (webapp/scheduler.py) hasn't
-  // completed its first successful fetch yet — not "a live request just
-  // failed," since no route ever fetches live anymore. Once a snapshot
-  // exists, it's shown as current until the background loop persists new
-  // data — no per-request staleness, so this notice only ever appears
-  // before the very first fetch (fresh install / recent restart).
-  if (data.error) {
-    predictionsStaleNoticeEl.textContent = data.error;
-    predictionsStaleNoticeEl.style.display = "";
-  } else {
-    predictionsStaleNoticeEl.textContent = "";
-    predictionsStaleNoticeEl.style.display = "none";
-  }
-
-  renderAccumulatorStaleness(data.accumulator_staleness_seconds);
-
-  // Capture which History panels are currently expanded so a fresh
-  // re-render below (which rebuilds every card from scratch, wiping
-  // panel state and the data-loaded fetch cache) can restore them
-  // afterward instead of silently collapsing them every 60s.
-  const expandedHistoryIds = Array.from(cardsEl.querySelectorAll('.history-panel'))
-    .filter((p) => p.style.display !== 'none')
-    .map((p) => p.id);
-
-  // Same idea for the flip-card feature — which symbols are currently
-  // flipped, so a fresh re-render (which rebuilds every card, wiping
-  // .flipped and the article_history fetch cache) can restore them
-  // instead of silently flipping everything back to front every 60s.
-  const flippedSymbols = Array.from(cardsEl.querySelectorAll('.card.flipped'))
-    .map((c) => c.querySelector('.symbol-flip-trigger')?.dataset.symbol)
-    .filter(Boolean);
-
-  cardsEl.innerHTML = "";
-  (data.predictions || []).forEach((entry) => cardsEl.appendChild(renderCard(entry)));
-
-  // Re-expand (and re-fetch, since event_history may genuinely have
-  // changed) any panel that survives under the same deterministic id —
-  // i.e. this card's `next` event is still the same symbol+title.
-  expandedHistoryIds.forEach((id) => {
-    if (!document.getElementById(id)) return;  // that event is no longer this card's `next` — nothing to restore
-    const btn = document.querySelector(`[data-target="${id}"]`);
-    if (btn) btn.click();
-  });
-
-  flippedSymbols.forEach((symbol) => {
-    const trigger = document.querySelector(`.symbol-flip-trigger[data-symbol="${symbol}"]`);
-    if (trigger) trigger.click();  // re-fetches article_history fresh — a material change while flipped should show up
-  });
 }
 
 async function refreshCalendar() {
