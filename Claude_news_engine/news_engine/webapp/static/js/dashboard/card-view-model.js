@@ -197,7 +197,19 @@ export function buildCardViewModel(symbolEntry, uiState = {}) {
     const printPrediction = buildPrintPredictionViewModel(next.print_prediction);
     const kalshiRead = buildKalshiReadViewModel(next.kalshi_read);
     const trendSignal = buildTrendSignalViewModel(next.trend_signal);
-    const hasAnySignal = !!(articlePrediction || tier1Prediction || printPrediction || kalshiRead || trendSignal);
+    const tier1SentimentConflict = buildTier1SentimentConflictViewModel(next.tier1_sentiment_conflict);
+    const tier1ConfidenceDowngrade = buildTier1ConfidenceDowngradeViewModel(next.tier1_confidence_downgrade);
+    // Fix (Task 9, deferred from Task 4's review): the original renderCard()'s
+    // equivalent check was `tier1PredictionLine` — a STRING concatenation of
+    // tier1PredictionHtml() + tier1SentimentConflictHtml() +
+    // tier1ConfidenceDowngradeHtml() (webapp/static/app.js, commit 79865bd) —
+    // so a conflict or downgrade present with no tier1_prediction itself still
+    // made that combined string non-empty and counted as "a signal". Checking
+    // only `tier1Prediction` here missed that corner case (conflict/downgrade-
+    // only), producing the wrong "Awaiting: <title>" heading instead of
+    // "Awaiting essence score: <title>" when one of those two fires alone.
+    const hasAnySignal = !!(articlePrediction || tier1Prediction || tier1SentimentConflict
+      || tier1ConfidenceDowngrade || printPrediction || kalshiRead || trendSignal);
     return {
       symbol, isPending: true,
       pendingHeading: hasAnySignal ? `Awaiting essence score: ${next.event_title}` : `Awaiting: ${next.event_title}`,
@@ -205,8 +217,8 @@ export function buildCardViewModel(symbolEntry, uiState = {}) {
       articlePrediction,
       articlePredictionConflict: articlePrediction ? null : buildArticlePredictionConflictViewModel(next.article_prediction_conflict),
       tier1Prediction,
-      tier1SentimentConflict: buildTier1SentimentConflictViewModel(next.tier1_sentiment_conflict),
-      tier1ConfidenceDowngrade: buildTier1ConfidenceDowngradeViewModel(next.tier1_confidence_downgrade),
+      tier1SentimentConflict,
+      tier1ConfidenceDowngrade,
       printPrediction, kalshiRead, trendSignal,
       otherEvents: buildOtherEventsViewModel(events, symbol),
       otherTrackedEvents: buildOtherTrackedEventsViewModel(events, symbol),

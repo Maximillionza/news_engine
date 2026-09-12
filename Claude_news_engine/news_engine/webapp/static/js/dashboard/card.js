@@ -22,7 +22,7 @@
 // the same way Task 1 vendored repeat.js.
 import { html } from "../../vendor/lit-html.js";
 import { unsafeHTML } from "../../vendor/directives/unsafe-html.js";
-import { gaugeSvg, bullBearScaleSvg, buildDiffStripHtml, dayStripHtml } from "../format.js";
+import { gaugeSvg, bullBearScaleSvg, buildDiffStripHtml, dayStripHtml, formatEventDateTime } from "../format.js";
 
 // Note on escapeHtml: format.js's `escapeHtml` is NOT used in this file.
 // A value interpolated through lit-html's normal `${}` binding (child text
@@ -139,7 +139,7 @@ export function essenceArticleTemplate(vm) {
 
 function otherEventRowTemplate(row) {
   return html`<div class="other-event-row">
-    <span class="other-event-title">${row.title}${row.whenLabel ? html` <span style="font-size:11px;color:#888">(${new Date(row.whenLabel).toLocaleString()})</span>` : html``}</span>
+    <span class="other-event-title">${row.title}${row.whenLabel ? html` <span style="font-size:11px;color:#888">(${formatEventDateTime(row.whenLabel)})</span>` : html``}</span>
     ${essenceArticleTemplate(row.essenceArticle)}
     ${otherEventTier1MarkerTemplate(row.tier1Marker)}
     ${otherEventTier1ConflictMarkerTemplate(row.hasConflict)}
@@ -214,11 +214,11 @@ export function cardTemplate(vm, flipHandlers) {
       <div class="card-flip-inner">
         <div class="card-flip-front">
           <div class="card-header">
-            <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" @click=${() => flipHandlers.onFlipClick(vm.symbol)}>${vm.symbol}</h3>
+            <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" title="Click for why this call changed" @click=${() => flipHandlers.onFlipClick(vm.symbol)}>${vm.symbol}</h3>
             <button class="remove-btn" @click=${() => flipHandlers.onRemoveClick(vm.symbol)}>Remove</button>
           </div>
           <div class="pending">${vm.pendingHeading}<br>
-            <span style="font-size:12px;color:#888">${new Date(vm.eventTimeUtc).toLocaleString()}</span></div>
+            <span style="font-size:12px;color:#888">${formatEventDateTime(vm.eventTimeUtc)}</span></div>
           ${articlePredictionTemplate(vm.articlePrediction)}${articlePredictionConflictTemplate(vm.articlePredictionConflict)}
           ${tier1PredictionTemplate(vm.tier1Prediction)}${tier1SentimentConflictTemplate(vm.tier1SentimentConflict)}${tier1ConfidenceDowngradeTemplate(vm.tier1ConfidenceDowngrade)}
           ${printPredictionTemplate(vm.printPrediction)}${kalshiReadTemplate(vm.kalshiRead)}${trendSignalTemplate(vm.trendSignal)}
@@ -239,7 +239,7 @@ export function cardTemplate(vm, flipHandlers) {
     <div class="card-flip-inner">
       <div class="card-flip-front">
         <div class="card-header">
-          <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" @click=${() => flipHandlers.onFlipClick(vm.symbol)}>${vm.symbol}</h3>
+          <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" title="Click for why this call changed" @click=${() => flipHandlers.onFlipClick(vm.symbol)}>${vm.symbol}</h3>
           <button class="remove-btn" @click=${() => flipHandlers.onRemoveClick(vm.symbol)}>Remove</button>
         </div>
         ${vm.justReleased ? html`<div class="just-released ${vm.dirClass}">🎯 Just released — ${vm.directionLabel} ${vm.pct}%</div>` : html``}

@@ -1,5 +1,6 @@
 import { escapeHtml, directionLabel, directionClass, directionPct, confidenceColorClass } from "../format.js";
 import { fetchHistory, fetchHistoryStats } from "../api.js";
+import { articleProgressionEntryHtml } from "../dashboard/article-progression.js";
 
 let historyLoaded = false;
 // Batch 10: the whole table is small (~35 rows per the live review), so
@@ -249,3 +250,32 @@ function renderHistoryTable(rows) {
     </tr>${r.instrument ? `<tr class="history-drill-row" id="${drillId}" style="display:none"><td colspan="7"><div class="history-panel" data-loaded="false">Loading…</div></td></tr>` : ""}`;
   }).join("");
 }
+
+// Moved from webapp/static/app.js (Task 9 boundary-miss cleanup — this
+// delegated listener belongs to the History tab's own rendering, same as
+// every other function in this file, but Task 8's move only named the
+// functions/state above, missing this listener). Delegated (attached once,
+// not per-render, since renderHistoryTable() rebuilds #history-tbody's
+// innerHTML on every filter/sort change) — an expanded panel collapses on
+// the next re-render, same as the rest of this table's state; acceptable
+// here since filter/sort is a deliberate user action, not the silent 60s
+// background poll refreshDashboard() guards against.
+document.getElementById("history-tbody").addEventListener("click", async (e) => {
+  const btn = e.target.closest(".history-drill-toggle-btn");
+  if (!btn) return;
+  const row = document.getElementById(btn.dataset.target);
+  const panel = row.querySelector(".history-panel");
+  if (row.style.display !== "none") {
+    row.style.display = "none";
+    return;
+  }
+  row.style.display = "";
+  if (panel.dataset.loaded === "true") return;
+  const resp = await fetch(`/api/predictions/${btn.dataset.instrument}/article_history?event_title=${encodeURIComponent(btn.dataset.eventTitle)}`);
+  const data = await resp.json();
+  panel.dataset.loaded = "true";
+  const progression = data.progression || [];
+  panel.innerHTML = progression.length === 0
+    ? "<div style=\"font-size:12px;color:#888\">No article-based read recorded for this event yet.</div>"
+    : progression.map((entry, i) => articleProgressionEntryHtml(entry, i === 0)).join("");
+});
