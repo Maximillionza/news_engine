@@ -139,6 +139,46 @@ test("cardTemplate's isPending branch renders the flip structure (front/back) an
   assert.equal(flippedSymbolArg, "XAUUSD", "the pending branch's symbol click must call flipHandlers.onFlipClick, same as the resolved branch");
 });
 
+// Fix round 1, Finding 1 (this round): the pending branch's symbol-flip
+// trigger must pass the real event title through to onFlipClick (as its
+// third argument) so card-flip.js can seed state.currentEventTitle before
+// ever fetching article history — not omit it and leave the fetch to send
+// event_title=undefined.
+
+test("cardTemplate's isPending branch passes the real event title to onFlipClick, not undefined", () => {
+  const vm = buildCardViewModel(
+    {
+      symbol: "XAUUSD", symbol_class: "metal",
+      events: [{ event_title: "FOMC Statement", event_time_utc: "2026-09-11T18:00:00Z", direction: "pending" }],
+    },
+    {},
+  );
+  let flipArgs = null;
+  const flipHandlers = { ...noopFlipHandlers, onFlipClick: (...args) => { flipArgs = args; } };
+  const container = document.createElement("div");
+  render(cardTemplate(vm, flipHandlers), container);
+  container.querySelector(".symbol-flip-trigger").click();
+  assert.equal(flipArgs[0], "XAUUSD");
+  assert.equal(flipArgs[2], "FOMC Statement", "the pending branch's flip trigger must pass the real event title as the third argument");
+});
+
+test("cardTemplate's resolved branch passes the real event title to onFlipClick, not undefined", () => {
+  const vm = buildCardViewModel(
+    {
+      symbol: "XAUUSD", symbol_class: "metal",
+      events: [{ event_title: "NFP", event_time_utc: "2026-09-11T18:00:00Z", direction: "bullish", probability: 0.7 }],
+    },
+    {},
+  );
+  let flipArgs = null;
+  const flipHandlers = { ...noopFlipHandlers, onFlipClick: (...args) => { flipArgs = args; } };
+  const container = document.createElement("div");
+  render(cardTemplate(vm, flipHandlers), container);
+  container.querySelector(".symbol-flip-trigger").click();
+  assert.equal(flipArgs[0], "XAUUSD");
+  assert.equal(flipArgs[2], "NFP", "the resolved branch's flip trigger must pass the real event title as the third argument");
+});
+
 // Fix round 1, Finding 2: a value that goes through card.js's normal
 // lit-html `${}` bindings must render its real characters once, not come
 // out double-escaped (entity-encoded text that's never decoded back,

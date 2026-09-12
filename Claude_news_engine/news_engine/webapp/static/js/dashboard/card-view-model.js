@@ -213,6 +213,7 @@ export function buildCardViewModel(symbolEntry, uiState = {}) {
     return {
       symbol, isPending: true,
       pendingHeading: hasAnySignal ? `Awaiting essence score: ${next.event_title}` : `Awaiting: ${next.event_title}`,
+      eventTitle: next.event_title,
       eventTimeUtc: next.event_time_utc,
       articlePrediction,
       articlePredictionConflict: articlePrediction ? null : buildArticlePredictionConflictViewModel(next.article_prediction_conflict),

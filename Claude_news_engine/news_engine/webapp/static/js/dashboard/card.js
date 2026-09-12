@@ -214,7 +214,7 @@ export function cardTemplate(vm, flipHandlers) {
       <div class="card-flip-inner">
         <div class="card-flip-front">
           <div class="card-header">
-            <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" title="Click for why this call changed" @click=${() => flipHandlers.onFlipClick(vm.symbol)}>${vm.symbol}</h3>
+            <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" title="Click for why this call changed" @click=${() => flipHandlers.onFlipClick(vm.symbol, undefined, vm.eventTitle)}>${vm.symbol}</h3>
             <button class="remove-btn" @click=${() => flipHandlers.onRemoveClick(vm.symbol)}>Remove</button>
           </div>
           <div class="pending">${vm.pendingHeading}<br>
@@ -239,7 +239,7 @@ export function cardTemplate(vm, flipHandlers) {
     <div class="card-flip-inner">
       <div class="card-flip-front">
         <div class="card-header">
-          <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" title="Click for why this call changed" @click=${() => flipHandlers.onFlipClick(vm.symbol)}>${vm.symbol}</h3>
+          <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" title="Click for why this call changed" @click=${() => flipHandlers.onFlipClick(vm.symbol, undefined, vm.eventTitle)}>${vm.symbol}</h3>
           <button class="remove-btn" @click=${() => flipHandlers.onRemoveClick(vm.symbol)}>Remove</button>
         </div>
         ${vm.justReleased ? html`<div class="just-released ${vm.dirClass}">🎯 Just released — ${vm.directionLabel} ${vm.pct}%</div>` : html``}

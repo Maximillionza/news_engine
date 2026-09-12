@@ -41,6 +41,29 @@ test("historyPanelContent shows Loading… before the fetch resolves", () => {
   assert.equal(handlers.historyPanelContent({ historyPanelOpen: true, historyPanelLoaded: false }), "Loading…");
 });
 
+test("onFlipClick(symbol, undefined, eventTitle) seeds currentEventTitle before any History toggle has run, and fetches article history with the real title", async () => {
+  const cardState = new Map();
+  const fetchedUrls = [];
+  global.fetch = async (url) => {
+    fetchedUrls.push(url);
+    return { ok: true, json: async () => ({ progression: [] }) };
+  };
+  const handlers = createCardFlipHandlers(cardState, { onRender: () => {}, onSymbolRemoved: async () => {} });
+  await handlers.onFlipClick("XAUUSD", undefined, "Real Event Title");
+  assert.equal(cardState.get("XAUUSD").currentEventTitle, "Real Event Title");
+  assert.equal(fetchedUrls.length, 1);
+  assert.ok(fetchedUrls[0].includes(encodeURIComponent("Real Event Title")), `expected fetch URL to include the real event title, got: ${fetchedUrls[0]}`);
+  assert.ok(!fetchedUrls[0].includes("undefined"), `fetch URL must not contain the literal string "undefined": ${fetchedUrls[0]}`);
+  global.fetch = async () => ({ ok: true, json: async () => ({ progression: [] }) });
+});
+
+test("onFlipClick(symbol, false) without an eventTitle leaves an existing currentEventTitle untouched", async () => {
+  const cardState = new Map([["XAUUSD", { flipped: true, currentEventTitle: "Existing Title" }]]);
+  const handlers = createCardFlipHandlers(cardState, { onRender: () => {}, onSymbolRemoved: async () => {} });
+  await handlers.onFlipClick("XAUUSD", false);
+  assert.equal(cardState.get("XAUUSD").currentEventTitle, "Existing Title");
+});
+
 test("onRemoveClick calls onSymbolRemoved (a real re-fetch), not onRender (a cheap re-render of stale data)", async () => {
   const cardState = new Map();
   let renderCount = 0, removedCount = 0;

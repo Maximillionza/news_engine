@@ -19,16 +19,22 @@ export function createCardFlipHandlers(cardState, { onRender, onSymbolRemoved })
     return cardState.get(symbol);
   }
 
-  async function onFlipClick(symbol, show) {
+  async function onFlipClick(symbol, show, eventTitle) {
     const state = getState(symbol);
+    // Seed/refresh the event title being flipped to from the caller (same
+    // pattern as onHistoryToggle below) — a caller that doesn't pass one
+    // (e.g. the "✕ Back" button, which isn't changing which event this
+    // card is about) leaves whatever is already there alone. Without this,
+    // flipping a card BEFORE ever opening its History panel fetched article
+    // history with `state.currentEventTitle` still undefined.
+    if (eventTitle !== undefined) state.currentEventTitle = eventTitle;
     const nextFlipped = show === undefined ? !state.flipped : show;
     state.flipped = nextFlipped;
     onRender();
     if (!nextFlipped || state.articleHistoryLoaded) return;
     // Lazily fetches on first flip only (data-loaded guard, same pattern
     // as the History toggle) — flipping back and forth afterward is free.
-    const eventTitle = state.currentEventTitle;
-    const data = await fetchArticleHistory(symbol, eventTitle);
+    const data = await fetchArticleHistory(symbol, state.currentEventTitle);
     state.articleHistoryLoaded = true;
     state.articleHistory = data.progression || [];
     onRender();
