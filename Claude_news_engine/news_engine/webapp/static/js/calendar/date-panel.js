@@ -5,11 +5,17 @@
 // this module is a pure template + one fetch-triggering function.
 
 import { html, render } from "../../vendor/lit-html.js";
-import { escapeHtml, directionLabel, directionPct, confidenceColorClass } from "../format.js";
+import { directionLabel, directionPct, confidenceColorClass } from "../format.js";
 import { fetchCalendarDate } from "../api.js";
 
-function callLineTemplate(symbol, call) {
-  if (!call) return html`<div class="date-panel-call">${escapeHtml(symbol)}: <span style="color:#888">no call recorded</span></div>`;
+// Note on escapeHtml: not used in this file. Every value below flows
+// through a normal lit-html `${}` binding (child text or an attribute),
+// which already escapes it via direct DOM property/attribute assignment
+// — never parsed as HTML. Calling format.js's escapeHtml() first would
+// double-escape (see card.js's header comment for the full rule and the
+// empirically-confirmed regression it caused there).
+export function callLineTemplate(symbol, call) {
+  if (!call) return html`<div class="date-panel-call">${symbol}: <span style="color:#888">no call recorded</span></div>`;
   const essenceLine = call.direction != null && call.direction !== "pending"
     ? html`<b>${directionLabel(call.direction)} ${directionPct(call.probability, call.direction)}%</b>`
     : html`<span style="color:#888">no essence score yet</span>`;
@@ -19,22 +25,22 @@ function callLineTemplate(symbol, call) {
   const printLine = call.print_prediction
     ? (() => {
         const pct = Math.round(call.print_prediction.confidence * 100);
-        return html`<div style="font-size:12px">📊 ${escapeHtml(call.print_prediction.direction)} <span class="${confidenceColorClass(pct)}">(${pct}% conf.)</span></div>`;
+        return html`<div style="font-size:12px">📊 ${call.print_prediction.direction} <span class="${confidenceColorClass(pct)}">(${pct}% conf.)</span></div>`;
       })()
     : html``;
-  return html`<div class="date-panel-call">${escapeHtml(symbol)}: ${essenceLine}${articleLine}${printLine}</div>`;
+  return html`<div class="date-panel-call">${symbol}: ${essenceLine}${articleLine}${printLine}</div>`;
 }
 
-function eventTemplate(e) {
+export function eventTemplate(e) {
   if (e.estimated) {
     return html`<div class="date-panel-event">
-      <b>${escapeHtml(e.title)}</b> <span class="estimated-badge" title="FRED month-ahead estimate — not yet confirmed by Forex Factory's own feed">ESTIMATED</span><br>
+      <b>${e.title}</b> <span class="estimated-badge" title="FRED month-ahead estimate — not yet confirmed by Forex Factory's own feed">ESTIMATED</span><br>
       <span style="font-size:12px;color:#888">Exact time not yet confirmed — Forex Factory hasn't reached this occurrence's week yet.</span>
     </div>`;
   }
   return html`<div class="date-panel-event">
-    <b>${escapeHtml(e.title)}</b> (${escapeHtml(e.impact ?? "")})<br>
-    <span style="font-size:12px;color:#888">forecast ${escapeHtml(e.forecast ?? "—")}, previous ${escapeHtml(e.previous ?? "—")}, actual ${escapeHtml(e.actual ?? "—")}</span>
+    <b>${e.title}</b> (${e.impact ?? ""})<br>
+    <span style="font-size:12px;color:#888">forecast ${e.forecast ?? "—"}, previous ${e.previous ?? "—"}, actual ${e.actual ?? "—"}</span>
     ${Object.entries(e.calls || {}).map(([symbol, call]) => callLineTemplate(symbol, call))}
   </div>`;
 }
