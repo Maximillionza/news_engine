@@ -19,6 +19,23 @@ The workbook's own README (written before any of Option A existed) describes an 
 
 The 2026-09-10 PPI miss (Tier 1 called `Certain`/bullish, wrong) was a direct symptom of shipping layer 2 in isolation with layer 3 never built — nothing in the live system checked "was anything exogenous happening that day" before treating Tier 1's narrow calculation as a standalone verdict. Batch 6 closes that specific gap for the confidence dimension (an unresolved exogenous shock now downgrades every tracked instrument's Tier 1 confidence, never its direction); it does not close it for the causal-chain/transmission-nuance dimension, which stays future work.
 
+**Update (2026-09-12):** the confidence-dimension gap itself had an
+imprecision Batch 6 left unaddressed — a downgrade applied to EVERY
+tracked instrument uniformly, regardless of whether the shock's actual
+category has any documented transmission channel to that instrument.
+Closed: `data_layer/exposure.py`'s hand-curated, cited exposure table
+(built from a full read of `Layer1_Event_to_USD`'s 16 real rows and
+`Layer2_Asset_Transmission`'s 14 real rows) now makes the downgrade
+instrument-selective — e.g. an OPEC+ supply decision, which this
+project's own sourced evidence shows has no demonstrated direct
+USD/gold/equity channel, no longer downgrades XAUUSD or US30's Tier 1
+confidence. This closes the *confidence* dimension's remaining
+imprecision fully; the *causal-chain/transmission-nuance* dimension
+(Layer2's other 12 documented instrument classes never wired to
+anything live, and Layer2's per-instrument DIRECTIONAL nuance —
+`predicted_direction` stays manual-only) remains future work, per the
+2026-09-12 design spec's own explicit Non-goals.
+
 ---
 
 ## 2. Feature inventory
@@ -67,6 +84,7 @@ The 2026-09-10 PPI miss (Tier 1 called `Certain`/bullish, wrong) was a direct sy
 | Persistence for a detected/researched shock | **Shipped** (2026-09-11) | `scoring/backtest_store.py`'s `exogenous_shocks` table, `record_exogenous_shock()`/`get_exogenous_shock_for_date()`, `UNIQUE(series, shock_date)` |
 | Scheduled daily detection + research trigger | **Shipped** (2026-09-11) | scheduled task `tier1-cpi-ppi-autoresearch`'s prompt extended with a new Step 0: `detect_anomaly()` across `DETECTOR_SERIES` for yesterday's session, real WebSearch headline research + taxonomy classification (or honest `None`) on any real unresolved anomaly |
 | Mechanism connecting Tier 2/3 context to a Tier 1 verdict's confidence | **Shipped** (2026-09-11) | `webapp/predictions_service.py`'s `tier1_confidence_downgrade` field — confidence-only, one-tier downgrade (Certain→Likely→Guessing floor, never compounds past one tier even with multiple same-day shocks), never touches `predicted_direction` or the stored `Tier1Prediction` row, applies to EVERY tracked instrument's Tier1 rows whenever ANY of the 4 `DETECTOR_SERIES` has an unresolved shock (not just the shock's own series), gated to not-yet-resolved events only. Rendered via `webapp/static/app.js`'s `tier1ConfidenceDowngradeHtml()` (featured card) and `otherEventTier1DowngradeMarkerHtml()` (sibling/co-released and other-tracked-events rows — this second rendering path was a real gap the final whole-branch review caught and fixed in the same batch, since it's the exact "Core PPI featured, real PPI sibling row invisible" shape Batch 4's own conflict-marker fix already had to solve once). Answered the two open design questions from the original brainstorm: statistical anomaly detector, not a checklist; confidence-only override, not log-only, not direction-altering |
+| Instrument-selective exposure (which categories actually touch which instrument classes) | **Shipped** (2026-09-12) | `data_layer/exposure.py` — `is_exposed()`, hand-curated `_NOT_EXPOSED` table (one real, cited entry as of ship: OPEC+ supply decisions don't meaningfully touch `metal`/`index_risk` confidence, per `Layer2_Asset_Transmission`'s own Oil row). `webapp/predictions_service.py`'s `_get_todays_exogenous_shocks()`/`_first_exposing_shock()` replace Batch 6's single-shock "first found" lookup so a non-exposing shock can never shadow a real exposing one checked later. Default is always exposed — this can only narrow Batch 6's blanket downgrade, never widen it. `Layer1_Event_to_USD`/`Layer2_Asset_Transmission`'s other documented instrument classes (FX majors, silver, Bitcoin, oil, the 2s10s curve) and Layer2's per-instrument DIRECTIONAL nuance remain unwired — out of scope, see the design spec's Non-goals |
 | `Periodic_Qualitative_Calendar` — fixed-schedule non-numeric events (FOMC, Treasury Quarterly Refunding, Jackson Hole) | **Documented, zero code** | workbook sheet — not part of this batch, out of scope |
 | `Layer1_Event_to_USD` — sourced causal-chain knowledge base (event → USD/rate/yield effect) | **Documented, zero code** | workbook sheet, dozens of real dated rows — not part of this batch, out of scope |
 | `Layer2_Asset_Transmission` — USD effect → per-instrument transmission nuance (XAUUSD/XAGUSD/BTC/US30/FX majors, each with its own documented mechanism and caveats) | **Documented, zero code** | workbook sheet — not part of this batch, out of scope |
