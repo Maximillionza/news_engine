@@ -34,6 +34,7 @@ from scoring.backtest_store import (
 from webapp.reconciliation import reconcile_group
 from webapp.conflict import compute_tier1_sentiment_conflict
 from data_layer.discovery_detector import DETECTOR_SERIES
+from data_layer.exposure import is_exposed
 
 logger = logging.getLogger(__name__)
 
@@ -48,39 +49,51 @@ def _downgrade_one_tier(confidence: str) -> str:
     return _CONFIDENCE_DOWNGRADE_ORDER[min(idx + 1, len(_CONFIDENCE_DOWNGRADE_ORDER) - 1)]
 
 
-def _get_todays_exogenous_shock(backtest_conn: sqlite3.Connection):
+def _get_todays_exogenous_shocks(backtest_conn: sqlite3.Connection) -> list:
     """
-    First unresolved shock found for today OR yesterday across
-    DETECTOR_SERIES, or None. Fail-open (same pattern as
-    build_predictions_payload()'s existing get_latest_tier1_predictions_bulk()
-    try/except) -- a broken lookup must never take down /api/predictions.
-    "First found" is sufficient: per the spec, multiple same-day shocks
-    still only downgrade ONE tier, so which specific shock's series/reason
-    gets shown when several exist the same day is not a load-bearing
-    distinction.
+    Every real unresolved shock found for today OR yesterday across
+    DETECTOR_SERIES — not just the first (that was Batch 6's behavior;
+    see docs/superpowers/specs/2026-09-12-layer1-layer2-exposure-design.md's
+    Architecture section for why "first found" became a real bug once
+    exposure is instrument-selective: a non-exposing shock checked first
+    could otherwise shadow a real exposing one checked later). Fail-open
+    (same pattern as build_predictions_payload()'s existing
+    get_latest_tier1_predictions_bulk() try/except) -- a broken lookup
+    must never take down /api/predictions.
 
-    Both today's AND yesterday's date are checked (today preferred first)
-    because of a real write/read mismatch discovered in final whole-branch
-    review: Task 7's scheduled research task (already deployed to the
-    user's scheduler, not in this repo) runs detect_anomaly() for
-    YESTERDAY's completed session and persists shock_date = yesterday --
-    a shock detected on the morning of day N is logged under N-1. A
-    lookup keyed only on today's date (N) never matches that row, so the
-    feature was inert in production: the writer produced a row the reader
-    never asked for. Checking yesterday's date too makes this the actual
-    production case this function needs to serve; today's date is still
-    checked first in case a shock is ever logged same-day.
+    Both today's AND yesterday's date are checked (today's results
+    first, in list order) for the same reason as Batch 6's original
+    function: the scheduled research task persists a shock under
+    YESTERDAY's date (detect_anomaly() runs against yesterday's
+    completed session), so checking only today would silently regress
+    that already-fixed write/read mismatch.
     """
     today = dt.datetime.now(dt.timezone.utc).date()
     yesterday = today - dt.timedelta(days=1)
+    shocks = []
     try:
         for shock_date in (today, yesterday):
             for series in DETECTOR_SERIES:
                 shock = get_exogenous_shock_for_date(backtest_conn, series, shock_date)
                 if shock is not None:
-                    return shock
+                    shocks.append(shock)
     except Exception:
         logger.warning("exogenous shock lookup failed for this cycle", exc_info=True)
+    return shocks
+
+
+def _first_exposing_shock(shocks: list, symbol_class: str):
+    """
+    The first shock in `shocks` this symbol_class is actually exposed to
+    (per data_layer.exposure.is_exposed()), or None if today's real
+    shocks exist but none of them expose this instrument class. "First"
+    is a display-stability choice only -- the one-tier-never-compounds
+    rule means which specific exposing shock gets shown (its series/
+    headline_cause) is not load-bearing when multiple would qualify.
+    """
+    for shock in shocks:
+        if is_exposed(shock.taxonomy_category, symbol_class):
+            return shock
     return None
 
 
@@ -279,7 +292,7 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
         tier1_by_occurrence = {}
     # Same single-shot-per-request, fail-open shape as tier1_by_occurrence
     # above — computed once here, reused for every symbol/event pair below.
-    todays_shock = _get_todays_exogenous_shock(backtest_conn)
+    todays_shocks = _get_todays_exogenous_shocks(backtest_conn)
 
     predictions = []
     for ticker in symbols:
@@ -405,23 +418,22 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
 
             # Confidence-only downgrade (never predicted_direction, never
             # the stored Tier1Prediction row) applied fresh per request
-            # when ANY of the 4 DETECTOR_SERIES logged an unresolved
-            # exogenous shock today — deliberately applies to EVERY
-            # tracked instrument's Tier 1 row today, not just the shock's
-            # own series' instrument (approved spec rule).
-            # event["actual"] is None is this function's existing signal
-            # for "still pending/current" (see _recompute_stale_pending()'s
-            # own match filter above) -- an event whose actual has already
-            # printed is a settled result, and stamping today's speculative
-            # exogenous-shock context onto it would be fabricating
-            # relevance for something no longer live.
+            # when this SPECIFIC instrument (via its symbol_class) is
+            # exposed to at least one of today's real exogenous shocks —
+            # per docs/superpowers/specs/2026-09-12-layer1-layer2-exposure-design.md,
+            # replacing Batch 6's uniform "any shock downgrades every
+            # tracked instrument" rule with a real, cited, per-instrument
+            # exposure check. event["actual"] is None is unchanged from
+            # Batch 6 -- a settled result never gets today's speculative
+            # exogenous-shock context stamped onto it.
+            exposing_shock = _first_exposing_shock(todays_shocks, symbol_class.symbol_class)
             tier1_confidence_downgrade = None
-            if tier1_prediction is not None and todays_shock is not None and event["actual"] is None:
+            if tier1_prediction is not None and exposing_shock is not None and event["actual"] is None:
                 tier1_confidence_downgrade = {
                     "original_confidence": tier1_prediction["confidence"],
                     "displayed_confidence": _downgrade_one_tier(tier1_prediction["confidence"]),
-                    "reason": todays_shock.headline_cause,
-                    "series": todays_shock.series,
+                    "reason": exposing_shock.headline_cause,
+                    "series": exposing_shock.series,
                 }
 
             # An event is only worth including in this symbol's list at

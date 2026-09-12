@@ -2123,6 +2123,99 @@ def test_predictions_no_tier1_confidence_downgrade_for_an_already_resolved_event
     print("PASS\n")
 
 
+def test_predictions_no_downgrade_when_the_only_shock_is_a_category_this_instrument_is_not_exposed_to():
+    print("=== app: /api/predictions does NOT downgrade XAUUSD's Tier 1 confidence when today's only real shock is an OPEC+ supply decision (real, cited non-exposure for the 'metal' symbol_class) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="PPI m/m", country="USD", impact="High",
+                               event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual=None),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time, 0.60, "bearish", 0.5, 100, False,
+            )
+            backtest_store.record_tier1_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time,
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+            )
+            today = dt.datetime.now(dt.timezone.utc).date()
+            backtest_store.record_exogenous_shock(
+                bconn, "DXY", today, move_pct=3.0, stdev_move=2.5,
+                taxonomy_category="OPEC+ supply decision",
+                headline_cause="Real OPEC+ supply-increase headline", source="Reuters",
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
+            assert events["PPI m/m"]["tier1_confidence_downgrade"] is None, \
+                "XAUUSD (symbol_class='metal') is not exposed to an OPEC+ supply decision per the real exposure table — no downgrade expected"
+    print("PASS\n")
+
+
+def test_predictions_downgrades_when_a_default_exposed_category_shock_exists_alongside_a_non_exposing_one():
+    print("=== app: two real shocks exist today — one non-exposing category (OPEC+), one default-exposed category (Treasury buyback, no exposure-table entry) — XAUUSD must still be downgraded via the SECOND shock, not silently shadowed by the first ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="PPI m/m", country="USD", impact="High",
+                               event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual=None),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time, 0.60, "bearish", 0.5, 100, False,
+            )
+            backtest_store.record_tier1_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time,
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+            )
+            today = dt.datetime.now(dt.timezone.utc).date()
+            # DETECTOR_SERIES order is ["DXY", "UST_BOND", "XAUUSD", "US30"] --
+            # DXY's shock (non-exposing OPEC+ category) is checked before
+            # UST_BOND's (default-exposed Treasury buyback category), so
+            # this exercises the exact "first shock found" shadowing bug
+            # the plan's data-flow fix exists to prevent.
+            backtest_store.record_exogenous_shock(
+                bconn, "DXY", today, move_pct=3.0, stdev_move=2.5,
+                taxonomy_category="OPEC+ supply decision",
+                headline_cause="Real OPEC+ supply-increase headline", source="Reuters",
+            )
+            backtest_store.record_exogenous_shock(
+                bconn, "UST_BOND", today, move_pct=1.2, stdev_move=2.8,
+                taxonomy_category="Treasury buyback size/schedule change",
+                headline_cause="Real Treasury buyback cap change headline", source="Bloomberg",
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
+            downgrade = events["PPI m/m"]["tier1_confidence_downgrade"]
+            assert downgrade is not None, \
+                "the Treasury-buyback shock (default exposed, no exposure-table entry) must still downgrade XAUUSD, even though the OPEC+ shock (checked first, per DETECTOR_SERIES order) does not expose it"
+            assert downgrade["series"] == "UST_BOND", \
+                "the downgrade's shown reason/series must come from the EXPOSING shock (UST_BOND/Treasury buyback), not the non-exposing one (DXY/OPEC+) that happened to be found first"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
