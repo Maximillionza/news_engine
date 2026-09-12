@@ -240,7 +240,7 @@ export function cardTemplate(vm, flipHandlers) {
           <h3>${vm.symbol} — why this changed</h3>
           <button class="flip-back-btn" @click=${() => flipHandlers.onFlipClick(vm.symbol, false)}>✕ Back</button>
         </div>
-        <div class="article-progression">${flipHandlers.articleProgressionContent(vm.uiState)}</div>
+        <div class="article-progression">${unsafeHTML(flipHandlers.articleProgressionContent(vm.uiState))}</div>
       </div>
     </div>
   </div>`;

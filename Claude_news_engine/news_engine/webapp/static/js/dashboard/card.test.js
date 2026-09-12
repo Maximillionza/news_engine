@@ -121,3 +121,30 @@ test("tier1PredictionTemplate renders apostrophes/ampersands/angle-brackets ONCE
   assert.ok(!container.innerHTML.includes("&#39;"), "must not be entity-encoded — lit-html's normal ${} binding already prevents injection without escapeHtml()");
   assert.ok(!container.innerHTML.includes("&amp;amp;"), "must not be double-escaped");
 });
+
+// Fix round 1, Finding 3: articleProgressionContent() returns a real HTML
+// string (card-flip.js's own articleProgressionContent, backed by
+// article-progression.js's articleProgressionEntryHtml — real <div>/<a>
+// markup). card.js's flip-back panel must interpolate it via unsafeHTML(),
+// not a plain lit-html ${} binding (which would set it as literal text,
+// never parsed as HTML). historyPanelContent deliberately returns plain
+// text and is NOT part of this fix.
+
+test("cardTemplate's flip-back panel renders articleProgressionContent's HTML as real DOM structure, not escaped text", () => {
+  const vm = buildCardViewModel(
+    { symbol: "XAUUSD", symbol_class: "metal", events: [{ event_title: "NFP", event_time_utc: "2026-09-11T12:30:00Z", direction: "bullish", probability: 0.7 }] },
+    { flipped: true },
+  );
+  const flipHandlers = {
+    ...noopFlipHandlers,
+    articleProgressionContent: () => '<div class="progression-entry"><a href="https://example.com">Example article</a></div>',
+  };
+  const container = document.createElement("div");
+  render(cardTemplate(vm, flipHandlers), container);
+  const progressionDiv = container.querySelector(".article-progression");
+  assert.ok(progressionDiv, "expected a .article-progression element");
+  const link = progressionDiv.querySelector("a");
+  assert.ok(link, "expected articleProgressionContent's markup to render as a real <a> element, not escaped text");
+  assert.equal(link.getAttribute("href"), "https://example.com");
+  assert.ok(!progressionDiv.innerHTML.includes("&lt;div"), "must not render as escaped literal text");
+});
