@@ -1971,14 +1971,19 @@ def test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_tod
                 value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
             )
             # A real shock logged on a DIFFERENT series (DXY) than this
-            # instrument (XAUUSD) -- per the spec's own rule, ANY
-            # unresolved shock across all 4 series downgrades EVERY
-            # tracked instrument's Tier 1 rows, not just its own series'.
-            # Dated to the real wall-clock "today" (not ppi_time's own
-            # date) -- _get_todays_exogenous_shock() keys off actual
-            # today, matching production semantics (a shock detected
-            # today downgrades what's on today's dashboard), not the
-            # historical occurrence's own release date.
+            # instrument (XAUUSD) -- per the current implementation,
+            # instrument-selective downgrade applies: _get_todays_exogenous_shocks()
+            # (plural, called via _first_exposing_shock()) finds ALL unresolved
+            # shocks, then filters to those this instrument is exposed to.
+            # These tests rely on taxonomy_category defaulting to None (always-exposed),
+            # so they pass even though they don't set a real category. See the newer
+            # test_predictions_no_downgrade_when_the_only_shock_is_a_category_this_instrument_is_not_exposed_to
+            # and test_predictions_downgrades_when_a_default_exposed_category_shock_exists_alongside_a_non_exposing_one
+            # for actual exposure-selective behavior with real categories.
+            # Dated to the real wall-clock "today" (not ppi_time's own date) --
+            # _get_todays_exogenous_shocks() keys off actual today, matching
+            # production semantics (a shock detected today downgrades what's
+            # on today's dashboard), not the historical occurrence's own release date.
             today = dt.datetime.now(dt.timezone.utc).date()
             backtest_store.record_exogenous_shock(
                 bconn, "DXY", today, move_pct=5.0, stdev_move=3.0,
@@ -2003,7 +2008,7 @@ def test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_tod
 
 
 def test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_yesterday():
-    print("=== app: /api/predictions downgrades a Tier 1 row's DISPLAYED confidence when an exogenous_shocks row exists for YESTERDAY -- the actual production case: Task 7's scheduled research task records shock_date = yesterday (it runs detect_anomaly() for yesterday's completed session), so a shock detected this morning is always logged under yesterday's date, never today's ===")
+    print("=== app: /api/predictions downgrades a Tier 1 row's DISPLAYED confidence when an exogenous_shocks row exists for YESTERDAY -- the actual production case: Task 7's scheduled research task records shock_date = yesterday (it runs detect_anomaly() for yesterday's completed session), so a shock detected this morning is always logged under yesterday's date, never today's. Uses instrument-selective exposure via _get_todays_exogenous_shocks()/_first_exposing_shock(); this test relies on taxonomy_category defaulting to None (always-exposed) since no real category is set. ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         backtest_db_path = Path(tmp) / "backtest_log.db"
@@ -2085,7 +2090,7 @@ def test_predictions_no_tier1_confidence_downgrade_without_a_real_shock():
 
 
 def test_predictions_no_tier1_confidence_downgrade_for_an_already_resolved_event():
-    print("=== app: /api/predictions: tier1_confidence_downgrade is null for an event whose actual has already printed, even when a real shock is logged today -- a settled result must never get today's speculative exogenous context stamped on it ===")
+    print("=== app: /api/predictions: tier1_confidence_downgrade is null for an event whose actual has already printed, even when a real shock is logged today -- a settled result must never get today's speculative exogenous context stamped on it. Also relies on taxonomy_category=None (always-exposed); see test_predictions_no_downgrade_when_the_only_shock_is_a_category_this_instrument_is_not_exposed_to and test_predictions_downgrades_when_a_default_exposed_category_shock_exists_alongside_a_non_exposing_one for exposure-selective tests with real categories. ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         backtest_db_path = Path(tmp) / "backtest_log.db"
