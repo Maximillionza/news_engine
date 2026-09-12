@@ -7,13 +7,15 @@
 import "./test-dom-setup.js";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { render } from "../../vendor/lit-html.js";
 import {
   articlePredictionTemplate, tier1PredictionTemplate, tier1ConfidenceDowngradeTemplate,
-  essenceArticleTemplate, otherEventsTemplate,
+  essenceArticleTemplate, otherEventsTemplate, cardTemplate,
 } from "./card.js";
 import {
   buildArticlePredictionViewModel, buildTier1PredictionViewModel,
   buildTier1ConfidenceDowngradeViewModel, buildEssenceArticleViewModel, buildOtherEventsViewModel,
+  buildCardViewModel,
 } from "./card-view-model.js";
 
 // lit-html's `html` tagged template constructs a TemplateResult without
@@ -70,4 +72,52 @@ test("otherEventsTemplate returns an empty TemplateResult when the view model is
   const vm = buildOtherEventsViewModel([{ event_time_utc: "2026-09-11T12:30:00Z" }], "XAUUSD");
   const result = otherEventsTemplate(vm);
   assert.equal(result.strings.join(""), "");
+});
+
+// Fix round 1, Finding 1: cardTemplate must actually render the fx_cross
+// and no_events branches (not just the view model not throwing — the
+// template has to handle vm.kind too).
+
+const noopFlipHandlers = {
+  onFlipClick: () => {}, onRemoveClick: () => {}, onHistoryToggle: () => {}, onBreakdownToggle: () => {},
+  historyPanelContent: () => "", articleProgressionContent: () => "",
+};
+
+test("cardTemplate renders the fx_cross branch: header + fixed message, no essence/direction markup", () => {
+  const vm = buildCardViewModel({ symbol: "EURGBP", symbol_class: "fx_cross", events: [] }, {});
+  const container = document.createElement("div");
+  render(cardTemplate(vm, noopFlipHandlers), container);
+  assert.match(container.innerHTML, /No USD exposure for tracked events/);
+  assert.match(container.innerHTML, />EURGBP</);
+  assert.doesNotMatch(container.innerHTML, /gauge-row/, "fx_cross has no essence score, so no gauge should render");
+});
+
+test("cardTemplate renders the no_events branch: header + fixed message", () => {
+  const vm = buildCardViewModel({ symbol: "XAUUSD", symbol_class: "metal", events: [] }, {});
+  const container = document.createElement("div");
+  render(cardTemplate(vm, noopFlipHandlers), container);
+  assert.match(container.innerHTML, /Awaiting next tracked event/);
+  assert.match(container.innerHTML, />XAUUSD</);
+});
+
+// Fix round 1, Finding 2: a value that goes through card.js's normal
+// lit-html `${}` bindings must render its real characters once, not come
+// out double-escaped (entity-encoded text that's never decoded back,
+// because it's set via a direct DOM property/text-node assignment, not
+// parsed as HTML). Verified empirically before the fix: with escapeHtml()
+// still in tier1PredictionTemplate, this same test's `source` field
+// rendered as the literal, visible substring "Fed&#39;s Beige Book"
+// instead of "Fed's Beige Book".
+
+test("tier1PredictionTemplate renders apostrophes/ampersands/angle-brackets ONCE through the real DOM, not double-escaped", () => {
+  const vm = buildTier1PredictionViewModel(
+    { confidence: "Likely", predicted_direction: "bullish", source: "Fed's Beige Book <2026>", value: "hawkish & confident" },
+    "XAUUSD",
+  );
+  const container = document.createElement("div");
+  render(tier1PredictionTemplate(vm), container);
+  assert.ok(container.textContent.includes("Fed's Beige Book <2026>"), `expected the real apostrophe/brackets in textContent, got: ${container.textContent}`);
+  assert.ok(container.textContent.includes("hawkish & confident"), `expected a real ampersand in textContent, got: ${container.textContent}`);
+  assert.ok(!container.innerHTML.includes("&#39;"), "must not be entity-encoded — lit-html's normal ${} binding already prevents injection without escapeHtml()");
+  assert.ok(!container.innerHTML.includes("&amp;amp;"), "must not be double-escaped");
 });

@@ -22,7 +22,24 @@
 // the same way Task 1 vendored repeat.js.
 import { html } from "../../vendor/lit-html.js";
 import { unsafeHTML } from "../../vendor/directives/unsafe-html.js";
-import { escapeHtml, gaugeSvg, bullBearScaleSvg, buildDiffStripHtml, dayStripHtml } from "../format.js";
+import { gaugeSvg, bullBearScaleSvg, buildDiffStripHtml, dayStripHtml } from "../format.js";
+
+// Note on escapeHtml: format.js's `escapeHtml` is NOT used in this file.
+// A value interpolated through lit-html's normal `${}` binding (child text
+// or an attribute) is set via a direct DOM property/attribute assignment
+// (e.g. a text node's `.data`, `element.setAttribute(...)`) — never parsed
+// as HTML — so lit-html already prevents injection there with no entity-
+// encoding needed. Calling `escapeHtml()` first and THEN binding through
+// `${}` double-escapes: the entities `escapeHtml()` produces (e.g. `&#39;`
+// for `'`) are never decoded back, because nothing downstream parses them
+// as HTML, so they show up as literal `&#39;` on screen instead of `'`.
+// Confirmed empirically: `"Fed's Beige Book"` rendered as literal
+// `Fed&#39;s Beige Book` before this fix. `escapeHtml()` remains necessary
+// only where a raw string is concatenated into a pre-built HTML string
+// that then goes through `unsafeHTML()` (which does NOT auto-escape) —
+// format.js's own SVG/HTML builders used via `unsafeHTML()` below don't
+// take arbitrary external text as input, so no such case exists in this
+// file today.
 
 export function articlePredictionTemplate(vm) {
   if (!vm) return html``;
@@ -30,7 +47,7 @@ export function articlePredictionTemplate(vm) {
     ? buildDiffStripHtml(vm.prevDirection, vm.prevProbability, vm.currDirection, vm.currProbability)
     : "";
   return html`<div class="article-prediction ${vm.dirClass}">
-    📰 Article-based read: <b>${vm.dirClass === "bearish" ? "SELL" : vm.dirClass === "bullish" ? "BUY" : "INDECISIVE"} ${vm.pct}%</b>
+    📰 Article-based read: <b>${vm.label} ${vm.pct}%</b>
     <span style="font-size:12px;color:#888">(backed by ${vm.articleCount} article${vm.articleCount === 1 ? "" : "s"})</span>
     <div class="bull-bear-scale">${unsafeHTML(bullBearScaleSvg(vm.probability))}</div>
     ${unsafeHTML(diffHtml)}
@@ -41,16 +58,16 @@ export function articlePredictionConflictTemplate(vm) {
   if (!vm) return html``;
   return html`<div class="article-prediction-conflict">
     ⚠ Conflicting signals across co-released events
-    <span style="font-size:12px;color:#888">(${vm.titles.map(escapeHtml).join(", ")})</span>
+    <span style="font-size:12px;color:#888">(${vm.titles.join(", ")})</span>
   </div>`;
 }
 
 export function tier1PredictionTemplate(vm) {
   if (!vm) return html``;
   return html`<div class="tier1-prediction ${vm.dirClass}">
-    🧮 Tier 1 (${escapeHtml(vm.symbolForCard)}): <b>${vm.directionLabel}</b>
-    <span style="font-size:12px;color:#888">— ${escapeHtml(vm.confidence)}, ${escapeHtml(vm.source)}</span>
-    <div style="font-size:11px;color:#999">${escapeHtml(vm.value)}</div>
+    🧮 Tier 1 (${vm.symbolForCard}): <b>${vm.directionLabel}</b>
+    <span style="font-size:12px;color:#888">— ${vm.confidence}, ${vm.source}</span>
+    <div style="font-size:11px;color:#999">${vm.value}</div>
   </div>`;
 }
 
@@ -65,7 +82,7 @@ export function tier1ConfidenceDowngradeTemplate(vm) {
   if (!vm) return html``;
   return html`<div class="tier1-confidence-downgrade">
     ⚠ Confidence downgraded to <b>${vm.displayedConfidence}</b>
-    (was ${vm.originalConfidence}) — unexplained ${vm.series} move${vm.reason ? html`: ${escapeHtml(vm.reason)}` : html``}
+    (was ${vm.originalConfidence}) — unexplained ${vm.series} move${vm.reason ? html`: ${vm.reason}` : html``}
   </div>`;
 }
 
@@ -97,7 +114,7 @@ export function breakdownPanelTemplate(vm) {
 
 export function otherEventTier1MarkerTemplate(vm) {
   if (!vm) return html``;
-  return html`<span class="other-event-tier1 ${vm.dirClass}">🧮 Tier 1 (${escapeHtml(vm.symbolForCard)}): <b>${vm.label}</b></span>`;
+  return html`<span class="other-event-tier1 ${vm.dirClass}">🧮 Tier 1 (${vm.symbolForCard}): <b>${vm.label}</b></span>`;
 }
 
 export function otherEventTier1ConflictMarkerTemplate(hasConflict) {
@@ -122,7 +139,7 @@ export function essenceArticleTemplate(vm) {
 
 function otherEventRowTemplate(row) {
   return html`<div class="other-event-row">
-    <span class="other-event-title">${escapeHtml(row.title)}${row.whenLabel ? html` <span style="font-size:11px;color:#888">(${new Date(row.whenLabel).toLocaleString()})</span>` : html``}</span>
+    <span class="other-event-title">${row.title}${row.whenLabel ? html` <span style="font-size:11px;color:#888">(${new Date(row.whenLabel).toLocaleString()})</span>` : html``}</span>
     ${essenceArticleTemplate(row.essenceArticle)}
     ${otherEventTier1MarkerTemplate(row.tier1Marker)}
     ${otherEventTier1ConflictMarkerTemplate(row.hasConflict)}
@@ -152,11 +169,34 @@ export function otherTrackedEventsTemplate(vm) {
 // on cardState/interaction wiring, staying a pure function of (viewModel,
 // handlers) -> TemplateResult.
 export function cardTemplate(vm, flipHandlers) {
-  const safeSymbol = escapeHtml(vm.symbol);
+  // fx_cross (no USD exposure to any tracked event) and no_events (a
+  // newly-added symbol with no events yet) mirror the original, untouched
+  // renderCard()'s early returns in webapp/static/app.js: header + one
+  // fixed line, no flip trigger wired up (the original never reaches the
+  // code that attaches that listener for these two cases).
+  if (vm.kind === "fx_cross") {
+    return html`<div class="card">
+      <div class="card-header">
+        <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}">${vm.symbol}</h3>
+        <button class="remove-btn" @click=${() => flipHandlers.onRemoveClick(vm.symbol)}>Remove</button>
+      </div>
+      <div class="not-applicable">No USD exposure for tracked events</div>
+    </div>`;
+  }
+  if (vm.kind === "no_events") {
+    return html`<div class="card">
+      <div class="card-header">
+        <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}">${vm.symbol}</h3>
+        <button class="remove-btn" @click=${() => flipHandlers.onRemoveClick(vm.symbol)}>Remove</button>
+      </div>
+      <div class="pending">Awaiting next tracked event</div>
+    </div>`;
+  }
+
   if (vm.isPending) {
     return html`<div class="card">
       <div class="card-header">
-        <h3 class="symbol-flip-trigger" data-symbol="${safeSymbol}" @click=${() => flipHandlers.onFlipClick(vm.symbol)}>${safeSymbol}</h3>
+        <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" @click=${() => flipHandlers.onFlipClick(vm.symbol)}>${vm.symbol}</h3>
         <button class="remove-btn" @click=${() => flipHandlers.onRemoveClick(vm.symbol)}>Remove</button>
       </div>
       <div class="pending">${vm.pendingHeading}<br>
@@ -172,14 +212,14 @@ export function cardTemplate(vm, flipHandlers) {
     <div class="card-flip-inner">
       <div class="card-flip-front">
         <div class="card-header">
-          <h3 class="symbol-flip-trigger" data-symbol="${safeSymbol}" @click=${() => flipHandlers.onFlipClick(vm.symbol)}>${safeSymbol}</h3>
+          <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" @click=${() => flipHandlers.onFlipClick(vm.symbol)}>${vm.symbol}</h3>
           <button class="remove-btn" @click=${() => flipHandlers.onRemoveClick(vm.symbol)}>Remove</button>
         </div>
-        ${vm.justReleased ? html`<div class="just-released ${vm.dirClass}">🎯 Just released — ${vm.dirClass === "bearish" ? "SELL" : vm.dirClass === "bullish" ? "BUY" : "INDECISIVE"} ${vm.pct}%</div>` : html``}
+        ${vm.justReleased ? html`<div class="just-released ${vm.dirClass}">🎯 Just released — ${vm.directionLabel} ${vm.pct}%</div>` : html``}
         ${vm.hasPreviousChange ? unsafeHTML(buildDiffStripHtml(vm.prevDirection, vm.prevProbability, vm.direction, vm.probability)) : html``}
         <div class="gauge-row">${unsafeHTML(gaugeSvg(vm.pct, vm.direction))}
-          <div><div class="gauge-label ${vm.dirClass}">Essence: ${vm.dirClass === "bearish" ? "SELL" : vm.dirClass === "bullish" ? "BUY" : "INDECISIVE"} ${vm.pct}%</div>
-          <div style="font-size:12px;color:#888">${escapeHtml(vm.eventTitle)}</div>
+          <div><div class="gauge-label ${vm.dirClass}">Essence: ${vm.directionLabel} ${vm.pct}%</div>
+          <div style="font-size:12px;color:#888">${vm.eventTitle}</div>
           ${articlePredictionTemplate(vm.articlePrediction)}${articlePredictionConflictTemplate(vm.articlePredictionConflict)}
           ${tier1PredictionTemplate(vm.tier1Prediction)}${tier1SentimentConflictTemplate(vm.tier1SentimentConflict)}${tier1ConfidenceDowngradeTemplate(vm.tier1ConfidenceDowngrade)}
           ${printPredictionTemplate(vm.printPrediction)}${kalshiReadTemplate(vm.kalshiRead)}</div></div>
@@ -197,7 +237,7 @@ export function cardTemplate(vm, flipHandlers) {
       </div>
       <div class="card-flip-back">
         <div class="card-header">
-          <h3>${safeSymbol} — why this changed</h3>
+          <h3>${vm.symbol} — why this changed</h3>
           <button class="flip-back-btn" @click=${() => flipHandlers.onFlipClick(vm.symbol, false)}>✕ Back</button>
         </div>
         <div class="article-progression">${flipHandlers.articleProgressionContent(vm.uiState)}</div>

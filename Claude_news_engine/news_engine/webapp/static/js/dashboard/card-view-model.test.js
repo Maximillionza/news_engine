@@ -120,3 +120,59 @@ test("buildCardViewModel: resolved branch computes pct/dirClass and passes uiSta
   assert.equal(vm.hasPreviousChange, true, "a direction reversal from previous must be flagged, even though buildDiffStripHtml renders it as Reversed, not a delta");
   assert.equal(vm.uiState, uiState, "uiState must pass through unchanged for card.js to read");
 });
+
+// Fix round 1, Finding 1: the original, untouched renderCard() in
+// webapp/static/app.js early-returns for symbol_class === "fx_cross" and
+// for an empty/missing `events` array, BEFORE it ever destructures
+// events[0] — buildCardViewModel() must replicate that, not crash trying
+// to read events[0] off a symbol with no events (the real API shape
+// webapp/predictions_service.py unconditionally produces for these cases).
+
+test("buildCardViewModel: fx_cross symbol_class never touches events[0], never throws", () => {
+  const symbolEntry = { symbol: "EURGBP", symbol_class: "fx_cross", events: [] };
+  assert.doesNotThrow(() => buildCardViewModel(symbolEntry, {}));
+  const vm = buildCardViewModel(symbolEntry, {});
+  assert.equal(vm.kind, "fx_cross");
+  assert.equal(vm.symbol, "EURGBP");
+});
+
+test("buildCardViewModel: empty events array never throws, distinct from fx_cross", () => {
+  const symbolEntry = { symbol: "XAUUSD", symbol_class: "metal", events: [] };
+  assert.doesNotThrow(() => buildCardViewModel(symbolEntry, {}));
+  const vm = buildCardViewModel(symbolEntry, {});
+  assert.equal(vm.kind, "no_events");
+  assert.equal(vm.symbol, "XAUUSD");
+});
+
+test("buildCardViewModel: fx_cross takes priority even if events happens to be non-empty (matches the original's branch order)", () => {
+  const symbolEntry = {
+    symbol: "EURGBP", symbol_class: "fx_cross",
+    events: [{ direction: "bearish", probability: 0.5, event_title: "Core CPI m/m", event_time_utc: "2026-09-11T12:30:00Z" }],
+  };
+  const vm = buildCardViewModel(symbolEntry, {});
+  assert.equal(vm.kind, "fx_cross", "the original checks symbol_class before ever looking at events, so fx_cross wins regardless");
+});
+
+// Fix round 1, Finding 3: the BUY/SELL/INDECISIVE direction label is a
+// decision that belongs in the view model, not recomputed inline in
+// card.js's templates (which was happening 3 times).
+
+test("buildArticlePredictionViewModel exposes a pre-computed label, not left for the template to decide", () => {
+  const vm = buildArticlePredictionViewModel({ direction: "bearish", probability: 0.44, article_count: 12 }, null);
+  assert.equal(vm.label, "SELL");
+});
+
+test("buildCardViewModel: resolved branch exposes a pre-computed directionLabel", () => {
+  const symbolEntry = {
+    symbol: "XAUUSD", symbol_class: "metal",
+    events: [{
+      direction: "bullish", probability: 0.62, event_title: "Core CPI m/m", event_time_utc: "2026-09-11T12:30:00Z",
+      previous_direction: "pending", previous_probability: null,
+      article_prediction: null, article_prediction_conflict: null,
+      tier1_prediction: null, tier1_sentiment_conflict: null, tier1_confidence_downgrade: null,
+      print_prediction: null, kalshi_read: null, trend_signal: null,
+    }],
+  };
+  const vm = buildCardViewModel(symbolEntry, {});
+  assert.equal(vm.directionLabel, "BUY");
+});

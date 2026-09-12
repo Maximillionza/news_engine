@@ -14,6 +14,7 @@ export function buildArticlePredictionViewModel(pred, prevPred) {
   return {
     direction: pred.direction,
     dirClass: directionClass(pred.direction),
+    label: directionLabel(pred.direction),
     pct: directionPct(pred.probability, pred.direction),
     articleCount: pred.article_count,
     probability: pred.probability,
@@ -170,6 +171,24 @@ export function buildOtherTrackedEventsViewModel(allEvents, symbolForCard) {
 // card with no prior interaction.
 export function buildCardViewModel(symbolEntry, uiState = {}) {
   const { symbol, symbol_class, events } = symbolEntry;
+
+  // Ground truth: webapp/static/app.js's original renderCard() (still
+  // present, untouched) early-returns for these two cases BEFORE it ever
+  // destructures events[0] — an fx_cross symbol has no USD exposure to any
+  // tracked event, so there is no essence/direction data at all, and an
+  // empty `events` array (a newly-added symbol still awaiting its first
+  // tracked event) has no `events[0]` to read. Both render only the header
+  // (symbol + Remove button) plus one fixed line of text, with no flip
+  // trigger wired up (the original only attaches the flip click listener
+  // later, in code these early returns never reach). Replicating that
+  // shape here, not guessing at it.
+  if (symbol_class === "fx_cross") {
+    return { symbol, kind: "fx_cross" };
+  }
+  if (!events || events.length === 0) {
+    return { symbol, kind: "no_events" };
+  }
+
   const next = events[0];
 
   if (next.direction === "pending") {
@@ -206,7 +225,7 @@ export function buildCardViewModel(symbolEntry, uiState = {}) {
   return {
     symbol, isPending: false,
     eventTitle: next.event_title, eventTimeUtc: next.event_time_utc,
-    direction: next.direction, pct, dirClass, probability: next.probability,
+    direction: next.direction, pct, dirClass, directionLabel: directionLabel(next.direction), probability: next.probability,
     justReleased,
     hasPreviousChange,
     prevDirection: next.previous_direction, prevProbability: next.previous_probability,
