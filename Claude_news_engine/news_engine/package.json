@@ -1,0 +1,13 @@
+{
+  "name": "news-engine-frontend-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Test-only tooling for webapp/static/js. Never shipped to webapp/static/ at runtime — see docs/superpowers/specs/2026-09-11-frontend-rendering-refactor-design.md's Global Constraints.",
+  "scripts": {
+    "test": "node --test webapp/static/js/*.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.1"
+  }
+}
