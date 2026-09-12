@@ -4,6 +4,7 @@ import {
   buildDiffStripHtml, diffPieSvg, dayStripHtml, tier1DirectionLabel,
 } from "./js/format.js";
 import { refreshDashboard } from "./js/dashboard/dashboard-poll.js";
+import { refreshCalendar } from "./js/calendar/calendar-poll.js";
 import { renderFeedStaleness } from "./js/staleness.js";
 
 const POLL_INTERVAL_MS = 60_000;
@@ -691,121 +692,6 @@ function wireCardFlip(el, symbol) {
       e.stopPropagation();
       flipTo(false);
     });
-  }
-}
-
-async function refreshCalendar() {
-  // Same reasoning as refreshDashboard()'s guard — a transient network
-  // blip must not throw an unhandled rejection and silently freeze this
-  // tab on stale data.
-  let data;
-  try {
-    const resp = await fetch("/api/calendar");
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    data = await resp.json();
-  } catch (err) {
-    console.error("refreshCalendar: poll failed", err);
-    calendarPollErrorEl.textContent = "Couldn't reach the server — showing the last data received.";
-    calendarPollErrorEl.style.display = "";
-    return;
-  }
-  calendarPollErrorEl.style.display = "none";
-  const events = data.events || [];
-  renderFeedStaleness(data.feed_staleness_seconds);
-
-  if (data.error) {
-    calendarStaleNoticeEl.textContent = data.error;
-    calendarStaleNoticeEl.style.display = "";
-  } else {
-    calendarStaleNoticeEl.textContent = "";
-    calendarStaleNoticeEl.style.display = "none";
-  }
-
-  // Macro view (docs/macro-calendar-design-2026-08-16.md): FRED-sourced
-  // month-ahead dates for whatever FF's own "thisweek" feed hasn't
-  // populated yet — fetched separately so a failure here never blocks
-  // the FF-backed grid above from rendering. Only entries with
-  // estimated===true are actually NEW information (a false one is
-  // already a duplicate of something `events` already has, per
-  // /api/calendar/monthahead's own dedup rule).
-  let estimatedOnlyEvents = [];
-  try {
-    const monthAheadResp = await fetch("/api/calendar/monthahead");
-    const monthAheadData = await monthAheadResp.json();
-    estimatedOnlyEvents = (monthAheadData.events || []).filter((e) => e.estimated);
-  } catch {
-    estimatedOnlyEvents = [];  // macro view is a nice-to-have overlay — a fetch failure here must not break the calendar tab
-  }
-
-  const now = new Date();
-  const upcoming = events
-    .map((e) => new Date(e.event_time_utc))
-    .filter((d) => d >= now)
-    .sort((a, b) => a - b);
-  const nearestUpcomingDateStr = upcoming.length > 0 ? upcoming[0].toDateString() : null;
-
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth();
-  const firstDay = new Date(year, month, 1);
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const startWeekday = firstDay.getDay();
-
-  const eventsByDate = {};
-  events.forEach((e) => {
-    const d = new Date(e.event_time_utc).toDateString();
-    (eventsByDate[d] = eventsByDate[d] || []).push(e);
-  });
-  const estimatedByDate = {};
-  estimatedOnlyEvents.forEach((e) => {
-    const d = new Date(e.event_time_utc).toDateString();
-    (estimatedByDate[d] = estimatedByDate[d] || []).push(e);
-  });
-
-  let cells = "";
-  for (let i = 0; i < startWeekday; i++) cells += `<div class="cal-cell"></div>`;
-  for (let day = 1; day <= daysInMonth; day++) {
-    const cellDate = new Date(year, month, day);
-    const isToday = cellDate.toDateString() === today.toDateString();
-    const isNearestUpcoming = cellDate.toDateString() === nearestUpcomingDateStr;
-    const dayEvents = eventsByDate[cellDate.toDateString()] || [];
-    const dayEstimated = estimatedByDate[cellDate.toDateString()] || [];
-    const dots = dayEvents.map((e) => {
-      const impactClass = e.impact === 'High' ? 'impact-high' : e.impact === 'Medium' ? 'impact-medium' : 'impact-low';
-      return `<span class="cal-dot ${impactClass}" title="${escapeHtml(e.title)} (${escapeHtml(e.impact)})"></span>`;
-    }).join("");
-    // Estimated (FRED month-ahead, not FF-confirmed) dots — hollow style,
-    // see .cal-dot-estimated in style.css. Rendered even when the day
-    // already has real FF dots, in case a DIFFERENT title on the same
-    // date is still macro-only (e.g. CPI confirmed by FF, PPI not yet).
-    const estimatedDots = dayEstimated.map((e) =>
-      `<span class="cal-dot cal-dot-estimated" title="${escapeHtml(e.title)} (estimated — not yet confirmed by Forex Factory)"></span>`
-    ).join("");
-    const classes = ["cal-cell"];
-    if (isToday) classes.push("today");
-    if (isNearestUpcoming) classes.push("nearest-upcoming");
-    if (dayEvents.length === 0 && dayEstimated.length > 0) classes.push("has-estimated-only");
-    cells += `<div class="${classes.join(" ")}" data-date="${toIsoDateLocal(cellDate)}">${day}<br>${dots}${estimatedDots}</div>`;
-  }
-  calendarGridEl.innerHTML = cells;
-  calendarGridEl.querySelectorAll(".cal-cell[data-date]").forEach((cellEl) => {
-    cellEl.addEventListener("click", () => showDatePanel(cellEl.dataset.date));
-  });
-
-  // Default view: nearest-upcoming date's own events + tracked-symbol
-  // calls, via the same click-to-inspect panel (richer than a flat dump —
-  // per-symbol essence/article/print calls, not just title+impact). Falls
-  // back to today when nothing is upcoming, so the panel is never left
-  // blank on initial load. Click any other cell to inspect it instead.
-  //
-  // refreshCalendar() re-runs every POLL_INTERVAL_MS — without this, each
-  // poll would silently snap the panel back to the default date, discarding
-  // whatever the user clicked, and would also re-open a panel the user just
-  // closed. selectedCalendarDateStr/calendarPanelClosed make the choice
-  // sticky across polls, same idea as expandedHistoryIds for dashboard cards.
-  if (!calendarPanelClosed) {
-    const defaultDateStr = upcoming.length > 0 ? toIsoDateLocal(upcoming[0]) : toIsoDateLocal(today);
-    await showDatePanel(selectedCalendarDateStr || defaultDateStr);
   }
 }
 
