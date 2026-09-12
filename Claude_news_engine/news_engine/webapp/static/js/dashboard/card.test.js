@@ -139,6 +139,47 @@ test("cardTemplate's isPending branch renders the flip structure (front/back) an
   assert.equal(flippedSymbolArg, "XAUUSD", "the pending branch's symbol click must call flipHandlers.onFlipClick, same as the resolved branch");
 });
 
+// Fix round 1, Finding 2 (this round): `.card-has-flip` must be applied
+// UNCONDITIONALLY, not only once flipped — the original finalizeCardFlip()
+// added it to every flippable card and toggled only `.flipped` on top,
+// because `.card-has-flip` strips `.card`'s own border/padding/shadow in
+// favor of `.card-flip-front`/`.card-flip-back`'s own box styling (see
+// style.css's comment on `.card-has-flip`). Applying it conditionally on
+// `vm.uiState.flipped` meant every UNFLIPPED card (the default, 100% of
+// them) nested two borders/paddings/shadows.
+
+test("cardTemplate's resolved branch applies card-has-flip even when the card is not flipped", () => {
+  const vm = buildCardViewModel(
+    {
+      symbol: "XAUUSD", symbol_class: "metal",
+      events: [{ event_title: "NFP", event_time_utc: "2026-09-11T18:00:00Z", direction: "bullish", probability: 0.7 }],
+    },
+    {}, // no uiState.flipped set — the default, unflipped state
+  );
+  assert.equal(vm.isPending, false, "sanity check: this test must exercise the resolved branch");
+  const container = document.createElement("div");
+  render(cardTemplate(vm, noopFlipHandlers), container);
+  const card = container.querySelector(".card");
+  assert.ok(card.classList.contains("card-has-flip"), "card-has-flip must be present even on an unflipped card");
+  assert.ok(!card.classList.contains("flipped"), "flipped must NOT be present on an unflipped card");
+});
+
+test("cardTemplate's isPending branch applies card-has-flip even when the card is not flipped", () => {
+  const vm = buildCardViewModel(
+    {
+      symbol: "XAUUSD", symbol_class: "metal",
+      events: [{ event_title: "FOMC Statement", event_time_utc: "2026-09-11T18:00:00Z", direction: "pending" }],
+    },
+    {}, // no uiState.flipped set — the default, unflipped state
+  );
+  assert.equal(vm.isPending, true, "sanity check: this test must exercise the isPending branch");
+  const container = document.createElement("div");
+  render(cardTemplate(vm, noopFlipHandlers), container);
+  const card = container.querySelector(".card");
+  assert.ok(card.classList.contains("card-has-flip"), "card-has-flip must be present even on an unflipped pending card");
+  assert.ok(!card.classList.contains("flipped"), "flipped must NOT be present on an unflipped card");
+});
+
 // Fix round 1, Finding 1 (this round): the pending branch's symbol-flip
 // trigger must pass the real event title through to onFlipClick (as its
 // third argument) so card-flip.js can seed state.currentEventTitle before

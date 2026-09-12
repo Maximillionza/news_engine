@@ -210,7 +210,7 @@ export function cardTemplate(vm, flipHandlers) {
     // exist until the resolved branch's own code, below the `next.direction
     // === "pending"` early return) — nothing to add here that the original
     // didn't have.
-    return html`<div class="card ${vm.uiState.flipped ? "card-has-flip flipped" : ""}">
+    return html`<div class="card card-has-flip ${vm.uiState.flipped ? "flipped" : ""}">
       <div class="card-flip-inner">
         <div class="card-flip-front">
           <div class="card-header">
@@ -235,7 +235,7 @@ export function cardTemplate(vm, flipHandlers) {
     </div>`;
   }
 
-  return html`<div class="card ${vm.uiState.flipped ? "card-has-flip flipped" : ""}">
+  return html`<div class="card card-has-flip ${vm.uiState.flipped ? "flipped" : ""}">
     <div class="card-flip-inner">
       <div class="card-flip-front">
         <div class="card-header">
