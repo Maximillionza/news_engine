@@ -41,9 +41,38 @@ header h1 { font-size: 18px; margin: 0; }
 nav .tab-btn { background: none; border: 1px solid var(--border); padding: 8px 14px; margin-left: 8px; border-radius: 6px; cursor: pointer; }
 nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 
-#add-symbol-form { display: flex; gap: 8px; margin-bottom: 16px; }
-#add-symbol-input { padding: 8px; border: 1px solid var(--border); border-radius: 6px; text-transform: uppercase; }
-#add-symbol-form button { padding: 8px 16px; border: none; border-radius: 6px; background: #222; color: #fff; cursor: pointer; }
+/* Symbol picker (2026-09-13): replaces the old free-text "Add symbol
+   e.g. EURUSD" input entirely -- a 2-step category-then-tick-list picker
+   instead. See webapp/static/js/dashboard/symbol-picker.js. */
+.symbol-picker { position: relative; margin-bottom: 16px; display: inline-block; }
+#symbol-picker-toggle { padding: 8px 16px; border: none; border-radius: 6px; background: #222; color: #fff; cursor: pointer; font-size: 14px; }
+
+.symbol-picker-panel {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 20;
+  background: #fff; border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.14);
+  padding: 10px; min-width: 220px;
+}
+
+.picker-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.picker-title { font-weight: 600; font-size: 14px; }
+.picker-back-btn, .picker-close-btn { background: none; border: none; cursor: pointer; color: #666; font-size: 14px; padding: 6px; border-radius: 4px; }
+.picker-back-btn:hover, .picker-close-btn:hover { background: #f0f0f0; }
+
+.picker-category-list { list-style: none; margin: 0; padding: 0; }
+.picker-category-btn {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  padding: 10px 8px; border-radius: 6px; cursor: pointer; font-size: 14px; color: #222;
+}
+.picker-category-btn:hover { background: #f5f5f5; }
+
+.picker-symbol-list { list-style: none; margin: 0; padding: 0; }
+.picker-symbol-row { display: block; }
+.picker-symbol-label {
+  display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px; cursor: pointer; font-size: 14px;
+}
+.picker-symbol-label:hover { background: #f5f5f5; }
+.picker-symbol-label input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
 
 .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 

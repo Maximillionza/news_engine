@@ -1,11 +1,13 @@
 import { refreshDashboard } from "./js/dashboard/dashboard-poll.js";
 import { refreshCalendar } from "./js/calendar/calendar-poll.js";
 import { loadHistoryIfNeeded } from "./js/history/table.js";
+// Side-effecting import (2026-09-13): registers the "+ Add symbol"
+// picker's own listeners at module load, same pattern calendar-poll.js's
+// close-button listener already uses. Replaces the old free-text
+// "Add symbol e.g. EURUSD" form entirely.
+import "./js/dashboard/symbol-picker.js";
 
 const POLL_INTERVAL_MS = 60_000;
-
-const addForm = document.getElementById("add-symbol-form");
-const addInput = document.getElementById("add-symbol-input");
 
 document.getElementById("tab-dashboard").addEventListener("click", () => showView("dashboard"));
 document.getElementById("tab-calendar").addEventListener("click", () => showView("calendar"));
@@ -28,24 +30,6 @@ function showView(name) {
   document.getElementById("tab-calendar").setAttribute("aria-selected", String(name === "calendar"));
   document.getElementById("tab-history").setAttribute("aria-selected", String(name === "history"));
 }
-
-addForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const ticker = addInput.value.trim().toUpperCase();
-  if (!ticker) return;
-  const resp = await fetch("/api/symbols", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ticker }),
-  });
-  if (!resp.ok) {
-    const body = await resp.json().catch(() => ({}));
-    alert(body.error || "Could not add symbol");
-    return;
-  }
-  addInput.value = "";
-  await refreshDashboard();
-});
 
 async function refreshAll() {
   await refreshDashboard();

@@ -24,10 +24,12 @@
        different failure the existing staleness badges never covered. -->
   <div id="predictions-poll-error-notice" class="stale-notice" style="display:none"></div>
   <div id="accumulator-staleness-indicator" class="feed-staleness"></div>
-  <form id="add-symbol-form">
-    <input id="add-symbol-input" placeholder="Add symbol e.g. EURUSD" maxlength="6" />
-    <button type="submit">Add</button>
-  </form>
+  <div class="symbol-picker">
+    <button id="symbol-picker-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="symbol-picker-panel">+ Add symbol</button>
+    <div id="symbol-picker-panel" class="symbol-picker-panel" role="dialog" aria-label="Add or remove a tracked symbol" hidden>
+      <div id="symbol-picker-body"></div>
+    </div>
+  </div>
   <div id="cards" class="cards-grid"></div>
 </section>
 
