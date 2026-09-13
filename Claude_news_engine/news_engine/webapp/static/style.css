@@ -197,10 +197,28 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 #history-controls { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; margin-bottom: 10px; align-items: center; }
 #history-controls select { font-size: 12px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; }
 
-#history-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+/* Mobile-layout fix (2026-09-13, docs/feature-inventory-2026-09-11.md
+   "Responsive/mobile layout"): the table itself keeps a real minimum
+   width so its columns stay readable — this wrapper is what scrolls on a
+   narrow screen, never the page body itself. */
+.history-table-wrap { overflow-x: auto; }
+#history-table { width: 100%; min-width: 640px; border-collapse: collapse; margin-top: 12px; }
 #history-table th, #history-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #ddd; font-size: 13px; }
 #history-table th { color: #666; font-weight: 600; }
 #history-th-event, #history-th-instrument, #history-th-confidence { user-select: none; }
+
+/* Mobile-layout fix (2026-09-13): the calendar grid stays a real 7-column
+   week (a day-per-column agenda view would be a bigger redesign than this
+   fix scopes) but its cells shrink their padding/min-height/font so all 7
+   still fit a phone-width viewport without truncating or forcing the page
+   to scroll sideways. The dashboard's own card grid (.cards-grid) and the
+   header (Batch 10) already reflow on their own and need nothing here. */
+@media (max-width: 640px) {
+  body { padding: 0 8px 24px; }
+  #calendar-grid { gap: 3px; }
+  .cal-cell { min-height: 40px; padding: 3px; font-size: 10px; }
+  #calendar-date-panel-title { font-size: 14px; }
+}
 
 /* Batch 10: "confidence has no visual weighting... 1% and 100% render as
    identical plain text" — a 3-tier threshold treatment, same split this

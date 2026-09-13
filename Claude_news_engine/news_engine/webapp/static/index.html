@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>News Engine — Symbol Dashboard</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -65,12 +66,14 @@
       <option value="no_call">No strong call / awaiting / not comparable</option>
     </select></label>
   </div>
-  <table id="history-table" style="display:none">
-    <thead>
-      <tr><th id="history-th-event">Event</th><th id="history-th-instrument">Instr.</th><th>Previous</th><th>Forecast</th><th>Actual</th><th id="history-th-confidence">NE Prediction</th><th>Outcome</th></tr>
-    </thead>
-    <tbody id="history-tbody"></tbody>
-  </table>
+  <div class="history-table-wrap">
+    <table id="history-table" style="display:none">
+      <thead>
+        <tr><th id="history-th-event">Event</th><th id="history-th-instrument">Instr.</th><th>Previous</th><th>Forecast</th><th>Actual</th><th id="history-th-confidence">NE Prediction</th><th>Outcome</th></tr>
+      </thead>
+      <tbody id="history-tbody"></tbody>
+    </table>
+  </div>
 </section>
 
 <script type="module" src="/static/app.js"></script>
