@@ -21,6 +21,12 @@ function showView(name) {
   document.getElementById("tab-dashboard").classList.toggle("active", name === "dashboard");
   document.getElementById("tab-calendar").classList.toggle("active", name === "calendar");
   document.getElementById("tab-history").classList.toggle("active", name === "history");
+  // Accessibility fix (2026-09-13): aria-selected is what actually tells a
+  // screen reader which tab is current — the "active" class above is a
+  // visual-only signal it can't read.
+  document.getElementById("tab-dashboard").setAttribute("aria-selected", String(name === "dashboard"));
+  document.getElementById("tab-calendar").setAttribute("aria-selected", String(name === "calendar"));
+  document.getElementById("tab-history").setAttribute("aria-selected", String(name === "history"));
 }
 
 addForm.addEventListener("submit", async (e) => {

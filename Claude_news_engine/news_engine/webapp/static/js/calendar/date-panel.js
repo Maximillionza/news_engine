@@ -35,12 +35,12 @@ export function eventTemplate(e) {
   if (e.estimated) {
     return html`<div class="date-panel-event">
       <b>${e.title}</b> <span class="estimated-badge" title="FRED month-ahead estimate — not yet confirmed by Forex Factory's own feed">ESTIMATED</span><br>
-      <span style="font-size:12px;color:#888">Exact time not yet confirmed — Forex Factory hasn't reached this occurrence's week yet.</span>
+      <span class="meta-text">Exact time not yet confirmed — Forex Factory hasn't reached this occurrence's week yet.</span>
     </div>`;
   }
   return html`<div class="date-panel-event">
     <b>${e.title}</b> (${e.impact ?? ""})<br>
-    <span style="font-size:12px;color:#888">forecast ${e.forecast ?? "—"}, previous ${e.previous ?? "—"}, actual ${e.actual ?? "—"}</span>
+    <span class="meta-text">forecast ${e.forecast ?? "—"}, previous ${e.previous ?? "—"}, actual ${e.actual ?? "—"}</span>
     ${Object.entries(e.calls || {}).map(([symbol, call]) => callLineTemplate(symbol, call))}
   </div>`;
 }

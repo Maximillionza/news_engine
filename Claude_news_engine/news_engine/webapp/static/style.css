@@ -9,6 +9,28 @@
 * { box-sizing: border-box; }
 body { font-family: system-ui, sans-serif; margin: 0; padding: 0 16px 40px; background: #fafafa; color: #222; }
 
+/* Accessibility fix (2026-09-13, docs/feature-inventory-2026-09-11.md
+   "Accessibility"): a visible focus outline for every element this fix
+   makes keyboard-reachable via tabindex (symbol-flip-trigger, cal-cell) —
+   a real <button>/<select>/<input> already gets the browser's own default
+   outline, so this only needs to cover the non-native cases. */
+.symbol-flip-trigger:focus-visible, .cal-cell[data-date]:focus-visible {
+  outline: 2px solid #1565c0;
+  outline-offset: 2px;
+}
+
+/* Shared secondary/meta text — replaces ~25 call sites across the JS
+   modules that each repeated the same inline `style="font-size:...;
+   color:#888"`. Two sizes because both are genuinely in use today (12px
+   for a card's inline annotations, 11px for smaller sub-labels); the
+   modifier keeps the 11px badges' explicit `font-weight: normal` intent
+   (overriding a bold ancestor in a couple of spots) rather than guessing
+   at a merged rule. Purely a styling-consistency cleanup — not itself an
+   accessibility requirement (color:#888 on white already passes contrast
+   at this size, and nothing here conveys meaning through color alone). */
+.meta-text { font-size: 12px; color: #888; }
+.meta-text-sm { font-size: 11px; color: #888; font-weight: normal; }
+
 /* Batch 10 (dashboard-review-2026-09-11.md live UI walkthrough):
    "nav buttons crowd/overlap at the pane's default width" — header had no
    wrap at all (h1 + 3 tab buttons fighting for one row), the same missing-
@@ -16,7 +38,7 @@ body { font-family: system-ui, sans-serif; margin: 0; padding: 0 16px 40px; back
    lets the nav drop to its own row instead of overlapping the title. */
 header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 16px 0; gap: 8px; }
 header h1 { font-size: 18px; margin: 0; }
-nav .tab-btn { background: none; border: 1px solid var(--border); padding: 6px 14px; margin-left: 8px; border-radius: 6px; cursor: pointer; }
+nav .tab-btn { background: none; border: 1px solid var(--border); padding: 8px 14px; margin-left: 8px; border-radius: 6px; cursor: pointer; }
 nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 
 #add-symbol-form { display: flex; gap: 8px; margin-bottom: 16px; }
@@ -28,7 +50,10 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
 .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .card-header h3 { margin: 0; font-size: 15px; }
-.remove-btn { background: none; border: none; color: #999; cursor: pointer; font-size: 14px; }
+/* Hit-target fix: was borderless/paddingless text with no click-box
+   margin at all — bumped to a comfortable tap area without changing how
+   it reads (background/border stay none). */
+.remove-btn { background: none; border: none; color: #999; cursor: pointer; font-size: 14px; padding: 6px 8px; margin: -6px -8px; }
 
 /* Click-the-symbol flip: "why did this call change" (2026-08-17). Front
    and back faces are stacked in the same grid cell (grid-row/column:1) so
@@ -48,7 +73,7 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 
 .symbol-flip-trigger { cursor: pointer; }
 .symbol-flip-trigger:hover { text-decoration: underline; text-decoration-style: dotted; }
-.flip-back-btn { background: none; border: 1px solid var(--border); border-radius: 6px; color: #666; cursor: pointer; font-size: 12px; padding: 3px 8px; }
+.flip-back-btn { background: none; border: 1px solid var(--border); border-radius: 6px; color: #666; cursor: pointer; font-size: 12px; padding: 6px 12px; }
 
 .progression-entry { padding: 8px 0; border-bottom: 1px solid #eee; }
 .progression-entry:last-child { border-bottom: none; }
@@ -172,7 +197,7 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .feed-staleness.stale { color: #c62828; font-weight: bold; }
 
 #calendar-date-panel { position: relative; border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: #fff; margin-top: 8px; }
-#calendar-date-panel-close { position: absolute; top: 10px; right: 10px; border: none; background: none; font-size: 14px; cursor: pointer; color: #888; }
+#calendar-date-panel-close { position: absolute; top: 4px; right: 4px; border: none; background: none; font-size: 14px; cursor: pointer; color: #888; padding: 8px; }
 #calendar-date-panel-title { margin: 0 24px 10px 0; font-size: 16px; }
 .date-panel-event { margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
 .date-panel-event:last-child { border-bottom: none; margin-bottom: 0; }
@@ -181,8 +206,8 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .print-prediction { margin-top: 4px; font-size: 13px; }
 .kalshi-read { margin-top: 4px; font-size: 13px; }
 .history-toggle { margin-top: 8px; }
-.history-toggle-btn, .breakdown-toggle-btn { background: none; border: none; color: #666; font-size: 12px; cursor: pointer; padding: 2px 0; }
-.history-toggle-btn:hover, .breakdown-toggle-btn:hover { text-decoration: underline; }
+.history-toggle-btn, .breakdown-toggle-btn, .history-drill-toggle-btn { background: none; border: none; color: #666; font-size: 12px; cursor: pointer; padding: 6px 4px; margin: -6px -4px; }
+.history-toggle-btn:hover, .breakdown-toggle-btn:hover, .history-drill-toggle-btn:hover { text-decoration: underline; }
 .history-panel { font-size: 12px; color: #555; margin-top: 4px; padding-left: 8px; border-left: 2px solid #ddd; }
 
 #history-stats { margin-bottom: 12px; font-size: 13px; }

@@ -197,14 +197,14 @@ function renderHistoryTable(rows) {
   tbody.innerHTML = rows.map((r, idx) => {
     const dateLabel = new Date(r.event_time_utc).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
     const actualCell = r.unchanged_vs_previous
-      ? `${escapeHtml(r.actual ?? "—")} <span style="color:#888;font-size:11px">(= prev)</span>`
+      ? `${escapeHtml(r.actual ?? "—")} <span class="meta-text-sm">(= prev)</span>`
       : escapeHtml(r.actual ?? "—");
     const sourceBadge = r.source === "seeded"
-      ? ' <span style="color:#888;font-size:11px;font-weight:normal">(seeded)</span>'
+      ? ' <span class="meta-text-sm">(seeded)</span>'
       : r.source === "live_web_fallback"
-      ? ' <span style="color:#888;font-size:11px;font-weight:normal">(web-sourced)</span>'
+      ? ' <span class="meta-text-sm">(web-sourced)</span>'
       : r.source === "cloud_web_fallback"
-      ? ' <span style="color:#888;font-size:11px;font-weight:normal">(cloud-researched)</span>'
+      ? ' <span class="meta-text-sm">(cloud-researched)</span>'
       : "";
     // Numeric rows use higher/lower/in_line; text-event fallback rows use bullish/bearish/neutral.
     const predictionLabel = { higher: "Higher", lower: "Lower", in_line: "In-line", bullish: "Bullish", bearish: "Bearish", neutral: "Neutral" }[r.ne_prediction] || escapeHtml(r.ne_prediction);
@@ -236,11 +236,16 @@ function renderHistoryTable(rows) {
     // docstring) doesn't have, so the toggle is simply absent there
     // rather than fetching against a symbol that isn't real.
     const drillId = `history-drill-${idx}`;
+    // Accessibility fix (2026-09-13): aria-expanded/aria-controls kept in
+    // sync with the real open/closed state by the click handler below,
+    // same "does a screen reader know this is a toggle, and which state
+    // it's in" gap already fixed on the Dashboard card's own History/
+    // breakdown toggles.
     const drillToggle = r.instrument
-      ? ` <button class="history-drill-toggle-btn" data-target="${drillId}" data-event-title="${escapeHtml(r.event_title)}" data-instrument="${escapeHtml(r.instrument)}" style="font-size:11px">why ▾</button>`
+      ? ` <button class="history-drill-toggle-btn" data-target="${drillId}" data-event-title="${escapeHtml(r.event_title)}" data-instrument="${escapeHtml(r.instrument)}" aria-expanded="false" aria-controls="${drillId}">why ▾</button>`
       : "";
     return `<tr>
-      <td>${escapeHtml(r.event_title)}${sourceBadge}<br><span style="font-size:11px;color:#888">${dateLabel}</span>${drillToggle}</td>
+      <td>${escapeHtml(r.event_title)}${sourceBadge}<br><span class="meta-text-sm">${dateLabel}</span>${drillToggle}</td>
       <td>${escapeHtml(r.instrument ?? "")}</td>
       <td>${escapeHtml(r.previous ?? "—")}</td>
       <td>${escapeHtml(r.forecast ?? "—")}</td>
@@ -267,15 +272,17 @@ document.getElementById("history-tbody").addEventListener("click", async (e) => 
   const panel = row.querySelector(".history-panel");
   if (row.style.display !== "none") {
     row.style.display = "none";
+    btn.setAttribute("aria-expanded", "false");
     return;
   }
   row.style.display = "";
+  btn.setAttribute("aria-expanded", "true");
   if (panel.dataset.loaded === "true") return;
   const resp = await fetch(`/api/predictions/${btn.dataset.instrument}/article_history?event_title=${encodeURIComponent(btn.dataset.eventTitle)}`);
   const data = await resp.json();
   panel.dataset.loaded = "true";
   const progression = data.progression || [];
   panel.innerHTML = progression.length === 0
-    ? "<div style=\"font-size:12px;color:#888\">No article-based read recorded for this event yet.</div>"
+    ? "<div class=\"meta-text\">No article-based read recorded for this event yet.</div>"
     : progression.map((entry, i) => articleProgressionEntryHtml(entry, i === 0)).join("");
 });

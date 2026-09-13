@@ -48,7 +48,7 @@ export function articlePredictionTemplate(vm) {
     : "";
   return html`<div class="article-prediction ${vm.dirClass}">
     📰 Article-based read: <b>${vm.label} ${vm.pct}%</b>
-    <span style="font-size:12px;color:#888">(backed by ${vm.articleCount} article${vm.articleCount === 1 ? "" : "s"})</span>
+    <span class="meta-text">(backed by ${vm.articleCount} article${vm.articleCount === 1 ? "" : "s"})</span>
     <div class="bull-bear-scale">${unsafeHTML(bullBearScaleSvg(vm.probability))}</div>
     ${unsafeHTML(diffHtml)}
   </div>`;
@@ -58,7 +58,7 @@ export function articlePredictionConflictTemplate(vm) {
   if (!vm) return html``;
   return html`<div class="article-prediction-conflict">
     ⚠ Conflicting signals across co-released events
-    <span style="font-size:12px;color:#888">(${vm.titles.join(", ")})</span>
+    <span class="meta-text">(${vm.titles.join(", ")})</span>
   </div>`;
 }
 
@@ -66,8 +66,8 @@ export function tier1PredictionTemplate(vm) {
   if (!vm) return html``;
   return html`<div class="tier1-prediction ${vm.dirClass}">
     🧮 Tier 1 (${vm.symbolForCard}): <b>${vm.directionLabel}</b>
-    <span style="font-size:12px;color:#888">— ${vm.confidence}, ${vm.source}</span>
-    <div style="font-size:11px;color:#999">${vm.value}</div>
+    <span class="meta-text">— ${vm.confidence}, ${vm.source}</span>
+    <div class="meta-text-sm" style="color:#999">${vm.value}</div>
   </div>`;
 }
 
@@ -96,19 +96,19 @@ export function printPredictionTemplate(vm) {
 export function kalshiReadTemplate(vm) {
   if (!vm) return html``;
   return html`<div class="kalshi-read">
-    💰 Kalshi market: likely <b>${vm.label}</b> <span style="font-size:12px;color:#888">(${vm.pct}% implied, ${vm.openInterest} open interest)</span>
+    💰 Kalshi market: likely <b>${vm.label}</b> <span class="meta-text">(${vm.pct}% implied, ${vm.openInterest} open interest)</span>
   </div>`;
 }
 
 export function trendSignalTemplate(vm) {
   if (!vm) return html``;
   return html`<div class="trend-signal">
-    📈 Trend streak: <b>${vm.direction}</b> <span style="font-size:12px;color:#888">(strength ${vm.strength})</span>${vm.leanLabel ? html` — lean: <b>${vm.leanLabel}</b>` : html``}
+    📈 Trend streak: <b>${vm.direction}</b> <span class="meta-text">(strength ${vm.strength})</span>${vm.leanLabel ? html` — lean: <b>${vm.leanLabel}</b>` : html``}
   </div>`;
 }
 
 export function breakdownPanelTemplate(vm) {
-  if (!vm || vm.isEmpty) return html`<div style="font-size:12px;color:#888">No structured signals fired for this event yet.</div>`;
+  if (!vm || vm.isEmpty) return html`<div class="meta-text">No structured signals fired for this event yet.</div>`;
   return html`${vm.rows.map((r) => html`<div>${r.icon} ${r.text}</div>`)}`;
 }
 
@@ -139,7 +139,7 @@ export function essenceArticleTemplate(vm) {
 
 function otherEventRowTemplate(row) {
   return html`<div class="other-event-row">
-    <span class="other-event-title">${row.title}${row.whenLabel ? html` <span style="font-size:11px;color:#888">(${formatEventDateTime(row.whenLabel)})</span>` : html``}</span>
+    <span class="other-event-title">${row.title}${row.whenLabel ? html` <span class="meta-text-sm">(${formatEventDateTime(row.whenLabel)})</span>` : html``}</span>
     ${essenceArticleTemplate(row.essenceArticle)}
     ${otherEventTier1MarkerTemplate(row.tier1Marker)}
     ${otherEventTier1ConflictMarkerTemplate(row.hasConflict)}
@@ -214,11 +214,11 @@ export function cardTemplate(vm, flipHandlers) {
       <div class="card-flip-inner">
         <div class="card-flip-front">
           <div class="card-header">
-            <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" title="Click for why this call changed" @click=${() => flipHandlers.onFlipClick(vm.symbol, undefined, vm.eventTitle)}>${vm.symbol}</h3>
+            <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" title="Click for why this call changed" role="button" tabindex="0" @click=${() => flipHandlers.onFlipClick(vm.symbol, undefined, vm.eventTitle)} @keydown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flipHandlers.onFlipClick(vm.symbol, undefined, vm.eventTitle); } }}>${vm.symbol}</h3>
             <button class="remove-btn" @click=${() => flipHandlers.onRemoveClick(vm.symbol)}>Remove</button>
           </div>
           <div class="pending">${vm.pendingHeading}<br>
-            <span style="font-size:12px;color:#888">${formatEventDateTime(vm.eventTimeUtc)}</span></div>
+            <span class="meta-text">${formatEventDateTime(vm.eventTimeUtc)}</span></div>
           ${articlePredictionTemplate(vm.articlePrediction)}${articlePredictionConflictTemplate(vm.articlePredictionConflict)}
           ${tier1PredictionTemplate(vm.tier1Prediction)}${tier1SentimentConflictTemplate(vm.tier1SentimentConflict)}${tier1ConfidenceDowngradeTemplate(vm.tier1ConfidenceDowngrade)}
           ${printPredictionTemplate(vm.printPrediction)}${kalshiReadTemplate(vm.kalshiRead)}${trendSignalTemplate(vm.trendSignal)}
@@ -239,14 +239,14 @@ export function cardTemplate(vm, flipHandlers) {
     <div class="card-flip-inner">
       <div class="card-flip-front">
         <div class="card-header">
-          <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" title="Click for why this call changed" @click=${() => flipHandlers.onFlipClick(vm.symbol, undefined, vm.eventTitle)}>${vm.symbol}</h3>
+          <h3 class="symbol-flip-trigger" data-symbol="${vm.symbol}" title="Click for why this call changed" role="button" tabindex="0" @click=${() => flipHandlers.onFlipClick(vm.symbol, undefined, vm.eventTitle)} @keydown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flipHandlers.onFlipClick(vm.symbol, undefined, vm.eventTitle); } }}>${vm.symbol}</h3>
           <button class="remove-btn" @click=${() => flipHandlers.onRemoveClick(vm.symbol)}>Remove</button>
         </div>
         ${vm.justReleased ? html`<div class="just-released ${vm.dirClass}">🎯 Just released — ${vm.directionLabel} ${vm.pct}%</div>` : html``}
         ${vm.hasPreviousChange ? unsafeHTML(buildDiffStripHtml(vm.prevDirection, vm.prevProbability, vm.direction, vm.probability)) : html``}
         <div class="gauge-row">${unsafeHTML(gaugeSvg(vm.pct, vm.direction))}
           <div><div class="gauge-label ${vm.dirClass}">Essence: ${vm.directionLabel} ${vm.pct}%</div>
-          <div style="font-size:12px;color:#888">${vm.eventTitle}</div>
+          <div class="meta-text">${vm.eventTitle}</div>
           ${articlePredictionTemplate(vm.articlePrediction)}${articlePredictionConflictTemplate(vm.articlePredictionConflict)}
           ${tier1PredictionTemplate(vm.tier1Prediction)}${tier1SentimentConflictTemplate(vm.tier1SentimentConflict)}${tier1ConfidenceDowngradeTemplate(vm.tier1ConfidenceDowngrade)}
           ${printPredictionTemplate(vm.printPrediction)}${kalshiReadTemplate(vm.kalshiRead)}</div></div>
@@ -254,12 +254,12 @@ export function cardTemplate(vm, flipHandlers) {
         ${otherEventsTemplate(vm.otherEvents)}${otherTrackedEventsTemplate(vm.otherTrackedEvents)}
         ${unsafeHTML(dayStripHtml(vm.eventTimeUtc))}
         <div class="history-toggle">
-          <button class="history-toggle-btn" @click=${() => flipHandlers.onHistoryToggle(vm.symbol, vm.eventTitle)}>History ▾</button>
-          <div class="history-panel" style="display:${vm.uiState.historyPanelOpen ? "" : "none"}">${flipHandlers.historyPanelContent(vm.uiState)}</div>
+          <button class="history-toggle-btn" aria-expanded="${vm.uiState.historyPanelOpen ? "true" : "false"}" aria-controls="history-panel-${vm.symbol}" @click=${() => flipHandlers.onHistoryToggle(vm.symbol, vm.eventTitle)}>History ▾</button>
+          <div id="history-panel-${vm.symbol}" class="history-panel" style="display:${vm.uiState.historyPanelOpen ? "" : "none"}">${flipHandlers.historyPanelContent(vm.uiState)}</div>
         </div>
         <div class="history-toggle">
-          <button class="breakdown-toggle-btn" @click=${() => flipHandlers.onBreakdownToggle(vm.symbol)}>Why this call ▾</button>
-          <div class="history-panel" style="display:${vm.uiState.breakdownPanelOpen ? "" : "none"}">${breakdownPanelTemplate(vm.breakdownPanel)}</div>
+          <button class="breakdown-toggle-btn" aria-expanded="${vm.uiState.breakdownPanelOpen ? "true" : "false"}" aria-controls="breakdown-panel-${vm.symbol}" @click=${() => flipHandlers.onBreakdownToggle(vm.symbol)}>Why this call ▾</button>
+          <div id="breakdown-panel-${vm.symbol}" class="history-panel" style="display:${vm.uiState.breakdownPanelOpen ? "" : "none"}">${breakdownPanelTemplate(vm.breakdownPanel)}</div>
         </div>
       </div>
       <div class="card-flip-back">

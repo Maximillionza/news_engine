@@ -14,7 +14,10 @@ function cellTemplate(cell, onCellClick) {
   if (cell.isToday) classes.push("today");
   if (cell.isNearestUpcoming) classes.push("nearest-upcoming");
   if (cell.hasEstimatedOnly) classes.push("has-estimated-only");
-  return html`<div class="${classes.join(" ")}" data-date="${cell.dateStr}" @click=${() => onCellClick(cell.dateStr)}>
+  // Accessibility fix (2026-09-13): this cell was a click-only div — a
+  // keyboard-only user had no way to reach it at all. role/tabindex/keydown
+  // make it behave like a real button without restyling it as one.
+  return html`<div class="${classes.join(" ")}" data-date="${cell.dateStr}" role="button" tabindex="0" aria-label="${cell.day}" @click=${() => onCellClick(cell.dateStr)} @keydown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onCellClick(cell.dateStr); } }}>
     ${cell.day}<br>
     ${cell.dots.map((d) => html`<span class="cal-dot ${d.impactClass}" title="${d.title}"></span>`)}
     ${cell.estimatedDots.map((d) => html`<span class="cal-dot cal-dot-estimated" title="${d.title}"></span>`)}

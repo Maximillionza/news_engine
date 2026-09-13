@@ -9,14 +9,14 @@
 <body>
 <header>
   <h1>Symbol Impact Dashboard</h1>
-  <nav>
-    <button id="tab-dashboard" class="tab-btn active">Dashboard</button>
-    <button id="tab-calendar" class="tab-btn">Calendar</button>
-    <button id="tab-history" class="tab-btn">History</button>
+  <nav role="tablist" aria-label="Dashboard sections">
+    <button id="tab-dashboard" class="tab-btn active" role="tab" aria-selected="true" aria-controls="view-dashboard">Dashboard</button>
+    <button id="tab-calendar" class="tab-btn" role="tab" aria-selected="false" aria-controls="view-calendar">Calendar</button>
+    <button id="tab-history" class="tab-btn" role="tab" aria-selected="false" aria-controls="view-history">History</button>
   </nav>
 </header>
 
-<section id="view-dashboard">
+<section id="view-dashboard" role="tabpanel" aria-labelledby="tab-dashboard">
   <div id="predictions-stale-notice" class="stale-notice" style="display:none"></div>
   <!-- dashboard-review-2026-09-11.md: distinct from predictions-stale-notice
        above (which means "the backend has no data yet") — this means "the
@@ -31,7 +31,7 @@
   <div id="cards" class="cards-grid"></div>
 </section>
 
-<section id="view-calendar" style="display:none">
+<section id="view-calendar" style="display:none" role="tabpanel" aria-labelledby="tab-calendar">
   <div id="calendar-stale-notice" class="stale-notice" style="display:none"></div>
   <div id="calendar-poll-error-notice" class="stale-notice" style="display:none"></div>
   <div id="feed-staleness-indicator" class="feed-staleness"></div>
@@ -40,14 +40,14 @@
     <span><span class="cal-dot impact-high"></span> Confirmed (Forex Factory)</span>
     <span><span class="cal-dot cal-dot-estimated"></span> Estimated (FRED month-ahead, not yet confirmed by FF)</span>
   </div>
-  <div id="calendar-date-panel" style="display:none">
-    <button id="calendar-date-panel-close">✕</button>
+  <div id="calendar-date-panel" style="display:none" role="region" aria-labelledby="calendar-date-panel-title">
+    <button id="calendar-date-panel-close" aria-label="Close">✕</button>
     <h3 id="calendar-date-panel-title"></h3>
     <div id="calendar-date-panel-body"></div>
   </div>
 </section>
 
-<section id="view-history" style="display:none">
+<section id="view-history" style="display:none" role="tabpanel" aria-labelledby="tab-history">
   <div id="history-stats"></div>
   <div id="history-empty-notice" class="stale-notice" style="display:none">No confirmed calls yet.</div>
   <div id="history-legend" class="calendar-legend">
