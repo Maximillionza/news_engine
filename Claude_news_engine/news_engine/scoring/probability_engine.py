@@ -40,7 +40,6 @@ from config.settings import (
     EQUITY_RISK_DISAGREEMENT_CONFIDENCE_MULTIPLIER,
     EVENT_INFLUENCE_LINKS,
     EVENT_SURPRISE_DIRECTION,
-    INSTRUMENTS,
     KALSHI_TRUST_WEIGHT,
     MACRO_BACKDROP_DISAGREEMENT_CONFIDENCE_MULTIPLIER,
     MIN_CONFIDENT_SAMPLE_SIZE,
@@ -70,6 +69,7 @@ from data_layer.news_feed import NewsArticle
 from scoring.finbert_sentiment import score_article_finbert
 from scoring.llm_sentiment import score_article_llm
 from scoring.sentiment import score_article_text
+from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 
 
 class Direction(str, Enum):
@@ -729,8 +729,16 @@ def _check_equity_risk_sentiment(
     (positive = risk-on) against instrument_score's sign for THIS
     instrument (not aggregate_usd) — an equity index has no USD sign of
     its own.
+
+    usd_relationship now comes from webapp.symbols.classify_symbol()
+    (2026-09-13) — same single source of truth the essence-only dashboard
+    path already used, replacing this file's own separate,
+    config.settings.INSTRUMENTS-keyed copy. `instrument` is assumed
+    already validated by score_bundle()'s own top-of-function check
+    (below) by the time this helper runs, so classify_symbol() here is
+    never expected to raise.
     """
-    if INSTRUMENTS.get(instrument, {}).get("usd_relationship") != "risk_sentiment":
+    if classify_symbol(instrument).usd_relationship != "risk_sentiment":
         return None, None
     if macro_backdrop is None:
         return None, None
@@ -808,7 +816,13 @@ def _check_precursor_chain_conflict(
 
 
 def _map_to_instrument_score(usd_sentiment: float, instrument: str) -> float:
-    relationship = INSTRUMENTS[instrument]["usd_relationship"]
+    """
+    usd_relationship comes from webapp.symbols.classify_symbol() (2026-09-13)
+    — see score_bundle()'s own top-of-function validation for why `instrument`
+    is guaranteed classifiable with a non-None usd_relationship by the time
+    this function ever runs.
+    """
+    relationship = classify_symbol(instrument).usd_relationship
     if relationship == "inverse":
         return -usd_sentiment
     if relationship == "direct":
@@ -928,8 +942,14 @@ def score_bundle(
     current_direction: str | None = None,  # 'bullish'/'bearish'/'neutral' | None — see _direction_for_score()
 ) -> ProbabilityResult:
     """
-    Main entry point: score an EventNewsBundle for a given instrument
-    (must be a key in config.settings.INSTRUMENTS, e.g. 'XAUUSD').
+    Main entry point: score an EventNewsBundle for a given instrument —
+    any ticker webapp.symbols.classify_symbol() recognizes with a real
+    USD relationship (a known metal/index, or a 6-letter USD-legged FX
+    pair; e.g. 'XAUUSD'). A cross pair with no USD leg (classify_symbol()'s
+    fx_cross case, usd_relationship=None) has nothing to score against
+    USD-based news and must be filtered out by the CALLER before this
+    function is ever invoked — see scoring/backtest_accumulator.py's own
+    per-instrument loop, which does exactly that (2026-09-13).
 
     precursor_events: optional leading-indicator events (already-released
     minor/medium USD releases that predict this event — ADP before NFP,
@@ -996,8 +1016,31 @@ def score_bundle(
     _direction_for_score(). None (the default) reproduces the old,
     non-hysteresis, "first-ever score" behavior exactly.
     """
-    if instrument not in INSTRUMENTS:
-        raise ValueError(f"Unknown instrument {instrument!r} — add it to config.settings.INSTRUMENTS first")
+    # Validated via classify_symbol() (2026-09-13), not a
+    # config.settings.INSTRUMENTS membership check — INSTRUMENTS only
+    # ever had 2 hand-entered keys (XAUUSD, US30), so any OTHER real,
+    # tracked symbol (e.g. a newly dashboard-added metal or FX pair)
+    # used to hit this exact ValueError even though classify_symbol()
+    # already knew perfectly well how to score it. Two real failure
+    # cases stay hard errors — a caller bug, same as before:
+    # - a ticker matching no known shape at all (UnrecognizedSymbolError)
+    # - a real, recognized ticker with NO USD leg (fx_cross,
+    #   usd_relationship=None) — nothing to score, and unlike the essence
+    #   engine's own graceful "not applicable" path, score_bundle() has
+    #   no meaningful partial result to return for this, so the caller
+    #   (scoring/backtest_accumulator.py's per-instrument loop) is
+    #   responsible for skipping fx_cross instruments before ever
+    #   calling this function, mirroring webapp/scoring_service.py's own
+    #   applicable=False convention for the essence-only path.
+    try:
+        _symbol_class = classify_symbol(instrument)
+    except UnrecognizedSymbolError as exc:
+        raise ValueError(f"Unknown instrument {instrument!r}: {exc}") from exc
+    if _symbol_class.usd_relationship is None:
+        raise ValueError(
+            f"{instrument!r} has no USD relationship (fx_cross) — nothing to score against "
+            f"USD-based news; the caller must filter fx_cross instruments out before calling score_bundle()"
+        )
 
     as_of = bundle.as_of_utc
     article_contributions = _build_contributions(bundle.articles, as_of, TIME_DECAY_HALF_LIFE_MINUTES)

@@ -1035,7 +1035,27 @@ def test_compute_history_stats_empty_rows_returns_empty_stats():
     print("PASS\n")
 
 
+def test_implied_surprise_direction_works_for_a_real_symbol_never_in_config_settings_instruments():
+    print("=== _implied_surprise_direction: a real, classifiable instrument never in config.settings.INSTRUMENTS (silver) grades correctly via classify_symbol(), no config edit needed ===")
+    # XAGUSD (silver) — inverse USD relationship, same as gold, per
+    # webapp/symbols.py's METALS set, but never had a config.settings.INSTRUMENTS entry.
+    # "Non-Farm Employment Change" is higher_bullish; a bearish call on an
+    # inverse instrument implies the print came in HIGHER than forecast.
+    result = history._implied_surprise_direction("Non-Farm Employment Change", "XAGUSD", "bearish")
+    assert result == "higher"
+    print("PASS\n")
+
+
+def test_implied_surprise_direction_returns_none_for_a_real_fx_cross_pair():
+    print("=== _implied_surprise_direction: a real fx_cross pair (no USD leg) returns None — never fabricates a guess ===")
+    result = history._implied_surprise_direction("Non-Farm Employment Change", "GBPAUD", "bearish")
+    assert result is None
+    print("PASS\n")
+
+
 if __name__ == "__main__":
+    test_implied_surprise_direction_works_for_a_real_symbol_never_in_config_settings_instruments()
+    test_implied_surprise_direction_returns_none_for_a_real_fx_cross_pair()
     test_resolved_event_with_real_call_is_judged()
     test_resolved_event_with_shrug_call_excluded_from_judging()
     test_unresolved_numeric_event_excluded_entirely()

@@ -648,7 +648,7 @@ def test_predictions_article_count_is_none_when_accumulator_never_scored_it():
              patch.object(backtest_store, "DB_PATH", backtest_db_path):
             _seed_calendar(db_path, _fake_events())
             conn = store.get_connection(db_path)
-            store.add_tracked_symbol(conn, "EURUSD")  # accumulator never tracks EURUSD (config.settings.INSTRUMENTS is XAUUSD/US30 only)
+            store.add_tracked_symbol(conn, "EURUSD")  # this test never populates backtest_log.db at all, regardless of what the accumulator does/doesn't track — see the test's own final comment below
             event_time = dt.datetime(2026, 8, 7, 12, 30, tzinfo=dt.timezone.utc)
             store.record_run(conn, "EURUSD", "Non-Farm Employment Change", event_time, 0.55, "bearish", -0.2)
             conn.close()

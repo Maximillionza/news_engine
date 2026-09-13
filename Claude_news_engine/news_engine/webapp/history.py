@@ -47,6 +47,7 @@ from typing import Optional
 from config.settings import EVENT_SURPRISE_DIRECTION, INSTRUMENTS
 from scoring.print_direction import NO_HIT_CONFIDENCE
 from webapp.store import get_connection, get_resolved_event_history, get_text_only_resolved_events
+from webapp.symbols import classify_symbol
 from webapp.conflict import compute_tier1_sentiment_conflict
 
 DEFAULT_HISTORY_LIMIT = 50
@@ -160,7 +161,23 @@ def _implied_surprise_direction(event_title: str, instrument: str, direction: st
     surprise_map = EVENT_SURPRISE_DIRECTION.get(event_title)
     if surprise_map is None:
         return None
-    relationship = INSTRUMENTS[instrument]["usd_relationship"]
+    # usd_relationship comes from webapp.symbols.classify_symbol() (2026-09-13),
+    # not config.settings.INSTRUMENTS -- INSTRUMENTS only ever had 2
+    # hand-entered keys (XAUUSD, US30), so any other real tracked
+    # instrument (e.g. a dashboard-added metal or FX pair) used to raise
+    # a bare KeyError here the moment its History tab tried to grade a
+    # print call. classify_symbol() covers every symbol shape this
+    # project already recognizes with zero per-instrument config.
+    relationship = classify_symbol(instrument).usd_relationship
+    if relationship is None:
+        # fx_cross (no USD leg) — never fabricate a guess. In practice this
+        # should not happen: score_bundle() (scoring/probability_engine.py)
+        # already refuses to score an fx_cross instrument at all, so no
+        # accumulator prediction — and therefore no call into this
+        # function — should ever exist for one. Guarded explicitly anyway,
+        # same "never fabricate" discipline this function's own docstring
+        # already commits to for the surprise_map=None case above.
+        return None
     # 'inverse' and 'risk_sentiment' both flip sign relative to direct USD
     # sentiment (see _map_to_instrument_score()'s own comment on
     # risk_sentiment's simplification) — only 'direct' passes through

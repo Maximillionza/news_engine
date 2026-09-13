@@ -73,8 +73,7 @@ def test_print_call_higher_on_bullish_indicator_is_bullish_for_direct_instrument
     event = _cpi_event()
     bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
     print_call = PrintCall(direction="higher", confidence=0.7, article_count=5)
-    with patch.dict(probability_engine.INSTRUMENTS, {"USDJPY": {"label": "USD/JPY", "usd_relationship": "direct"}}):
-        result = score_bundle(bundle, "USDJPY", print_call=print_call)  # USDJPY = direct relationship
+    result = score_bundle(bundle, "USDJPY", print_call=print_call)  # USDJPY = direct relationship, per classify_symbol()
     assert result.direction == Direction.BULLISH
     print("PASS\n")
 
@@ -84,8 +83,7 @@ def test_print_call_higher_on_bearish_indicator_flips_sign():
     event = _unemployment_event()
     bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
     print_call = PrintCall(direction="higher", confidence=0.7, article_count=5)
-    with patch.dict(probability_engine.INSTRUMENTS, {"USDJPY": {"label": "USD/JPY", "usd_relationship": "direct"}}):
-        result = score_bundle(bundle, "USDJPY", print_call=print_call)
+    result = score_bundle(bundle, "USDJPY", print_call=print_call)
     assert result.direction == Direction.BEARISH
     print("PASS\n")
 
@@ -144,8 +142,7 @@ def test_trend_signal_higher_contributes_in_correct_direction():
     event = _cpi_event()
     bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
     trend_signal = _FakeTrendSignal(direction="higher", strength=0.8)
-    with patch.dict(probability_engine.INSTRUMENTS, {"USDJPY": {"label": "USD/JPY", "usd_relationship": "direct"}}):
-        result = score_bundle(bundle, "USDJPY", trend_signal=trend_signal)
+    result = score_bundle(bundle, "USDJPY", trend_signal=trend_signal)
     assert result.direction == Direction.BULLISH
     print("PASS\n")
 
@@ -207,8 +204,7 @@ def test_kalshi_read_higher_on_bullish_indicator_is_bullish():
     event = _cpi_event()
     bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
     kalshi_read = _FakeKalshiRead(strike=0.3, implied_direction="higher", implied_probability=0.7, open_interest=100.0)
-    with patch.dict(probability_engine.INSTRUMENTS, {"USDJPY": {"label": "USD/JPY", "usd_relationship": "direct"}}):
-        result = score_bundle(bundle, "USDJPY", kalshi_read=kalshi_read)
+    result = score_bundle(bundle, "USDJPY", kalshi_read=kalshi_read)
     assert result.direction == Direction.BULLISH
     print("PASS\n")
 
@@ -218,8 +214,7 @@ def test_kalshi_read_higher_on_bearish_indicator_flips_sign():
     event = _unemployment_event()
     bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
     kalshi_read = _FakeKalshiRead(strike=4.0, implied_direction="higher", implied_probability=0.7, open_interest=100.0)
-    with patch.dict(probability_engine.INSTRUMENTS, {"USDJPY": {"label": "USD/JPY", "usd_relationship": "direct"}}):
-        result = score_bundle(bundle, "USDJPY", kalshi_read=kalshi_read)
+    result = score_bundle(bundle, "USDJPY", kalshi_read=kalshi_read)
     assert result.direction == Direction.BEARISH
     print("PASS\n")
 
@@ -1152,7 +1147,48 @@ def test_event_influence_links_weight_is_stored_but_not_consumed_by_scoring():
     print("PASS\n")
 
 
+def test_score_bundle_scores_a_real_symbol_never_in_config_settings_instruments():
+    print("=== score_bundle: a real, classifiable instrument that was NEVER in config.settings.INSTRUMENTS (e.g. silver) scores correctly via classify_symbol(), no config edit needed ===")
+    event = _cpi_event()
+    bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
+    print_call = PrintCall(direction="higher", confidence=0.7, article_count=5)
+    # XAGUSD (silver) — a real metal classify_symbol() already recognizes
+    # (webapp/symbols.py's METALS set), inverse USD relationship same as
+    # gold, but config.settings.INSTRUMENTS never had an entry for it.
+    result = score_bundle(bundle, "XAGUSD", print_call=print_call)
+    assert result.direction == Direction.BEARISH, "inverse relationship: a USD-bullish print call should read bearish for a metal"
+    print("PASS\n")
+
+
+def test_score_bundle_raises_for_a_genuinely_unrecognized_ticker():
+    print("=== score_bundle: a ticker matching no known shape at all raises ValueError — a real caller bug, not silently scored ===")
+    event = _cpi_event()
+    bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
+    try:
+        score_bundle(bundle, "NOT_A_REAL_TICKER")
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "NOT_A_REAL_TICKER" in str(exc)
+    print("PASS\n")
+
+
+def test_score_bundle_raises_for_a_real_fx_cross_pair_no_usd_leg():
+    print("=== score_bundle: a real fx_cross pair (no USD leg, e.g. GBPAUD) raises ValueError — nothing to score, caller must filter it out before calling ===")
+    event = _cpi_event()
+    bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
+    try:
+        score_bundle(bundle, "GBPAUD")
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "GBPAUD" in str(exc)
+        assert "USD" in str(exc)
+    print("PASS\n")
+
+
 if __name__ == "__main__":
+    test_score_bundle_scores_a_real_symbol_never_in_config_settings_instruments()
+    test_score_bundle_raises_for_a_genuinely_unrecognized_ticker()
+    test_score_bundle_raises_for_a_real_fx_cross_pair_no_usd_leg()
     test_score_bundle_without_new_params_is_unchanged()
     test_print_call_higher_on_bullish_indicator_is_bullish_for_direct_instrument()
     test_print_call_higher_on_bearish_indicator_flips_sign()

@@ -1184,7 +1184,31 @@ def test_score_and_record_event_passes_cot_positioning_through_to_score_bundle()
     print("PASS\n")
 
 
+def test_score_and_record_event_skips_fx_cross_instruments_without_calling_score_bundle():
+    print("=== score_and_record_event: an fx_cross instrument (no USD leg, e.g. GBPAUD) is skipped BEFORE score_bundle() is ever called, not passed through and caught by the try/except ===")
+    event = EconomicEvent(title="CPI m/m", country="USD", impact="High", event_time_utc=dt.datetime(2026, 9, 2, 12, 30, tzinfo=UTC_TZ), forecast="0.3%", previous="0.3%")
+    with patch.object(accumulator, "build_event_news_bundle", return_value=_bundle(event, [])), \
+         patch.object(accumulator, "record_check"), \
+         patch.object(accumulator, "_read_precursor_events", return_value=[]), \
+         patch.object(accumulator, "score_print_direction", return_value=None), \
+         patch.object(accumulator, "_read_trend_signal", return_value=None), \
+         patch.object(accumulator, "_read_kalshi_signal", return_value=(None, None)), \
+         patch.object(accumulator, "get_latest_prediction", return_value=None), \
+         patch.object(accumulator, "score_bundle", return_value=_fake_result()) as mock_score_bundle, \
+         patch.object(accumulator, "_is_material_change", return_value=False):
+        results = accumulator.score_and_record_event(
+            conn=MagicMock(), event=event, all_events=[event],
+            instruments=["GBPAUD", "XAUUSD"], sources=[],
+        )
+
+    mock_score_bundle.assert_called_once()  # only for XAUUSD, never for GBPAUD
+    assert mock_score_bundle.call_args.args[1] == "XAUUSD"
+    assert "GBPAUD" not in results
+    print("PASS\n")
+
+
 if __name__ == "__main__":
+    test_score_and_record_event_skips_fx_cross_instruments_without_calling_score_bundle()
     test_interval_far_when_nothing_active()
     test_interval_hourly_once_within_pre_event_window()
     test_interval_tighter_day_of_event()

@@ -82,6 +82,7 @@ from scoring.backtest_store import (
 )
 from webapp.store import get_connection as get_dashboard_connection, get_event_history, DB_PATH as DASHBOARD_DB_PATH
 from webapp.trend import compute_trend_signal
+from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 
 # A same-direction probability move smaller than this is "supporting" the
 # current sentiment, not changing it — no write. 0.10 = 10 percentage
@@ -520,6 +521,21 @@ def score_and_record_event(
         print(f"[backtest_accumulator] Kalshi read for {event.title}: {kalshi_read.implied_direction} ({kalshi_read.implied_probability:.0%} implied, {kalshi_read.open_interest:.0f} open interest)")
 
     for instrument in instruments:
+        # An fx_cross instrument (no USD leg — webapp.symbols.classify_symbol()'s
+        # usd_relationship=None case) has nothing to score against USD-based
+        # news at all; score_bundle() itself refuses it with a ValueError
+        # (2026-09-13), which the try/except below would silently swallow
+        # anyway — skipped explicitly here instead, with a quiet one-line
+        # note rather than a per-cycle "scoring failed" WARNING that would
+        # misrepresent a deliberate, permanent skip as a transient error.
+        try:
+            symbol_class = classify_symbol(instrument)
+        except UnrecognizedSymbolError as exc:
+            print(f"[backtest_accumulator] WARNING: {instrument!r} is not a recognized symbol shape, skipping: {exc}")
+            continue
+        if symbol_class.usd_relationship is None:
+            continue
+
         # Fetched BEFORE score_bundle() (not just for the material-change
         # check afterward, as before) so its direction can be passed in as
         # current_direction — enables score_bundle()'s direction hysteresis

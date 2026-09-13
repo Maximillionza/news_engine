@@ -20,12 +20,28 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.settings import INSTRUMENTS
 from scoring.backtest_accumulator import start_accumulator
+import webapp.store as store
 
 
 def main():
-    tracked = list(INSTRUMENTS.keys())
+    # Reads the dashboard's OWN live tracked-symbols list (2026-09-13) —
+    # previously read config.settings.INSTRUMENTS.keys() instead, a
+    # separate, hand-maintained 2-entry dict (XAUUSD, US30) that silently
+    # never grew when a new symbol was added via the dashboard's "Add"
+    # form. A symbol added there now gets real article-based scoring too,
+    # the next time this process is (re)started — start_accumulator()'s
+    # background loop still reuses a fixed list for its own lifetime, so
+    # adding/removing a symbol on the live dashboard while this process
+    # is already running still needs a restart to take effect, same as
+    # every instrument-related change already required before this fix.
+    conn = store.get_connection()
+    tracked = store.list_tracked_symbols(conn)
+    conn.close()
+    if not tracked:
+        print("No tracked symbols found in the dashboard's tracked_symbols table — nothing to accumulate. "
+              "Add a symbol via the dashboard's \"Add\" form first, then restart this process.")
+        return
     print(f"Starting the article-based backtest accumulator for: {tracked}")
     print("Poll interval adapts to how close the nearest tracked event is "
           "(webapp/scheduler.py's compute_adaptive_interval_seconds tiers, reused here).")

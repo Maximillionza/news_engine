@@ -158,12 +158,25 @@ CONTEXTUAL_CONFIDENCE_THRESHOLD = 0.6  # below this, FinBERT's own top-class pro
 LLM_SENTIMENT_MODEL = "claude-haiku-4-5-20251001"  # cheapest current model — this is a short classification call, not a reasoning task
 
 # --- Instruments tracked ---
-# Each entry maps an instrument to the USD relationship used for directional logic
-# "inverse" = instrument tends to move opposite to USD strength (e.g. gold, EURUSD)
-# "direct"  = instrument tends to move with USD strength (e.g. USDJPY, US30 is more nuanced — risk-driven)
+# A deliberately curated, cost-bounded instrument list — NOT the live
+# dashboard's tracked-symbol list (webapp/store.py's tracked_symbols
+# table, read dynamically by scripts/run_accumulator.py as of 2026-09-13).
+# Used only where a fixed, hand-reviewed instrument set is the right
+# choice on purpose: scripts/run_manual_sentiment_check.py and
+# scripts/seed_historical_data.py (both cap real API-call budgets by
+# instrument count) and webapp/history.py's aggregate stat rollups.
+#
+# usd_relationship was REMOVED from these entries 2026-09-13 — it used to
+# be this dict's own hand-maintained copy of exactly what
+# webapp.symbols.classify_symbol() already derives from a ticker's shape,
+# and every real reader of it (scoring/probability_engine.py,
+# webapp/history.py) now calls classify_symbol() directly instead. Keeping
+# a second, unmaintained copy here risked silently drifting from the real
+# one; XAUUSD/US30's values already always agreed with classify_symbol()'s
+# own (inverse/risk_sentiment), so nothing about live scoring changes.
 INSTRUMENTS = {
-    "XAUUSD": {"label": "Gold", "usd_relationship": "inverse"},
-    "US30":   {"label": "Dow Jones / US30", "usd_relationship": "risk_sentiment"},
+    "XAUUSD": {"label": "Gold"},
+    "US30":   {"label": "Dow Jones / US30"},
 }
 
 # Dampening applied to "risk_sentiment" instruments (currently just US30) —
