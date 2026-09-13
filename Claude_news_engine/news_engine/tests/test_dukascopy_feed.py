@@ -50,14 +50,46 @@ def test_get_price_at_returns_none_on_fetch_exception():
     print("PASS\n")
 
 
-def test_get_price_at_rejects_unmapped_instrument():
-    print("=== dukascopy_feed: get_price_at raises a clear ValueError for an instrument with no Dukascopy mapping ===")
+def test_get_price_at_rejects_a_genuinely_unmapped_instrument():
+    print("=== dukascopy_feed: get_price_at raises a clear ValueError for a ticker with no real Dukascopy coverage at all (not even under FX_MAJORS/FX_CROSSES) ===")
     when = dt.datetime(2026, 8, 7, 12, 30, tzinfo=dt.timezone.utc)
     try:
-        dukascopy_feed.get_price_at("EURUSD", when)
-        raise AssertionError("expected ValueError for an unmapped instrument")
+        dukascopy_feed.get_price_at("ZZZUSD", when)  # matches the USD-quote shape but no real currency code
+        raise AssertionError("expected ValueError for a genuinely unmapped instrument")
     except ValueError as e:
-        assert "EURUSD" in str(e)
+        assert "ZZZUSD" in str(e)
+    print("PASS\n")
+
+
+def test_resolve_dukascopy_instrument_hits_the_static_map_first():
+    print("=== _resolve_dukascopy_instrument: the hand-verified metals/indices map (XAUUSD/XAGUSD/US30/US500/NAS100) resolves without going near the FX-pair fallback ===")
+    assert dukascopy_feed._resolve_dukascopy_instrument("XAUUSD") == dukascopy_feed._INSTRUMENT_MAP["XAUUSD"]
+    assert dukascopy_feed._resolve_dukascopy_instrument("XAGUSD") == dukascopy_feed._INSTRUMENT_MAP["XAGUSD"]
+    assert dukascopy_feed._resolve_dukascopy_instrument("US500") == dukascopy_feed._INSTRUMENT_MAP["US500"]
+    assert dukascopy_feed._resolve_dukascopy_instrument("NAS100") == dukascopy_feed._INSTRUMENT_MAP["NAS100"]
+    print("PASS\n")
+
+
+def test_resolve_dukascopy_instrument_derives_a_real_usd_legged_fx_pair_never_hand_entered():
+    print("=== _resolve_dukascopy_instrument: a real USD-legged FX pair NEVER added to the static map resolves via the real, verified naming convention ===")
+    import dukascopy_python.instruments as inst
+    assert dukascopy_feed._resolve_dukascopy_instrument("EURUSD") == inst.INSTRUMENT_FX_MAJORS_EUR_USD
+    assert dukascopy_feed._resolve_dukascopy_instrument("USDJPY") == inst.INSTRUMENT_FX_MAJORS_USD_JPY
+    # USD/BRL exists only under FX_CROSSES, not FX_MAJORS -- proves the
+    # fallback-to-crosses step is real, not dead code.
+    assert dukascopy_feed._resolve_dukascopy_instrument("USDBRL") == inst.INSTRUMENT_FX_CROSSES_USD_BRL
+    print("PASS\n")
+
+
+def test_resolve_dukascopy_instrument_returns_none_for_a_real_fx_cross_no_usd_leg():
+    print("=== _resolve_dukascopy_instrument: a real fx_cross pair with no USD leg (e.g. GBPAUD) returns None -- it never enters the backtest/outcome pipeline in the first place, nothing to grade ===")
+    assert dukascopy_feed._resolve_dukascopy_instrument("GBPAUD") is None
+    print("PASS\n")
+
+
+def test_resolve_dukascopy_instrument_returns_none_for_a_genuinely_uncovered_pair():
+    print("=== _resolve_dukascopy_instrument: a USD-shaped ticker with no real currency backing it (neither FX_MAJORS nor FX_CROSSES) honestly returns None, never fabricates an instrument identifier ===")
+    assert dukascopy_feed._resolve_dukascopy_instrument("ZZZUSD") is None
     print("PASS\n")
 
 
@@ -65,5 +97,9 @@ if __name__ == "__main__":
     test_get_price_at_returns_first_tick_price()
     test_get_price_at_returns_none_on_empty_window()
     test_get_price_at_returns_none_on_fetch_exception()
-    test_get_price_at_rejects_unmapped_instrument()
+    test_get_price_at_rejects_a_genuinely_unmapped_instrument()
+    test_resolve_dukascopy_instrument_hits_the_static_map_first()
+    test_resolve_dukascopy_instrument_derives_a_real_usd_legged_fx_pair_never_hand_entered()
+    test_resolve_dukascopy_instrument_returns_none_for_a_real_fx_cross_no_usd_leg()
+    test_resolve_dukascopy_instrument_returns_none_for_a_genuinely_uncovered_pair()
     print("All dukascopy_feed tests passed.")
