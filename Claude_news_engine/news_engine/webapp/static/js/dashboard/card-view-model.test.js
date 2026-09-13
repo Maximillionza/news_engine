@@ -74,16 +74,53 @@ test("buildOtherEventsViewModel includes only genuinely simultaneous siblings", 
 });
 
 test("buildOtherTrackedEventsViewModel promotes conflict-flagged rows to the front before bounding", () => {
+  const now = new Date("2026-09-11T00:00:00Z");
   const events = [
     { event_title: "Featured", event_time_utc: "2026-09-11T12:30:00Z" },
-    { event_title: "No Conflict A", event_time_utc: "2026-09-10T12:30:00Z" },
-    { event_title: "Has Conflict", event_time_utc: "2026-09-09T12:30:00Z", tier1_sentiment_conflict: { tier1_direction: "bullish", sentiment_direction: "bearish" } },
-    { event_title: "No Conflict B", event_time_utc: "2026-09-08T12:30:00Z" },
-    { event_title: "No Conflict C", event_time_utc: "2026-09-07T12:30:00Z" },
+    { event_title: "No Conflict A", event_time_utc: "2026-09-12T12:30:00Z" },
+    { event_title: "Has Conflict", event_time_utc: "2026-09-13T12:30:00Z", tier1_sentiment_conflict: { tier1_direction: "bullish", sentiment_direction: "bearish" } },
+    { event_title: "No Conflict B", event_time_utc: "2026-09-14T12:30:00Z" },
+    { event_title: "No Conflict C", event_time_utc: "2026-09-15T12:30:00Z" },
   ];
-  const vm = buildOtherTrackedEventsViewModel(events, "XAUUSD");
+  const vm = buildOtherTrackedEventsViewModel(events, "XAUUSD", now);
   assert.equal(vm.rows[0].title, "Has Conflict", "the conflict row must be promoted to the front, not lost to the 3-item bound");
   assert.equal(vm.rows.length, 3);
+});
+
+test("buildOtherTrackedEventsViewModel excludes a sibling event that has already happened", () => {
+  // Bug fix regression test: a past event (its own time already elapsed,
+  // not just equal to the featured event's time) must never appear in
+  // "Other tracked events" — that's what the History tab is for.
+  const now = new Date("2026-09-13T00:00:00Z");
+  const events = [
+    { event_title: "Featured", event_time_utc: "2026-09-16T14:30:00Z" },
+    { event_title: "PPI m/m", event_time_utc: "2026-09-10T12:30:00Z" }, // already happened relative to `now`
+    { event_title: "Core CPI m/m", event_time_utc: "2026-09-11T12:30:00Z" }, // already happened relative to `now`
+    { event_title: "Retail Sales m/m", event_time_utc: "2026-09-17T12:30:00Z" }, // genuinely upcoming
+  ];
+  const vm = buildOtherTrackedEventsViewModel(events, "XAUUSD", now);
+  assert.equal(vm.rows.length, 1, "only the genuinely upcoming sibling should remain");
+  assert.equal(vm.rows[0].title, "Retail Sales m/m");
+  assert.ok(!vm.rows.some((r) => r.title === "PPI m/m" || r.title === "Core CPI m/m"), "past events must never appear here");
+});
+
+test("buildOtherTrackedEventsViewModel treats a sibling at exactly `now` as still current, not past", () => {
+  const now = new Date("2026-09-13T12:30:00Z");
+  const events = [
+    { event_title: "Featured", event_time_utc: "2026-09-16T14:30:00Z" },
+    { event_title: "Right Now", event_time_utc: "2026-09-13T12:30:00Z" },
+  ];
+  const vm = buildOtherTrackedEventsViewModel(events, "XAUUSD", now);
+  assert.equal(vm.rows.length, 1, "an event exactly at `now` (e.g. still resolving) must not be treated as already past");
+});
+
+test("buildOtherTrackedEventsViewModel returns null when every sibling has already happened", () => {
+  const now = new Date("2026-09-13T00:00:00Z");
+  const events = [
+    { event_title: "Featured", event_time_utc: "2026-09-16T14:30:00Z" },
+    { event_title: "PPI m/m", event_time_utc: "2026-09-10T12:30:00Z" },
+  ];
+  assert.equal(buildOtherTrackedEventsViewModel(events, "XAUUSD", now), null);
 });
 
 test("buildCardViewModel: pending branch produces isPending:true with the right heading when a signal exists", () => {

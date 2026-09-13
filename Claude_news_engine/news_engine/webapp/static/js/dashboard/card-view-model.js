@@ -152,10 +152,19 @@ export function buildOtherEventsViewModel(events, symbolForCard) {
 
 const OTHER_TRACKED_EVENTS_LIMIT = 3;
 
-export function buildOtherTrackedEventsViewModel(allEvents, symbolForCard) {
+// Bug fix (2026-09-13, user-reported): this only ever excluded the exact
+// same timestamp as the featured event — a sibling that already happened
+// (its event_time_utc is in the past) had nothing stopping it from
+// showing up in "Other tracked events" alongside genuinely upcoming ones.
+// A resolved event belongs in the History tab, not this card's live/
+// upcoming-context list. `now` is an explicit parameter (defaulting to
+// the real clock) so this stays testable against a fixed point in time,
+// same reasoning data_layer/discovery_detector.py's own testable "now"
+// parameters already use.
+export function buildOtherTrackedEventsViewModel(allEvents, symbolForCard, now = new Date()) {
   if (!allEvents || allEvents.length === 0) return null;
   const featuredTime = allEvents[0].event_time_utc;
-  const candidates = allEvents.slice(1).filter((e) => e.event_time_utc !== featuredTime);
+  const candidates = allEvents.slice(1).filter((e) => e.event_time_utc !== featuredTime && new Date(e.event_time_utc) >= now);
   const conflicts = candidates.filter((e) => e.tier1_sentiment_conflict);
   const nonConflicts = candidates.filter((e) => !e.tier1_sentiment_conflict);
   const rest = conflicts.concat(nonConflicts).slice(0, OTHER_TRACKED_EVENTS_LIMIT);
