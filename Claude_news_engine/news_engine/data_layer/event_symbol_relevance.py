@@ -189,6 +189,154 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
         "market-analysis/usdcad-oil-four-month-high-us-cpi-september-11-"
         "2026/), consistent with Layer2's oil-linked USDCAD nuance",
     ),
+    ("PPI m/m", "XAUUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Internal, dated, PPI-specific evidence from this project's own live "
+        "scoring DB (scoring/backtest_log.db, tier1_predictions/outcomes "
+        "tables): 6 real PPI m/m occurrences logged against XAUUSD in 2026 "
+        "(2026-02-27, 2026-03-18, 2026-06-11, 2026-07-15, 2026-08-13, "
+        "2026-09-10) each with a Dukascopy-measured 30-min price move "
+        "(e.g. -0.54% on 2026-09-10, +0.73% on 2026-07-15); the 2026-09-10 "
+        "case is also the one docs/feature-inventory-2026-09-11.md Sec.3 "
+        "flags as a real live miss (Tier1 called Certain/bullish, actual "
+        "was bearish) -- the wrongness was directional, but the case is "
+        "real evidence PPI itself reaches gold, not borrowed from CPI",
+    ),
+    ("PPI m/m", "XAGUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, PPI-specific: the same Sep 10 2026 "
+        "hot US PPI print (August data, annual PPI accelerating to 5.4% "
+        "y/y) drove silver down sharply from $68.50 to $63.99 as Fed "
+        "rate-hike odds rose above 73% "
+        "(vantagemarkets.com/market-analysis/xagusd-silver-price-today-"
+        "rate-hike-bets-september-11-2026/) -- a specific, sourced XAGUSD "
+        "reaction to PPI itself, not reasoned by analogy from gold or CPI",
+    ),
+    ("PPI m/m", "US30"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Internal, dated, PPI-specific evidence from this project's own live "
+        "scoring DB (scoring/backtest_log.db): 3 real PPI m/m occurrences "
+        "logged against US30 in 2026 (2026-03-18, 2026-07-15, 2026-08-13, "
+        "2026-09-10) with Dukascopy-measured moves, plus the 2026-08-13 row "
+        "carries an independently-sourced note: 'Dow +119pts / +0.3% "
+        "shortly after the open following flat July PPI ... closed the day "
+        "+0.24%' (CNBC live market updates, ts2.tech, 2026-08-13) -- a real, "
+        "quantified US30 reaction to PPI itself",
+    ),
+    ("PPI m/m", "US500"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, PPI-specific: Sep 2026 hot PPI "
+        "(producer prices accelerating to 5.4% y/y on a 4.2% energy surge) "
+        "-- 'stock market opened in the red ... S&P 500 down 0.6%' as the "
+        "data pushed September rate-hike odds to 63% (Seeking Alpha, "
+        "'Wall Street slides as investors digest PPI report', "
+        "seekingalpha.com/news/4641457); a separate dated instance shows "
+        "the opposite-direction case -- a cooler PPI print sent the S&P 500 "
+        "to a fresh record as rate-hike odds fell (bitcoinworld.co.in/"
+        "sp-500-record-cooler-ppi-rate-cut-odds/) -- both real, PPI-specific",
+    ),
+    ("PPI m/m", "NAS100"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, PPI-specific quantified finding from Nasdaq.com's own NDX "
+        "options research: average NDX price change on PPI-release days is "
+        "measurably different from an average trading day (recent-year "
+        "figures cited include +/-0.94% over the last twelve PPI reports "
+        "vs +/-0.89% for all days that period) -- a real, dated, "
+        "PPI-specific volatility premium, smaller than CPI's own premium "
+        "but real and distinct from it, not reasoned by analogy "
+        "(nasdaq.com/articles/inflation-numbers-tap-recent-nasdaq-100-ndx-"
+        "reactions-cpi-and-ppi-mixed, nasdaq.com/articles/nasdaq-100-and-"
+        "a-lack-of-volatility-on-ppi-days)",
+    ),
+    ("PPI m/m", "EURUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch findings, PPI-specific: hot Aug 2026 US PPI "
+        "(annual producer inflation to 5.4% vs 5.3% forecast) 'reaffirmed "
+        "Fed rate-hike bets and boosted the US Dollar', weighing on EURUSD "
+        "(FXStreet, 'Euro weakens despite ECB rate hike as US PPI comes in "
+        "hot', fxstreet.com/news/euro-weakens-despite-ecb-rate-hike-as-us-"
+        "ppi-comes-in-hot-202609101256); a separate softer-PPI instance "
+        "(Jul 2026 data, released Aug 2026) shows only a muted EURUSD "
+        "reaction (fxstreet.com/news/euro-edges-higher-against-us-dollar-"
+        "after-soft-us-ppi-data-202608131430) -- real but surprise-"
+        "magnitude-dependent, same pattern as CPI's own EURUSD entry",
+    ),
+    ("PPI m/m", "GBPUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, PPI-specific: the Aug 2026 US PPI "
+        "beat (5.4% y/y vs 5.3% forecast) sent GBPUSD down to 1.3525 "
+        "(-0.17%) as 'investors priced in a more hawkish Federal Reserve' "
+        "and Fed-hike odds rose above 70% (FXStreet, 'British Pound feels "
+        "the heat as hot PPI puts Fed hike in play', fxstreet.com/news/"
+        "british-pound-feels-the-heat-as-hot-ppi-puts-fed-hike-in-play-"
+        "202609101527) -- a specific, sourced GBPUSD reaction to PPI "
+        "itself, not borrowed from CPI's own (separately cited) reaction",
+    ),
+    ("PPI m/m", "USDJPY"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch findings, PPI-specific: Aug 2026 US PPI "
+        "(5.4% y/y) 'reaffirmed Fed rate-hike bets and boosted the US "
+        "Dollar ... which weighed heavily on' USDJPY; a separate, older "
+        "dated instance shows USDJPY approaching 145.00 as 'US PPI rose "
+        "strongly' (fxstreet.com/news/usd-jpy-approaches-14500-as-us-ppi-"
+        "rose-strongly-202308111304); Sep 11 2026 also has the mirror case "
+        "-- 'Japanese Yen edges higher on PPI, focus turns to US CPI' "
+        "(fxstreet.com/news/japanese-yen-edges-higher-as-ppi-reaffirms-boj-"
+        "rate-hike-bets-and-usd-bulls-await-us-cpi-202609110131) -- real, "
+        "PPI-specific reactions on both sides of the pair",
+    ),
+    ("PPI m/m", "USDCHF"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, PPI-specific: May 2026 US PPI came "
+        "in far above expectations (1.4% m/m, 6.0% y/y, core PPI also "
+        "beating) and 'caused the US dollar to move higher after the US "
+        "PPI data', pushing USDCHF above the 50% midpoint of its move up "
+        "from the January 2026 low (investinglive.com/technical-analysis/"
+        "the-usd-moved-higher-after-the-us-ppi-data-but-the-rise-has-had-"
+        "its-limits-what-next-20260513/) -- a real, dated, PPI-specific "
+        "USDCHF reaction, distinct from CPI's own (separately cited) move",
+    ),
+    ("PPI m/m", "AUDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, PPI-specific: Aug 2026 US PPI "
+        "(5.3% y/y, faster than expected) drove AUDUSD to a 0.80% loss on "
+        "the day as the print 'triggered pricing for a more hawkish "
+        "Federal Reserve' (FXStreet, 'Australian Dollar declines ... as "
+        "hot US inflation data boost case for Fed rate hike' and 'Australian "
+        "Dollar retreats from session peak as US PPI print beats sharply', "
+        "fxstreet.com/news/australian-dollar-retreats-from-session-peak-"
+        "as-us-ppi-print-beats-sharply-202605132234) -- a real, sourced, "
+        "PPI-specific reaction on top of Layer2's mechanical USD-leg "
+        "baseline, not reasoned by analogy from CPI",
+    ),
+    ("PPI m/m", "NZDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch findings, PPI-specific: multiple dated "
+        "instances of NZDUSD moving on US PPI releases -- 'New Zealand "
+        "Dollar weakens below 0.5850 as hot US PPI lifts US Dollar' "
+        "(Jun 2026, fxstreet.com/news/new-zealand-dollar-weakens-below-"
+        "05850-as-stronger-us-ppi-lifts-us-dollar-202606120655) and "
+        "'New Zealand Dollar gives back gains as US PPI offsets RBNZ "
+        "expectations' (May 2026, fxstreet.com/news/new-zealand-dollar-"
+        "gave-back-gains-as-hot-us-ppi-offsets-rbnz-expectations-rise-"
+        "202605132236), with a US PPI print of 6.5% y/y (vs 5.7% prior) "
+        "cited as the driver -- real, dated, PPI-specific, not borrowed "
+        "from CPI's own NZDUSD reaction",
+    ),
+    ("PPI m/m", "USDCAD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, PPI-specific: Aug 2026 US PPI "
+        "(5.4% y/y, above the 5.3% forecast) left USDCAD trading around "
+        "1.3815-1.3835 -- 'USD/CAD held modest gains as the US Dollar lost "
+        "momentum ... despite US PPI data showing that producer inflation "
+        "picked up again', with higher oil prices offsetting the USD-"
+        "strength impulse the same day (FXStreet, 'Canadian Dollar trades "
+        "under pressure as US PPI data supports Fed hike bets', "
+        "fxstreet.com/news/canadian-dollar-trades-under-pressure-as-us-ppi"
+        "-data-supports-fed-hike-bets-202609101551) -- a real, contained "
+        "but PPI-specific reaction, consistent with Layer2's oil-linked "
+        "USDCAD nuance (oil competes with, doesn't erase, PPI's own pull)",
+    ),
 }
 
 
