@@ -657,6 +657,155 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
         "dated, FOMC-specific USDCAD reaction, consistent with the "
         "mechanical USD-leg baseline already used for CPI/PPI/NFP",
     ),
+    ("GDP q/q", "XAUUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Internal, real, live-logged evidence from this project's own scoring "
+        "DB (scoring/backtest_log.db, predictions/outcomes tables): the "
+        "2026-08-26 'Prelim GDP q/q' release (Q2 2026 second estimate, "
+        "confirmed at 1.5%) has a confirmed outcome row against XAUUSD -- "
+        "'Dukascopy: -0.34% in 30min (auto)' -- real, GDP-specific, not "
+        "borrowed from CPI/PPI/NFP evidence. Note this is the only GDP-"
+        "specific instrument pair with a live-logged outcome in this DB "
+        "(only XAUUSD and US30 appear); no dedicated Layer1_Event_to_USD "
+        "row exists for GDP as of this session (checked, confirmed absent)",
+    ),
+    ("GDP q/q", "XAGUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, GDP-specific: the Jul 30 2026 US "
+        "Q2 advance GDP release (1.5% actual vs 2.1% expected, a miss) -- "
+        "silver advanced toward $58.80/oz, gaining around 1.7% on the day, "
+        "'as softer United States inflation data and weaker-than-expected "
+        "economic growth placed pressure on the US Dollar' (FX Leaders, "
+        "'Silver Surges Past $59 as Weak Dollar, Soft GDP and Middle East "
+        "Tensions Fuel XAG/USD Rally', fxleaders.com/news/2026/07/31/"
+        "silver-surges-past-59-as-weak-dollar-soft-gdp-and-middle-east-"
+        "tensions-fuel-xag-usd-rally/) -- GDP is named as one of three "
+        "compounding drivers that day (weak Dollar, soft GDP, Middle East "
+        "tensions), not the sole cause, but a real and specific one",
+    ),
+    ("GDP q/q", "US30"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Internal, real, live-logged evidence from this project's own "
+        "scoring DB (scoring/backtest_log.db, predictions/outcomes tables): "
+        "the same 2026-08-26 'Prelim GDP q/q' release has a confirmed "
+        "outcome row against US30 -- 'Dukascopy: -0.27% in 30min (auto)' -- "
+        "real, GDP-specific, distinct instrument from the XAUUSD row above",
+    ),
+    ("GDP q/q", "US500"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, GDP-specific (a different GDP "
+        "print than the internal-DB/XAGUSD entries, but still a real US "
+        "GDP release, not a different event type): Feb 20 2026, US Q4 GDP "
+        "grew an annualized 1.4% vs 3% expected -- 'contracts for the S&P "
+        "500 and the Dow were 0.3% lower' pre-market as futures extended "
+        "losses (TradingEconomics/FX.co, 'US Futures Extend Drop on GDP "
+        "Miss', tradingeconomics.com/united-states/stock-market/news/"
+        "527452, fx.co/en/forex-news/2908716) -- a same-session PCE "
+        "overshoot is named as a compounding factor, so this is real but "
+        "not a GDP-isolated move",
+    ),
+    ("GDP q/q", "NAS100"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, GDP-specific: the same Feb 20 2026 "
+        "Q4 GDP miss (1.4% vs 3% expected) -- 'those for the Nasdaq 100 "
+        "fell 0.5%' pre-market, a larger pre-market drop than the S&P 500's "
+        "0.3% cited in the US500 entry (TradingEconomics, same URL as "
+        "US500) -- a specific, sourced NAS100 GDP reaction, distinct from "
+        "and not reasoned by analogy from US500/US30",
+    ),
+    ("GDP q/q", "EURUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, GDP-specific: the Jul 30 2026 US "
+        "Q2 advance GDP miss (1.5% vs 2.1% expected) -- EUR/USD traded "
+        "north of 1.1500, reaching a fresh six-week high near 1.1534, with "
+        "'US...second-quarter growth disappoint[ing]' named alongside a "
+        "same-day Eurozone GDP beat and suspected Japanese-intervention "
+        "pressure on the Dollar as the drivers (FXStreet, 'Euro climbs to "
+        "six-week high as suspected Japanese intervention pressures "
+        "Greenback', fxstreet.com/news/euro-climbs-to-six-week-high-as-"
+        "suspected-japanese-intervention-pressures-greenback-202607301404) "
+        "-- three simultaneous drivers, so the US GDP contribution is real "
+        "but not isolated from the other two",
+    ),
+    ("GDP q/q", "GBPUSD"): RelevanceJudgment(
+        RelevanceStatus.UNVERIFIED,
+        "Searched specifically for a GBPUSD reaction to the Jul 30 2026 US "
+        "Q2 advance GDP miss (1.5% vs 2.1% expected); no primary-source "
+        "coverage found isolating a GDP-specific GBPUSD move -- that same "
+        "date carried a Bank of England rate decision (held at 3.75% on a "
+        "6-3 MPC vote), and the sources found (Born2Trade, 'July 30, 2026: "
+        "Oil, US GDP, and the Bank of England Decision', born2trade.com/"
+        "news-articles/july-30-2026-oil-us-gdp-and-the-bank-of-england-"
+        "decision) frame GBPUSD's reaction that day as driven primarily by "
+        "the BoE vote split, not the US GDP print -- an honest UNVERIFIED, "
+        "not a forced RELEVANT/NOT_RELEVANT off a confounded day",
+    ),
+    ("GDP q/q", "USDJPY"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, GDP-specific: on Jul 30 2026 (the "
+        "same US Q2 advance GDP miss day), 'the USD moved sharply lower "
+        "dragged down by the USDJPY' with USDJPY falling from 163.30 to a "
+        "low of 158.00, in an Americas session the source frames as driven "
+        "by 'potential intervention' speculation together with 'Thursday's "
+        "economic calendar' (the GDP miss, PCE, and a divided Fed) "
+        "delivering broad Dollar weakness (InvestingLive, 'Americas FX "
+        "news wrap 30 Jul: USDJPY moves sharply lower on speculation of "
+        "intervention', investinglive.com/news/investinglive-americas-fx-"
+        "news-wrap-30-jul-usdjpy-move/) -- GDP is a real, named "
+        "contributing factor, but intervention speculation is the "
+        "dominant one for this specific pair, so the GDP-specific "
+        "contribution can't be isolated from that larger move",
+    ),
+    ("GDP q/q", "USDCHF"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, GDP-specific: the same Jul 30 2026 "
+        "session -- the same InvestingLive Americas FX wrap quantifies the "
+        "broad post-GDP-miss Dollar weakness as 'declines of 1.25% vs the "
+        "NZD, 1.05% vs the AUD, and 1.00% vs the CHF leading the declines' "
+        "(i.e. USDCHF fell roughly 1.00% that session), attributed to the "
+        "same combination of the GDP miss, a divided Fed, and intervention "
+        "speculation (investinglive.com/news/investinglive-americas-fx-"
+        "news-wrap-30-jul-usdjpy-move/) -- real and GDP-specific, though "
+        "GDP is one of several named simultaneous drivers, not isolated",
+    ),
+    ("GDP q/q", "AUDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, GDP-specific: the same Jul 30 2026 "
+        "US Q2 advance GDP miss (1.5% vs 2.1% expected) -- AUD/USD traded "
+        "around 0.7010, up 0.82% on the day, with 'US Q2 GDP missing "
+        "expectations' explicitly named as helping the pair advance "
+        "alongside a divided Fed hold vote (FXStreet, 'Australian Dollar "
+        "rallies despite softer CPI as US Dollar tumbles after Fed, "
+        "weaker data', fxstreet.com/news/australian-dollar-rallies-"
+        "despite-softer-cpi-as-us-dollar-tumbles-after-fed-weaker-data-"
+        "202607301450) -- figure checked against the article's own stated "
+        "level/percentage before use, per the review lesson from PPI's "
+        "prior AUDUSD correction",
+    ),
+    ("GDP q/q", "NZDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, GDP-specific: the same Jul 30 2026 "
+        "session -- the same InvestingLive Americas FX wrap quantifies the "
+        "broad post-GDP-miss Dollar weakness as 'declines of 1.25% vs the "
+        "NZD...leading the declines' (i.e. NZDUSD was the single largest "
+        "mover of the majors that session, up roughly 1.25%), attributed "
+        "to the same GDP-miss/Fed/intervention-speculation combination "
+        "(investinglive.com/news/investinglive-americas-fx-news-wrap-30-"
+        "jul-usdjpy-move/) -- real and GDP-specific, not reasoned by "
+        "analogy from AUDUSD despite the shared source",
+    ),
+    ("GDP q/q", "USDCAD"): RelevanceJudgment(
+        RelevanceStatus.UNVERIFIED,
+        "Searched specifically for a USDCAD reaction to the Jul 30 2026 US "
+        "Q2 advance GDP miss (the same release quantified for "
+        "NZDUSD/AUDUSD/USDCHF/USDJPY above); no primary-source coverage "
+        "found isolating a GDP-specific USDCAD move that day -- CAD is not "
+        "named in the InvestingLive Americas FX wrap's 'NZD/AUD/CHF "
+        "leading the declines' list used for the other majors, and no "
+        "separate USDCAD-specific article on that date was found -- an "
+        "honest UNVERIFIED rather than assuming CAD moved the same way by "
+        "analogy to the other Dollar pairs",
+    ),
 }
 
 
