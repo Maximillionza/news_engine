@@ -35,6 +35,7 @@ from scoring.backtest_store import (
     get_prediction_history as get_article_prediction_history,
 )
 from webapp.predictions_service import build_predictions_payload, _print_prediction_dict
+from alerting import store as alerting_store
 
 app = Flask(__name__, static_folder="static")
 
@@ -359,6 +360,27 @@ def get_print_call_history():
                 "outcome": r.outcome, "unjudged_reason": r.unjudged_reason,
                 "source": r.source,
                 "tier1_conflict": r.tier1_conflict,
+            }
+            for r in rows
+        ],
+    })
+
+
+@app.route("/api/shock-alerts", methods=["GET"])
+def get_shock_alerts():
+    conn = alerting_store.get_connection()
+    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)
+    rows = alerting_store.list_recent_alerts(conn, since)
+    return jsonify({
+        "rows": [
+            {
+                "id": r.id, "headline": r.headline, "sources": r.sources,
+                "detected_at_utc": r.detected_at_utc.isoformat(),
+                "category": r.category, "severity": r.severity,
+                "classification_method": r.classification_method,
+                "rationale": r.rationale, "affected_symbols": r.affected_symbols,
+                "delivery_status": r.delivery_status,
+                "reality_mismatch": r.reality_mismatch,
             }
             for r in rows
         ],
