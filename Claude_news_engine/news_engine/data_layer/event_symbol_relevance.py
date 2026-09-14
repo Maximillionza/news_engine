@@ -503,6 +503,160 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
         "other out), so USDCAD's NFP reaction is real but contingent on "
         "whether Canadian jobs data lands the same day",
     ),
+    ("FOMC Rate Decision", "XAUUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Internal, real, live-logged evidence from this project's own "
+        "scoring DB (scoring/backtest_log.db, tier1_predictions table): "
+        "'Federal Funds Rate' and 'FOMC Statement' predictions for the "
+        "2026-09-16 FOMC meeting logged against XAUUSD at Certain "
+        "confidence (85.5% CME FedWatch-implied probability of a 25bp "
+        "hike as of 2026-09-12, up from ~56-70% on 2026-09-10, EFFR 3.63% "
+        "per Fed H.15) -- real evidence the event reaches this symbol, "
+        "consistent with Layer1_Event_to_USD's dated Fed rows (e.g. the "
+        "2025-10-29-FOMC cut and Dec 2025 succession-storm DXY/yield move)",
+    ),
+    ("FOMC Rate Decision", "XAGUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, FOMC-specific: as of 2026-09-14, "
+        "XAG/USD fell to near $63.50 'amid Fed hike bets' with the Sept "
+        "16 2026 decision priced at an 87% probability of a 25bp hike (up "
+        "from 59% the prior week) (FXStreet, 'Silver Price Forecast: "
+        "XAG/USD falls to near $63.50 amid Fed hike bets, higher oil "
+        "prices', fxstreet.com/news/silver-price-forecast-xag-usd-falls-"
+        "to-near-6350-amid-fed-hike-bets-higher-oil-prices-202609140747); "
+        "separately, an Aug 31 2026 FXStreet piece documents XAG/USD "
+        "falling to near $66.00 specifically 'amid Fed Chair Warsh's "
+        "hawkish tone' -- two independent, dated, FOMC-specific reactions",
+    ),
+    ("FOMC Rate Decision", "US30"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Internal, real, live-logged evidence (scoring/backtest_log.db, "
+        "tier1_predictions table): 'Federal Funds Rate'/'FOMC Statement' "
+        "predictions for 2026-09-16 logged against US30 at Certain "
+        "confidence; corroborated by real, dated WebSearch, FOMC-specific: "
+        "the prior June 17 2026 FOMC decision (hold at 3.50-3.75%, but a "
+        "hawkish dot plot -- median 2026 fed funds dot to ~3.8% from 3.4%) "
+        "sent the Dow Jones down 507.12 points (-0.97%) that day (X/"
+        "Markets Today market-close summary, 2026-06-17; corroborated by "
+        "CNBC 'Dow closes 500 points lower as Warsh's first Fed meeting "
+        "sets off surge in bond yields', cnbc.com/2026/06/16/stock-market-"
+        "today-live-updates.html)",
+    ),
+    ("FOMC Rate Decision", "US500"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, FOMC-specific: the June 17 2026 "
+        "FOMC decision (rates held at 3.50-3.75%, but 9 of 19 members' dot "
+        "plot pointed to a 2026 hike) -- 'S&P 500 Drops 1.2% as Fed "
+        "Signals 2026 Rate Hike', the index declined 91.25 points (-1.21%) "
+        "to close at 7,420.10 that day (X/Markets Today market-close "
+        "summary, 2026-06-17; Swingfolio, swingfolio.com/daily/us/2026-06-"
+        "17/afternoon; TheStreet, 'S&P 500, Nasdaq plummet as Fed meeting "
+        "points to rate hike in late 2026', thestreet.com/stock-market-"
+        "today/stock-market-today-dow-jones-sp-500-nasdaq-updates-june-17"
+        "-2026)",
+    ),
+    ("FOMC Rate Decision", "NAS100"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, FOMC-specific: the same June 17 "
+        "2026 hawkish-hold decision -- the Nasdaq 100 climbed steadily "
+        "into the meeting then sold off sharply around 14:00-15:00 UTC on "
+        "June 16, shedding over 500 points to lows near 29,800, with a "
+        "partial recovery fading after the June 17 decision and Chair "
+        "Warsh's press conference to settle back near 30,100 (Vantage "
+        "Markets, 'NAS100 Slides After Fed Signals Rate Hike Risk for "
+        "2026', vantagemarkets.com/market-analysis/nas100-analysis-"
+        "hawkish-fed-june-18-2026/); TheStreet's own headline for the day "
+        "explicitly names the Nasdaq alongside the S&P 500 plummeting",
+    ),
+    ("FOMC Rate Decision", "EURUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, FOMC-specific: the June 17 2026 "
+        "hawkish-hold decision (2026 fed funds dot to ~3.8% from 3.4%) -- "
+        "EUR/USD had been sitting just below 1.1600 into the announcement "
+        "and fell close to 60 pips within minutes through 1.1550 toward "
+        "1.1500, then continued falling roughly 180 pips over the "
+        "following day to a 1.1420 session low (FXStreet, 'Euro routed as "
+        "Warsh's Fed turns the dot plot upside down', fxstreet.com/news/"
+        "euro-routed-as-warshs-fed-turns-the-dot-plot-upside-down-"
+        "202606171915; Vantage Markets, 'EURUSD Falls to Multi-Week Low "
+        "at 1.1420 After Hawkish Fed Surprise', vantagemarkets.com/"
+        "market-analysis/eurusd-analysis-june-19-2026/)",
+    ),
+    ("FOMC Rate Decision", "GBPUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, FOMC-specific: the same June 17 "
+        "2026 decision -- GBP/USD 'tanked by over 1%' and fell sharply to "
+        "a two-month low near 1.3270 amid broad US Dollar strength "
+        "following the hawkish dot plot (median 2026 fed funds projection "
+        "to 3.8% from 3.4%) (FXStreet, 'British Pound craters as Warsh's "
+        "guidance void fuels US Dollar rally', fxstreet.com/news/british-"
+        "pound-sinks-as-warshs-hawkish-dots-power-us-dollar-202606171827)",
+    ),
+    ("FOMC Rate Decision", "USDJPY"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, FOMC-specific: the same June 17 "
+        "2026 decision -- the Yen depreciated against the Dollar after "
+        "the hawkish hold, with USD/JPY trading at 160.66 after bouncing "
+        "off a daily low of 160.11 as the DXY spiked through the 100.00 "
+        "handle on the release (FXStreet, 'US Dollar Index storms back as "
+        "the Fed turns hawkish', fxstreet.com/news/us-dollar-index-storms"
+        "-back-as-the-fed-turns-hawkish-202606171817)",
+    ),
+    ("FOMC Rate Decision", "USDCHF"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, FOMC-specific: the same June 17 "
+        "2026 hawkish-hold decision -- the hawkish Summary of Economic "
+        "Projections (median 2026 dot to 3.8% from 3.4%) 'immediately "
+        "pushed US Treasury yields higher and fueled broad-based US "
+        "dollar strength, while the Swiss Franc came under selling "
+        "pressure' on the widening rate-differential expectation "
+        "(TradingKey, 'USD/CHF (USDCHF) Volatility Intensified on Jun 17: "
+        "Factors to Watch', tradingkey.com/news/market-movers/261973931-"
+        "market-movers-usdchf-20260617) -- direction and driver are real "
+        "and FOMC-specific, though no exact pip/percent figure was found "
+        "in the sources checked, so the magnitude itself is qualitative "
+        "only",
+    ),
+    ("FOMC Rate Decision", "AUDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, FOMC-specific: the same June 17 "
+        "2026 hawkish-hold decision -- AUD/USD fell from around 0.7080 to "
+        "a session low of 0.6988 (close to 80-90 pips), slicing through "
+        "0.7050 and briefly breaking below 0.7000, as the hawkish dot "
+        "plot (nine of 18 officials backing further 2026 hikes) drove "
+        "broad US Dollar strength (Vantage Markets, 'AUD/USD Today: "
+        "0.7012 as Hawkish Fed Hits Aussie Hard', vantagemarkets.com/"
+        "market-analysis/audusd-analysis-19-june-2026/) -- figure checked "
+        "against the article's own stated levels before use",
+    ),
+    ("FOMC Rate Decision", "NZDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, FOMC-specific: NZD/USD traded "
+        "sideways near 0.5830 ahead of the June 17 2026 decision, then "
+        "reacted to the Fed's hawkish outlook -- the median fed funds "
+        "rate projection for end-2026 rose to 3.8% from 3.4%, with "
+        "officials also raising 2026 inflation forecasts to 3.6% headline "
+        "/ 3.3% core, and the Kiwi's upside stayed limited on the shift "
+        "(FXStreet, 'New Zealand Dollar trades sideways ahead of Fed rate "
+        "decision', fxstreet.com/news/new-zealand-dollar-trades-sideways-"
+        "ahead-of-fed-rate-decision-202606162132; CNBC, 'Fed interest "
+        "rate decision June 2026: Fed holds rates steady', cnbc.com/2026/"
+        "06/17/fed-interest-rate-decision-june-2026.html) -- direction "
+        "and driver real and FOMC-specific; no exact post-decision pip "
+        "figure was found in the sources checked",
+    ),
+    ("FOMC Rate Decision", "USDCAD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, FOMC-specific: following the same "
+        "June 17 2026 hawkish-hold decision, USD/CAD climbed to a new "
+        "2026 high of 1.4071, with traders repricing toward an October "
+        "hike after the decision and Chair Warsh's remarks (InvestingLive, "
+        "'How has the technical view changed after the FOMC rate "
+        "decision?', investinglive.com/technical-analysis/what-has-the-"
+        "usd-done-post-the-fomc-rate-decision-20260617/) -- a real, "
+        "dated, FOMC-specific USDCAD reaction, consistent with the "
+        "mechanical USD-leg baseline already used for CPI/PPI/NFP",
+    ),
 }
 
 
