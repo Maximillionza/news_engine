@@ -147,3 +147,83 @@ def get_alert(conn: sqlite3.Connection, alert_id: int) -> Optional[ShockAlertRow
     if row is None:
         return None
     return _row_to_shock_alert(dict(row))
+
+
+def get_cursor(conn: sqlite3.Connection, source: str) -> Optional[dt.datetime]:
+    row = conn.execute("SELECT last_seen_utc FROM poll_cursor WHERE source = ?", (source,)).fetchone()
+    if row is None:
+        return None
+    return dt.datetime.fromisoformat(row["last_seen_utc"])
+
+
+def set_cursor(conn: sqlite3.Connection, source: str, last_seen_utc: dt.datetime) -> None:
+    conn.execute(
+        "INSERT INTO poll_cursor (source, last_seen_utc) VALUES (?, ?) "
+        "ON CONFLICT(source) DO UPDATE SET last_seen_utc = excluded.last_seen_utc",
+        (source, last_seen_utc.isoformat()),
+    )
+    conn.commit()
+
+
+def record_near_miss(
+    conn: sqlite3.Connection, headline: str, closest_category: Optional[str],
+    near_miss_score: Optional[float], seen_at_utc: Optional[dt.datetime] = None,
+) -> int:
+    """Rolling audit log for taxonomy tuning -- never read by the live alerting path itself."""
+    seen_at_utc = seen_at_utc or dt.datetime.now(dt.timezone.utc)
+    cur = conn.execute(
+        "INSERT INTO shock_near_misses (headline, closest_category, near_miss_score, seen_at_utc) VALUES (?, ?, ?, ?)",
+        (headline, closest_category, near_miss_score, seen_at_utc.isoformat()),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def list_recent_alerts_in_category(conn: sqlite3.Connection, category: str, since_utc: dt.datetime) -> list[ShockAlertRow]:
+    rows = conn.execute(
+        "SELECT * FROM shock_alerts WHERE category = ? AND detected_at_utc >= ? ORDER BY detected_at_utc DESC",
+        (category, since_utc.isoformat()),
+    ).fetchall()
+    return [_row_to_shock_alert(dict(r)) for r in rows]
+
+
+def list_recent_alerts(conn: sqlite3.Connection, since_utc: dt.datetime) -> list[ShockAlertRow]:
+    rows = conn.execute(
+        "SELECT * FROM shock_alerts WHERE detected_at_utc >= ? ORDER BY detected_at_utc DESC",
+        (since_utc.isoformat(),),
+    ).fetchall()
+    return [_row_to_shock_alert(dict(r)) for r in rows]
+
+
+def set_delivery_status(conn: sqlite3.Connection, alert_id: int, status: str) -> None:
+    conn.execute("UPDATE shock_alerts SET delivery_status = ? WHERE id = ?", (status, alert_id))
+    conn.commit()
+
+
+def get_alerts_needing_reality_check(conn: sqlite3.Connection, older_than_utc: dt.datetime) -> list[ShockAlertRow]:
+    rows = conn.execute(
+        "SELECT * FROM shock_alerts WHERE reality_check_at_utc IS NULL AND detected_at_utc >= ? "
+        "ORDER BY detected_at_utc ASC",
+        (older_than_utc.isoformat(),),
+    ).fetchall()
+    return [_row_to_shock_alert(dict(r)) for r in rows]
+
+
+def record_reality_check(
+    conn: sqlite3.Connection, alert_id: int,
+    move_5min: Optional[dict], move_secondary: Optional[dict],
+    mismatch: Optional[bool], checked_at_utc: Optional[dt.datetime] = None,
+) -> None:
+    checked_at_utc = checked_at_utc or dt.datetime.now(dt.timezone.utc)
+    conn.execute(
+        "UPDATE shock_alerts SET reality_move_5min_json = ?, reality_move_secondary_json = ?, "
+        "reality_check_at_utc = ?, reality_mismatch = ? WHERE id = ?",
+        (
+            json.dumps(move_5min) if move_5min is not None else None,
+            json.dumps(move_secondary) if move_secondary is not None else None,
+            checked_at_utc.isoformat(),
+            None if mismatch is None else int(mismatch),
+            alert_id,
+        ),
+    )
+    conn.commit()
