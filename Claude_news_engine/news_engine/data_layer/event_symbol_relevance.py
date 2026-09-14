@@ -806,6 +806,171 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
         "honest UNVERIFIED rather than assuming CAD moved the same way by "
         "analogy to the other Dollar pairs",
     ),
+    ("Core PCE Price Index m/m", "XAUUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Internal, real, live-logged evidence from this project's own scoring "
+        "DB (scoring/backtest_log.db, predictions/outcomes tables): the "
+        "2026-08-26 'Core PCE Price Index m/m' release (July 2026 print, "
+        "0.2% m/m / 3.3% y/y core, both in line) has a confirmed outcome row "
+        "against XAUUSD -- actual_direction 'bearish', 'User-confirmed real "
+        "trade outcome (2026-08-26 conversation): traded the engine SELL 52% "
+        "call ... and the trade was successful' -- real, Core-PCE-specific, "
+        "not borrowed from CPI/GDP evidence. Corroborated by real, dated "
+        "WebSearch, a DIFFERENT (May 2026) print: XAU/USD stabilized around "
+        "$4,036, recovering from a more-than-seven-month low of $3,959, as "
+        "the in-line core PCE reading (3.4% y/y) weighed modestly on the US "
+        "Dollar (FXStreet, 'Gold recovers above $4,000 after US PCE data "
+        "broadly matches expectations', fxstreet.com/news/gold-consolidates-"
+        "near-seven-month-low-ahead-of-us-pce-report-202606251104)",
+    ),
+    ("Core PCE Price Index m/m", "XAGUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, Core-PCE-specific: the May 2026 "
+        "print (released Jun 25 2026: core PCE 3.4% y/y, matching forecasts, "
+        "no upside surprise) -- silver rebounded 2.16% on the day to around "
+        "$58.65, supported by a 0.24% pullback in the US Dollar Index (DXY) "
+        "to 101.30 as investors focused on the lack of any hot core surprise "
+        "(FXStreet, 'Silver price rebounds as in-line US PCE data weighs on "
+        "Dollar', fxstreet.com/news/silver-price-rebounds-after-in-line-us-"
+        "pce-data-eases-dollar-support-202606251620) -- real and Core-PCE-"
+        "specific, not reasoned by analogy from XAUUSD",
+    ),
+    ("Core PCE Price Index m/m", "US30"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Internal, real, live-logged evidence from this project's own "
+        "scoring DB (scoring/backtest_log.db, predictions/outcomes tables): "
+        "the same 2026-08-26 'Core PCE Price Index m/m' release has a "
+        "confirmed outcome row against US30 -- actual_direction 'bearish', "
+        "'Dukascopy: -0.27% in 30min (auto)' -- real, Core-PCE-specific, "
+        "distinct instrument from the XAUUSD row above, same release",
+    ),
+    ("Core PCE Price Index m/m", "US500"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, Core-PCE-specific: the same "
+        "2026-08-26 release (July 2026 print, headline 3.7% y/y above the "
+        "3.6% forecast, core 3.3% y/y in line) -- S&P 500 slipped 0.1% to "
+        "7,668.85 (shedding roughly 8 points) by midday as 'a hotter-than-"
+        "forecast July inflation print revived talk of a September rate "
+        "hike' (Benzinga/TradingView, 'Stock Market Today: Hot PCE Inflation "
+        "Stirs Rate-Hike Bets', tradingview.com/news/benzinga:8d7e7b3ab094b:"
+        "0-nasdaq-100-falls-as-hot-pce-inflation-stirs-rate-hike-bets-stock-"
+        "market-today/) -- this is the midday, PCE-driven move; Nvidia's "
+        "after-the-bell earnings the same evening are a separate, later "
+        "confound on the day's final close, not on this reaction itself",
+    ),
+    ("Core PCE Price Index m/m", "NAS100"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, Core-PCE-specific: the same "
+        "2026-08-26 release -- Nasdaq 100 fell 0.6% (about a 168-point "
+        "decline, to roughly 29,041.12) by midday, the weakest major "
+        "benchmark that session, as the hotter-than-forecast July headline "
+        "print (with core PCE holding at 3.3% y/y) revived September "
+        "rate-hike talk (Benzinga/TradingView, same URL as the US500 entry) "
+        "-- a real, sourced NAS100 Core-PCE reaction, larger than the "
+        "US500's same-session move, not reasoned by analogy from it",
+    ),
+    ("Core PCE Price Index m/m", "EURUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, Core-PCE-specific: the May 2026 "
+        "print (released Jun 26 2026) had core PCE TOP estimates -- 'EUR/USD "
+        "slips below 1.1700 as core PCE tops estimates' (FXStreet, "
+        "fxstreet.com/news/eur-usd-slips-below-11700-as-core-pce-tops-"
+        "estimates-eurozone-data-mixed-202506272039), a genuine core-PCE "
+        "surprise case, not a mixed/headline-only one. Corroborated by the "
+        "2026-08-26 release (core in line, headline hot): EUR/USD traded "
+        "around 1.1660, down 0.12% on the day, as 'hotter-than-expected "
+        "headline PCE inflation offers modest support to the US Dollar' "
+        "(FXStreet, 'Euro comes under pressure against US Dollar after "
+        "mixed US PCE data', fxstreet.com/news/euro-comes-under-pressure-"
+        "against-us-dollar-after-mixed-us-pce-data-202608261257)",
+    ),
+    ("Core PCE Price Index m/m", "GBPUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, Core-PCE-specific: the same "
+        "2026-08-26 release (core PCE 3.3% y/y in line, headline 3.7% above "
+        "forecast) -- GBP/USD retreated about 0.39% on the day, falling to "
+        "a five-day low below 1.3600 after reaching a high near 1.3651, as "
+        "'the US Dollar staged a recovery after a US inflation report "
+        "showed prices remain elevated' (FXStreet, 'British Pound weakens "
+        "against US Dollar as headline PCE beats forecasts', fxstreet.com/"
+        "news/british-pound-weakens-against-us-dollar-as-headline-pce-"
+        "beats-forecasts-202608261335) -- real and Core-PCE-release-"
+        "specific, not borrowed from CPI's own GBPUSD reaction",
+    ),
+    ("Core PCE Price Index m/m", "USDJPY"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch findings, Core-PCE-specific, two separate "
+        "releases: (1) the May 2026 print (Jun 25 2026, in line) -- USD/JPY "
+        "traded slightly lower around 161.75 'as the US Dollar eased after "
+        "the latest US PCE data broadly matched market expectations' "
+        "(FXStreet, 'Forex Today: US Dollar eases after PCE data, Yen "
+        "remains near intervention zone', fxstreet.com/news/forex-today-us-"
+        "dollar-eases-after-pce-data-yen-remains-near-intervention-zone-"
+        "202606252035); (2) the 2026-08-26 print (headline hot, core in "
+        "line) -- USD/JPY traded around 159.41, recovering off an intraday "
+        "low of 158.88 (forex.com, 'USD/JPY Forecast: Yen remains under "
+        "pressure after US PCE data'); a third source (OANDA) separately "
+        "frames USDJPY as 'highly sensitive' to PCE surprises with a "
+        "'statistically consistent' directional response",
+    ),
+    ("Core PCE Price Index m/m", "USDCHF"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, Core-PCE-specific: the May 2026 "
+        "print (released Jun 26 2026: headline PCE 0.4% m/m, below the 0.5% "
+        "forecast; core PCE 0.3% m/m, in line) -- USD/CHF fell to around "
+        "0.8071, extending losses for a second day after an 11-month high "
+        "of 0.8139 two days prior, as 'the US Dollar rally loses momentum "
+        "following the latest US PCE data' (FXStreet, 'Swiss Franc "
+        "strengthens as US Dollar loses momentum following US PCE inflation "
+        "data', fxstreet.com/news/swiss-franc-strengthens-as-us-dollar-"
+        "loses-momentum-following-us-pce-inflation-data-202606261331)",
+    ),
+    ("Core PCE Price Index m/m", "AUDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, Core-PCE-specific: the 2026-08-26 "
+        "release (core PCE 3.3% y/y in line, headline 3.7% above forecast, "
+        "reaffirming >70% odds of a Fed hike by December) -- AUD/USD still "
+        "ADVANCED for a third straight day, up more than 0.17% to 0.7176 "
+        "from 0.7159, because a domestic RBA-hike-bets catalyst (Australian "
+        "trimmed-mean inflation beating estimates) offset the hawkish pull "
+        "of the US data that same session (FXStreet, 'Australian Dollar "
+        "extends rally as RBA hike bets, offset US data', fxstreet.com/news/"
+        "australian-dollar-extends-rally-as-rba-hike-bets-offset-us-data-"
+        "202608262321) -- Core PCE's own hawkish pull on AUDUSD is real and "
+        "named, even though a same-day domestic driver dominated the "
+        "session's net direction, the same treatment given to confounded-"
+        "but-real cases elsewhere in this table (e.g. GDP's USDJPY entry)",
+    ),
+    ("Core PCE Price Index m/m", "NZDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, Core-PCE-specific: the 2026-08-26 "
+        "release (core PCE 3.3% y/y in line, headline 3.7% y/y slightly "
+        "above the 3.6% estimate) -- NZD/USD traded with mild losses around "
+        "0.5950 in the following Asian session as 'the US Dollar strengthens "
+        "against the New Zealand Dollar as US inflation data lifted "
+        "expectations of a Federal Reserve rate hike' (FXStreet, 'New "
+        "Zealand Dollar declines to near 0.5950 as US PCE data lift Fed "
+        "rate hike bets', fxstreet.com/news/new-zealand-dollar-declines-to-"
+        "near-05950-as-us-pce-data-lift-fed-rate-hike-bets-202608270222) -- "
+        "real and Core-PCE-specific, not reasoned by analogy from AUDUSD",
+    ),
+    ("Core PCE Price Index m/m", "USDCAD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, Core-PCE-specific: the May 2026 "
+        "print (released Jun 25-26 2026: core PCE 3.4% y/y in line, headline "
+        "monthly 0.4% below the 0.5% consensus) -- USD/CAD declined to "
+        "around 1.4190 as 'the US Personal Consumption Expenditures (PCE) "
+        "Price Index inflation data eases US rate hike expectations' "
+        "(FXStreet, 'Canadian Dollar rebounds as US PCE inflation data "
+        "eases US rate hike bets', fxstreet.com/news/canadian-dollar-"
+        "rebounds-as-us-pce-inflation-data-eases-us-rate-hike-bets-"
+        "202606260559); a same-session Oil-price rebound is named as a "
+        "compounding, not sole, CAD-supportive factor (FXStreet, 'Canadian "
+        "Dollar recovers on Oil rebound as US Dollar eases after PCE', "
+        "fxstreet.com/news/canadian-dollar-recovers-as-oil-prices-rebound-"
+        "us-dollar-eases-after-pce-data-202606251429) -- consistent with "
+        "Layer2's already-established oil-linked USDCAD nuance",
+    ),
 }
 
 
