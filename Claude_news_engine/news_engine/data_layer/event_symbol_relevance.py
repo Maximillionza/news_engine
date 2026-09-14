@@ -95,21 +95,29 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
     ),
     ("CPI m/m", "US500"): RelevanceJudgment(
         RelevanceStatus.RELEVANT,
-        "Layer2_Asset_Transmission's equity-indices row explicitly groups "
-        "'S&P 500 / Nasdaq / Dow (US30)' under the same rate-path "
-        "transmission mechanism as US30, and names S&P 500 directly in its "
-        "sourced in-window example (Seeking Alpha, Oct 6 2025: 'S&P 500 "
-        "Rises To Record Highs After U.S. Government Shuts Down', the same "
-        "dovish-Fed-read pattern CPI surprises feed into) -- same real "
-        "channel as US30, not a separate assumption",
+        "Real, dated WebSearch finding, CPI-specific (not by analogy to a "
+        "different event): Sep 11 2026 US CPI (headline hotter on energy, "
+        "core in-line at 2.4% y/y) -- S&P 500 gapped up and closed the day "
+        "up about 0.9-1%, part of a 'losing week ending on a high note as "
+        "Fed rate-hike bets jump' (Yahoo Finance, "
+        "finance.yahoo.com/markets/live/stock-market-today-friday-"
+        "september-11-dow-sp-500-nasdaq-cpi-inflation-082201751.html); "
+        "academic event-study evidence (Tandfonline, 'Asymmetric S&P 500 "
+        "reactions to CPI surprises in a high-inflation environment', "
+        "2021-2025 sample) separately documents statistically significant "
+        "S&P 500 abnormal returns on disinflationary CPI surprises",
     ),
     ("CPI m/m", "NAS100"): RelevanceJudgment(
         RelevanceStatus.RELEVANT,
-        "Layer2_Asset_Transmission's equity-indices row explicitly groups "
-        "'S&P 500 / Nasdaq / Dow (US30)' together under the same rate-path "
-        "transmission mechanism (Evercore ISI post-rate-cut pattern) -- "
-        "Nasdaq named directly alongside US30 in the same sourced row, "
-        "same real channel, not a separate assumption",
+        "Real, dated WebSearch finding, CPI-specific: same Sep 11 2026 US "
+        "CPI release -- Nasdaq rose alongside the S&P 500 that day (Yahoo "
+        "Finance, same URL as the US500 entry); separately, Nasdaq.com's "
+        "own reporting on Nasdaq-100 (NDX) documents a real quantified "
+        "CPI-day volatility premium -- average price change on CPI-release "
+        "days is +/-1.44% vs +/-1.05% on an average day "
+        "(nasdaq.com/articles/inflation-numbers-tap-recent-nasdaq-100-ndx-"
+        "reactions-cpi-and-ppi-mixed) -- a specific, sourced NAS100 CPI "
+        "reaction, not reasoned by analogy from US30",
     ),
     ("CPI m/m", "EURUSD"): RelevanceJudgment(
         RelevanceStatus.RELEVANT,
