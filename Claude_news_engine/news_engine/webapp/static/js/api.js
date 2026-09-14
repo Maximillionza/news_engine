@@ -34,6 +34,10 @@ export function fetchHistoryStats() {
   return fetchJson("/api/history/stats");
 }
 
+export function fetchShockAlerts() {
+  return fetchJson("/api/shock-alerts");
+}
+
 export function fetchArticleHistory(symbol, eventTitle) {
   return fetchJson(`/api/predictions/${symbol}/article_history?event_title=${encodeURIComponent(eventTitle)}`);
 }

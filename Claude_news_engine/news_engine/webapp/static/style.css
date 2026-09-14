@@ -282,3 +282,13 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .confidence-high { color: var(--bullish); font-size: 11px; font-weight: 600; }
 .confidence-medium { color: #f9a825; font-size: 11px; font-weight: 600; }
 .confidence-low { color: #888; font-size: 11px; }
+
+/* Task 11: Shock Alerts tab card -- minimal, reuses .meta-text-sm and
+   .stale-notice already defined above rather than introducing new ones. */
+.shock-alert-card {
+  background: #fff;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}

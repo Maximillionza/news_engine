@@ -13,6 +13,7 @@
     <button id="tab-dashboard" class="tab-btn active" role="tab" aria-selected="true" aria-controls="view-dashboard">Dashboard</button>
     <button id="tab-calendar" class="tab-btn" role="tab" aria-selected="false" aria-controls="view-calendar">Calendar</button>
     <button id="tab-history" class="tab-btn" role="tab" aria-selected="false" aria-controls="view-history">History</button>
+    <button id="tab-shock-alerts" class="tab-btn" role="tab" aria-selected="false" aria-controls="view-shock-alerts">Shock Alerts</button>
   </nav>
 </header>
 
@@ -76,6 +77,15 @@
       <tbody id="history-tbody"></tbody>
     </table>
   </div>
+</section>
+
+<section id="view-shock-alerts" style="display:none" role="tabpanel" aria-labelledby="tab-shock-alerts">
+  <div id="shock-alerts-empty-notice" class="stale-notice" style="display:none">No shock alerts in the last 7 days.</div>
+  <div id="shock-alerts-list"></div>
+  <details id="shock-alerts-low-details" style="display:none">
+    <summary>Low-severity (collapsed)</summary>
+    <div id="shock-alerts-low-list"></div>
+  </details>
 </section>
 
 <script type="module" src="/static/app.js"></script>
