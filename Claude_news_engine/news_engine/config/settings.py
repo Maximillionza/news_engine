@@ -26,6 +26,8 @@ ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY", "")
 APITUBE_API_KEY = os.environ.get("APITUBE_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # --- FRED (St. Louis Fed) month-lookahead calendar source — READ-ONLY,
 # comparison/logging use only, NOT wired into scoring or the live
