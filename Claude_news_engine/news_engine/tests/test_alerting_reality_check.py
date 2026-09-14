@@ -61,6 +61,51 @@ def test_missing_price_data_logs_no_data_not_a_mismatch():
     assert row.reality_mismatch is None
 
 
+def test_low_severity_alert_with_confirming_move_is_flagged_mismatch():
+    conn = store.get_connection(":memory:")
+    detected_at = dt.datetime.now(UTC) - dt.timedelta(days=1)
+    alert_id = _seed_alert(conn, "Low", "XAUUSD", detected_at)
+
+    # price at T0 = 2800.0, T+5min = 2812.0 (+$12, clears the $10 XAUUSD threshold)
+    # -- a Low alert that actually moved the market is under-alerted.
+    prices = [PricePoint(price=2800.0), PricePoint(price=2812.0), PricePoint(price=2815.0)]
+    with patch("alerting.reality_check.get_price_at", side_effect=prices):
+        run_reality_check(conn=conn)
+
+    row = store.get_alert(conn, alert_id)
+    assert row.reality_check_at_utc is not None
+    assert row.reality_mismatch is True
+
+
+def test_low_severity_alert_with_no_move_is_no_mismatch():
+    conn = store.get_connection(":memory:")
+    detected_at = dt.datetime.now(UTC) - dt.timedelta(days=1)
+    alert_id = _seed_alert(conn, "Low", "XAUUSD", detected_at)
+
+    prices = [PricePoint(price=2800.0), PricePoint(price=2801.0), PricePoint(price=2800.5)]
+    with patch("alerting.reality_check.get_price_at", side_effect=prices):
+        run_reality_check(conn=conn)
+
+    row = store.get_alert(conn, alert_id)
+    assert row.reality_check_at_utc is not None
+    assert row.reality_mismatch is False
+
+
+def test_medium_severity_alert_with_confirming_move_is_never_mismatch():
+    conn = store.get_connection(":memory:")
+    detected_at = dt.datetime.now(UTC) - dt.timedelta(days=1)
+    alert_id = _seed_alert(conn, "Medium", "XAUUSD", detected_at)
+
+    # move clears the threshold, but Medium never mismatches in v1.
+    prices = [PricePoint(price=2800.0), PricePoint(price=2812.0), PricePoint(price=2815.0)]
+    with patch("alerting.reality_check.get_price_at", side_effect=prices):
+        run_reality_check(conn=conn)
+
+    row = store.get_alert(conn, alert_id)
+    assert row.reality_check_at_utc is not None
+    assert row.reality_mismatch is False
+
+
 def test_alert_with_no_affected_symbols_is_still_marked_checked():
     conn = store.get_connection(":memory:")
     detected_at = dt.datetime.now(UTC) - dt.timedelta(days=1)
