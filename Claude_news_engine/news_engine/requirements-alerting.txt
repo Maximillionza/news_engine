@@ -1,0 +1,5 @@
+# requirements-alerting.txt
+# Only needed for alerting/llm_classify.py's severity classification of
+# ambiguous shock candidates -- a single plain API call per candidate,
+# not a Claude Code session. Install only if running the alerting/ tool.
+anthropic>=0.40.0
