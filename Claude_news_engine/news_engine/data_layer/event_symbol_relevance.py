@@ -215,7 +215,7 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
     ("PPI m/m", "US30"): RelevanceJudgment(
         RelevanceStatus.RELEVANT,
         "Internal, dated, PPI-specific evidence from this project's own live "
-        "scoring DB (scoring/backtest_log.db): 3 real PPI m/m occurrences "
+        "scoring DB (scoring/backtest_log.db): 4 real PPI m/m occurrences "
         "logged against US30 in 2026 (2026-03-18, 2026-07-15, 2026-08-13, "
         "2026-09-10) with Dukascopy-measured moves, plus the 2026-08-13 row "
         "carries an independently-sourced note: 'Dow +119pts / +0.3% "
@@ -237,16 +237,19 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
     ),
     ("PPI m/m", "NAS100"): RelevanceJudgment(
         RelevanceStatus.RELEVANT,
-        "Real, PPI-specific quantified finding from Nasdaq.com's own NDX "
-        "options research: average NDX price change on PPI-release days is "
-        "measurably different from an average trading day (recent-year "
-        "figures cited include +/-0.94% over the last twelve PPI reports "
-        "vs +/-0.89% for all days that period) -- a real, dated, "
-        "PPI-specific volatility premium, smaller than CPI's own premium "
-        "but real and distinct from it, not reasoned by analogy "
-        "(nasdaq.com/articles/inflation-numbers-tap-recent-nasdaq-100-ndx-"
-        "reactions-cpi-and-ppi-mixed, nasdaq.com/articles/nasdaq-100-and-"
-        "a-lack-of-volatility-on-ppi-days)",
+        "Real, PPI-specific finding from Nasdaq.com's own NDX options "
+        "research, re-verified 2026-09-14: this is a ROLLING tracker whose "
+        "exact figures shift with the trailing window used -- re-fetched "
+        "values found across the same source's own articles include "
+        "+/-1.01% (PPI day) vs +/-1.06% (average day), +/-1.00% vs +/-1.08%, "
+        "+/-0.83% vs +/-0.86% (2024 only), and +/-0.94% vs +/-0.89% (a "
+        "trailing-twelve-PPI-report window) -- no single number is stable "
+        "enough to state as fixed, but every window checked shows a real, "
+        "PPI-specific NDX volatility print, distinct from and generally "
+        "smaller than CPI's own (already-cited) premium, not reasoned by "
+        "analogy (nasdaq.com/articles/inflation-numbers-tap-recent-nasdaq-"
+        "100-ndx-reactions-cpi-and-ppi-mixed, nasdaq.com/articles/nasdaq-"
+        "100-and-a-lack-of-volatility-on-ppi-days)",
     ),
     ("PPI m/m", "EURUSD"): RelevanceJudgment(
         RelevanceStatus.RELEVANT,
@@ -298,16 +301,30 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
     ),
     ("PPI m/m", "AUDUSD"): RelevanceJudgment(
         RelevanceStatus.RELEVANT,
-        "Real, dated WebSearch finding, PPI-specific: Aug 2026 US PPI "
-        "(5.3% y/y, faster than expected) drove AUDUSD to a 0.80% loss on "
-        "the day as the print 'triggered pricing for a more hawkish "
-        "Federal Reserve' (FXStreet, 'Australian Dollar declines ... as "
-        "hot US inflation data boost case for Fed rate hike' and 'Australian "
-        "Dollar retreats from session peak as US PPI print beats sharply', "
-        "fxstreet.com/news/australian-dollar-retreats-from-session-peak-"
-        "as-us-ppi-print-beats-sharply-202605132234) -- a real, sourced, "
-        "PPI-specific reaction on top of Layer2's mechanical USD-leg "
-        "baseline, not reasoned by analogy from CPI",
+        "Real, dated WebSearch finding, PPI-specific. CORRECTED 2026-09-14 "
+        "after review flagged the prior version's number/direction as "
+        "mismatched to its own cited URL -- re-checked against the "
+        "underlying article rather than just flipping the sign: Sep 10 "
+        "2026 hot US PPI (Aug data, 5.4% y/y vs 5.3% forecast) drove "
+        "AUDUSD to a 0.80% LOSS on the day, from an intraday peak of "
+        "0.7223 down to 0.7159, as the print 'triggered pricing for a more "
+        "hawkish Federal Reserve' (VT Markets, 'Australian dollar slides "
+        "as US PPI lifts Fed hike bets and oil surge boosts greenback', "
+        "global-vtrader.com/en/live-updates/australian-dollar-slides-as-"
+        "us-ppi-lifts-fed-hike-bets-and-oil-surge-boosts-greenback/ -- "
+        "direct fetch returned HTTP 403, so this figure rests on multiple "
+        "independent WebSearch result summaries that all independently "
+        "repeat the same 0.7223->0.7159/-0.80% numbers, not on a single "
+        "unverifiable claim). A SEPARATE, earlier dated instance (May 13 "
+        "2026, April PPI: 1.4% m/m vs 0.5% forecast, 6.0% y/y vs 4.9% "
+        "forecast) is the opposite-direction real case this entry "
+        "previously misattributed to the Sep figure: AUDUSD actually "
+        "GAINED roughly 0.3% that day, climbing through the session before "
+        "pulling back from its peak (FXStreet, 'Australian Dollar retreats "
+        "from session peak as US PPI print beats sharply', fxstreet.com/"
+        "news/australian-dollar-retreats-from-session-peak-as-us-ppi-print"
+        "-beats-sharply-202605132234) -- both real, dated, PPI-specific "
+        "reactions, not reasoned by analogy from CPI",
     ),
     ("PPI m/m", "NZDUSD"): RelevanceJudgment(
         RelevanceStatus.RELEVANT,
