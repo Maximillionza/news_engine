@@ -354,6 +354,155 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
         "but PPI-specific reaction, consistent with Layer2's oil-linked "
         "USDCAD nuance (oil competes with, doesn't erase, PPI's own pull)",
     ),
+    ("Non-Farm Employment Change", "XAUUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Two independent, dated NFP-specific sources agree: Layer1_Event_to_"
+        "USD's 2026-06-NFP row (June 2026 print +57,000 vs +110-115,000 "
+        "forecast -- 'Sept 2026 hike probability 67% -> ~50%; DXY posted "
+        "biggest weekly decline since April; gold best week since March'), "
+        "and this project's own live scoring DB (scoring/backtest_log.db, "
+        "outcomes table): 7 real NFP occurrences logged against XAUUSD in "
+        "2026 with Dukascopy-measured 30-min moves, including the matching "
+        "2026-07-02 row (June print's release date) at +1.28% and the most "
+        "recent 2026-09-04 row (August print, 162K vs 56K forecast) at "
+        "-1.73% -- both directions real and NFP-specific, not borrowed",
+    ),
+    ("Non-Farm Employment Change", "XAGUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, NFP-specific: the Sep 4 2026 "
+        "release (August print, 162K vs 56K forecast -- a beat) drove "
+        "silver down sharply to an intraday low of $64.74 as the stronger "
+        "print boosted the US Dollar and Treasury yields, before a partial "
+        "recovery left it trading around $66.20, down 1.18% on the day "
+        "(FXStreet, 'Silver claws back post-NFP losses after briefly "
+        "crashing below 65', fxstreet.com/news/silver-claws-back-post-nfp-"
+        "losses-after-briefly-crashing-below-65-202609041551)",
+    ),
+    ("Non-Farm Employment Change", "US30"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Internal, dated, NFP-specific evidence from this project's own "
+        "live scoring DB (scoring/backtest_log.db, outcomes table): 5 real "
+        "NFP occurrences logged against US30 in 2026 with Dukascopy-"
+        "measured 30-min moves (e.g. 2026-03-06: -0.84%, 2026-09-04: "
+        "-0.23%), corroborated by real WebSearch: the same Sep 4 2026 "
+        "August-beat release (162K vs 55K forecast) sent the Dow down "
+        "271.86 points (-0.51%) that day on revived rate-hike fears "
+        "(TheStreet, 'Stock Market Today (Sept. 4, 2026): Yields jump, "
+        "stocks fall after jobs report surprises to upside', thestreet.com/"
+        "stock-market-today/stock-market-today-dow-jones-sp-500-nasdaq-"
+        "updates-sept-04-2026)",
+    ),
+    ("Non-Farm Employment Change", "US500"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, NFP-specific: the same Sep 4 2026 "
+        "August-beat release (162K vs 55K forecast, unemployment steady at "
+        "4.1%) -- 'good news is bad news' reaction sent the S&P 500 down "
+        "0.38% to close at 7,718.60 on revived Fed rate-hike expectations "
+        "(TheStreet, same URL as the US30 entry) -- a specific, sourced "
+        "US500 reaction to NFP itself",
+    ),
+    ("Non-Farm Employment Change", "NAS100"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, NFP-specific: the May 2026 NFP beat "
+        "(172,000 actual vs ~85,000 consensus) triggered a sharp 'good "
+        "news is bad news' reversal in growth-sensitive names -- 'Nasdaq-"
+        "100 Futures down heavily around 1.4-2.0%' as cash equities opened "
+        "(Quantum Trading, 'Strong May 2026 NFP Beat (+172k) -- Why Nasdaq "
+        "Sold Off Heavily on Jobs Data', quantumtrading.com/trading/us-non-"
+        "farm-payrolls-may-2026-strong-beat-keeps-labour-market-resilient-"
+        "but-markets-sell-the-news/) -- a specific, sourced NAS100 (not "
+        "Nasdaq Composite) NFP reaction, distinct from the US500 entry",
+    ),
+    ("Non-Farm Employment Change", "EURUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, NFP-specific: the Sep 4 2026 "
+        "August-beat release (162K vs 56K forecast) sent EURUSD down to "
+        "around 1.1605 (-0.18% on the day), retreating from an intraday "
+        "high of 1.1633, as the US Dollar strengthened and yields rose "
+        "(FXStreet, 'Euro slips against US Dollar as Nonfarm Payrolls "
+        "crush expectations', fxstreet.com/news/euro-slips-against-us-"
+        "dollar-as-nonfarm-payrolls-crush-expectations-202609041319) -- "
+        "the mirror-direction case (Aug 7 2026, July print's -23,000 "
+        "miss) is headlined 'Euro surges as shocking US NFP slashes Fed "
+        "September hike odds' (fxstreet.com/news/euro-surges-as-shocking-"
+        "us-nfp-reverses-fed-september-hike-expectations-202608071300), "
+        "confirming the pair moves on NFP in both directions",
+    ),
+    ("Non-Farm Employment Change", "GBPUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, NFP-specific: the Sep 4 2026 "
+        "August-beat release (162K vs 53K consensus) sent GBPUSD down to "
+        "an intraday low of 1.3482 before recovering toward 1.3510-1.3512 "
+        "as the initial Dollar strength faded (VT Markets, 'Following "
+        "strong US payrolls data, GBP/USD falls again, suggesting the "
+        "Federal Reserve maintains higher rates longer', vtmarkets.com/en-"
+        "eu/live-updates/following-strong-us-payrolls-data-gbp-usd-falls-"
+        "again-suggesting-the-federal-reserve-maintains-higher-rates-"
+        "longer/; FXDailyReport, 'GBP/USD Rebounds Toward 1.3510 as Strong "
+        "US Payrolls Fail to Sustain Dollar Momentum', fxdailyreport.com/"
+        "gbp-usd-rebounds-toward-1-3510-as-strong-us-payrolls-fail-to-"
+        "sustain-dollar-momentum/)",
+    ),
+    ("Non-Farm Employment Change", "USDJPY"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, NFP-specific: the June 2026 miss "
+        "(57,000 actual vs 110,000 forecast) sent USDJPY dropping about 85 "
+        "pips to trade at 160.79 as the weak print eliminated near-term "
+        "Fed-hike odds and supported the yen (InvestingLive, 'US June non-"
+        "farm payrolls +57K vs +110K expected', investinglive.com/news/us-"
+        "june-non-farm-payrolls-57k-vs-110k-expected-20260702/) -- note "
+        "USDJPY's NFP reaction is layered with real, separately-documented "
+        "BoJ-intervention speculation around the same releases, consistent "
+        "with Tier1 prompt's PER-INSTRUMENT QUIRKS on this pair",
+    ),
+    ("Non-Farm Employment Change", "USDCHF"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, NFP-specific: the Sep 4 2026 "
+        "August-beat release (162K vs 56K forecast) sent USDCHF jumping to "
+        "0.8126 before settling around 0.8102, up nearly 0.34% on the day "
+        "(FXStreet, 'Swiss Franc loses ground upbeat US Nonfarm Payrolls', "
+        "fxstreet.com/news/swiss-franc-loses-ground-upbeat-us-nonfarm-"
+        "payrolls-202609041453) -- a real, dated, NFP-specific USDCHF "
+        "reaction, distinct from CPI/PPI's own (separately cited) moves",
+    ),
+    ("Non-Farm Employment Change", "AUDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, NFP-specific: the June 2026 miss "
+        "(57,000 actual vs 113,000 consensus) sent the US Dollar to a "
+        "two-week low and AUDUSD 0.4% HIGHER in reaction, as reduced Fed-"
+        "hike odds and lower yields weakened the Dollar (Convera, 'Dollar "
+        "sinks on payrolls miss', convera.com/blog/market-insights/fx-"
+        "research/daily-market-updates/dollar-sinks-on-payrolls-miss/) -- "
+        "figure double-checked against the article's own stated direction "
+        "and magnitude before use, per the review lesson from PPI's prior "
+        "AUDUSD correction",
+    ),
+    ("Non-Farm Employment Change", "NZDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, NFP-specific: the July 2026 miss "
+        "(-23,000 actual vs +80,000 forecast, with a combined 103,000 "
+        "downward revision to prior months) sent NZDUSD to around 0.5890, "
+        "up 0.36% on the day, as the weak print pressured the US Dollar "
+        "(FXStreet, 'New Zealand Dollar advances as weak US jobs data hits "
+        "the USD', fxstreet.com/news/new-zealand-dollar-advances-as-us-"
+        "labor-market-weakness-pressures-the-usd-202608071603) -- real, "
+        "dated, NFP-specific, not reasoned by analogy from AUDUSD",
+    ),
+    ("Non-Farm Employment Change", "USDCAD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, NFP-specific: the Sep 4 2026 "
+        "August-beat release (162K vs 56K forecast) accelerated USDCAD "
+        "sharply higher to trade around 1.3850, gaining nearly 80 pips, as "
+        "the simultaneous Canadian jobs report (-41,700) compounded the "
+        "US-Dollar-strength impulse rather than offsetting it (FXStreet, "
+        "'Canadian Dollar slides as Canada sheds 41.7K jobs, US payrolls "
+        "surge', fxstreet.com/news/canadian-dollar-slides-as-canada-sheds-"
+        "417k-jobs-us-payrolls-surge-202609041400) -- a separate, earlier "
+        "June 2026 instance shows the OPPOSITE dynamic (US and Canadian "
+        "NFP-equivalent data both beating on the same day, cancelling each "
+        "other out), so USDCAD's NFP reaction is real but contingent on "
+        "whether Canadian jobs data lands the same day",
+    ),
 }
 
 
