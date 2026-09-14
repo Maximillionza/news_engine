@@ -72,7 +72,116 @@ class RelevanceJudgment:
 # present by the time Task 11 runs its completeness test. Deliberately
 # NOT sparse: a missing key here is a plan bug, not a valid "unverified"
 # representation (UNVERIFIED cells still get a real, explicit entry).
-_RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {}
+_RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
+    ("CPI m/m", "XAUUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Layer1_Event_to_USD 2025-07-CPI/2026-03-CPI/2026-07-CPI rows -- "
+        "repeated, dated, sourced gold reactions to CPI surprises "
+        "(e.g. 2025-07-CPI: gold to a 1-week low as headline dominated)",
+    ),
+    ("CPI m/m", "XAGUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Same USD-inflation channel as XAUUSD (Tier1 prompt's PER-INSTRUMENT "
+        "QUIRKS: silver moves off the same baseline, amplified annually "
+        "though not always monthly) -- no real evidence CPI's reach to "
+        "silver is itself in question, only its relative magnitude vs gold",
+    ),
+    ("CPI m/m", "US30"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Tier1 prompt's PER-INSTRUMENT QUIRKS: equity indices react to "
+        "the same rate-path news CPI feeds into, framing-dependent "
+        "(soft-landing vs recession-fear) but real and documented "
+        "(Evercore ISI post-rate-cut pattern already cited there)",
+    ),
+    ("CPI m/m", "US500"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Layer2_Asset_Transmission's equity-indices row explicitly groups "
+        "'S&P 500 / Nasdaq / Dow (US30)' under the same rate-path "
+        "transmission mechanism as US30, and names S&P 500 directly in its "
+        "sourced in-window example (Seeking Alpha, Oct 6 2025: 'S&P 500 "
+        "Rises To Record Highs After U.S. Government Shuts Down', the same "
+        "dovish-Fed-read pattern CPI surprises feed into) -- same real "
+        "channel as US30, not a separate assumption",
+    ),
+    ("CPI m/m", "NAS100"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Layer2_Asset_Transmission's equity-indices row explicitly groups "
+        "'S&P 500 / Nasdaq / Dow (US30)' together under the same rate-path "
+        "transmission mechanism (Evercore ISI post-rate-cut pattern) -- "
+        "Nasdaq named directly alongside US30 in the same sourced row, "
+        "same real channel, not a separate assumption",
+    ),
+    ("CPI m/m", "EURUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch findings: Sep 11 2026 US CPI (headline "
+        "in-line, core hotter) moved EURUSD from an intraday low of 1.1569 "
+        "back toward 1.1600 on reinforced Fed-hike expectations "
+        "(fxstreet.com/news/euro-steadies-against-us-dollar-after-volatile-"
+        "reaction-to-us-cpi-202609111302); a milder case (Apr 2026 CPI, "
+        "May 13 2026 report) shows only a 3-pip move, so the pair's CPI "
+        "sensitivity is real but surprise-magnitude-dependent, not uniform",
+    ),
+    ("CPI m/m", "GBPUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding: an August US CPI release (headline "
+        "in-line at 3.4% y/y, core hotter at 0.3% vs 0.2% forecast) moved "
+        "GBPUSD from 1.3524 down to an intraday low near 1.3470 before "
+        "recovering, roughly 54 pips of CPI-driven movement "
+        "(fxstreet.com/news/pound-sterling-price-news-and-forecast-gbp-usd-"
+        "shakes-off-us-cpi-jolt-as-uk-growth-steals-spotlight-202609111657)",
+    ),
+    ("CPI m/m", "USDJPY"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding: Dec 2025 US CPI undershoot (2.7% "
+        "actual vs 3.1% expected) triggered fresh dollar-selling pressure "
+        "in USDJPY; separately, Forex Factory documents USDJPY as 'a big "
+        "mover on US CPI data' with a >700-pip move over roughly a week "
+        "during a volatile stretch -- consistent with Tier1 prompt's "
+        "PER-INSTRUMENT QUIRKS on USDJPY's layered (mechanical + carry + "
+        "safe-haven) CPI sensitivity",
+    ),
+    ("CPI m/m", "USDCHF"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding: an August US CPI release (core "
+        "hotter than forecast) moved USDCHF up over 0.40%, from a daily "
+        "low of 0.8124 to 0.8165-0.8170 "
+        "(fxstreet.com/news/usd-chf-price-forecast-bulls-break-08150-as-cpi"
+        "-fuels-fed-bets-202609112101) -- consistent with Layer2's mechanical "
+        "USD-leg baseline for this pair",
+    ),
+    ("CPI m/m", "AUDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding: a downside US CPI surprise drove "
+        "AUDUSD intraday highs above $0.71 as the dollar fell roughly 1.1% "
+        "on the yield correction and risk appetite surged "
+        "(fxstreet.com/amp/analysis/aud-surges-on-heels-of-us-inflation-"
+        "surprise-202208110051) -- an older dated instance, but a real, "
+        "specific CPI-surprise reaction in this exact pair, on top of "
+        "Layer2's mechanical USD-leg baseline",
+    ),
+    ("CPI m/m", "NZDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding: a June 2026 US CPI undershoot "
+        "(headline -0.4% m/m vs -0.1% forecast, y/y easing to 3.5% from "
+        "4.2%) sent NZDUSD to a one-month high near 0.5820, up nearly "
+        "1.23% on the day "
+        "(tmgm.com/en/analysis/market-news/article/new-zealand-dollar-"
+        "soars-to-one-month-high-as-us-cpi-undershoots-202607141433)",
+    ),
+    ("CPI m/m", "USDCAD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding: an August 2026 US CPI release "
+        "(core hotter than forecast) pushed USDCAD to an intraday high of "
+        "1.3882 before settling near 1.3870, with the move compounded (not "
+        "replaced) by a separate >4% Oil selloff that independently "
+        "weighed on CAD the same day -- CPI's own initial impulse is real "
+        "and documented even though oil is a competing driver "
+        "(forex.com/en-us/news-and-analysis/usdcad-analysis-canadian-"
+        "dollar-rebounds-after-cpi-and-boc-decision/, vantagemarkets.com/"
+        "market-analysis/usdcad-oil-four-month-high-us-cpi-september-11-"
+        "2026/), consistent with Layer2's oil-linked USDCAD nuance",
+    ),
+}
 
 
 def get_relevance(event_type: str, symbol: str) -> RelevanceJudgment:
