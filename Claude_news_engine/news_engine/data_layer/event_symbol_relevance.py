@@ -971,6 +971,180 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
         "us-dollar-eases-after-pce-data-202606251429) -- consistent with "
         "Layer2's already-established oil-linked USDCAD nuance",
     ),
+    ("ISM Manufacturing PMI", "XAUUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Internal, real, live-logged evidence from this project's own scoring "
+        "DB (scoring/backtest_log.db, predictions table): two live "
+        "'ISM Manufacturing PMI' predictions logged against XAUUSD for the "
+        "2026-09-01 release (bullish, 0.557 and 0.662 probability). "
+        "Corroborated by real, dated WebSearch, ISM-specific: Jan 5 2026 "
+        "(Dec 2025 print, 47.9 vs 48.3 forecast, a miss) -- gold traded "
+        "around $4,448, up nearly 2.70% on the day as the weak print pulled "
+        "the Dollar down (FXStreet, 'Gold edges higher after weak ISM "
+        "Manufacturing PMI', fxstreet.com/news/gold-trades-firm-as-us-"
+        "venezuela-tensions-keep-geopolitical-risks-elevated-202601051201); "
+        "the opposite-direction case, Jun 1 2026 (May print, 54 vs 53 "
+        "forecast, a beat) -- spot gold fell 1.77% on the day to $4,460.05, "
+        "a session low of $4,447.86, as the stronger factory data weighed "
+        "(Kitco, 'Spot gold trades near $4,460/oz after ISM Manufacturing "
+        "PMI rises to 54', kitco.com/news/article/2026-06-01/spot-gold-"
+        "trades-near-4460oz-after-ism-manufacturing-pmi-rises-54) -- both "
+        "directions real and ISM-specific, not borrowed from CPI/PPI/NFP",
+    ),
+    ("ISM Manufacturing PMI", "XAGUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, ISM-specific: Aug 3 2026 (July "
+        "print, 55.6 vs 54.0 forecast, a beat) -- silver fell toward "
+        "$57.20, down 0.73% on the day, as the stronger-than-expected ISM "
+        "reading reinforced hawkish Fed expectations and raised the "
+        "opportunity cost of holding non-yielding silver (FXStreet, "
+        "'Silver price dips as robust US PMI boosts hawkish Fed outlook', "
+        "fxstreet.com/news/silver-price-falls-as-stronger-us-pmi-"
+        "reinforces-hawkish-fed-expectations-202608031444) -- a specific, "
+        "sourced XAGUSD reaction to ISM itself, consistent with silver's "
+        "dual monetary/industrial-demand sensitivity to a manufacturing "
+        "survey (investing.com analysis, general channel description, not "
+        "itself the dated evidence)",
+    ),
+    ("ISM Manufacturing PMI", "US30"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Internal, real, live-logged evidence from this project's own "
+        "scoring DB (scoring/backtest_log.db, outcomes table): 2 real ISM "
+        "Manufacturing PMI occurrences logged against US30 with Dukascopy-"
+        "measured 30-min moves -- 2026-03-02: +0.23%, 2026-09-01: +0.41% "
+        "(both bullish) -- real, ISM-specific, distinct from CPI/PPI/NFP/"
+        "GDP/Core-PCE evidence. Corroborated by real, dated WebSearch: the "
+        "Sep 2 2026 release (Aug print, 54.6 vs 55.3 consensus, a miss) -- "
+        "the Dow opened down 363 points (-0.7%) before 'upbeat ISM data "
+        "took the index back higher' intraday (MarketPulse by OANDA, "
+        "'ISM manufacturing PMIs lift US stocks from another bearish "
+        "open', marketpulse.com/markets/ism-manufacturing-pmis-lift-us-"
+        "stocks-from-another-bearish-open-intraday-levels-for-dow-jones-sp-"
+        "500-and-nasdaq/)",
+    ),
+    ("ISM Manufacturing PMI", "US500"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, ISM-specific: the same Sep 2 2026 "
+        "release (Aug print, 54.6 vs 55.3 consensus, a miss vs consensus "
+        "but still expansionary) -- the S&P 500 opened down 0.7% before "
+        "'upbeat ISM data took the index back higher' that session "
+        "(MarketPulse by OANDA, same URL as the US30 entry). Corroborated "
+        "by the Layer2_Asset_Transmission sheet's own equity-indices row: "
+        "a real backtest finding that 'a naive buy S&P 500 whenever ISM "
+        "PMI > 50 rule actually UNDERPERFORMED plain buy-and-hold (7.3% vs "
+        "8.5% annual return)' -- real evidence ISM reaches this symbol "
+        "even though a simple threshold rule isn't a validated edge",
+    ),
+    ("ISM Manufacturing PMI", "NAS100"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, ISM-specific: the same Sep 2 2026 "
+        "release -- the Nasdaq Composite opened down 1.3% (the largest of "
+        "the three major benchmarks) before ISM data helped lift US "
+        "stocks off that bearish open (MarketPulse by OANDA, same URL as "
+        "the US30/US500 entries) -- note the source's own figure is for "
+        "the Nasdaq COMPOSITE, not the NAS100 futures/index itself, so "
+        "this is a real, dated, ISM-specific reaction in a closely related "
+        "but not identical instrument; MacroMicro's own long-run chart "
+        "('US ISM Mfg PMI vs S&P 500 & NASDAQ 100 (YoY, %) 6 Month Lead', "
+        "en.macromicro.me/charts/90336) separately tracks a structural "
+        "ISM-to-NASDAQ-100 relationship, though as a lagged/correlational "
+        "chart rather than a single dated event reaction",
+    ),
+    ("ISM Manufacturing PMI", "EURUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, ISM-specific, from FXStreet's own "
+        "stated release-day volatility statistic (not a single dated "
+        "instance, but the source's own aggregate claim): 'on average, "
+        "after the release of ISM Manufacturing PMI, EURUSD experienced "
+        "volatility of 23.11 pips (0.20%) over the last 10 releases' "
+        "(FXStreet, 'When is the US ISM Manufacturing PMI data and how "
+        "could it affect EUR/USD?', fxstreet.com/news/when-is-the-us-ism-"
+        "manufacturing-pmi-data-and-how-could-it-affect-eur-usd-"
+        "202603021134) -- a real, quantified, ISM-specific EURUSD reaction "
+        "size, smaller than CPI/PPI/NFP's own (separately cited) moves, "
+        "consistent with a narrower manufacturing-sector print",
+    ),
+    ("ISM Manufacturing PMI", "GBPUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, ISM-specific: Aug 3 2026 (July "
+        "print, 55.6 vs 54.0 forecast, a beat) -- GBP/USD retreated about "
+        "0.27% on the day, trading at 1.3439 after reaching a daily high "
+        "of 1.3506, as US ISM data 'beat forecasts, supporting renewed US "
+        "Dollar demand' with concurrent weak UK manufacturing PMI data "
+        "adding further pressure on the Pound (FXStreet, 'British Pound "
+        "slips as strong ISM data revives the US Dollar', fxstreet.com/"
+        "news/british-pound-slips-as-strong-ism-data-revives-the-us-"
+        "dollar-202608031637) -- real and ISM-specific, though the UK's "
+        "own PMI print the same day is a compounding, not sole, factor",
+    ),
+    ("ISM Manufacturing PMI", "USDJPY"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, ISM-specific: May 21 2026 (May "
+        "print, 55.3, a beat) -- USD/JPY rose toward the 159.30 region, "
+        "approaching the 160.00 level that has previously triggered Bank "
+        "of Japan intervention, as the strong factory data boosted the US "
+        "Dollar and reinforced higher-for-longer Fed expectations "
+        "(FXStreet, 'Japanese Yen falls amid strong US Manufacturing "
+        "PMI', fxstreet.com/news/japanese-yen-falls-amid-strong-us-"
+        "manufacturing-pmi-202605211618) -- real and ISM-specific, "
+        "consistent with USDJPY's already-documented layered (mechanical "
+        "+ intervention-risk) sensitivity to US data surprises",
+    ),
+    ("ISM Manufacturing PMI", "USDCHF"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, ISM-specific: Mar 2 2026 (Feb "
+        "print, 52.4 vs 51.8 consensus, a beat) -- USD/CHF traded around "
+        "0.7800, up 1.50% on the day, as 'the headline figure edged lower "
+        "[from January] but beats the market consensus... signaling "
+        "ongoing expansion', with an escalating Middle East war named as "
+        "a second, compounding safe-haven-adjacent Dollar driver the same "
+        "session (FXStreet, 'USD/CHF rises on Middle East war, strong US "
+        "manufacturing PMI', fxstreet.com/news/usd-chf-advances-on-"
+        "middle-east-war-robust-us-manufacturing-pmi-202603021620) -- "
+        "ISM's own contribution is real and named, though not isolated "
+        "from that same-day geopolitical driver",
+    ),
+    ("ISM Manufacturing PMI", "AUDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, ISM-specific: Aug 3 2026 (July "
+        "print, 55.6 vs 54.0 forecast, a beat, its highest since May "
+        "2022) -- AUD/USD traded at 0.7000 after reaching a daily high of "
+        "0.7050, as the stronger-than-expected ISM reading 'revived the "
+        "US Dollar' despite an otherwise risk-on mood (FXStreet, "
+        "'Australian Dollar slides to 0.70 as US ISM PMI, revives the US "
+        "Dollar', fxstreet.com/news/australian-dollar-slides-to-070-as-"
+        "us-ism-pmi-revives-the-us-dollar-202608032230) -- figure checked "
+        "against the article's own stated levels before use, per the "
+        "review lesson from PPI's prior AUDUSD correction",
+    ),
+    ("ISM Manufacturing PMI", "NZDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, ISM-specific: Jan 5 2026 (Dec "
+        "2025 print, 47.9 vs 48.3 forecast, a miss, a 10th straight month "
+        "of contraction) -- NZD/USD traded in positive territory around "
+        "0.5800 during the Asian session, with 'the Greenback edg[ing] "
+        "lower in an immediate reaction to the downbeat US Manufacturing "
+        "PMI report' (FXStreet, 'NZD/USD edges higher to near 0.5800 as "
+        "US manufacturing data disappoints', fxstreet.com/news/nzd-usd-"
+        "edges-higher-to-near-05800-as-us-manufacturing-data-disappoints-"
+        "202601060316) -- real and ISM-specific, not reasoned by analogy "
+        "from AUDUSD",
+    ),
+    ("ISM Manufacturing PMI", "USDCAD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Real, dated WebSearch finding, ISM-specific: Feb 2 2026 (Jan "
+        "print, 52.6 vs 48.5 forecast, a large beat, New Orders Index "
+        "jumping to 57.1 from 47.7) -- USD/CAD traded around 1.3676, up "
+        "about 0.44% on the day, as 'renewed Greenback strength and "
+        "falling Oil prices weigh on the commodity-linked Loonie' (WTI "
+        "down more than 5.5% the same session) (FXStreet, 'USD/CAD rises "
+        "as strong US PMI and falling Oil prices weigh on the Loonie', "
+        "fxstreet.com/news/usd-cad-rises-as-strong-us-pmi-and-falling-"
+        "oil-prices-weigh-on-the-loonie-202602021618) -- ISM's own "
+        "contribution is real and named, compounded (not replaced) by the "
+        "same-day Oil move, consistent with Layer2's oil-linked USDCAD "
+        "nuance already used for CPI/PPI/Core-PCE",
+    ),
 }
 
 
