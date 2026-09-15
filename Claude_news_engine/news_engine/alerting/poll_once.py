@@ -53,7 +53,7 @@ def _process_article(conn, webapp_conn, article: NewsArticle) -> None:
     result = triage_article(article)
     if not result.matched:
         if result.near_miss_score is not None and result.near_miss_score >= NEAR_MISS_LOG_THRESHOLD:
-            store.record_near_miss(conn, article.title, result.category, result.near_miss_score)
+            store.record_near_miss(conn, article.title, result.near_miss_category, result.near_miss_score)
         return
 
     if result.rule_tier_hit:
