@@ -5,7 +5,7 @@
 $ProjectRoot = "C:\Users\Masoodt\Documents\Claude\Projects\Claude_news_engine\news_engine"
 $PythonPath = (Get-Command python).Source
 
-$Action = New-ScheduledTaskAction -Execute $PythonPath -Argument "-m alerting.reality_check" -WorkingDirectory $ProjectRoot
+$Action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$PythonPath`" -m alerting.reality_check >> `"$ProjectRoot\alerting\reality_check.log`" 2>&1" -WorkingDirectory $ProjectRoot
 $Trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At "20:00"
 $Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable
 

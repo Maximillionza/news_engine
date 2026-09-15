@@ -7,7 +7,7 @@
 $ProjectRoot = "C:\Users\Masoodt\Documents\Claude\Projects\Claude_news_engine\news_engine"
 $PythonPath = (Get-Command python).Source
 
-$Action = New-ScheduledTaskAction -Execute $PythonPath -Argument "-m alerting.poll_once" -WorkingDirectory $ProjectRoot
+$Action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$PythonPath`" -m alerting.poll_once >> `"$ProjectRoot\alerting\poll_once.log`" 2>&1" -WorkingDirectory $ProjectRoot
 $Trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 2) -RepetitionDuration ([TimeSpan]::MaxValue)
 $Settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable
 
