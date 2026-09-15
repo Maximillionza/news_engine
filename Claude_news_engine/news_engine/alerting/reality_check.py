@@ -24,11 +24,27 @@ MAGNITUDE_THRESHOLDS: dict[str, float] = {
 
 SECONDARY_WINDOW_MINUTES = 30
 
+# An alert detected less than this many minutes before the job runs would
+# still have its detected_at_utc + SECONDARY_WINDOW_MINUTES window in the
+# future, so get_price_at correctly returns None for it -- but without
+# this floor it would get permanently stamped reality_check_at_utc with
+# mismatch=None and never be re-examined later once real price data
+# exists (get_alerts_needing_reality_check only returns rows still NULL).
+# Comfortably past the 30-minute secondary window.
+MIN_AGE_MINUTES = 60
+
 
 def run_reality_check(conn=None) -> None:
     conn = conn if conn is not None else store.get_connection()
     older_than = dt.datetime(2000, 1, 1, tzinfo=dt.timezone.utc)  # every unchecked alert, regardless of age
+    now = dt.datetime.now(dt.timezone.utc)
+    min_age_cutoff = now - dt.timedelta(minutes=MIN_AGE_MINUTES)
     for alert in store.get_alerts_needing_reality_check(conn, older_than):
+        if alert.detected_at_utc > min_age_cutoff:
+            # Too recent -- skip silently this run. It was never marked
+            # checked, so a future run will pick it up once it's old
+            # enough for real price data to exist.
+            continue
         _check_alert(conn, alert)
 
 

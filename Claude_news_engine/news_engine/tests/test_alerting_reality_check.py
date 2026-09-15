@@ -106,6 +106,25 @@ def test_medium_severity_alert_with_confirming_move_is_never_mismatch():
     assert row.reality_mismatch is False
 
 
+def test_too_recent_alert_is_skipped_while_old_enough_alert_is_checked():
+    conn = store.get_connection(":memory:")
+    now = dt.datetime.now(UTC)
+    recent_alert_id = _seed_alert(conn, "High", "XAUUSD", now - dt.timedelta(minutes=5))
+    old_alert_id = _seed_alert(conn, "High", "XAUUSD", now - dt.timedelta(days=1))
+
+    # Only the old-enough alert should ever call get_price_at, so three
+    # PricePoints (t0, t5, t_secondary) is exactly enough for one alert.
+    prices = [PricePoint(price=2800.0), PricePoint(price=2812.0), PricePoint(price=2815.0)]
+    with patch("alerting.reality_check.get_price_at", side_effect=prices):
+        run_reality_check(conn=conn)
+
+    recent_row = store.get_alert(conn, recent_alert_id)
+    old_row = store.get_alert(conn, old_alert_id)
+    assert recent_row.reality_check_at_utc is None
+    assert old_row.reality_check_at_utc is not None
+    assert old_row.reality_mismatch is False
+
+
 def test_alert_with_no_affected_symbols_is_still_marked_checked():
     conn = store.get_connection(":memory:")
     detected_at = dt.datetime.now(UTC) - dt.timedelta(days=1)
