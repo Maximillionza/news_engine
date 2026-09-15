@@ -3,3 +3,8 @@
 # ambiguous shock candidates -- a single plain API call per candidate,
 # not a Claude Code session. Install only if running the alerting/ tool.
 anthropic>=0.40.0
+
+# alerting/reality_check.py additionally requires dukascopy-python (its
+# price-at-timestamp lookups go through data_layer.dukascopy_feed) --
+# see requirements-dukascopy.txt and install that file too if you're
+# running the weekly reality check.

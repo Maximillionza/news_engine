@@ -1,4 +1,6 @@
-# Only needed for scripts/confirm_backtest_outcomes.py's --auto flag (Dukascopy
-# price-based outcome auto-confirmation). Core scoring/backtest pipeline has no
-# dependency on this — install only if you want auto-confirmation.
+# Needed for scripts/confirm_backtest_outcomes.py's --auto flag (Dukascopy
+# price-based outcome auto-confirmation) and for alerting/reality_check.py
+# (which imports data_layer.dukascopy_feed for its price-at-timestamp
+# lookups). Core scoring/backtest pipeline has no dependency on this --
+# install only if you want auto-confirmation or run the weekly reality check.
 dukascopy-python>=4.0.1
