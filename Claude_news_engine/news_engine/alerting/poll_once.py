@@ -38,7 +38,15 @@ def _poll_source(conn, webapp_conn, name: str, url: str, now: dt.datetime) -> No
         return
     for article in articles:
         _process_article(conn, webapp_conn, article)
-    store.set_cursor(conn, name, now)
+    # Advance the cursor to the newest published_utc actually seen this
+    # cycle, not to wall-clock `now` -- RSSNewsSource.fetch() filters on
+    # published < since_utc, so anchoring to `now` can silently drop an
+    # article that only appears in the feed a few minutes after its own
+    # published_utc (it falls into the gap between two poll cycles and is
+    # never seen). An empty poll falls back to the existing `since` value
+    # so the cursor never resets backward or gets stuck incorrectly.
+    newest_seen = max((a.published_utc for a in articles), default=since)
+    store.set_cursor(conn, name, newest_seen)
 
 
 def _process_article(conn, webapp_conn, article: NewsArticle) -> None:
