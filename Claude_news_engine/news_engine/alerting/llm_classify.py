@@ -9,7 +9,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-import anthropic
+try:
+    import anthropic
+    _SDK_AVAILABLE = True
+except ImportError:
+    _SDK_AVAILABLE = False
 
 from alerting.taxonomy import SHOCK_CATEGORIES
 from alerting.triage import TriageResult
@@ -17,6 +21,17 @@ from data_layer.news_feed import NewsArticle
 
 _MODEL = "claude-haiku-4-5"
 _VALID_SEVERITIES = ("High", "Medium", "Low")
+
+
+def is_available() -> bool:
+    """
+    Whether the optional `anthropic` SDK (requirements-alerting.txt) is
+    importable. `anthropic` is opt-in -- poll_once.py imports this module
+    unconditionally even for the free, no-LLM hard-rule-tier alerting
+    path, so classify_candidate() must degrade to the fallback rather
+    than let an ImportError at module scope take down the whole poller.
+    """
+    return _SDK_AVAILABLE
 
 
 @dataclass
@@ -65,6 +80,15 @@ def classify_candidate(article: NewsArticle, triage: TriageResult) -> Classifica
     (alerting/poll_once.py) is expected to persist the fallback result
     with classification_method="llm_failed_fallback" for manual review.
     """
+    if not is_available():
+        print(f"[llm_classify] WARNING: anthropic SDK not installed -- falling back to rule-tier category at Medium for {article.title!r}")
+        return ClassificationResult(
+            category=triage.category,
+            severity="Medium",
+            rationale="anthropic SDK not installed -- falling back to rule-tier category at Medium for manual review.",
+            classification_failed=True,
+        )
+
     prompt = _build_prompt(article, triage)
     try:
         text = _call_model(prompt)

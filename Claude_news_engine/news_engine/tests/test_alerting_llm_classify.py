@@ -50,3 +50,13 @@ def test_api_call_raising_falls_back():
         result = classify_candidate(_article(), _triage())
     assert result.classification_failed is True
     assert result.severity == "Medium"
+
+
+def test_sdk_unavailable_falls_back_without_calling_model():
+    with patch("alerting.llm_classify.is_available", return_value=False), \
+         patch("alerting.llm_classify._call_model") as mock_call:
+        result = classify_candidate(_article(), _triage())
+    mock_call.assert_not_called()
+    assert result.classification_failed is True
+    assert result.severity == "Medium"
+    assert result.category == "energy"  # falls back to triage's own category
