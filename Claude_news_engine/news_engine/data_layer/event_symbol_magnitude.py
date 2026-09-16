@@ -377,6 +377,176 @@ _MAGNITUDE_TABLE: dict[tuple[str, str], MagnitudeJudgment] = {
             "used for the tier)."
         ),
     ),
+    # --- Non-Farm Employment Change (Task 4) --------------------------
+    ("Non-Farm Employment Change", "XAUUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "This project's own scoring/backtest_log.db outcomes table, event_title='Non-Farm "
+            "Employment Change', instrument=XAUUSD, 7 real logged 30-min post-release moves "
+            "(Dukascopy, auto): +0.22% (2026-01-09), -0.30% (2026-02-11), +0.30% (2026-05-08), "
+            "-1.30% (2026-06-05), +1.28% (2026-07-02), +1.22% (2026-08-07), -1.73% (2026-09-04). "
+            "Median absolute move 1.22%, mean ~0.91% -- both well over the ~0.8% HIGH line, with "
+            "4 of 7 prints exceeding 1.2%. Consistent with the Phase 1 relevance citation's own "
+            "framing of NFP as gold's most reliably large release."
+        ),
+    ),
+    ("Non-Farm Employment Change", "XAGUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, dated finding, NFP-specific, independently re-verified for this task by "
+            "directly fetching a WebSearch result that quotes the source article's own exact "
+            "words: on 2026-09-04 (August NFP beat, 162K vs 56K forecast), 'Silver (XAG/USD) "
+            "trades around $66.20 on Friday, down 1.18% on the day, after recovering part of its "
+            "sharp post-Nonfarm Payrolls (NFP) decline. The precious metal initially tumbled to an "
+            "intraday low of $64.74' (FXStreet, 'Silver bounces from intraday lows as USD retreats "
+            "from post-NFP highs', fxstreet.com/news/silver-claws-back-post-nfp-losses-after-"
+            "briefly-crashing-below-65-202609041551; direct fetch blocked, 403 -- exact wording "
+            "confirmed via a WebSearch result quoting the article verbatim). 1.18% is over the "
+            "~0.8% HIGH line, and the intraday low-to-open swing was materially larger still."
+        ),
+    ),
+    ("Non-Farm Employment Change", "US30"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "This project's own scoring/backtest_log.db outcomes table, event_title='Non-Farm "
+            "Employment Change', instrument=US30, 5 real logged 30-min post-release moves "
+            "(Dukascopy, auto): +0.18% (2026-01-09), +0.37% (2026-02-11), -0.84% (2026-03-06), "
+            "+0.22% (2026-07-02), -0.23% (2026-09-04). Median absolute move 0.23%, with 4 of 5 "
+            "prints under the ~0.3% LOW line and only one (0.84%) reaching HIGH -- LOW, same "
+            "pattern as this project's own CPI m/m and PPI m/m x US30 entries (Dow's value/"
+            "industrial weighting reacts less than the more rate-sensitive S&P/Nasdaq)."
+        ),
+    ),
+    ("Non-Farm Employment Change", "US500"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated finding, NFP-specific, independently re-verified for this task via a "
+            "WebSearch result quoting the source article's own exact words: on 2026-09-04 (August "
+            "NFP beat, 162K vs 53K-56K forecast), 'The S&P 500 slid 0.38% to end at 7,718.60, while "
+            "the Nasdaq Composite dropped 0.29% to 26,506.99 ... Nonfarm payrolls grew 162,000 last "
+            "month, much more than the 53,000 that economists polled by Dow Jones expected' "
+            "(TheStreet, 'Stock Market Today (Sept. 4, 2026): Yields jump, stocks fall after jobs "
+            "report surprises to upside', thestreet.com/stock-market-today/stock-market-today-dow-"
+            "jones-sp-500-nasdaq-updates-sept-04-2026; direct fetch blocked, 403 -- exact wording "
+            "confirmed via a WebSearch result quoting the article verbatim, matching the figure in "
+            "Phase 1's own relevance citation for this pair). 0.38% sits within the ~0.3-0.8% "
+            "MEDIUM band."
+        ),
+    ),
+    ("Non-Farm Employment Change", "NAS100"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, dated finding, NFP-specific, independently re-verified for this task by "
+            "directly fetching the source article's own text: on the May 2026 NFP beat (172,000 "
+            "actual vs ~85,000 consensus), 'Nasdaq-100 (NQ) Futures: Down heavily ~1.4-2.0% "
+            "(trading near 29,900-30,100 after opening around 30,414)' (Quantum Trading, 'Strong "
+            "May 2026 NFP Beat (+172k) -- Why Nasdaq Sold Off Heavily on Jobs Data', "
+            "quantumtrading.com/trading/us-non-farm-payrolls-may-2026-strong-beat-keeps-labour-"
+            "market-resilient-but-markets-sell-the-news/). 1.4-2.0% is well over the ~0.8% HIGH "
+            "line -- a specific, sourced NAS100 (not Nasdaq Composite) NFP reaction, distinct from "
+            "the US500 entry above."
+        ),
+    ),
+    ("Non-Farm Employment Change", "EURUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated finding, NFP-specific, independently re-verified for this task via a "
+            "WebSearch result quoting the source article's own exact words: on 2026-09-04 (August "
+            "NFP beat), 'EUR/USD comes under selling pressure on Friday ... the pair trades around "
+            "1.1605, down roughly 0.18% on the day' (FXStreet, 'Euro slips against US Dollar as "
+            "Nonfarm Payrolls crush expectations', fxstreet.com/news/euro-slips-against-us-dollar-"
+            "as-nonfarm-payrolls-crush-expectations-202609041319; direct fetch blocked, 403 -- exact "
+            "wording confirmed via a WebSearch result quoting the article verbatim). 0.18% is under "
+            "the ~0.3% LOW line. Phase 1's own citation shows the mirror-direction case (Aug 2026 "
+            "miss) moving the other way, confirming this is a real two-way NFP reaction, just "
+            "small in magnitude on this print."
+        ),
+    ),
+    ("Non-Farm Employment Change", "GBPUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated finding, NFP-specific, independently re-verified for this task via a "
+            "WebSearch result quoting the source article's own exact words: on 2026-09-04 (August "
+            "NFP beat), 'The pair dropped to an intraday low of 1.3482 following the release of "
+            "stronger-than-expected US Nonfarm Payrolls ... Following the release, GBP/USD regained "
+            "ground, trading around 1.3512' -- with the day's stated range running up to 1.3535 "
+            "(VT Markets / FXDailyReport coverage of the same session, vtmarkets.com/en-eu/live-"
+            "updates/following-strong-us-payrolls-data-gbp-usd-falls-again-suggesting-the-federal-"
+            "reserve-maintains-higher-rates-longer/; fxdailyreport.com/gbp-usd-rebounds-toward-1-"
+            "3510-as-strong-us-payrolls-fail-to-sustain-dollar-momentum/). The 1.3535-to-1.3482 "
+            "intraday swing is ~0.39%, within the ~0.3-0.8% MEDIUM band -- read as a real but not "
+            "extreme reaction, distinct from the more decisive EURUSD move the same day."
+        ),
+    ),
+    ("Non-Farm Employment Change", "USDJPY"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated finding, NFP-specific, independently re-verified for this task by "
+            "directly fetching the source article's own text: on the June 2026 NFP miss (57,000 "
+            "actual vs 110,000 forecast), 'USD/JPY down about 85 pips on the release and trading at "
+            "160.79' (InvestingLive, 'US June non-farm payrolls +57K vs +110K expected', "
+            "investinglive.com/news/us-june-non-farm-payrolls-57k-vs-110k-expected-20260702/). 85 "
+            "pips off a ~160.79-161.64 base is ~0.53%, within the ~0.3-0.8% MEDIUM band. Same NFP-"
+            "reaction pattern flagged in Phase 1's own relevance citation for this pair."
+        ),
+    ),
+    ("Non-Farm Employment Change", "USDCHF"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated finding, NFP-specific, independently re-verified for this task via a "
+            "WebSearch result quoting the source article's own exact words: on 2026-09-04 (August "
+            "NFP beat), 'USD/CHF trades higher on Friday ... The pair jumped to 0.8126 following the "
+            "release before giving back part of its advance, and at the time of writing, USD/CHF "
+            "trades around 0.8102, up nearly 0.34% on the day' (FXStreet, 'Swiss Franc loses ground "
+            "upbeat US Nonfarm Payrolls', fxstreet.com/news/swiss-franc-loses-ground-upbeat-us-"
+            "nonfarm-payrolls-202609041453; direct fetch blocked, 403 -- exact wording confirmed via "
+            "a WebSearch result quoting the article verbatim). 0.34% is just inside the ~0.3-0.8% "
+            "MEDIUM band, right at the LOW/MEDIUM boundary."
+        ),
+    ),
+    ("Non-Farm Employment Change", "AUDUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated finding, NFP-specific, independently re-verified for this task by "
+            "directly fetching the source article's own text: on the June 2026 NFP miss (57,000 "
+            "actual vs 113,000 consensus), 'AUD/USD and NZD/USD were 0.4% higher' as the Dollar "
+            "sank on the weak print (Convera, 'Dollar sinks on payrolls miss', convera.com/blog/"
+            "market-insights/fx-research/daily-market-updates/dollar-sinks-on-payrolls-miss/). 0.4% "
+            "sits within the ~0.3-0.8% MEDIUM band -- figure independently confirmed by direct "
+            "fetch, per the review lesson from PPI's prior AUDUSD correction."
+        ),
+    ),
+    ("Non-Farm Employment Change", "NZDUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Two independent, dated NFP-specific real findings agree: the same Convera article used "
+            "for AUDUSD above states 'AUD/USD and NZD/USD were 0.4% higher' on the June 2026 NFP "
+            "miss (convera.com/blog/market-insights/fx-research/daily-market-updates/dollar-sinks-"
+            "on-payrolls-miss/); separately, independently re-verified via a WebSearch result "
+            "quoting the source article's own exact words, 'NZD/USD trades around 0.5890 on Friday "
+            "at the time of writing, up 0.36% on the day' on the July 2026 NFP miss (-23,000 vs "
+            "+80,000 forecast) (FXStreet, 'New Zealand Dollar advances as weak US jobs data hits the "
+            "USD', fxstreet.com/news/new-zealand-dollar-advances-as-us-labor-market-weakness-"
+            "pressures-the-usd-202608071603; direct fetch blocked, 403). Both real, dated instances "
+            "(0.36%, 0.4%) sit within the ~0.3-0.8% MEDIUM band."
+        ),
+    ),
+    ("Non-Farm Employment Change", "USDCAD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated finding, NFP-specific, independently re-verified for this task via a "
+            "WebSearch result quoting the source article's own exact words: on 2026-09-04 (August "
+            "NFP beat, 162K vs 56K forecast, compounded by Canada shedding 41,700 jobs the same "
+            "session), 'USD/CAD accelerated sharply higher on Friday, trading around 1.3850 at the "
+            "time of writing, up 0.39% on the day. The pair gained nearly 80 pips' (FXStreet, "
+            "'Canadian Dollar under pressure as employment falls by 41.7K in August', fxstreet.com/"
+            "news/canadian-dollar-slides-as-canada-sheds-417k-jobs-us-payrolls-surge-202609041400; "
+            "direct fetch blocked, 403 -- exact wording confirmed via a WebSearch result quoting the "
+            "article verbatim). 0.39% is within the ~0.3-0.8% MEDIUM band. Phase 1's own relevance "
+            "citation for this pair flags the reaction as contingent on Canadian jobs data landing "
+            "the same day -- this instance is one where it did."
+        ),
+    ),
 }
 
 
