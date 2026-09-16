@@ -91,6 +91,16 @@ def test_core_pce_has_all_12_relevant_magnitude_entries_with_real_shape():
     print("PASS\n")
 
 
+def test_ism_manufacturing_has_all_10_relevant_magnitude_entries_with_real_shape():
+    print("=== ISM Manufacturing PMI: all 10 RELEVANT symbols have a magnitude entry, each with a valid tier and a non-empty citation ===")
+    symbols = ["XAUUSD", "XAGUSD", "US30", "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "NZDUSD", "USDCAD"]
+    for symbol in symbols:
+        judgment = esm.get_magnitude("ISM Manufacturing PMI", symbol)
+        assert isinstance(judgment.tier, esm.MagnitudeTier)
+        assert judgment.citation.strip() != "", f"ISM Manufacturing PMI x {symbol} has an empty citation"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_get_magnitude_raises_keyerror_for_a_pair_outside_the_94_scope()
     test_magnitude_tier_has_exactly_four_members()
@@ -100,4 +110,5 @@ if __name__ == "__main__":
     test_fomc_rate_decision_has_all_12_relevant_magnitude_entries_with_real_shape()
     test_gdp_qq_has_all_10_relevant_magnitude_entries_with_real_shape()
     test_core_pce_has_all_12_relevant_magnitude_entries_with_real_shape()
+    test_ism_manufacturing_has_all_10_relevant_magnitude_entries_with_real_shape()
     print("All event_symbol_magnitude scaffolding tests passed.")

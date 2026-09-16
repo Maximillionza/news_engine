@@ -1084,6 +1084,166 @@ _MAGNITUDE_TABLE: dict[tuple[str, str], MagnitudeJudgment] = {
             "CAD-supportive factor, consistent with this table's other USDCAD entries."
         ),
     ),
+
+    # --- ISM Manufacturing PMI (Task 8) ------------------------------
+    # Real relevant set is 10 symbols, NOT the usual 12 -- US500 and
+    # NAS100 are UNVERIFIED in Phase 1's relevance table for this event
+    # type and out of scope here. Phase 1's ISM Manufacturing PMI task
+    # cost two real fix rounds on misattributed news-article "driver"
+    # claims on big multi-factor trading days -- XAUUSD, XAGUSD, and
+    # US30's Phase 1 relevance citations were largely resolved via
+    # ISM-specific dated articles or (US30) internal DB evidence after
+    # that review; this table reuses that same real evidence, re-reads
+    # for the actual figures rather than re-deriving new claims.
+    ("ISM Manufacturing PMI", "XAUUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, dated WebSearch findings, ISM-specific, reused and re-checked from this project's "
+            "own Phase 1 relevance citation for this pair: Jan 5 2026 (Dec 2025 print, 47.9 vs 48.3 "
+            "forecast, a miss) -- gold traded around $4,448, 'up nearly 2.70% on the day' as the weak "
+            "print pulled the Dollar down (FXStreet, 'Gold edges higher after weak ISM Manufacturing "
+            "PMI', fxstreet.com/news/gold-trades-firm-as-us-venezuela-tensions-keep-geopolitical-risks-"
+            "elevated-202601051201); and the opposite-direction case, Jun 1 2026 (May print, 54 vs 53 "
+            "forecast, a beat) -- 'spot gold fell 1.77% on the day to $4,460.05', session low $4,447.86, "
+            "as the stronger factory data weighed (Kitco, 'Spot gold trades near $4,460/oz after ISM "
+            "Manufacturing PMI rises to 54', kitco.com/news/article/2026-06-01/spot-gold-trades-near-"
+            "4460oz-after-ism-manufacturing-pmi-rises-54). Both moves (2.70%, 1.77%) are over the ~0.8% "
+            "HIGH line and both are real, ISM-specific, dated, with the article's own numbers matching "
+            "what's cited -- HIGH."
+        ),
+    ),
+    ("ISM Manufacturing PMI", "XAGUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated WebSearch finding, ISM-specific, reused and re-checked from this project's own "
+            "Phase 1 relevance citation for this pair: Aug 3 2026 (July print, 55.6 vs 54.0 forecast, a "
+            "beat) -- 'silver fell toward $57.20, down 0.73% on the day', as the stronger-than-expected "
+            "ISM reading reinforced hawkish Fed expectations and raised the opportunity cost of holding "
+            "non-yielding silver (FXStreet, 'Silver price dips as robust US PMI boosts hawkish Fed "
+            "outlook', fxstreet.com/news/silver-price-falls-as-stronger-us-pmi-reinforces-hawkish-fed-"
+            "expectations-202608031444). 0.73% sits in the ~0.3-0.8% MEDIUM band, just under the HIGH "
+            "line -- a single dated data point (n=1), so treated as indicative rather than exhaustive."
+        ),
+    ),
+    ("ISM Manufacturing PMI", "US30"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "This project's own scoring/backtest_log.db outcomes table, event_title='ISM Manufacturing "
+            "PMI', instrument='US30', 2 real logged 30-min post-release moves (Dukascopy, auto): row id "
+            "55 (2026-03-02T15:00:00Z) '+0.23% in 30min', row id 87 (2026-09-01T14:00:00Z, live) "
+            "'+0.41% in 30min'. Mean/median ~0.32%, just over the ~0.3% LOW/MEDIUM line -- MEDIUM, "
+            "though on n=2 this is a thin sample and sits right at the boundary; note this breaks from "
+            "the pattern of US30 landing LOW on every other event type in this table (CPI, PPI, NFP, "
+            "FOMC, GDP, Core PCE all used median absolute moves under 0.3% for US30) -- flagged as a "
+            "real observed divergence from that pattern, not an artifact, since both source rows are "
+            "genuine release-window Dukascopy measurements, not a same-day close confounded by other "
+            "news (per the review lesson from this same pair's Phase 1 relevance-citation fix rounds)."
+        ),
+    ),
+    ("ISM Manufacturing PMI", "EURUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated WebSearch finding, ISM-specific, reused and re-checked from this project's own "
+            "Phase 1 relevance citation for this pair -- FXStreet's own stated release-day aggregate "
+            "volatility statistic (not a single dated instance, but the source's own stated figure): "
+            "'on average, after the release of ISM Manufacturing PMI, EUR/USD experienced volatility of "
+            "23.11 pips (0.20%) over the last 10 releases' (FXStreet, 'When is the US ISM Manufacturing "
+            "PMI data and how could it affect EUR/USD?', fxstreet.com/news/when-is-the-us-ism-"
+            "manufacturing-pmi-data-and-how-could-it-affect-eur-usd-202603021134). 0.20% is under the "
+            "~0.3% LOW line -- an aggregate across 10 releases, smaller than CPI/PPI/NFP's own "
+            "(separately cited) moves, consistent with a narrower manufacturing-sector print."
+        ),
+    ),
+    ("ISM Manufacturing PMI", "GBPUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated WebSearch finding, ISM-specific, reused and re-checked from this project's own "
+            "Phase 1 relevance citation for this pair: Aug 3 2026 (July print, 55.6 vs 54.0 forecast, a "
+            "beat) -- GBP/USD 'retreated about 0.27% on the day', trading at 1.3439 after a daily high "
+            "of 1.3506, as US ISM data 'beat forecasts, supporting renewed US Dollar demand', with "
+            "concurrent weak UK manufacturing PMI data adding further pressure on the Pound (FXStreet, "
+            "'British Pound slips as strong ISM data revives the US Dollar', fxstreet.com/news/british-"
+            "pound-slips-as-strong-ism-data-revives-the-us-dollar-202608031637). 0.27% is under the "
+            "~0.3% LOW line, though the UK's own same-day PMI print is a compounding, not sole, factor."
+        ),
+    ),
+    ("ISM Manufacturing PMI", "USDJPY"): MagnitudeJudgment(
+        tier=MagnitudeTier.UNVERIFIED,
+        citation=(
+            "Real, dated WebSearch finding confirms an ISM-specific USDJPY reaction occurred -- May 21 "
+            "2026 (May print, 55.3, a beat) -- USD/JPY 'rose toward the 159.30 region, approaching the "
+            "160.00 level', as the strong factory data boosted the US Dollar and reinforced "
+            "higher-for-longer Fed expectations (FXStreet, 'Japanese Yen falls amid strong US "
+            "Manufacturing PMI', fxstreet.com/news/japanese-yen-falls-amid-strong-us-manufacturing-pmi-"
+            "202605211618, re-confirmed via a second independent WebSearch query returning the same "
+            "article and figures). But this article states only a destination price level, not a "
+            "percentage or a stated prior-day/pre-release baseline, and a further WebSearch attempt to "
+            "find USD/JPY's own daily percent change for 2026-05-21 from historical-rate sources "
+            "returned no dated, source-confirmed figure for that specific session. Marked UNVERIFIED "
+            "rather than reconstructing a percentage from an approximate price level."
+        ),
+    ),
+    ("ISM Manufacturing PMI", "USDCHF"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, dated WebSearch finding, ISM-specific, reused and re-checked from this project's own "
+            "Phase 1 relevance citation for this pair: Mar 2 2026 (Feb print, 52.4 vs 51.8 consensus, a "
+            "beat) -- USD/CHF 'traded around 0.7800, up 1.50% on the day', as 'the headline figure edged "
+            "lower [from January] but beats the market consensus... signaling ongoing expansion' "
+            "(FXStreet, 'USD/CHF rises on Middle East war, strong US manufacturing PMI', fxstreet.com/"
+            "news/usd-chf-advances-on-middle-east-war-robust-us-manufacturing-pmi-202603021620). 1.50% "
+            "is over the ~0.8% HIGH line, though the same article names an escalating Middle East war as "
+            "a second, compounding safe-haven-adjacent Dollar driver the same session -- ISM's own real "
+            "contribution is named but not isolated from that concurrent geopolitical driver, so this "
+            "HIGH tier reflects the day's confirmed total move, not an ISM-only-isolated figure."
+        ),
+    ),
+    ("ISM Manufacturing PMI", "AUDUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated WebSearch finding, ISM-specific, reused and independently re-verified for this "
+            "task via a second WebSearch query returning the same article and figures: Aug 3 2026 (July "
+            "print, 55.6 vs 54.0 forecast, a beat, its highest since May 2022) -- 'AUD/USD traded at "
+            "0.7000' after 'reaching a daily high of 0.7050', as the stronger-than-expected ISM reading "
+            "'revived the US Dollar' despite an otherwise risk-on mood (FXStreet, 'Australian Dollar "
+            "slides to 0.70 as US ISM PMI, revives the US Dollar', fxstreet.com/news/australian-dollar-"
+            "slides-to-070-as-us-ism-pmi-revives-the-us-dollar-202608032230). 0.7050 to 0.7000 is a "
+            "computed ~0.71% intraday retracement, in the ~0.3-0.8% MEDIUM band -- computed from the "
+            "article's own stated levels (high-to-last), not a stated open-to-close percentage, so "
+            "treated as an approximate, not exact, figure."
+        ),
+    ),
+    ("ISM Manufacturing PMI", "NZDUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.UNVERIFIED,
+        citation=(
+            "Real, dated WebSearch finding confirms an ISM-specific NZDUSD reaction occurred -- Jan 5 "
+            "2026 (Dec 2025 print, 47.9 vs 48.3 forecast, a miss, a 10th straight month of contraction) "
+            "-- 'NZD/USD traded in positive territory around 0.5800' during the Asian session, with 'the "
+            "Greenback edg[ing] lower in an immediate reaction to the downbeat US Manufacturing PMI "
+            "report' (FXStreet, 'NZD/USD edges higher to near 0.5800 as US manufacturing data "
+            "disappoints', fxstreet.com/news/nzd-usd-edges-higher-to-near-05800-as-us-manufacturing-"
+            "data-disappoints-202601060316, re-confirmed via a second independent WebSearch query "
+            "returning the same article). But this article states only a destination price level and "
+            "qualitative framing ('edges higher'), never a percentage or a clean prior-level baseline to "
+            "compute one from. Marked UNVERIFIED rather than guessing or reconstructing a figure from an "
+            "approximate price level, consistent with this table's other NZDUSD UNVERIFIED entries "
+            "(e.g. Core PCE x NZDUSD above) facing the same evidence gap."
+        ),
+    ),
+    ("ISM Manufacturing PMI", "USDCAD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated WebSearch finding, ISM-specific, reused and re-checked from this project's own "
+            "Phase 1 relevance citation for this pair: Feb 2 2026 (Jan print, 52.6 vs 48.5 forecast, a "
+            "large beat, New Orders Index jumping to 57.1 from 47.7) -- USD/CAD 'traded around 1.3676, "
+            "up about 0.44% on the day', as 'renewed Greenback strength and falling Oil prices weigh on "
+            "the commodity-linked Loonie' (WTI down more than 5.5% the same session) (FXStreet, 'USD/CAD "
+            "rises as strong US PMI and falling Oil prices weigh on the Loonie', fxstreet.com/news/usd-"
+            "cad-rises-as-strong-us-pmi-and-falling-oil-prices-weigh-on-the-loonie-202602021618). 0.44% "
+            "is in the ~0.3-0.8% MEDIUM band; ISM's own contribution is real and named, compounded (not "
+            "replaced) by the same-day Oil move, consistent with this table's other USDCAD entries."
+        ),
+    ),
 }
 
 
