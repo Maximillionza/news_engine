@@ -1244,6 +1244,80 @@ _MAGNITUDE_TABLE: dict[tuple[str, str], MagnitudeJudgment] = {
             "replaced) by the same-day Oil move, consistent with this table's other USDCAD entries."
         ),
     ),
+    # --- ISM Services PMI (Task 9) -------------------------------------
+    # Bands (reasoned starting ruler, not independently re-derived):
+    # <~0.3% typical move = LOW, ~0.3-0.8% = MEDIUM, >~0.8% = HIGH.
+    # All 4 of Phase 1's own relevance citations for this event type are
+    # external-news-based (no internal scoring/backtest_log.db rows
+    # exist for ISM Services at all, confirmed by direct SQL check --
+    # see the XAUUSD entry below), independently verified clean in
+    # Phase 1's own review, and reused here.
+    ("ISM Services PMI", "XAUUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Checked scoring/backtest_log.db first: SELECT * FROM outcomes/predictions/"
+            "tier1_predictions WHERE event_title LIKE '%ISM Services%' OR '%Services PMI%' returns "
+            "zero rows across all three tables -- no internal DB evidence exists for this event type. "
+            "Real, dated finding, ISM-Services-specific, independently re-verified for this task by "
+            "directly fetching the source article's own text: on Aug 5 2026 (July print, 54.1, a "
+            "slight miss vs 54.5 forecast), 'Spot gold last traded at $4,225.80 an ounce, up 3.65% on "
+            "the day' (Kitco News, 'Gold prices trading near session highs as ISM Services PMI "
+            "increases 54.1', kitco.com/news/article/2026-08-05/gold-prices-trading-near-session-"
+            "highs-ism-services-pmi-increases-541; article also confirms 'The Institute for Supply "
+            "Management (ISM) announced on Wednesday that its Services Purchasing Managers Index (PMI) "
+            "rose to just 54.1 in July'). 3.65% is well over the ~0.8% HIGH line -- Kitco's own "
+            "dedicated release-day gold/ISM-Services series (distinct dated articles for multiple 2026 "
+            "prints), not a single isolated case."
+        ),
+    ),
+    ("ISM Services PMI", "EURUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Checked scoring/backtest_log.db -- zero rows for this event type (see XAUUSD entry's "
+            "SQL). Real, dated finding, ISM-Services-specific, independently re-verified for this task "
+            "by directly fetching a working mirror of the source article's own text (FXStreet's own "
+            "URL returns 403; TMGM syndicates the identical FXStreet piece): on Apr 6 2026 (March "
+            "print, 54 vs 55 forecast, a miss, employment sub-index falling to 45.2, its lowest since "
+            "December 2023), 'EUR/USD trades 0.25% at around 1.1544 during the late European trading "
+            "session on Monday' (TMGM / FXStreet, 'Breaking: US ISM Services PMI came in at 54 in "
+            "March, below forecasts', tmgm.com/en/analysis/market-news/article/when-is-the-us-ism-"
+            "services-pmi-data-for-march-and-how-could-it-affect-eur-usd-202604061129, mirroring "
+            "fxstreet.com/news/when-is-the-us-ism-services-pmi-data-for-march-and-how-could-it-affect-"
+            "eur-usd-202604061129). 0.25% is under the ~0.3% LOW line."
+        ),
+    ),
+    ("ISM Services PMI", "GBPUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.UNVERIFIED,
+        citation=(
+            "UNVERIFIED: checked scoring/backtest_log.db -- zero rows for this event type (see XAUUSD "
+            "entry's SQL). The same Apr 6 2026 March-print miss (54 vs 55 forecast) used for EURUSD and "
+            "USDJPY above/below is confirmed, via direct fetch of a working mirror of the source "
+            "article's own text (Mitrade, mirroring the same FXStreet piece FXStreet's own URL blocks "
+            "with 403), to have moved GBP/USD only qualitatively: 'GBP/USD traded flat on Monday, "
+            "settling close to 1.3240 in a thin session with the UK on Easter Monday holiday' -- the "
+            "article states no percentage or pip figure for this pair on this day (mitrade.com/au/"
+            "insights/news/live-news/article-1-1611302-20260407, mirroring fxstreet.com/news/gbp-usd-"
+            "holds-near-1-3240-as-soft-ism-data-offsets-us-jobs-strength-202604062254). Multiple "
+            "further WebSearch attempts to find a quantified GBP/USD move for this specific print "
+            "returned no dated, source-confirmed percentage. Marked UNVERIFIED rather than guessing or "
+            "reconstructing a figure from the 'flat' qualitative description."
+        ),
+    ),
+    ("ISM Services PMI", "USDJPY"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Checked scoring/backtest_log.db -- zero rows for this event type (see XAUUSD entry's "
+            "SQL). Real, dated finding, ISM-Services-specific, independently re-verified for this task "
+            "by directly fetching a working mirror of the source article's own text (Mitrade, "
+            "mirroring FXStreet, whose own URL blocks with 403): on the same Apr 6 2026 March-print "
+            "miss (54 vs 55 forecast, employment sub-index to 45.2, a multi-year low, prices paid "
+            "surging to 70.7, the highest since October 2022), 'USD/JPY traded flat on Monday, edging "
+            "up less than 0.1% to settle around 159.60 in a quiet session ahead of the US data release' "
+            "(mitrade.com/au/insights/news/live-news/article-1-1611275-20260407, mirroring fxstreet.com/"
+            "news/usd-jpy-steady-near-16000-as-weak-ism-data-offsets-geopolitical-bid-202604062225). "
+            "Under 0.1% is well under the ~0.3% LOW line."
+        ),
+    ),
 }
 
 
