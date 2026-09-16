@@ -142,12 +142,11 @@ _MAGNITUDE_TABLE: dict[tuple[str, str], MagnitudeJudgment] = {
             "expectations alongside the CPI reaction (FXStreet, fxstreet.com/news/japanese-yen-"
             "strengthens-as-us-inflation-fails-to-sustain-dollar-rebound-202609111304). ~0.58% sits in "
             "the ~0.3-0.8% MEDIUM band. NOTE: the Phase 1 relevance citation's '>700-pip move over "
-            "roughly a week' figure was independently re-checked for this task and traces to a "
-            "separate FXStreet Elliott Wave technical-analysis piece dated 2026-09-15 ('USD/JPY slides "
-            "more than 700 pips following bearish wave analysis') describing a multi-day technical "
-            "move, not a same-day CPI reaction -- the same 'big move, event named as a contributing "
-            "factor' pattern flagged as a risk by the ISM Manufacturing PMI lesson. That figure was "
-            "NOT used for this tier; the verified same-day 2026-09-11 CPI print above was used instead."
+            "roughly a week' figure (originally sourced there to a Forex Factory / StoneX-syndicated "
+            "piece, 'USD/JPY Has Been a Big Mover on US CPI Data -- Will Tomorrow Force a Repeat?') is "
+            "too imprecisely dated and too multi-day to isolate a single CPI print's own contribution, "
+            "so it was not used for this magnitude tier -- the verified same-day 2026-09-11 CPI print "
+            "above was used instead."
         ),
     ),
     ("CPI m/m", "USDCHF"): MagnitudeJudgment(
@@ -164,10 +163,14 @@ _MAGNITUDE_TABLE: dict[tuple[str, str], MagnitudeJudgment] = {
         tier=MagnitudeTier.LOW,
         citation=(
             "Real, dated WebSearch finding, independently re-verified for this task: on the 2026-09-11 "
-            "US CPI day, AUD/USD advanced 0.17% on the day, closing around 0.7170, though the RBA "
+            "US CPI day, AUD/USD advanced 0.17% on the day, trading around 0.7170, though the RBA "
             "rate-hike narrative and the prior day's hot US PPI were also live drivers that day "
-            "(DailyForex, dailyforex.com/forex-technical-analysis/2026/09/audusd-forex-forecast-11-"
-            "september-2026/249597). 0.17% is under the ~0.3% LOW line. FLAG: the Phase 1 relevance "
+            "(FXStreet, 'AUD/USD Price Forecast: Doji high guards bulls as Fed bets bite', "
+            "fxstreet.com/news/aud-usd-price-forecast-doji-high-guards-bulls-as-fed-bets-bite-"
+            "202609112201 -- corroborated by a separate same-day Mitrade wrap quoting AUD/USD at "
+            "0.7176 after 'a firmer-than-expected US inflation print that would normally weigh on the "
+            "Aussie', mitrade.com/au/insights/news/live-news/article-1-2080126-20260911). 0.17% is "
+            "under the ~0.3% LOW line. FLAG: the Phase 1 relevance "
             "citation for this pair instead cites an older, dated Aug 2022 instance ('the dollar fell "
             "roughly 1.1%' on a downside CPI surprise) -- that figure describes a broad-dollar move on "
             "an outlier historical event, not this pair's typical CPI-day reaction, so it was not used "
