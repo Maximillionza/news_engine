@@ -1355,6 +1355,195 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
         "and no independently-corroborated external case after a real search "
         "pass",
     ),
+    ("Retail Sales m/m", "XAUUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Internal, real, live-logged evidence from this project's own scoring "
+        "DB (scoring/backtest_log.db): 3 real Retail Sales m/m occurrences "
+        "logged against XAUUSD in the outcomes table with Dukascopy-measured "
+        "30-min moves (2026-04-01: -0.21%, 2026-06-17: +0.22%, 2026-07-16: "
+        "-0.81%), plus a real, live 'Likely'-confidence Tier1 prediction "
+        "(tier1_predictions id 15, logged 2026-09-13) for the 2026-09-16 "
+        "release against XAUUSD sourced to BofA Institute's Consumer "
+        "Checkpoint card-spending tracker -- real, Retail-Sales-specific "
+        "evidence this event reaches gold, not borrowed from CPI/PPI/NFP",
+    ),
+    ("Retail Sales m/m", "XAGUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Checked scoring/backtest_log.db first -- zero rows for XAGUSD x "
+        "Retail Sales m/m (only XAUUSD/US30 appear in this table, confirmed "
+        "by direct SQL). Real, dated WebSearch finding, Retail-Sales-"
+        "specific, independently re-fetched: the Aug 14 2026 July print (-0.6% "
+        "m/m actual vs +0.1% forecast, a sharp miss) -- 'gold and silver "
+        "prices higher in late-afternoon US trading Friday' with spot silver "
+        "at $64.53/oz (+0.32%) explicitly headlined as reacting to 'weak "
+        "retail sales' cutting Fed-hike odds, alongside a cooler CPI (Wed) "
+        "and flat PPI (Thu) from the same week (Kitco, 'Gold, silver rise as "
+        "weak retail sales cut Fed-hike odds - Kitco PM Report', kitco.com/"
+        "news/article/2026-08-14/gold-silver-rise-weak-retail-sales-cut-fed-"
+        "hike-odds-kitco-pm-report, independently re-fetched and confirmed) "
+        "-- retail sales is named specifically, alongside (not replaced by) "
+        "the same week's CPI/PPI, a real compounding effect not an analogy",
+    ),
+    ("Retail Sales m/m", "US30"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Internal, real, live-logged evidence from this project's own scoring "
+        "DB (scoring/backtest_log.db): 2 real Retail Sales m/m occurrences "
+        "logged against US30 in the outcomes table with Dukascopy-measured "
+        "30-min moves (2026-03-06: -0.84%, 2026-04-01: -0.21%), plus a real, "
+        "live 'Likely'-confidence Tier1 prediction (tier1_predictions id 16, "
+        "logged 2026-09-13) for the 2026-09-16 release against US30, same "
+        "BofA Consumer Checkpoint sourcing as the XAUUSD entry -- distinct "
+        "instrument, real and Retail-Sales-specific evidence",
+    ),
+    ("Retail Sales m/m", "US500"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Checked scoring/backtest_log.db first -- zero rows for US500 x "
+        "Retail Sales m/m (confirmed empty, same SQL as XAGUSD entry). Real, "
+        "dated WebSearch finding, Retail-Sales-specific, independently "
+        "re-fetched: the same Aug 14 2026 July miss (-0.6% vs +0.1% forecast) "
+        "-- 'Stock Market Today: S&P 500 Slips From Record as US Retail "
+        "Sales Fall', the index declined about 0.2% to 7,785.76-7,786 that "
+        "day, with the article naming weak retail sales as the main trigger "
+        "though noting AI-stock gains and reduced rate-hike odds partly "
+        "offset the decline (Eurasia Business News, "
+        "eurasiabusinessnews.com/2026/08/14/stock-market-today-sp-500-slips-"
+        "from-record-as-us-retail-sales-fall/, independently re-fetched and "
+        "confirmed -- 'weak retail sales served as the main economic "
+        "trigger' per the article's own text) -- a real, single-headline, "
+        "Retail-Sales-specific US500 reaction, not reasoned by analogy",
+    ),
+    ("Retail Sales m/m", "NAS100"): RelevanceJudgment(
+        RelevanceStatus.UNVERIFIED,
+        "Checked scoring/backtest_log.db first -- zero rows for NAS100 x "
+        "Retail Sales m/m. The same Aug 14 2026 July miss was checked "
+        "specifically for the NAS100 (not Nasdaq Composite) index: WebSearch "
+        "found NAS100 FUTURES actually traded UP 0.15% to 30,233.00 in the "
+        "minutes right after the 8:30am ET release, the opposite direction "
+        "from the Nasdaq Composite's eventual close down 0.28-0.5% that day "
+        "-- a genuinely mixed, muted initial reaction, not a clean directional "
+        "move. No isolated, dated NAS100-index-specific (as opposed to "
+        "Composite) article naming Retail Sales as the driver was found after "
+        "a real search pass, including direct checks of Vantage Markets' own "
+        "NAS100-focused coverage for that week. Honest UNVERIFIED rather than "
+        "reasoning by analogy from the Nasdaq Composite's own (different "
+        "index) reaction, the exact trap this task's brief warns against",
+    ),
+    ("Retail Sales m/m", "EURUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Checked scoring/backtest_log.db first -- zero rows for EURUSD x "
+        "Retail Sales m/m. Real, dated WebSearch finding, Retail-Sales-"
+        "specific, independently re-fetched and cross-checked against two "
+        "independent sources: the same Aug 14 2026 July miss (-0.6% vs +0.1% "
+        "forecast) -- Yahoo Finance's own market-wrap states 'EUR/USD "
+        "(^EURUSD) rose +0.34% on dollar weakness' that day, framed around "
+        "'Friday's July US retail sales fell -0.6% m/m, much weaker than "
+        "market expectations of +0.1%' (finance.yahoo.com/markets/"
+        "currencies/articles/dollar-falls-weak-us-retail-195632556.html, "
+        "independently re-fetched and confirmed), corroborated by a separate "
+        "FXStreet headline the same day describing EUR/USD rallying to a "
+        "two-month high near 1.1580 on the same broad-based Dollar weakness "
+        "('Euro climbs as fading Fed hike expectations pressure US Dollar', "
+        "fxstreet.com/news/euro-climbs-as-fading-fed-hike-expectations-"
+        "pressure-us-dollar-202608141445) -- two independent, quantified, "
+        "same-day sources, not reasoned by analogy from CPI/PPI",
+    ),
+    ("Retail Sales m/m", "GBPUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Checked scoring/backtest_log.db first -- zero rows for GBPUSD x "
+        "Retail Sales m/m. Real, dated WebSearch finding, Retail-Sales-"
+        "specific: the same Aug 14 2026 July miss -- FXStreet's own headline "
+        "'British Pound hits three-month high as weak US sales deepen USD "
+        "slide' (fxstreet.com/news/british-pound-advances-as-weak-us-sales-"
+        "deepen-usd-slide-202608141543) puts GBP/USD near 1.3560, "
+        "corroborated by TradingKey's independent intraday snapshot the same "
+        "day ('GBP/USD (GBPUSD) is up 0.53% at Aug 14 09:40 ET, now at "
+        "$1.35554', tradingkey.com/news/market-movers/262108297-market-"
+        "movers-gbpusd-20260814, independently re-fetched) and by "
+        "exchangerates.org.uk's end-of-week briefing noting 'a softer US "
+        "demand signal helped the Pound recover against the Dollar' -- "
+        "TradingKey's own earlier snapshot names general CPI/PPI-driven USD "
+        "weakness rather than retail sales specifically, so retail sales is "
+        "a real, named, but not sole, contributing driver here, same pattern "
+        "as this pair's already-cited CPI/PPI entries",
+    ),
+    ("Retail Sales m/m", "USDJPY"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Checked scoring/backtest_log.db first -- zero rows for USDJPY x "
+        "Retail Sales m/m. Real, dated WebSearch finding, Retail-Sales-"
+        "specific, independently re-fetched: the same Aug 14 2026 July miss "
+        "-- Yahoo Finance's market wrap ('Dollar Falls on Weak US Retail "
+        "Sales and Consumer Sentiment Reports') states 'USD/JPY (^USDJPY) "
+        "fell -0.08% on dollar weakness' the same day, framed around the "
+        "same -0.6% vs +0.1% retail sales miss (finance.yahoo.com/markets/"
+        "currencies/articles/dollar-falls-weak-us-retail-195632556.html, "
+        "independently re-fetched and confirmed) -- a real but small, "
+        "quantified move, consistent with Tier1 prompt's PER-INSTRUMENT "
+        "QUIRKS noting USDJPY's layered sensitivity (here compounded with "
+        "real, separately-documented BoJ-hike/intervention speculation the "
+        "same week, so the retail-sales-specific slice of the move is small "
+        "but real and directly named, not inferred by analogy)",
+    ),
+    ("Retail Sales m/m", "USDCHF"): RelevanceJudgment(
+        RelevanceStatus.UNVERIFIED,
+        "Checked scoring/backtest_log.db first -- zero rows for USDCHF x "
+        "Retail Sales m/m. The same Aug 14 2026 July miss was searched "
+        "specifically for USDCHF: the only same-day sources found are "
+        "PRE-release framing ('Swiss Franc Recovers Ground vs. Dollar As "
+        "Markets Await US Retail Sales', 'traders positioned ahead of the "
+        "release') or name CPI/PPI-driven Dollar weakness instead of retail "
+        "sales as the specific driver (TradingPedia, 'Swiss Franc Firms as "
+        "Cooling U.S. Inflation Hits Dollar', dated Aug 14 2026 but citing "
+        "softer July PPI, not retail sales). A separate candidate citation "
+        "('USD/CHF posts fresh three-month low near 0.8830 after weak US "
+        "retail sales', dated 2026-06-18) was checked against the actual "
+        "underlying May 2026 retail sales print and REJECTED: that print "
+        "(released 2026-06-17, per investinglive.com) was a real BEAT "
+        "(+0.9% actual vs +0.5% forecast), not a miss, directly contradicting "
+        "the headline's own 'weak' framing -- exactly the kind of "
+        "number/direction mismatch this task's brief warns about, so it was "
+        "discarded rather than used. Honest UNVERIFIED: no internal DB "
+        "evidence and no reliable, isolated, post-release USDCHF reaction to "
+        "Retail Sales found after a real search pass",
+    ),
+    ("Retail Sales m/m", "AUDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Checked scoring/backtest_log.db first -- zero rows for AUDUSD x "
+        "Retail Sales m/m. Real, dated WebSearch finding, Retail-Sales-"
+        "specific: the same Aug 14 2026 July miss -- FXStreet's own headline "
+        "'AUD/USD Price Forecast: Bulls eye 0.7100 after US Retail Sales "
+        "miss' (fxstreet.com/news/aud-usd-price-forecast-bulls-eye-07100-"
+        "after-us-retail-sales-miss-202608142230) puts AUD/USD at 0.7083, "
+        "up 0.34% on the day, with the weaker-than-expected print explicitly "
+        "named as increasing speculation the Fed would hold rates -- figure "
+        "checked against the article's own stated level/percentage before "
+        "use, per the review lesson from PPI's prior AUDUSD correction",
+    ),
+    ("Retail Sales m/m", "NZDUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Checked scoring/backtest_log.db first -- zero rows for NZDUSD x "
+        "Retail Sales m/m. Real, dated WebSearch finding, Retail-Sales-"
+        "specific: the same Aug 14 2026 July miss -- FXStreet's own headline "
+        "'New Zealand Dollar pushes higher as US economic worries pile up' "
+        "(fxstreet.com/news/new-zealand-dollar-charges-toward-05900-as-us-"
+        "dollar-loses-ground-202608141628) has NZD/USD gaining 0.75% to "
+        "trade near 0.5895, explicitly attributed to 'weakness in the US "
+        "Dollar following disappointing US economic data' (the retail sales "
+        "miss), alongside separately-supportive RBNZ policy expectations -- "
+        "real and Retail-Sales-named, not reasoned by analogy from AUDUSD",
+    ),
+    ("Retail Sales m/m", "USDCAD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Checked scoring/backtest_log.db first -- zero rows for USDCAD x "
+        "Retail Sales m/m. Real, dated WebSearch finding, Retail-Sales-"
+        "specific: the same Aug 14 2026 July miss -- FXStreet's own headline "
+        "'Canadian Dollar surges as sharp US Retail Sales miss hits the "
+        "Dollar' (fxstreet.com/news/canadian-dollar-surges-as-sharp-us-"
+        "retail-sales-miss-hits-the-dollar-202608141426) puts USDCAD at a "
+        "fresh two-month low near 1.3860, with the article's own text naming "
+        "the weaker-than-expected retail sales print as 'the primary driver "
+        "behind the Canadian Dollar's strength' that day -- a real, "
+        "single-driver, Retail-Sales-specific USDCAD reaction",
+    ),
 }
 
 
