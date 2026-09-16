@@ -1318,6 +1318,156 @@ _MAGNITUDE_TABLE: dict[tuple[str, str], MagnitudeJudgment] = {
             "Under 0.1% is well under the ~0.3% LOW line."
         ),
     ),
+
+    # --- Retail Sales m/m (Task 10) ----------------------------------
+    # Bands (same reasoned starting ruler as all prior tasks):
+    # <~0.3% typical move = LOW, ~0.3-0.8% = MEDIUM, >~0.8% = HIGH.
+    ("Retail Sales m/m", "XAUUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "This project's own scoring/backtest_log.db outcomes table, event_title='Retail Sales "
+            "m/m', instrument=XAUUSD, 4 real logged 30-min post-release moves (Dukascopy, auto; "
+            "outcomes ids 57, 59, 60, 124): -0.21% (2026-04-01), +0.22% (2026-06-17), -0.81% "
+            "(2026-07-16), +0.18% (2026-09-16, confirmed today at 13:12 UTC). Median absolute move "
+            "~0.215% -- LOW, though 1 of 4 prints (2026-07-16, -0.81%) was independently HIGH-tier, so "
+            "real tail risk above LOW exists, same pattern as CPI/XAUUSD's own tail-risk note. Two "
+            "further outcomes rows (ids 56, 58) were excluded per this project's own 2026-09-16 "
+            "correction to event_symbol_relevance's US30 citation -- id 56 is a mislabeled NFP "
+            "duplicate and id 58 shares a suspicious identical value with a different instrument's row "
+            "at the same timestamp; neither is used here either."
+        ),
+    ),
+    ("Retail Sales m/m", "XAGUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Checked scoring/backtest_log.db first -- zero rows for XAGUSD x Retail Sales m/m. Real, "
+            "dated WebSearch finding, Retail-Sales-specific, independently re-verified for this task: "
+            "the Aug 14 2026 July print (-0.6% m/m actual vs +0.1% forecast, a sharp miss) -- spot "
+            "silver closed the day up 0.32% at $64.53/oz, explicitly headlined as reacting to 'weak "
+            "retail sales' cutting Fed-hike odds, alongside the same week's cooler CPI and flat PPI "
+            "(Kitco, 'Gold, silver rise as weak retail sales cut Fed-hike odds - Kitco PM Report', "
+            "kitco.com/news/article/2026-08-14/gold-silver-rise-weak-retail-sales-cut-fed-hike-odds-"
+            "kitco-pm-report). 0.32% sits just inside the ~0.3-0.8% MEDIUM band, essentially at the "
+            "LOW/MEDIUM line -- a single data point, not an average, so treated as MEDIUM rather than "
+            "rounded down."
+        ),
+    ),
+    ("Retail Sales m/m", "US30"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "This project's own scoring/backtest_log.db outcomes table has no usable Retail-Sales-"
+            "specific US30 rows -- both ids 56 and 58 were excluded per event_symbol_relevance's own "
+            "2026-09-16 correction (id 56 is a mislabeled NFP duplicate at the same timestamp; id 58 "
+            "shares a suspicious identical -0.21%/30min value with XAUUSD's own row at the same "
+            "timestamp, not independently plausible). Real, dated WebSearch finding instead, "
+            "Retail-Sales-specific, independently re-verified for this task: on the Aug 14 2026 July "
+            "miss (-0.6% vs +0.1% forecast), 'the Dow Jones Industrial Average fell for the first time "
+            "in two sessions..., closing down 107.58 points, or 0.19%, at 53,732.41', the decline "
+            "attributed directly to the weak retail sales report stoking economic-slowdown concerns "
+            "(CNBC/BigGo Finance summary of the same session, finance.biggo.com/news/c7314090-c0c0-"
+            "49df-bc5b-83bc5fdfdc78, 'Dow Falls 107 Points as Weak Retail Sales and Middle East "
+            "Tensions Weigh on Market' -- note Middle East tensions are a compounding, not sole, "
+            "factor). 0.19% is under the ~0.3% LOW line."
+        ),
+    ),
+    ("Retail Sales m/m", "US500"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Checked scoring/backtest_log.db first -- zero rows for US500 x Retail Sales m/m. Real, "
+            "dated WebSearch finding, Retail-Sales-specific, independently re-fetched: the same Aug 14 "
+            "2026 July miss (-0.6% vs +0.1% forecast) -- 'Stock Market Today: S&P 500 Slips From Record "
+            "as US Retail Sales Fall', the index declined 13.23 points to 7,785.76 (roughly -0.17%), "
+            "with the article naming weak retail sales as the main trigger though noting AI-stock gains "
+            "and reduced rate-hike odds partly offset the decline (Eurasia Business News, "
+            "eurasiabusinessnews.com/2026/08/14/stock-market-today-sp-500-slips-from-record-as-us-"
+            "retail-sales-fall/). Roughly -0.17% is under the ~0.3% LOW line."
+        ),
+    ),
+    ("Retail Sales m/m", "EURUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Checked scoring/backtest_log.db first -- zero rows for EURUSD x Retail Sales m/m. Real, "
+            "dated WebSearch finding, Retail-Sales-specific, independently re-fetched and cross-checked "
+            "against two independent sources: the same Aug 14 2026 July miss (-0.6% vs +0.1% forecast) "
+            "-- Yahoo Finance's own market-wrap states 'EUR/USD (^EURUSD) rose +0.34% on dollar "
+            "weakness' that day, framed around the retail sales miss (finance.yahoo.com/markets/"
+            "currencies/articles/dollar-falls-weak-us-retail-195632556.html), corroborated by a "
+            "separate FXStreet headline the same day describing EUR/USD rallying to a two-month high "
+            "near 1.1580 on the same broad-based Dollar weakness ('Euro climbs as fading Fed hike "
+            "expectations pressure US Dollar', fxstreet.com/news/euro-climbs-as-fading-fed-hike-"
+            "expectations-pressure-us-dollar-202608141445). +0.34% is inside the ~0.3-0.8% MEDIUM band, "
+            "though close to the LOW/MEDIUM line -- two independent, quantified, same-day sources, not "
+            "reasoned by analogy from CPI/PPI."
+        ),
+    ),
+    ("Retail Sales m/m", "GBPUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Checked scoring/backtest_log.db first -- zero rows for GBPUSD x Retail Sales m/m. Real, "
+            "dated WebSearch finding, Retail-Sales-specific: the same Aug 14 2026 July miss -- "
+            "TradingKey's independent intraday snapshot states 'GBP/USD (GBPUSD) is up 0.53% at Aug 14 "
+            "09:40 ET, now at $1.35554' (tradingkey.com/news/market-movers/262108297-market-movers-"
+            "gbpusd-20260814), corroborated by FXStreet's own headline 'British Pound hits three-month "
+            "high as weak US sales deepen USD slide' (fxstreet.com/news/british-pound-advances-as-weak-"
+            "us-sales-deepen-usd-slide-202608141543) putting GBP/USD near 1.3560 -- retail sales is a "
+            "real, named, but not sole, contributing driver alongside the same week's CPI/PPI-driven USD "
+            "weakness (per this project's own Phase 1 relevance citation for this pair). +0.53% is "
+            "inside the ~0.3-0.8% MEDIUM band."
+        ),
+    ),
+    ("Retail Sales m/m", "USDJPY"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Checked scoring/backtest_log.db first -- zero rows for USDJPY x Retail Sales m/m. Real, "
+            "dated WebSearch finding, Retail-Sales-specific, independently re-fetched: the same Aug 14 "
+            "2026 July miss -- Yahoo Finance's market wrap ('Dollar Falls on Weak US Retail Sales and "
+            "Consumer Sentiment Reports') states 'USD/JPY (^USDJPY) fell -0.08% on dollar weakness' the "
+            "same day, framed around the same -0.6% vs +0.1% retail sales miss (finance.yahoo.com/"
+            "markets/currencies/articles/dollar-falls-weak-us-retail-195632556.html). -0.08% is well "
+            "under the ~0.3% LOW line, consistent with this project's own Phase 1 note on USDJPY's "
+            "layered, often-diluted sensitivity to any single US data print."
+        ),
+    ),
+    ("Retail Sales m/m", "AUDUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Checked scoring/backtest_log.db first -- zero rows for AUDUSD x Retail Sales m/m. Real, "
+            "dated WebSearch finding, Retail-Sales-specific: the same Aug 14 2026 July miss -- "
+            "FXStreet's own headline 'AUD/USD Price Forecast: Bulls eye 0.7100 after US Retail Sales "
+            "miss' (fxstreet.com/news/aud-usd-price-forecast-bulls-eye-07100-after-us-retail-sales-"
+            "miss-202608142230) puts AUD/USD at 0.7083, up 0.34% on the day, with the weaker-than-"
+            "expected print explicitly named as increasing speculation the Fed would hold rates. +0.34% "
+            "is inside the ~0.3-0.8% MEDIUM band, though close to the LOW/MEDIUM line."
+        ),
+    ),
+    ("Retail Sales m/m", "NZDUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Checked scoring/backtest_log.db first -- zero rows for NZDUSD x Retail Sales m/m. Real, "
+            "dated WebSearch finding, Retail-Sales-specific: the same Aug 14 2026 July miss -- "
+            "FXStreet's own headline 'New Zealand Dollar pushes higher as US economic worries pile up' "
+            "(fxstreet.com/news/new-zealand-dollar-charges-toward-05900-as-us-dollar-loses-ground-"
+            "202608141628) has NZD/USD gaining 0.75% to trade near 0.5895, explicitly attributed to "
+            "'weakness in the US Dollar following disappointing US economic data' (the retail sales "
+            "miss), alongside separately-supportive RBNZ policy expectations. +0.75% is inside the "
+            "~0.3-0.8% MEDIUM band, near its upper edge."
+        ),
+    ),
+    ("Retail Sales m/m", "USDCAD"): MagnitudeJudgment(
+        tier=MagnitudeTier.UNVERIFIED,
+        citation=(
+            "Checked scoring/backtest_log.db first -- zero rows for USDCAD x Retail Sales m/m. Real, "
+            "dated WebSearch finding confirms a Retail-Sales-specific USDCAD reaction occurred -- the "
+            "same Aug 14 2026 July miss -- FXStreet's own headline 'Canadian Dollar surges as sharp US "
+            "Retail Sales miss hits the Dollar' (fxstreet.com/news/canadian-dollar-surges-as-sharp-us-"
+            "retail-sales-miss-hits-the-dollar-202608141426) puts USD/CAD at a fresh two-month low near "
+            "1.3860, with the weak retail sales print named as 'the primary driver'. But multiple "
+            "further WebSearch attempts (FXStreet, Rio Times, KnightsbridgeFX, MTFX historical-rate "
+            "tools) for this task returned no dated, source-confirmed percentage or pip figure for this "
+            "specific move -- only the destination level. Marked UNVERIFIED rather than estimating a "
+            "percentage from the level alone without a confirmed prior-level anchor."
+        ),
+    ),
 }
 
 

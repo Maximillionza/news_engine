@@ -111,6 +111,47 @@ def test_ism_services_has_all_4_relevant_magnitude_entries_with_real_shape():
     print("PASS\n")
 
 
+def test_retail_sales_has_all_10_relevant_magnitude_entries_with_real_shape():
+    print("=== Retail Sales m/m: all 10 RELEVANT symbols have a magnitude entry, each with a valid tier and a non-empty citation ===")
+    symbols = ["XAUUSD", "XAGUSD", "US30", "US500", "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "NZDUSD", "USDCAD"]
+    for symbol in symbols:
+        judgment = esm.get_magnitude("Retail Sales m/m", symbol)
+        assert isinstance(judgment.tier, esm.MagnitudeTier)
+        assert judgment.citation.strip() != "", f"Retail Sales m/m x {symbol} has an empty citation"
+    print("PASS\n")
+
+
+def test_every_one_of_the_94_real_relevant_combinations_is_present():
+    print("=== Completeness: all 94 real RELEVANT (event_type, symbol) combinations from Phase 1 are present ===")
+    missing = []
+    total_relevant = 0
+    for event_type in esr.EVENT_TYPES:
+        for symbol in esr.SYMBOLS:
+            if esr.get_relevance(event_type, symbol).status != esr.RelevanceStatus.RELEVANT:
+                continue
+            total_relevant += 1
+            try:
+                esm.get_magnitude(event_type, symbol)
+            except KeyError:
+                missing.append((event_type, symbol))
+    assert total_relevant == 94, f"expected exactly 94 real RELEVANT pairs in Phase 1's table, found {total_relevant} -- Phase 1's own table changed, or this count is stale"
+    assert missing == [], f"missing {len(missing)} of 94 real RELEVANT entries: {missing[:5]}{'...' if len(missing) > 5 else ''}"
+    print("PASS\n")
+
+
+def test_magnitude_table_has_exactly_94_entries_no_stray_keys():
+    print("=== Completeness: _MAGNITUDE_TABLE has exactly 94 entries -- no stray/typo'd keys ===")
+    assert len(esm._MAGNITUDE_TABLE) == 94, f"expected exactly 94 entries, found {len(esm._MAGNITUDE_TABLE)}"
+    print("PASS\n")
+
+
+def test_no_magnitude_key_is_a_non_relevant_phase1_pair():
+    print("=== Scope boundary: every key in _MAGNITUDE_TABLE is RELEVANT in Phase 1's own table ===")
+    bad = [key for key in esm._MAGNITUDE_TABLE if esr.get_relevance(*key).status != esr.RelevanceStatus.RELEVANT]
+    assert bad == [], f"found {len(bad)} magnitude entries for a pair that isn't RELEVANT in Phase 1: {bad}"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_get_magnitude_raises_keyerror_for_a_pair_outside_the_94_scope()
     test_magnitude_tier_has_exactly_four_members()
@@ -122,4 +163,8 @@ if __name__ == "__main__":
     test_core_pce_has_all_12_relevant_magnitude_entries_with_real_shape()
     test_ism_manufacturing_has_all_10_relevant_magnitude_entries_with_real_shape()
     test_ism_services_has_all_4_relevant_magnitude_entries_with_real_shape()
+    test_retail_sales_has_all_10_relevant_magnitude_entries_with_real_shape()
+    test_every_one_of_the_94_real_relevant_combinations_is_present()
+    test_magnitude_table_has_exactly_94_entries_no_stray_keys()
+    test_no_magnitude_key_is_a_non_relevant_phase1_pair()
     print("All event_symbol_magnitude scaffolding tests passed.")
