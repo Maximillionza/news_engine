@@ -746,17 +746,30 @@ _MAGNITUDE_TABLE: dict[tuple[str, str], MagnitudeJudgment] = {
         ),
     ),
     ("GDP q/q", "XAGUSD"): MagnitudeJudgment(
-        tier=MagnitudeTier.HIGH,
+        tier=MagnitudeTier.UNVERIFIED,
         citation=(
-            "Real, dated WebSearch finding, GDP-specific (from Phase 1's own relevance citation for "
-            "this pair): the Jul 30 2026 US Q2 advance GDP release (1.5% actual vs 2.1% expected, a "
-            "miss) -- silver advanced toward $58.80/oz, 'gaining around 1.7% on the day, as softer "
-            "United States inflation data and weaker-than-expected economic growth placed pressure on "
-            "the US Dollar' (FX Leaders, 'Silver Surges Past $59 as Weak Dollar, Soft GDP and Middle "
-            "East Tensions Fuel XAG/USD Rally', fxleaders.com/news/2026/07/31/silver-surges-past-59-as-"
-            "weak-dollar-soft-gdp-and-middle-east-tensions-fuel-xag-usd-rally/). 1.7% is well over the "
-            "~0.8% HIGH line, though GDP is named as one of three compounding drivers that day (weak "
-            "Dollar, soft GDP, Middle East tensions), not the sole cause."
+            "UNVERIFIED (corrected in a fix round after review): the earlier version of this entry "
+            "attributed a '1.7% gain on the day' to FX Leaders, 'Silver Surges Past $59 as Weak Dollar, "
+            "Soft GDP and Middle East Tensions Fuel XAG/USD Rally' (fxleaders.com/news/2026/07/31/"
+            "silver-surges-past-59-as-weak-dollar-soft-gdp-and-middle-east-tensions-fuel-xag-usd-rally/) "
+            "-- that figure was not actually in the source. Re-fetched the exact URL directly for this "
+            "fix: the article gives only 'Front-month COMEX Silver futures traded around $58.50 to "
+            "$59.30 per troy ounce' plus qualitative drivers (weak DXY, soft GDP, Middle East "
+            "tensions) -- no percentage move figure at all, and $58.50-$59.30 is a same-day trading "
+            "range, not a directional move (it works out to about a 1.4% range, but repackaging a "
+            "range as a move percentage would misrepresent it). Checked several other real, dated "
+            "sources for the same Jul 30 2026 GDP day and found only an inconsistent, non-GDP-isolated "
+            "picture: an FXStreet 'Silver price today' snapshot timestamped 0931 UTC (pre-release, "
+            "GDP was 12:30 UTC) shows silver 'down 0.25%' for the prior session; a Yahoo Finance piece "
+            "gives September silver futures opening at $57.97 and reaching $58.24 'as of 8:56 a.m. ET' "
+            "(~12:56 UTC, shortly after the release) -- a real, computable +0.47% move, but the article "
+            "never attributes it to GDP; and a same-day Kitco AM Report ('Gold steadies as GDP, PCE "
+            "keep Fed-rate risk alive', kitco.com/news/article/2026-07-30/gold-steadies-gdp-pce-keep-"
+            "fed-rate-risk-alive-kitco-am-report) describes silver as merely 'slightly softer' near "
+            "$58.19 with no percentage and no clear causal link to GDP specifically ('two-sided, but "
+            "not cleanly dovish for metals'). No single real source ties a specific, GDP-attributed "
+            "percentage move to XAGUSD for this event -- marked UNVERIFIED rather than reconstructing "
+            "or guessing a figure."
         ),
     ),
     ("GDP q/q", "US30"): MagnitudeJudgment(
