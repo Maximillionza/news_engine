@@ -1167,6 +1167,194 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
         "same-day Oil move, consistent with Layer2's oil-linked USDCAD "
         "nuance already used for CPI/PPI/Core-PCE",
     ),
+    ("ISM Services PMI", "XAUUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Checked scoring/backtest_log.db first per review lesson from Task 8 -- "
+        "SELECT * FROM outcomes/predictions/tier1_predictions WHERE event_title "
+        "LIKE '%ISM Services%' OR '%Services PMI%' returns zero rows across all "
+        "three tables, no internal DB evidence exists for this event type at all. "
+        "Real, dated WebSearch finding, ISM-Services-specific, independently "
+        "re-fetched to confirm: Aug 5 2026 (July print, 54.1, a slight miss vs "
+        "54.5 forecast) -- spot gold traded at $4,225.80/oz, up 3.65% on the day "
+        "to a six-week high, with Kitco's own headline naming the release "
+        "directly -- 'the latest ISM data continues to add further support to "
+        "the rally', driven specifically by the Employment Index falling to 47.4 "
+        "into contraction (Kitco News, 'Gold prices trading near session highs "
+        "as ISM Services PMI increases 54.1', kitco.com/news/article/2026-08-05/"
+        "gold-prices-trading-near-session-highs-ism-services-pmi-increases-541) "
+        "-- this is Kitco's own dedicated release-day gold/ISM-Services series "
+        "(distinct dated articles for Jan/Feb/Mar/May/Jun/Jul/Aug 2026 prints "
+        "found), not a single isolated case or a big multi-factor rally day",
+    ),
+    ("ISM Services PMI", "XAGUSD"): RelevanceJudgment(
+        RelevanceStatus.UNVERIFIED,
+        "Checked scoring/backtest_log.db -- zero rows for this event type across "
+        "outcomes/predictions/tier1_predictions (same absence as every other "
+        "symbol here). Unlike gold, no dedicated Kitco-style release-day silver "
+        "series was found. The one same-day candidate checked, Aug 5 2026 (the "
+        "date used for XAUUSD's RELEVANT entry): silver was 'rising in early "
+        "trading' that day, but Yahoo Finance's own headline attributes it to "
+        "'Hormuz optimism', not ISM Services (Yahoo Finance, 'Silver prices "
+        "today, Wednesday, August 5, 2026: Prices rising in early trading on "
+        "Hormuz optimism') -- exactly the confounded-multi-driver-day shape "
+        "flagged as a trap by Task 8's review, so not used. Honest UNVERIFIED: "
+        "no internal DB evidence and no independently-corroborated, ISM-"
+        "Services-isolated silver reaction found after a real search pass",
+    ),
+    ("ISM Services PMI", "US30"): RelevanceJudgment(
+        RelevanceStatus.UNVERIFIED,
+        "Checked scoring/backtest_log.db -- zero rows for this event type "
+        "(outcomes/predictions/tier1_predictions all empty for US30 x ISM "
+        "Services PMI). The one dated case found, Sep 3 2026 (August print, "
+        "55.4 beat vs 54.3 forecast) -- Dow Jones climbed 624.16 points "
+        "(+1.18%) to 53,686.11 -- is exactly the confounded-day shape Task 8's "
+        "review flagged as a trap: CNBC's own headline for that day is 'S&P 500 "
+        "posts back-to-back gains as Treasury yields retreat', TheStreet's is "
+        "'Nasdaq, S&P 500 leap as Treasury yields fall, Dollar retreats', and "
+        "Yahoo Finance's is 'Dow, S&P 500 post best day in a month...as rate-"
+        "hike fears ease' -- every independent headline names Fed Governor "
+        "Waller's dovish remarks and falling Treasury yields as the driver, not "
+        "ISM Services PMI, even though the ISM beat is reported in the same "
+        "article as a same-day data point. Per explicit review guidance not to "
+        "force a 'named as one of several' citation into RELEVANT, this stays "
+        "honestly UNVERIFIED -- no internal DB evidence and no independently-"
+        "corroborated, ISM-Services-isolated US30 reaction found",
+    ),
+    ("ISM Services PMI", "US500"): RelevanceJudgment(
+        RelevanceStatus.UNVERIFIED,
+        "Checked scoring/backtest_log.db -- zero rows for this event type "
+        "(outcomes/predictions/tier1_predictions all empty for US500 x ISM "
+        "Services PMI). Same Sep 3 2026 confounded-day case checked for US30 "
+        "applies here too (S&P 500 +1.06% to 7,747.71) -- every independent "
+        "headline (CNBC, TheStreet, Yahoo Finance) names Fed Waller's dovish "
+        "comments and falling Treasury yields, not the same-day ISM Services "
+        "beat, as the driver. No separate, isolated ISM-Services-specific "
+        "S&P 500 reaction was found in a real search pass. Honest UNVERIFIED, "
+        "not a forced RELEVANT off a confounded multi-driver day, per the "
+        "explicit lesson from Task 8's two corrected US30/US500/NAS100 "
+        "citations",
+    ),
+    ("ISM Services PMI", "NAS100"): RelevanceJudgment(
+        RelevanceStatus.UNVERIFIED,
+        "Checked scoring/backtest_log.db -- zero rows for this event type "
+        "(outcomes/predictions/tier1_predictions all empty for NAS100 x ISM "
+        "Services PMI). Same Sep 3 2026 case checked for US30/US500 applies "
+        "(Nasdaq Composite +1.4% that day) -- again attributed by every "
+        "independent headline to Fed Waller's remarks and falling yields, not "
+        "ISM Services, and in any case that figure is the Nasdaq Composite, "
+        "not the NAS100 index this table tracks (same distinction Task 8's "
+        "NAS100 entry already draws). No isolated, ISM-Services-specific "
+        "NAS100 reaction found. Honest UNVERIFIED: no internal DB evidence and "
+        "no independently-corroborated external case after a real search pass",
+    ),
+    ("ISM Services PMI", "EURUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Checked scoring/backtest_log.db -- zero rows for this event type "
+        "(confirmed empty for every symbol, see XAUUSD entry's SQL). Real, "
+        "dated WebSearch finding, ISM-Services-specific, independently "
+        "re-fetched to confirm the number and direction: Apr 6 2026 (March "
+        "print, 54 vs 55 forecast, a miss, employment sub-index falling to a "
+        "multi-year low) -- EUR/USD traded up 0.25% near 1.1544 in late "
+        "European trade 'following the weaker-than-expected data, reflecting "
+        "the currency market's reaction to the softer economic signals and "
+        "implications for Federal Reserve policy' (FXStreet, 'Breaking: US ISM "
+        "Services PMI came in at 54 in March, below forecasts', fxstreet.com/"
+        "news/when-is-the-us-ism-services-pmi-data-for-march-and-how-could-it-"
+        "affect-eur-usd-202604061129) -- this is a single-driver release-"
+        "reaction article, not a multi-factor day, corroborated by VT Markets' "
+        "independent same-day coverage of the same print",
+    ),
+    ("ISM Services PMI", "GBPUSD"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Checked scoring/backtest_log.db -- zero rows for this event type (see "
+        "XAUUSD entry's SQL). Real, dated WebSearch finding, ISM-Services-"
+        "specific, independently re-fetched: the same Apr 6 2026 March-print "
+        "miss (54 vs 55 forecast) -- GBP/USD held steady near 1.3240, with the "
+        "soft ISM print explicitly named as offsetting same-day US employment "
+        "strength (FXStreet, 'GBP/USD holds near 1.3240 as soft ISM data "
+        "offsets US jobs strength', fxstreet.com/news/gbp-usd-steady-above-132"
+        "-after-ism-miss-weighs-on-the-us-dollar-202604062254) -- a real, "
+        "two-named-driver headline (ISM + jobs), not a broad multi-factor "
+        "rally day, and the exact same underlying print already confirmed for "
+        "EURUSD above, not reasoned by analogy from a different event",
+    ),
+    ("ISM Services PMI", "USDJPY"): RelevanceJudgment(
+        RelevanceStatus.RELEVANT,
+        "Checked scoring/backtest_log.db -- zero rows for this event type (see "
+        "XAUUSD entry's SQL). Real, dated WebSearch finding, ISM-Services-"
+        "specific, independently re-fetched and cross-checked against a "
+        "second, independent source (VT Markets mirrors the same FXStreet "
+        "story): the same Apr 6 2026 March-print miss (54 vs 55 forecast, "
+        "employment sub-index to a multi-year low) -- USD/JPY traded flat, "
+        "edging up less than 0.1% to settle around 159.60, consolidating in a "
+        "150-pip range, with FXStreet's own headline naming the ISM print "
+        "directly as one of two drivers alongside US-Iran ceasefire talk "
+        "optimism: 'USD/JPY steady near 160.00 as weak ISM data offsets "
+        "geopolitical bid' (fxstreet.com/news/usd-jpy-steady-near-16000-as-"
+        "weak-ism-data-offsets-geopolitical-bid-202604062225) -- a real, "
+        "explicitly two-named-driver headline, not a broad multi-factor rally "
+        "day, corroborated independently by VT Markets' own version of the "
+        "same story",
+    ),
+    ("ISM Services PMI", "USDCHF"): RelevanceJudgment(
+        RelevanceStatus.UNVERIFIED,
+        "Checked scoring/backtest_log.db -- zero rows for this event type (see "
+        "XAUUSD entry's SQL). The same Apr 6 2026 March-print miss checked for "
+        "EURUSD/GBPUSD/USDJPY was also checked for USDCHF: the only finding is "
+        "that 'the US Dollar traded slightly on the defensive... the Greenback "
+        "navigated an inconclusive range following the release, with the DXY "
+        "alternating gains with losses in the 98.50-98.40 band' -- explicitly "
+        "inconclusive, not a real directional USDCHF move that can be cited. "
+        "No other dated instance with a real, isolated USDCHF reaction to ISM "
+        "Services was found. Honest UNVERIFIED, not a forced RELEVANT off a "
+        "vague or inconclusive DXY-band description",
+    ),
+    ("ISM Services PMI", "AUDUSD"): RelevanceJudgment(
+        RelevanceStatus.UNVERIFIED,
+        "Checked scoring/backtest_log.db -- zero rows for this event type (see "
+        "XAUUSD entry's SQL). One candidate citation, 'Australian Dollar "
+        "slides to 0.70 as US ISM PMI, revives the US Dollar' "
+        "(fxstreet.com/news/australian-dollar-slides-to-070-as-us-ism-pmi-"
+        "revives-the-us-dollar-202608032230), was checked and REJECTED: its "
+        "date, Aug 3 2026, is ISM MANUFACTURING PMI's release day (already "
+        "used, correctly, as this exact citation for AUDUSD's ISM Manufacturing "
+        "PMI entry above) -- using it again here would be the reasoning-by-"
+        "analogy-to-a-different-event trap this task's brief explicitly warns "
+        "against, not real ISM-Services-specific evidence. Every other AUDUSD "
+        "hit found was pre-release ('ahead of'/'awaits ISM Services') framing, "
+        "not a post-release reaction. Honest UNVERIFIED: no internal DB "
+        "evidence and no independently-corroborated, ISM-Services-isolated "
+        "AUDUSD reaction found after a real search pass",
+    ),
+    ("ISM Services PMI", "NZDUSD"): RelevanceJudgment(
+        RelevanceStatus.UNVERIFIED,
+        "Checked scoring/backtest_log.db -- zero rows for this event type (see "
+        "XAUUSD entry's SQL). Every NZDUSD/ISM-Services search hit found "
+        "attributes same-day NZDUSD moves to Chinese Services PMI data or RBNZ "
+        "policy instead of the US ISM Services print itself (e.g. 'New Zealand "
+        "Dollar softens... despite robust China services PMI data'; 'New "
+        "Zealand Dollar weakens as RBNZ decision, US data weigh' with US data "
+        "only vaguely named) -- no isolated, dated case of NZDUSD moving "
+        "specifically on the US ISM Services print was found. Honest "
+        "UNVERIFIED: no internal DB evidence and no independently-corroborated "
+        "external case after a real search pass, not reasoned by analogy from "
+        "AUDUSD's own (also UNVERIFIED) entry",
+    ),
+    ("ISM Services PMI", "USDCAD"): RelevanceJudgment(
+        RelevanceStatus.UNVERIFIED,
+        "Checked scoring/backtest_log.db -- zero rows for this event type (see "
+        "XAUUSD entry's SQL). Every USDCAD/ISM-Services search hit found is "
+        "pre-release framing ('USD/CAD remains below 1.3800 due to subdued Oil "
+        "prices, US ISM Services PMI eyed') or actually references ISM "
+        "MANUFACTURING PMI's release days instead (e.g. the Jan 2026 USD/CAD "
+        "citation already used, correctly, in this table's ISM Manufacturing "
+        "PMI x USDCAD entry) -- reusing a Manufacturing-day citation here "
+        "would repeat the exact reasoning-by-analogy trap this task's brief "
+        "warns against. No isolated, dated, post-release ISM-Services-specific "
+        "USDCAD reaction was found. Honest UNVERIFIED: no internal DB evidence "
+        "and no independently-corroborated external case after a real search "
+        "pass",
+    ),
 }
 
 
