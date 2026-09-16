@@ -545,7 +545,7 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
     ("FOMC Rate Decision", "US500"): RelevanceJudgment(
         RelevanceStatus.RELEVANT,
         "Real, dated WebSearch finding, FOMC-specific: the June 17 2026 "
-        "FOMC decision (rates held at 3.50-3.75%, but 9 of 19 members' dot "
+        "FOMC decision (rates held at 3.50-3.75%, but 9 of 18 members' dot "
         "plot pointed to a 2026 hike) -- 'S&P 500 Drops 1.2% as Fed "
         "Signals 2026 Rate Hike', the index declined 91.25 points (-1.21%) "
         "to close at 7,420.10 that day (X/Markets Today market-close "
@@ -689,7 +689,16 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
         "scoring DB (scoring/backtest_log.db, predictions/outcomes tables): "
         "the same 2026-08-26 'Prelim GDP q/q' release has a confirmed "
         "outcome row against US30 -- 'Dukascopy: -0.27% in 30min (auto)' -- "
-        "real, GDP-specific, distinct instrument from the XAUUSD row above",
+        "real, GDP-specific, distinct instrument from the XAUUSD row above. "
+        "DISCLOSURE (added 2026-09-16 per review): this is the SAME "
+        "12:30Z 2026-08-26 measurement cited for Core PCE Price Index m/m x "
+        "US30 below (outcomes row id 78 vs this row's id 80, identical "
+        "-0.27%/30min timestamp and value) -- BEA genuinely co-released "
+        "Personal Income & Outlays (Core PCE) and Prelim GDP q/q in the "
+        "same window that day, so both citations are legitimate, but a "
+        "reader (especially phase 2 magnitude work) should not treat this "
+        "as two independent observations of market reaction; it is one "
+        "real measurement relevant to both simultaneously-released events",
     ),
     ("GDP q/q", "US500"): RelevanceJudgment(
         RelevanceStatus.RELEVANT,
@@ -842,7 +851,16 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
         "the same 2026-08-26 'Core PCE Price Index m/m' release has a "
         "confirmed outcome row against US30 -- actual_direction 'bearish', "
         "'Dukascopy: -0.27% in 30min (auto)' -- real, Core-PCE-specific, "
-        "distinct instrument from the XAUUSD row above, same release",
+        "distinct instrument from the XAUUSD row above, same release. "
+        "DISCLOSURE (added 2026-09-16 per review): this is the SAME "
+        "12:30Z 2026-08-26 measurement cited for GDP q/q x US30 above "
+        "(outcomes row id 78 here vs id 80 there, identical -0.27%/30min "
+        "timestamp and value) -- BEA genuinely co-released Personal Income "
+        "& Outlays (Core PCE) and Prelim GDP q/q in the same window that "
+        "day, so both citations are legitimate, but a reader (especially "
+        "phase 2 magnitude work) should not treat this as two independent "
+        "observations of market reaction; it is one real measurement "
+        "relevant to both simultaneously-released events",
     ),
     ("Core PCE Price Index m/m", "US500"): RelevanceJudgment(
         RelevanceStatus.RELEVANT,
@@ -908,8 +926,13 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
         "dollar-eases-after-pce-data-yen-remains-near-intervention-zone-"
         "202606252035); (2) the 2026-08-26 print (headline hot, core in "
         "line) -- USD/JPY traded around 159.41, recovering off an intraday "
-        "low of 158.88 (forex.com, 'USD/JPY Forecast: Yen remains under "
-        "pressure after US PCE data'); a third source (OANDA) separately "
+        "low of 158.88 (CORRECTED 2026-09-16: the previously-cited "
+        "forex.com source did not actually contain these figures -- "
+        "re-verified via WebSearch, the real source is FXStreet, "
+        "'Japanese Yen reverses earlier gains as US Dollar firms after PCE "
+        "data', fxstreet.com/news/japanese-yen-reverses-earlier-gains-as-"
+        "us-dollar-firms-after-pce-data-202608261418); a third source "
+        "(OANDA) separately "
         "frames USDJPY as 'highly sensitive' to PCE surprises with a "
         "'statistically consistent' directional response",
     ),
@@ -1386,14 +1409,34 @@ _RELEVANCE_TABLE: dict[tuple[str, str], RelevanceJudgment] = {
     ),
     ("Retail Sales m/m", "US30"): RelevanceJudgment(
         RelevanceStatus.RELEVANT,
-        "Internal, real, live-logged evidence from this project's own scoring "
-        "DB (scoring/backtest_log.db): 2 real Retail Sales m/m occurrences "
-        "logged against US30 in the outcomes table with Dukascopy-measured "
-        "30-min moves (2026-03-06: -0.84%, 2026-04-01: -0.21%), plus a real, "
-        "live 'Likely'-confidence Tier1 prediction (tier1_predictions id 16, "
-        "logged 2026-09-13) for the 2026-09-16 release against US30, same "
-        "BofA Consumer Checkpoint sourcing as the XAUUSD entry -- distinct "
-        "instrument, real and Retail-Sales-specific evidence",
+        "CORRECTED 2026-09-16 per review -- the prior version of this "
+        "citation rested partly on two contaminated outcomes rows, "
+        "verified directly against scoring/backtest_log.db and now "
+        "removed: (1) outcomes id 56 (event_title 'Retail Sales m/m', "
+        "instrument US30, event_time_utc 2026-03-06T13:30:00+00:00, "
+        "-0.84%/30min) is a mislabeled duplicate of outcomes id 8 "
+        "(event_title 'Non-Farm Employment Change', same instrument, "
+        "same 2026-03-06T13:30:00+00:00 timestamp, same -0.84%/30min "
+        "value) -- US Retail Sales is not released at that 13:30Z slot, "
+        "that is the NFP release time, so id 56 is really the NFP move "
+        "mislabeled as Retail Sales, not independent Retail-Sales "
+        "evidence. (2) outcomes id 58 (2026-04-01T12:30:00+00:00, US30, "
+        "-0.21%/30min) shares an identical -0.21%/30min value with "
+        "outcomes id 57, the SAME timestamp's Retail Sales row for "
+        "XAUUSD -- two different instruments producing an identical "
+        "measured move is not independently plausible, so id 58 is "
+        "treated as contaminated too, and neither row is used here. What "
+        "remains after removing both: a real, live, 'Likely'-confidence "
+        "Tier1 prediction (tier1_predictions id 16, logged "
+        "2026-09-13T14:26:01Z) for the 2026-09-16 Retail Sales m/m "
+        "release against US30, sourced from BofA Institute's Consumer "
+        "Checkpoint (institute.bankofamerica.com/economic-insights/"
+        "consumer-checkpoint-august-2026.html, published 2026-08-11) -- "
+        "this is a forward-looking model prediction, not a confirmed "
+        "outcome, so it is weaker than the removed rows would have been "
+        "had they been genuine, but it is real, dated, Retail-Sales-"
+        "specific evidence that the event is treated as reaching this "
+        "symbol, not fabricated or borrowed from another event",
     ),
     ("Retail Sales m/m", "US500"): RelevanceJudgment(
         RelevanceStatus.RELEVANT,

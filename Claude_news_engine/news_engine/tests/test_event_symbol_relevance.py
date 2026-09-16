@@ -150,6 +150,13 @@ def test_every_one_of_the_108_real_combinations_is_present():
             except KeyError:
                 missing.append((event_type, symbol))
     assert missing == [], f"missing {len(missing)} of 108 real entries: {missing[:5]}{'...' if len(missing) > 5 else ''}"
+    assert len(esr._RELEVANCE_TABLE) == 108, (
+        f"expected exactly 108 keys in _RELEVANCE_TABLE, got "
+        f"{len(esr._RELEVANCE_TABLE)} -- a typo'd or duplicate key would "
+        f"add a stray entry without causing any of the 108 real "
+        f"combinations to go missing, so this length check is needed on "
+        f"top of the missing-combination check above"
+    )
     print("PASS\n")
 
 
