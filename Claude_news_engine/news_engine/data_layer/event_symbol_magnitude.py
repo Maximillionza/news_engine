@@ -725,6 +725,154 @@ _MAGNITUDE_TABLE: dict[tuple[str, str], MagnitudeJudgment] = {
             "with the stated percentage, cross-checking the number."
         ),
     ),
+    # --- GDP q/q (Task 6) ---------------------------------------------
+    # Bands (reasoned starting ruler, not independently re-derived):
+    # <~0.3% typical move = LOW, ~0.3-0.8% = MEDIUM, >~0.8% = HIGH.
+    # GDP q/q's own Phase 1 relevance citations already carried real,
+    # quantified move sizes for all 10 RELEVANT symbols (unusual --
+    # normally this project's own backtest_log.db or a fresh WebSearch
+    # is needed), so those citations were the starting point here,
+    # independently re-verified where a further search was warranted.
+    ("GDP q/q", "XAUUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "This project's own scoring/backtest_log.db outcomes table (id 79), event_title='Prelim "
+            "GDP q/q', instrument=XAUUSD, event_time_utc=2026-08-26T12:30:00+00:00 (Q2 2026 second "
+            "estimate, confirmed at 1.5%): 'Dukascopy: -0.34% in 30min (auto)'. -0.34% is just over "
+            "the ~0.3% LOW/MEDIUM line -- MEDIUM, though close enough to the boundary that a LOW read "
+            "would not be unreasonable. Only one GDP-specific print is live-logged for this pair (no "
+            "dedicated Layer1_Event_to_USD row exists for GDP as of this session), so this single data "
+            "point carries the whole tier."
+        ),
+    ),
+    ("GDP q/q", "XAGUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, dated WebSearch finding, GDP-specific (from Phase 1's own relevance citation for "
+            "this pair): the Jul 30 2026 US Q2 advance GDP release (1.5% actual vs 2.1% expected, a "
+            "miss) -- silver advanced toward $58.80/oz, 'gaining around 1.7% on the day, as softer "
+            "United States inflation data and weaker-than-expected economic growth placed pressure on "
+            "the US Dollar' (FX Leaders, 'Silver Surges Past $59 as Weak Dollar, Soft GDP and Middle "
+            "East Tensions Fuel XAG/USD Rally', fxleaders.com/news/2026/07/31/silver-surges-past-59-as-"
+            "weak-dollar-soft-gdp-and-middle-east-tensions-fuel-xag-usd-rally/). 1.7% is well over the "
+            "~0.8% HIGH line, though GDP is named as one of three compounding drivers that day (weak "
+            "Dollar, soft GDP, Middle East tensions), not the sole cause."
+        ),
+    ),
+    ("GDP q/q", "US30"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "This project's own scoring/backtest_log.db outcomes table (id 80), event_title='Prelim "
+            "GDP q/q', instrument=US30, event_time_utc=2026-08-26T12:30:00+00:00 (same Q2 2026 second "
+            "estimate as the XAUUSD entry above): 'Dukascopy: -0.27% in 30min (auto)'. -0.27% is under "
+            "the ~0.3% LOW line. DISCLOSURE (carried over from Phase 1's own relevance citation for "
+            "this pair): this is the same 12:30Z 2026-08-26 measurement also cited for Core PCE Price "
+            "Index m/m x US30 (outcomes row id 78 vs this row's id 80, identical -0.27%/30min timestamp "
+            "and value) -- BEA genuinely co-released Personal Income & Outlays (Core PCE) and Prelim "
+            "GDP q/q in the same window that day, so this citation is legitimate for GDP too, but it is "
+            "one real measurement relevant to both events simultaneously, not two independent "
+            "observations."
+        ),
+    ),
+    ("GDP q/q", "US500"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated WebSearch finding, GDP-specific (from Phase 1's own relevance citation for "
+            "this pair, a different GDP print than the XAUUSD/US30 internal-DB entries but still a "
+            "real US GDP release): Feb 20 2026, US Q4 GDP grew an annualized 1.4% vs 3% expected -- "
+            "'contracts for the S&P 500 and the Dow were 0.3% lower' pre-market as futures extended "
+            "losses (TradingEconomics/FX.co, 'US Futures Extend Drop on GDP Miss', tradingeconomics.com/"
+            "united-states/stock-market/news/527452, fx.co/en/forex-news/2908716). 0.3% sits right at "
+            "the LOW/MEDIUM boundary; read as MEDIUM per the band's inclusive lower edge, consistent "
+            "with how this same boundary case was read for FOMC Rate Decision x US500 elsewhere in "
+            "this table. A same-session PCE overshoot is named as a compounding factor, so this is real "
+            "but not a GDP-isolated move."
+        ),
+    ),
+    ("GDP q/q", "NAS100"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated WebSearch finding, GDP-specific (from Phase 1's own relevance citation for "
+            "this pair): the same Feb 20 2026 Q4 GDP miss (1.4% vs 3% expected) -- 'those for the "
+            "Nasdaq 100 fell 0.5%' pre-market, a larger pre-market drop than the S&P 500's 0.3% cited "
+            "in the US500 entry above (TradingEconomics, same URL as US500: tradingeconomics.com/"
+            "united-states/stock-market/news/527452). 0.5% is within the ~0.3-0.8% MEDIUM band."
+        ),
+    ),
+    ("GDP q/q", "EURUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated WebSearch finding, GDP-specific, independently re-verified for this task via "
+            "a second, distinct source beyond Phase 1's own relevance citation: Babypips' own Jul 30 "
+            "2026 market recap states 'Gross domestic product expanded at an annualized 1.5% in the "
+            "second quarter, below the roughly 2.1% economists had expected' and that the Dollar 'fell "
+            "on net against the majors' but was 'down only a few tenths of a percent against the "
+            "Canadian dollar and the euro' (Babypips, 'Financial & Forex Market Recap - July 30, 2026', "
+            "babypips.com/news/financial-forex-market-recap-2026-07-30). 'A few tenths of a percent' "
+            "is under the ~0.3% LOW line. This is a smaller, more conservative figure than Phase 1's own "
+            "relevance citation for this pair (which describes EUR/USD reaching a six-week high near "
+            "1.1534 the same day, without stating a percentage, and names a same-day Eurozone GDP beat "
+            "and suspected Japanese-intervention pressure on the Dollar as two further simultaneous "
+            "drivers) -- the Babypips figure was preferred here because it is the only one of the two "
+            "sources that actually quantifies EURUSD's own move rather than just a price level."
+        ),
+    ),
+    ("GDP q/q", "USDJPY"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, dated WebSearch finding, GDP-specific (from Phase 1's own relevance citation for "
+            "this pair): on Jul 30 2026 (the same US Q2 advance GDP miss day), 'the USD moved sharply "
+            "lower dragged down by the USDJPY' with USDJPY falling from 163.30 to a low of 158.00 "
+            "(InvestingLive, 'Americas FX news wrap 30 Jul: USDJPY moves sharply lower on speculation "
+            "of intervention', investinglive.com/news/investinglive-americas-fx-news-wrap-30-jul-"
+            "usdjpy-move/). 163.30 to 158.00 is a ~3.2% move, well over the ~0.8% HIGH line. GDP is a "
+            "real, named contributing factor in the source, but intervention speculation is framed as "
+            "the dominant driver for this specific pair that session, so the GDP-specific contribution "
+            "alone cannot be isolated from the larger intervention-driven move -- HIGH reflects the "
+            "real total move on the GDP day, not a GDP-isolated figure."
+        ),
+    ),
+    ("GDP q/q", "USDCHF"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, dated WebSearch finding, GDP-specific (from Phase 1's own relevance citation for "
+            "this pair): the same Jul 30 2026 session -- the same InvestingLive Americas FX wrap used "
+            "for the USDJPY entry above quantifies the broad post-GDP-miss Dollar weakness as "
+            "'declines of 1.25% vs the NZD, 1.05% vs the AUD, and 1.00% vs the CHF leading the "
+            "declines' (i.e. USDCHF fell roughly 1.00% that session) (investinglive.com/news/"
+            "investinglive-americas-fx-news-wrap-30-jul-usdjpy-move/). 1.00% is over the ~0.8% HIGH "
+            "line, attributed to the same combination of the GDP miss, a divided Fed, and intervention "
+            "speculation -- real and GDP-specific, though GDP is one of several named simultaneous "
+            "drivers, not isolated."
+        ),
+    ),
+    ("GDP q/q", "AUDUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, dated WebSearch finding, GDP-specific (from Phase 1's own relevance citation for "
+            "this pair): the same Jul 30 2026 US Q2 advance GDP miss (1.5% vs 2.1% expected) -- AUD/USD "
+            "traded around 0.7010, 'up 0.82% on the day', with 'US Q2 GDP missing expectations' "
+            "explicitly named as helping the pair advance alongside a divided Fed hold vote (FXStreet, "
+            "'Australian Dollar rallies despite softer CPI as US Dollar tumbles after Fed, weaker "
+            "data', fxstreet.com/news/australian-dollar-rallies-despite-softer-cpi-as-us-dollar-"
+            "tumbles-after-fed-weaker-data-202607301450). 0.82% is just over the ~0.8% HIGH line -- "
+            "figure already checked by Phase 1 against the article's own stated level/percentage before "
+            "use, per the review lesson from PPI's prior AUDUSD correction."
+        ),
+    ),
+    ("GDP q/q", "NZDUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, dated WebSearch finding, GDP-specific (from Phase 1's own relevance citation for "
+            "this pair): the same Jul 30 2026 session -- the same InvestingLive Americas FX wrap used "
+            "for the USDJPY/USDCHF entries above quantifies the broad post-GDP-miss Dollar weakness as "
+            "'declines of 1.25% vs the NZD...leading the declines' (i.e. NZDUSD was the single largest "
+            "mover of the majors that session, up roughly 1.25%) (investinglive.com/news/investinglive-"
+            "americas-fx-news-wrap-30-jul-usdjpy-move/). 1.25% is well over the ~0.8% HIGH line, "
+            "attributed to the same GDP-miss/Fed/intervention-speculation combination -- real and "
+            "GDP-specific, not reasoned by analogy from AUDUSD despite the shared source."
+        ),
+    ),
 }
 
 
