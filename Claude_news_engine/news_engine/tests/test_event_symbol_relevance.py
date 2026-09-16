@@ -140,6 +140,19 @@ def test_retail_sales_has_all_12_symbol_entries_with_real_shape():
     print("PASS\n")
 
 
+def test_every_one_of_the_108_real_combinations_is_present():
+    print("=== Completeness: all 9x12=108 real (event_type, symbol) combinations are present in the table ===")
+    missing = []
+    for event_type in esr.EVENT_TYPES:
+        for symbol in esr.SYMBOLS:
+            try:
+                esr.get_relevance(event_type, symbol)
+            except KeyError:
+                missing.append((event_type, symbol))
+    assert missing == [], f"missing {len(missing)} of 108 real entries: {missing[:5]}{'...' if len(missing) > 5 else ''}"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_get_relevance_raises_keyerror_for_a_pair_outside_the_108_scope()
     test_treat_as_relevant_relevant_is_true()
@@ -155,4 +168,5 @@ if __name__ == "__main__":
     test_ism_manufacturing_has_all_12_symbol_entries_with_real_shape()
     test_ism_services_has_all_12_symbol_entries_with_real_shape()
     test_retail_sales_has_all_12_symbol_entries_with_real_shape()
+    test_every_one_of_the_108_real_combinations_is_present()
     print("All event_symbol_relevance scaffolding tests passed.")
