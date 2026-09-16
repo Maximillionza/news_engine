@@ -202,6 +202,181 @@ _MAGNITUDE_TABLE: dict[tuple[str, str], MagnitudeJudgment] = {
             "by the same-day oil selloff -- CPI's own contribution is LOW-tier."
         ),
     ),
+    # --- PPI m/m (Task 3) -------------------------------------------
+    ("PPI m/m", "XAUUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "This project's own scoring/backtest_log.db outcomes table, event_title='PPI m/m', "
+            "instrument=XAUUSD, 6 real logged 30-min post-release moves (Dukascopy, auto): "
+            "-0.24% (2026-02-27), -0.41% (2026-03-18), +0.33% (2026-06-11), +0.73% (2026-07-15), "
+            "+0.25% (2026-08-13), -0.54% (2026-09-10). Median absolute move ~0.37%, mean ~0.42% -- "
+            "MEDIUM. The 2026-09-10 print is the same one XAGUSD's own entry below documents as a "
+            "sharp real silver reaction, and is also the case docs/feature-inventory-2026-09-11.md "
+            "Sec.3 flags as a live Tier1 directional miss on gold -- wrongness there was directional, "
+            "not a magnitude question."
+        ),
+    ),
+    ("PPI m/m", "XAGUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, dated finding, PPI-specific, independently re-verified for this task by directly "
+            "fetching the source article's own text: on 2026-09-10, right at the 8:30 a.m. ET release "
+            "of the hot August PPI (annual rate accelerating to 5.4%), 'silver dropped from $67.31 to "
+            "$64.63, a 4.1% slide' -- gold fell only 1.35% the same session (goldsilver.com, 'Silver "
+            "Just Fell Three Times Harder Than Gold. Here's the PPI Story Behind It.', goldsilver.com/"
+            "industry-news/goldsilver-news/silver-underperforms-gold-ppi-day/). 4.1% is well over the "
+            "~0.8% HIGH line. NOTE: an earlier-seen WebSearch summary of a different article (vantage"
+            "markets.com) claimed a $68.50->$63.99 move (~6.6%) for the same day -- that figure could "
+            "not be independently confirmed by direct fetch (403) and was NOT used here in favor of "
+            "the goldsilver.com figure whose exact wording was directly confirmed; both point to the "
+            "same HIGH tier regardless."
+        ),
+    ),
+    ("PPI m/m", "US30"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "This project's own scoring/backtest_log.db outcomes table, event_title='PPI m/m', "
+            "instrument=US30, 4 real logged post-release moves: -0.61% (2026-03-18, Dukascopy 30-min "
+            "auto), +0.17% (2026-07-15, Dukascopy 30-min auto), +0.24% (2026-08-13, Dow +119pts shortly "
+            "after the open following a flat/cooler July PPI, closed the day +0.24% -- CNBC live market "
+            "updates, ts2.tech), -0.24% (2026-09-10, Dukascopy 30-min auto). Median absolute move 0.24%, "
+            "under the ~0.3% LOW line, with only one of four prints (0.61%) reaching MEDIUM -- LOW. "
+            "Same pattern as this project's own CPI m/m x US30 entry: the Dow's value/industrial "
+            "weighting reacts less than the more rate-sensitive S&P/Nasdaq composition."
+        ),
+    ),
+    ("PPI m/m", "US500"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated WebSearch finding, PPI-specific, independently re-verified for this task: on "
+            "2026-09-10, following the hot August PPI report (producer prices accelerating to 5.4% y/y "
+            "on a 4.2% energy surge), 'the stock market opened in the red ... with the S&P 500 down "
+            "0.6%, the Dow down 0.3%, and the Nasdaq Composite down 1.2%' (Seeking Alpha, 'Wall Street "
+            "slides as investors digest PPI report', seekingalpha.com/news/4641457). 0.6% is within the "
+            "~0.3-0.8% MEDIUM band. A separate dated instance in Phase 1's own citation shows the "
+            "opposite-direction case -- a cooler PPI print sending the S&P 500 to a fresh record -- "
+            "consistent with this being a real, surprise-magnitude-dependent PPI reaction, not a one-"
+            "off."
+        ),
+    ),
+    ("PPI m/m", "NAS100"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, PPI-specific finding from Nasdaq.com's own NDX options research, independently "
+            "re-verified for this task: this is the same ROLLING tracker Phase 1's own relevance "
+            "citation already flagged as shifting with the trailing window used. Re-confirmed figures "
+            "across the source's own articles: 'the average price change for NDX on PPI-day is +/-1.01%, "
+            "lower than the average price change for all days over the same period of +/-1.06%' and, in "
+            "a different window, 'the average move for NDX over the most recent twelve PPI reports is "
+            "+/-0.94%, much higher than +/-0.66% for CPI reports' (nasdaq.com/articles/inflation-numbers-"
+            "tap-recent-nasdaq-100-ndx-reactions-cpi-and-ppi-mixed, nasdaq.com/articles/nasdaq-100-and-a-"
+            "lack-of-volatility-on-ppi-days). Every window checked (0.83%-1.08%) sits at or above the "
+            "~0.8% HIGH line -- HIGH, though no single number is stable enough to cite as fixed."
+        ),
+    ),
+    ("PPI m/m", "EURUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated finding, PPI-specific, independently re-verified for this task by directly "
+            "fetching the source article's own text: investingLive's Americas FX news wrap for "
+            "2026-05-13 (the day of the hot April PPI report, 1.4% m/m vs 0.5% forecast) gives the "
+            "day's currency-vs-USD moves verbatim: 'Versus the USD, the only currency to move higher "
+            "vs the USD was the AUD which rose by 0.23% vs the greenback. The others fell: EUR -0.22%, "
+            "JPY -0.16%, GBP -0.10%, CHF -0.14%, CAD -0.07%, NZD -0.27%' (investinglive.com/news/"
+            "investinglive-americas-fx-news-wrap-13-may-20260513/, headlined 'PPI shocks markets, "
+            "stocks recover'). EUR -0.22% (EURUSD -0.22%) is under the ~0.3% LOW line. A separate, "
+            "distinct September 2026 hot-PPI instance (FXStreet, 'Euro weakens despite ECB rate hike as "
+            "US PPI comes in hot') was found via WebSearch summary only (~0.25%, direct fetch blocked "
+            "403/Cloudflare) and points the same direction/tier but was not relied on alone."
+        ),
+    ),
+    ("PPI m/m", "GBPUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated WebSearch finding, PPI-specific: the Aug 2026 US PPI beat (5.4% y/y vs 5.3% "
+            "forecast, released 2026-09-10) sent GBPUSD down -- 'The GBP/USD trades at 1.3525, down "
+            "0.17%' -- as 'investors priced in a more hawkish Federal Reserve' (FXStreet, 'British "
+            "Pound feels the heat as hot PPI puts Fed hike in play', fxstreet.com/news/british-pound-"
+            "feels-the-heat-as-hot-ppi-puts-fed-hike-in-play-202609101527; direct fetch blocked, "
+            "403 -- figure taken from a WebSearch result that quoted the article's own price-action "
+            "line verbatim). 0.17% is under the ~0.3% LOW line."
+        ),
+    ),
+    ("PPI m/m", "USDJPY"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated finding, PPI-specific, independently re-verified for this task by directly "
+            "fetching the source article's own text: investingLive's Americas FX news wrap for "
+            "2026-05-13 (hot April PPI day) gives 'JPY -0.16%' in its per-currency-vs-USD move listing "
+            "(investinglive.com/news/investinglive-americas-fx-news-wrap-13-may-20260513/) -- JPY "
+            "weakening 0.16% vs USD means USDJPY rose ~0.16% that day. Under the ~0.3% LOW line. A "
+            "separate September 2026 instance (FXStreet) shows USDJPY bouncing off a seven-month low to "
+            "reclaim 154.00 on the same hot PPI print, and a mirror-day instance shows USDJPY falling "
+            "'over 0.50%' the FOLLOWING day on CPI/BoJ-driven Yen strength -- that later move belongs to "
+            "CPI's own entry, not PPI's, so it was not used here."
+        ),
+    ),
+    ("PPI m/m", "USDCHF"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated finding, PPI-specific, independently re-verified for this task by directly "
+            "fetching the source article's own text: investingLive's Americas FX news wrap for "
+            "2026-05-13 (hot April PPI day) gives 'CHF -0.14%' in its per-currency-vs-USD move listing "
+            "(investinglive.com/news/investinglive-americas-fx-news-wrap-13-may-20260513/) -- CHF "
+            "weakening 0.14% vs USD means USDCHF rose ~0.14% that day. Under the ~0.3% LOW line. NOTE: "
+            "Phase 1's own relevance citation for this pair instead describes a technical retracement "
+            "level ('USDCHF moved above the 50% midpoint of the move up from the January 2026 low at "
+            "0.78228') with no percentage attached -- that framing describes a multi-week technical "
+            "level, not this single print's own magnitude, so it was not used for the tier here."
+        ),
+    ),
+    ("PPI m/m", "AUDUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated finding, PPI-specific, independently re-verified for this task by directly "
+            "fetching a source article's own text: on 2026-09-10, 'The Australian dollar fell 0.80% "
+            "against the US dollar on Thursday as hotter US producer inflation pushed markets towards a "
+            "more hawkish Federal Reserve outlook. AUD/USD traded around 0.7159 after touching 0.7223' "
+            "(VT Markets, global-vtrader.com/en/live-updates/australian-dollar-slides-as-us-ppi-lifts-"
+            "fed-hike-bets-and-oil-surge-boosts-greenback/). 0.80% sits right at the MEDIUM/HIGH "
+            "boundary -- read as MEDIUM (top of the ~0.3-0.8% band) rather than HIGH, since it does not "
+            "clearly exceed the line. A SEPARATE real, dated instance from the same investingLive "
+            "2026-05-13 wrap used for the other FX pairs above shows the opposite-direction case: 'the "
+            "only currency to move higher vs the USD was the AUD which rose by 0.23%' on that day's hot "
+            "April PPI print -- a real LOW-tier instance. FLAG: the two real dated instances span LOW "
+            "to the MEDIUM/HIGH boundary (0.23% vs 0.80%), so MEDIUM is a reasoned middle read, not a "
+            "confident single point estimate."
+        ),
+    ),
+    ("PPI m/m", "NZDUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated finding, PPI-specific, independently re-verified for this task by directly "
+            "fetching the source article's own text: investingLive's Americas FX news wrap for "
+            "2026-05-13 (hot April PPI day) gives 'NZD -0.27%' in its per-currency-vs-USD move listing "
+            "(investinglive.com/news/investinglive-americas-fx-news-wrap-13-may-20260513/) -- NZDUSD "
+            "-0.27% that day, just under the ~0.3% LOW line. A separate June 2026 instance (FXStreet, "
+            "'New Zealand Dollar weakens below 0.5850 as hot US PPI lifts US Dollar') confirms the same "
+            "direction (NZDUSD weakening to ~0.5820 on a hot PPI print) but its own article text, "
+            "directly fetched, does not state a percentage figure -- so the quantified 2026-05-13 figure "
+            "above was used for the tier."
+        ),
+    ),
+    ("PPI m/m", "USDCAD"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated finding, PPI-specific, independently re-verified for this task by directly "
+            "fetching the source article's own text: investingLive's Americas FX news wrap for "
+            "2026-05-13 (hot April PPI day) gives 'CAD -0.07%' in its per-currency-vs-USD move listing "
+            "(investinglive.com/news/investinglive-americas-fx-news-wrap-13-may-20260513/) -- CAD "
+            "weakening 0.07% vs USD means USDCAD rose ~0.07% that day, well under the ~0.3% LOW line. "
+            "Consistent with Phase 1's own relevance citation for this pair, which frames USDCAD's Sep "
+            "2026 PPI-day move as 'real, contained' since oil moves compete with the PPI-driven USD "
+            "impulse the same day (that Sep 2026 FXStreet piece's own text, directly fetched, gave price "
+            "levels -- ~1.3815-1.3835 -- but no percentage, so the quantified May 2026 figure above was "
+            "used for the tier)."
+        ),
+    ),
 }
 
 
