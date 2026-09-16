@@ -160,17 +160,19 @@ _MAGNITUDE_TABLE: dict[tuple[str, str], MagnitudeJudgment] = {
         ),
     ),
     ("CPI m/m", "AUDUSD"): MagnitudeJudgment(
-        tier=MagnitudeTier.LOW,
+        tier=MagnitudeTier.MEDIUM,
         citation=(
-            "Real, dated WebSearch finding, independently re-verified for this task: on the 2026-09-11 "
-            "US CPI day, AUD/USD advanced 0.17% on the day, trading around 0.7170, though the RBA "
-            "rate-hike narrative and the prior day's hot US PPI were also live drivers that day "
-            "(FXStreet, 'AUD/USD Price Forecast: Doji high guards bulls as Fed bets bite', "
-            "fxstreet.com/news/aud-usd-price-forecast-doji-high-guards-bulls-as-fed-bets-bite-"
-            "202609112201 -- corroborated by a separate same-day Mitrade wrap quoting AUD/USD at "
-            "0.7176 after 'a firmer-than-expected US inflation print that would normally weigh on the "
-            "Aussie', mitrade.com/au/insights/news/live-news/article-1-2080126-20260911). 0.17% is "
-            "under the ~0.3% LOW line. FLAG: the Phase 1 relevance "
+            "Real, dated WebSearch/WebFetch finding, independently re-verified for this task by "
+            "directly fetching the source article's own text (FXStreet blocks direct fetches; fetched "
+            "via a working mirror instead): on the 2026-09-11 US CPI day, AUD/USD 'traded at 0.7171, "
+            "up a decent 0.38%' (FXStreet, 'AUD/USD Price Forecast: Doji high guards bulls as Fed bets "
+            "bite', fxstreet.com/news/aud-usd-price-forecast-doji-high-guards-bulls-as-fed-bets-bite-"
+            "202609112201; quote confirmed verbatim via mirror vpsi.org/aud-usd-price-forecast-doji-"
+            "high-guards-bulls-as-fed-bets-bite/), though the RBA rate-hike narrative and the prior "
+            "day's hot US PPI were also live drivers that day. Price level corroborated by a separate "
+            "same-day Mitrade wrap quoting AUD/USD at 0.7176 (mitrade.com/au/insights/news/live-news/"
+            "article-1-2080126-20260911), though that piece states no percentage of its own. 0.38% is "
+            "within the ~0.3-0.8% MEDIUM band. FLAG: the Phase 1 relevance "
             "citation for this pair instead cites an older, dated Aug 2022 instance ('the dollar fell "
             "roughly 1.1%' on a downside CPI surprise) -- that figure describes a broad-dollar move on "
             "an outlier historical event, not this pair's typical CPI-day reaction, so it was not used "
