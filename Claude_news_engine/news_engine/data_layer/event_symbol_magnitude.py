@@ -886,6 +886,204 @@ _MAGNITUDE_TABLE: dict[tuple[str, str], MagnitudeJudgment] = {
             "GDP-specific, not reasoned by analogy from AUDUSD despite the shared source."
         ),
     ),
+
+    # --- Core PCE Price Index m/m (Task 7) -----------------------------
+    # Bands (reasoned starting ruler, not independently re-derived):
+    # <~0.3% typical move = LOW, ~0.3-0.8% = MEDIUM, >~0.8% = HIGH.
+    # Starting point was each symbol's own Phase 1 relevance citation
+    # (data_layer/event_symbol_relevance.get_relevance('Core PCE Price
+    # Index m/m', symbol)), most of which already carried a real,
+    # quantified move -- every number below was independently
+    # re-verified against the source's own exact wording for this task
+    # (via direct fetch where the source allowed it, or via two
+    # independent WebSearch results quoting the article's own text
+    # verbatim where the source blocked direct fetches), not trusted
+    # from a single paraphrased search snippet. XAUUSD/US30 also cross-
+    # checked against this project's own scoring/backtest_log.db
+    # outcomes rows (ids 75, 78) for the same 2026-08-26 release.
+    ("Core PCE Price Index m/m", "XAUUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, dated finding, Core-PCE-specific, independently re-verified for this task by "
+            "directly fetching a mirror of the source article's own text: on the May 2026 print "
+            "(released Jun 25 2026, core PCE 3.4% y/y in line), 'Gold (XAU/USD) price recovers on "
+            "Thursday, up by almost 1% as the Greenback drops' while 'The US Core Personal "
+            "Consumption Expenditures (PCE) Price Index rose as expected by 3.4% YoY in May' (FXStreet "
+            "via TMGM mirror, 'Gold price rebounds as US Dollar's rally stalls despite high Core PCE', "
+            "tmgm.com/en/analysis/market-news/article/gold-price-rebounds-as-us-dollars-rally-stalls-"
+            "despite-high-core-pce-202606251807). 'Almost 1%' is over the ~0.8% HIGH line. This "
+            "project's own scoring/backtest_log.db outcomes table (id 75), same event_type, "
+            "event_time_utc=2026-08-26T12:30:00+00:00 (a different, later print), corroborates a real "
+            "bearish reaction that day ('User-confirmed real trade outcome ... traded the engine SELL "
+            "52% call ... and the trade was successful') but gives no percentage, so the quantified "
+            "May 2026 figure above was used for the tier."
+        ),
+    ),
+    ("Core PCE Price Index m/m", "XAGUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, dated finding, Core-PCE-specific, independently re-verified for this task by "
+            "directly fetching the source article's own text: the same May 2026 print (released Jun 25 "
+            "2026) -- 'Silver (XAG/USD) rebounds on Thursday, trading around $58.65 at the time of "
+            "writing, up 2.16% on the day', with 'the US Dollar Index (DXY) fell 0.24% to 101.30, "
+            "providing support for Dollar-denominated precious metals' (FXStreet, 'Silver price "
+            "rebounds as in-line US PCE data weighs on Dollar', fxstreet.com/news/silver-price-"
+            "rebounds-after-in-line-us-pce-data-eases-dollar-support-202606251620; exact wording "
+            "confirmed via direct fetch of the Mitrade syndication of this article). 2.16% is well "
+            "over the ~0.8% HIGH line -- a materially larger same-day move than XAUUSD's 'almost 1%' "
+            "on the same print, consistent with silver's repeatedly higher volatility than gold seen "
+            "elsewhere in this table (e.g. CPI m/m)."
+        ),
+    ),
+    ("Core PCE Price Index m/m", "US30"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "This project's own scoring/backtest_log.db outcomes table (id 78), event_title='Core PCE "
+            "Price Index m/m', instrument=US30, event_time_utc=2026-08-26T12:30:00+00:00 (July 2026 "
+            "print, headline 3.7% y/y above the 3.6% forecast, core 3.3% y/y in line): 'Dukascopy: "
+            "-0.27% in 30min (auto)'. -0.27% is under the ~0.3% LOW line. DISCLOSURE (carried over from "
+            "Phase 1's own relevance citation for this pair): this is the same 12:30Z 2026-08-26 "
+            "measurement also cited for GDP q/q x US30 (outcomes row id 78 here vs id 80 there, "
+            "identical -0.27%/30min timestamp and value) -- BEA genuinely co-released Personal Income "
+            "& Outlays (Core PCE) and Prelim GDP q/q in the same window that day, so this citation is "
+            "legitimate for Core PCE too, but it is one real measurement relevant to both events "
+            "simultaneously, not two independent observations."
+        ),
+    ),
+    ("Core PCE Price Index m/m", "US500"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated WebSearch finding, Core-PCE-specific (from Phase 1's own relevance citation "
+            "for this pair, independently re-verified via a second WebSearch query against the same "
+            "source): the same 2026-08-26 release -- 'The Nasdaq 100 dropped 0.6% to 29,041.12 (a "
+            "168-point decline), while the S&P 500 slipped 0.1% to 7,668.85 (shedding roughly 8 "
+            "points)... a hotter-than-forecast July inflation print revived talk of a September rate "
+            "hike' (Benzinga/TradingView, 'Nasdaq 100 Falls as Hot PCE Inflation Stirs Rate-Hike Bets', "
+            "tradingview.com/news/benzinga:8d7e7b3ab094b:0-nasdaq-100-falls-as-hot-pce-inflation-stirs-"
+            "rate-hike-bets-stock-market-today/). 0.1% is well under the ~0.3% LOW line -- this is the "
+            "midday, PCE-driven move; Nvidia's after-the-bell earnings the same evening are a separate, "
+            "later confound on the day's final close, not on this reaction."
+        ),
+    ),
+    ("Core PCE Price Index m/m", "NAS100"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated WebSearch finding, Core-PCE-specific (from Phase 1's own relevance citation "
+            "for this pair, independently re-verified via a second WebSearch query against the same "
+            "source): the same 2026-08-26 release, same article as the US500 entry above -- 'The Nasdaq "
+            "100 dropped 0.6% to 29,041.12 (a 168-point decline)... a hotter-than-forecast July "
+            "inflation print revived talk of a September rate hike' (Benzinga/TradingView, same URL as "
+            "US500: tradingview.com/news/benzinga:8d7e7b3ab094b:0-nasdaq-100-falls-as-hot-pce-"
+            "inflation-stirs-rate-hike-bets-stock-market-today/). 0.6% sits within the ~0.3-0.8% "
+            "MEDIUM band -- a real, sourced NAS100 reaction six times larger than the US500's same-"
+            "session move, not reasoned by analogy from it."
+        ),
+    ),
+    ("Core PCE Price Index m/m", "EURUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated WebSearch finding, Core-PCE-specific, independently re-verified for this task: "
+            "the 2026-08-26 release (core PCE 3.3% y/y in line, headline 3.7% y/y above the 3.6% "
+            "forecast) -- 'EUR/USD edged lower as hotter-than-expected headline PCE inflation offered "
+            "modest support to the US Dollar. Core PCE met expectations, leaving the outlook for the "
+            "Fed's September meeting largely unchanged ... At the time of writing, the pair traded "
+            "around 1.1660, down 0.12% on the day' (FXStreet, 'Euro comes under pressure against US "
+            "Dollar after mixed US PCE data', fxstreet.com/news/euro-comes-under-pressure-against-us-"
+            "dollar-after-mixed-us-pce-data-202608261257). 0.12% is under the ~0.3% LOW line."
+        ),
+    ),
+    ("Core PCE Price Index m/m", "GBPUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated WebSearch finding, Core-PCE-specific (from Phase 1's own relevance citation "
+            "for this pair, independently re-verified via a second WebSearch query against the same "
+            "source): the same 2026-08-26 release -- 'The Pound Sterling retreated about 0.39% on "
+            "Wednesday as the US Dollar staged a recovery after a US inflation report showed prices "
+            "remain elevated ... The GBP/USD pair exchanges hands below 1.3600 after reaching a high "
+            "near 1.3651' (FXStreet, 'British Pound weakens against US Dollar as headline PCE beats "
+            "forecasts', fxstreet.com/news/british-pound-weakens-against-us-dollar-as-headline-pce-"
+            "beats-forecasts-202608261335). 0.39% is within the ~0.3-0.8% MEDIUM band."
+        ),
+    ),
+    ("Core PCE Price Index m/m", "USDJPY"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated WebSearch finding, Core-PCE-specific, independently re-verified for this task "
+            "(CORRECTION carried over from Phase 1's own relevance citation, which flagged that an "
+            "earlier-cited forex.com source did not actually contain its figures): on the 2026-08-26 "
+            "release, 'The Japanese Yen gave up its earlier gains against the US Dollar on Wednesday "
+            "... At the time of writing, USD/JPY traded around 159.41, recovering from an intraday low "
+            "of 158.88' (FXStreet, 'Japanese Yen reverses earlier gains as US Dollar firms after PCE "
+            "data', fxstreet.com/news/japanese-yen-reverses-earlier-gains-as-us-dollar-firms-after-pce-"
+            "data-202608261418). 158.88 to 159.41 is a computed ~0.33% move, within the ~0.3-0.8% "
+            "MEDIUM band (just inside it, near the LOW/MEDIUM boundary)."
+        ),
+    ),
+    ("Core PCE Price Index m/m", "USDCHF"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated WebSearch finding, Core-PCE-specific, independently re-verified for this task "
+            "via two separate WebSearch queries against the same source both returning the identical "
+            "quote: on the 2026-08-26 release, 'The Swiss franc weakened against the US dollar on "
+            "Wednesday as US inflation data supported the Greenback. USD/CHF traded around 0.8052, up "
+            "roughly 0.47% on the day' (VT Markets, 'Swiss franc slips as firmer US PCE inflation lifts "
+            "dollar, USD/CHF climbs towards 0.8052', vtmarkets.com/en-eu/live-updates/swiss-franc-"
+            "slips-as-firmer-us-pce-inflation-lifts-dollar-usd-chf-climbs-towards-0-8052/; direct fetch "
+            "blocked, 403 -- the earlier Jun26 2026 FXStreet print used in Phase 1's own relevance "
+            "citation for this pair was checked by direct fetch first but its own text, confirmed "
+            "verbatim, gives only price levels ('traded around 0.8071... after hitting an 11-month high "
+            "of 0.8139 on Wednesday') with no same-day percentage, so this quantified Aug 2026 print was "
+            "used instead). 0.47% is within the ~0.3-0.8% MEDIUM band."
+        ),
+    ),
+    ("Core PCE Price Index m/m", "AUDUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated WebSearch finding, Core-PCE-specific (this is the same finding already used, "
+            "verbatim, in Phase 1's own relevance citation for this pair): the 2026-08-26 release -- "
+            "'The Australian Dollar advanced for the third straight day, up more than 0.17%, despite "
+            "the latest US inflation report renewing investors' hawkish bets ... The AUD/USD traded at "
+            "0.7176, up from 0.7159' (FXStreet, 'Australian Dollar extends rally as RBA hike bets, "
+            "offset US data', fxstreet.com/news/australian-dollar-extends-rally-as-rba-hike-bets-"
+            "offset-us-data-202608262321). 0.17% is under the ~0.3% LOW line -- Core PCE's own hawkish "
+            "pull on AUDUSD is real and named in the source even though a same-day domestic RBA-hike-"
+            "bets catalyst dominated the session's net direction; the magnitude tier reflects the real "
+            "net same-day move, not a hypothetical PCE-isolated one."
+        ),
+    ),
+    ("Core PCE Price Index m/m", "NZDUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.UNVERIFIED,
+        citation=(
+            "UNVERIFIED: Phase 1's own relevance citation for this pair already quotes the 2026-08-26 "
+            "release's real, dated reaction only qualitatively -- 'NZD/USD traded with mild losses "
+            "around 0.5950 in the following Asian session' (FXStreet, 'New Zealand Dollar declines to "
+            "near 0.5950 as US PCE data lift Fed rate hike bets', fxstreet.com/news/new-zealand-dollar-"
+            "declines-to-near-05950-as-us-pce-data-lift-fed-rate-hike-bets-202608270222). Multiple "
+            "further real, dated WebSearch attempts for this task -- against both this same article and "
+            "several related same-week NZD/USD PCE pieces -- found only price levels ('near 0.5950', "
+            "'below 0.5950') and qualitative framing ('modest losses'), never a stated percentage or a "
+            "clean prior-level baseline to compute one from. Marked UNVERIFIED rather than guessing or "
+            "reconstructing a figure from an approximate price level."
+        ),
+    ),
+    ("Core PCE Price Index m/m", "USDCAD"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated WebSearch finding, Core-PCE-specific, independently re-verified for this task "
+            "via two separate WebSearch queries against the same source both returning the identical "
+            "quote: on the May 2026 print (released Jun 25-26 2026, core PCE 3.4% y/y in line, headline "
+            "monthly 0.4% below the 0.5% consensus), 'USD/CAD trades around 1.4205 on Thursday at the "
+            "time of writing, down 0.21% on the day after recently reaching its highest level in 14 "
+            "months' (FXStreet, 'Canadian Dollar recovers as Oil prices rebound, US Dollar eases after "
+            "PCE data', fxstreet.com/news/canadian-dollar-recovers-as-oil-prices-rebound-us-dollar-"
+            "eases-after-pce-data-202606251429; direct fetch blocked, 403, and a same-topic Mitrade "
+            "mirror of a DIFFERENT article on this pair did not contain this figure -- the 0.21% quote "
+            "was cross-checked by two independent WebSearch queries against this specific article "
+            "returning the same exact sentence verbatim before being trusted). 0.21% is under the ~0.3% "
+            "LOW line; a same-session WTI Oil rise to $70.50 is named as a compounding, not sole, "
+            "CAD-supportive factor, consistent with this table's other USDCAD entries."
+        ),
+    ),
 }
 
 
