@@ -7,7 +7,16 @@
 $ProjectRoot = "C:\Users\Masoodt\Documents\Claude\Projects\Claude_news_engine\news_engine"
 $PythonPath = (Get-Command python).Source
 
-$Action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$PythonPath`" -m alerting.poll_once >> `"$ProjectRoot\alerting\poll_once.log`" 2>&1" -WorkingDirectory $ProjectRoot
+# cmd.exe /c with two separately-quoted paths (python.exe AND the log
+# path) hit a real, reproducible Windows quoting bug on first live
+# registration, 2026-09-16: Task Scheduler's actual process launch failed
+# (LastTaskResult=1) on every run, before the log redirection even created
+# a file -- yet the identical string worked fine run manually through an
+# interactive shell, which re-quotes differently. powershell.exe's own
+# call operator + *>> (redirect all streams, append) avoids the nested
+# double-quote parsing entirely and is the reliable fix.
+$PollScriptArgs = "-NoProfile -WindowStyle Hidden -Command `"& '$PythonPath' -m alerting.poll_once *>> '$ProjectRoot\alerting\poll_once.log'`""
+$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $PollScriptArgs -WorkingDirectory $ProjectRoot
 # [TimeSpan]::MaxValue is rejected by Task Scheduler's XML schema (its
 # Duration element has a much smaller valid range) -- found live on first
 # real registration attempt, 2026-09-15. 10 years is comfortably
