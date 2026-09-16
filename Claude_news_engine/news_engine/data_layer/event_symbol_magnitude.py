@@ -547,6 +547,184 @@ _MAGNITUDE_TABLE: dict[tuple[str, str], MagnitudeJudgment] = {
             "the same day -- this instance is one where it did."
         ),
     ),
+
+    # --- FOMC Rate Decision (Task 5) ---------------------------------
+    # Bands (reasoned starting ruler, not independently re-derived):
+    # <~0.3% typical move = LOW, ~0.3-0.8% = MEDIUM, >~0.8% = HIGH.
+    # Where possible, anchored to this project's own live-logged moves
+    # for the actual 2026-09-16 FOMC "Federal Funds Rate" decision
+    # (25bp hike to 3.75-4.00%, first hike since 2023) in
+    # scoring/backtest_log.db's outcomes table -- preferred over
+    # external sourcing per this task's research procedure. Remaining
+    # pairs sourced from real, dated WebSearch findings, either for
+    # that same 2026-09-16 decision or (where no post-decision figure
+    # for that date could be confirmed after multiple real searches)
+    # the well-documented June 17 2026 hawkish-hold FOMC, which is also
+    # the dated event already used in Phase 1's own relevance citations
+    # for most of these pairs.
+    ("FOMC Rate Decision", "XAUUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "This project's own scoring/backtest_log.db outcomes table, event_title='Federal Funds "
+            "Rate' (also logged identically under 'FOMC Statement' and 'FOMC Economic Projections'), "
+            "instrument=XAUUSD, event_time_utc=2026-09-16T18:00:00+00:00 (the actual 25bp hike to "
+            "3.75%-4.00%, first Fed hike since 2023): 'Dukascopy: -0.81% in 30min (auto)'. -0.81% is "
+            "just over the ~0.8% HIGH line. A related same-day entry, event_title='FOMC Press "
+            "Conference' (18:30 UTC, Chair Warsh's remarks), logged an even larger -1.42% in 30min, "
+            "confirming the decision-day reaction was real and sizeable, not a fluke of the 30-minute "
+            "window chosen."
+        ),
+    ),
+    ("FOMC Rate Decision", "XAGUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "No exact post-decision percentage for XAG/USD specifically was found after several real, "
+            "dated WebSearch attempts targeting the 2026-09-16 decision (FXStreet's same-day coverage "
+            "-- 'Silver Price Forecast: XAG/USD jumps to near $65 ahead of Fed's interest rate "
+            "decision', fxstreet.com/news/silver-price-forecast-xag-usd-jumps-to-near-65-ahead-of-"
+            "feds-interest-rate-decision-202609160801, and 'Silver price rebounds as Fed rate hike, "
+            "Warsh speech loom', fxstreet.com/news/silver-price-rebounds-ahead-of-expected-fed-rate-"
+            "hike-warsh-press-conference-202609161341 -- both pre-announcement only). Tier is "
+            "therefore inferred, not directly quoted: this project's own internal XAUUSD figure for "
+            "the same event (-0.81% in 30min, scoring/backtest_log.db) plus two independent, dated, "
+            "FOMC-specific findings already in Phase 1's own relevance citation for this pair (XAG/USD "
+            "falling to near $63.50 'amid Fed hike bets' on 2026-09-14, and to near $66.00 'amid Fed "
+            "Chair Warsh's hawkish tone' on 2026-08-31) confirm the same real, repeated, rates-driven "
+            "downward pressure on silver around this event. Silver's real, repeatedly-observed higher "
+            "volatility than gold on rates-driven moves (also seen in this table's CPI m/m entry: "
+            "XAGUSD HIGH at 1.13% vs XAUUSD MEDIUM the same day) makes HIGH the reasoned tier here, "
+            "though flagged as the least directly-evidenced of these 12 entries."
+        ),
+    ),
+    ("FOMC Rate Decision", "US30"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "This project's own scoring/backtest_log.db outcomes table, event_title='Federal Funds "
+            "Rate' (also logged identically under 'FOMC Statement' and 'FOMC Economic Projections'), "
+            "instrument=US30, event_time_utc=2026-09-16T18:00:00+00:00: 'Dukascopy: -0.23% in 30min "
+            "(auto)'. -0.23% is under the ~0.3% LOW line. The follow-on 'FOMC Press Conference' entry "
+            "(18:30 UTC) logged a larger -0.90% in 30min, closely matching CNBC's own reporting of the "
+            "day's full session (Yahoo Finance/CNBC market-close coverage, 2026-09-16: 'the Dow Jones "
+            "Industrial Average fell 0.9%' during Chair Warsh's press conference, later extending to "
+            "'down 751 points, or 1.5%' by the close) -- confirming the initial announcement reaction "
+            "(this cell) was genuinely small relative to the larger press-conference-driven move."
+        ),
+    ),
+    ("FOMC Rate Decision", "US500"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated WebSearch finding, FOMC-specific, for the actual 2026-09-16 decision (25bp "
+            "hike to 3.75%-4.00%): 'the S&P 500 (^GSPC) dropped 0.3%' during Chair Warsh's post-"
+            "decision press conference (Yahoo Finance / CNBC market-close coverage, 2026-09-16, "
+            "finance.yahoo.com/markets/live/stock-market-today-wednesday-september-16-dow-sp-500-"
+            "nasdaq-fed-meeting-decision-080356525.html). 0.3% sits right at the LOW/MEDIUM boundary; "
+            "read as MEDIUM per the band's inclusive lower edge, and distinctly smaller than the same-"
+            "day Dow move (-0.9% to -1.5%), consistent with this table's CPI/PPI-era observation that "
+            "US500 and US30 do not always move in lockstep on the same macro print."
+        ),
+    ),
+    ("FOMC Rate Decision", "NAS100"): MagnitudeJudgment(
+        tier=MagnitudeTier.LOW,
+        citation=(
+            "Real, dated WebSearch finding, FOMC-specific, for the actual 2026-09-16 decision: 'the "
+            "Nasdaq Composite wavered near the flat line' during Chair Warsh's post-decision press "
+            "conference, after having been 'up 0.8%' in the immediate initial reaction to the rate-"
+            "hike announcement itself (Yahoo Finance / CNBC market-close coverage, 2026-09-16, "
+            "finance.yahoo.com/markets/live/stock-market-today-wednesday-september-16-dow-sp-500-"
+            "nasdaq-fed-meeting-decision-080356525.html). A near-flat net close-to-close reading is "
+            "under the ~0.3% LOW line; flagged that this is the Composite rather than the NAS100 "
+            "futures index specifically, but the two are tightly correlated and no NAS100-specific "
+            "figure was found in the sources checked."
+        ),
+    ),
+    ("FOMC Rate Decision", "EURUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated WebSearch finding, FOMC-specific (already in Phase 1's own relevance citation "
+            "for this pair, reused directly per this task's research procedure): on the June 17 2026 "
+            "hawkish-hold decision, 'EUR/USD had been sitting just below 1.1600 into the announcement "
+            "and fell close to 60 pips within minutes through 1.1550 toward 1.1500' (FXStreet, 'Euro "
+            "routed as Warsh's Fed turns the dot plot upside down', fxstreet.com/news/euro-routed-as-"
+            "warshs-fed-turns-the-dot-plot-upside-down-202606171915). 60 pips off a ~1.1600 base is "
+            "~0.52%, within the ~0.3-0.8% MEDIUM band. The same citation notes a larger ~180-pip "
+            "(~1.55%) move over the following day, so the immediate-reaction figure used here is the "
+            "conservative read."
+        ),
+    ),
+    ("FOMC Rate Decision", "GBPUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, dated WebSearch finding, FOMC-specific (already in Phase 1's own relevance citation "
+            "for this pair, reused directly per this task's research procedure): on the June 17 2026 "
+            "hawkish-hold decision, 'GBP/USD tanked by over 1%' and fell to a two-month low near 1.3270 "
+            "amid broad US Dollar strength following the hawkish dot plot (FXStreet, 'British Pound "
+            "craters as Warsh's guidance void fuels US Dollar rally', fxstreet.com/news/british-pound-"
+            "sinks-as-warshs-hawkish-dots-power-us-dollar-202606171827). 'Over 1%' is above the ~0.8% "
+            "HIGH line."
+        ),
+    ),
+    ("FOMC Rate Decision", "USDJPY"): MagnitudeJudgment(
+        tier=MagnitudeTier.UNVERIFIED,
+        citation=(
+            "UNVERIFIED: no real, confirmed post-decision percentage move for USD/JPY specifically was "
+            "found after multiple dated WebSearch attempts against both the actual 2026-09-16 decision "
+            "and the well-documented June 17 2026 hawkish-hold decision. Sources checked describe only "
+            "pre-decision levels ('USD/JPY recovered its early losses and flattened around 155.00... "
+            "touching a one-week high around the 155.45-155.50 region', FXStreet, 2026-09-16) or "
+            "conflicting post-event levels across different searches (160.66/160.11 range in Phase 1's "
+            "own citation for the June event vs. a separate 'fresh weekly highs around 156.00' result "
+            "for the day after) with no shared, reliable starting baseline to compute a real percentage "
+            "from. Marked UNVERIFIED rather than guessing between these inconsistent figures."
+        ),
+    ),
+    ("FOMC Rate Decision", "USDCHF"): MagnitudeJudgment(
+        tier=MagnitudeTier.UNVERIFIED,
+        citation=(
+            "UNVERIFIED: Phase 1's own relevance citation for this pair already notes the June 17 2026 "
+            "reaction was 'qualitative only' with 'no exact pip/percent figure found in the sources "
+            "checked'. Repeated new WebSearch attempts against the actual 2026-09-16 decision found "
+            "only pre-decision levels ('USD/CHF halted its five-day winning streak, trading around "
+            "0.8180 during Asian hours on Wednesday, with the pair inching lower as the US Dollar "
+            "depreciated ahead of the interest rate decision', FXStreet-sourced coverage, 2026-09-16) "
+            "and no post-decision reaction figure. Marked UNVERIFIED rather than guessing."
+        ),
+    ),
+    ("FOMC Rate Decision", "AUDUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.HIGH,
+        citation=(
+            "Real, dated WebSearch finding, FOMC-specific (already in Phase 1's own relevance citation "
+            "for this pair, reused directly per this task's research procedure): on the June 17 2026 "
+            "hawkish-hold decision, 'AUD/USD fell from around 0.7080 to a session low of 0.6988 (close "
+            "to 80-90 pips)... as the hawkish dot plot... drove broad US Dollar strength' (Vantage "
+            "Markets, 'AUD/USD Today: 0.7012 as Hawkish Fed Hits Aussie Hard', vantagemarkets.com/"
+            "market-analysis/audusd-analysis-19-june-2026/). ~90 pips off a 0.7080 base is ~1.3%, above "
+            "the ~0.8% HIGH line."
+        ),
+    ),
+    ("FOMC Rate Decision", "NZDUSD"): MagnitudeJudgment(
+        tier=MagnitudeTier.UNVERIFIED,
+        citation=(
+            "UNVERIFIED: Phase 1's own relevance citation for this pair already notes 'no exact post-"
+            "decision pip figure was found in the sources checked' for the June 17 2026 decision. "
+            "Repeated new WebSearch attempts against the actual 2026-09-16 decision found only pre-"
+            "decision context ('NZD/USD bears pushing against two-month lows at 0.5765 after dropping "
+            "beyond 2.5% so far in September', FXStreet-sourced coverage, 2026-09-15 -- a month-to-"
+            "date figure, not an event-specific one) and no confirmed post-decision reaction figure. "
+            "Marked UNVERIFIED rather than guessing."
+        ),
+    ),
+    ("FOMC Rate Decision", "USDCAD"): MagnitudeJudgment(
+        tier=MagnitudeTier.MEDIUM,
+        citation=(
+            "Real, dated WebSearch finding, FOMC-specific, for the actual 2026-09-16 decision: 'The "
+            "Loonie trades at its weakest since early August, with USD/CAD just under 1.4000 after a "
+            "71-pip rise and a 0.51% gain' following the Fed's 25bp hike to 3.75%-4.00% (FXStreet, "
+            "'The Canadian Dollar slips to a summer low on the Fed's rate hike', fxstreet.com/news/fed-"
+            "hike-sends-the-loonie-to-a-six-week-low-202609161841). 0.51% is within the ~0.3-0.8% "
+            "MEDIUM band; the pip figure (71 pips on a ~1.393 base is ~0.51%) is internally consistent "
+            "with the stated percentage, cross-checking the number."
+        ),
+    ),
 }
 
 
