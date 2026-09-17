@@ -108,12 +108,63 @@ def test_relevance_magnitude_read_unmapped_title_is_neutral():
     assert result is None
 
 
-def test_relevance_magnitude_read_unkeyed_pair_is_neutral():
-    # "ISM Services PMI" only has real table entries for XAUUSD/EURUSD/
-    # GBPUSD/USDJPY (Phase 1's own scoped population) -- US30 is a
-    # mapped title + tracked symbol whose pair is genuinely absent from
-    # both tables (KeyError), not UNVERIFIED.
+def test_relevance_magnitude_read_relevance_keyerror_is_neutral(monkeypatch):
+    # CORRECTED (final whole-branch review): this test previously claimed
+    # ("ISM Services PMI", "US30") was "genuinely absent from both tables
+    # (KeyError), not UNVERIFIED" -- that's false. The shipped
+    # data_layer/event_symbol_relevance.py's _RELEVANCE_TABLE is
+    # EXHAUSTIVELY populated at 108/108 cells (9 event types x 12
+    # symbols, verified directly: len(_RELEVANCE_TABLE) == 108, zero
+    # missing keys), so get_relevance("ISM Services PMI", "US30") really
+    # returns UNVERIFIED, not a KeyError -- the old test happened to still
+    # pass (UNVERIFIED is also neutral from _relevance_magnitude_read's
+    # perspective) but was exercising the wrong code path, leaving
+    # _relevance_magnitude_read's `except KeyError` branch around
+    # get_relevance() untested against any real gap.
+    #
+    # No real (mapped title, tracked symbol) pair can ever KeyError
+    # against the relevance table today. The `except KeyError` branch is
+    # correct defensive/future-proofing (e.g. for a symbol added to
+    # symbol-picker.js but not yet added to SYMBOLS/_RELEVANCE_TABLE) per
+    # the design doc's explicit "KeyError-as-neutral" requirement, not
+    # something reachable via shipped data -- so it's verified directly
+    # here via mocking, matching this file's own
+    # test_relevance_magnitude_read_not_relevant_case monkeypatch style.
+    import webapp.predictions_service as svc
+
+    def fake_get_relevance(event_type, symbol):
+        assert event_type == "ISM Services PMI"
+        assert symbol == "US30"
+        raise KeyError((event_type, symbol))
+
+    monkeypatch.setattr(svc, "get_relevance", fake_get_relevance)
     result = _relevance_magnitude_read("ISM Services PMI", "US30")
+    assert result is None
+
+
+def test_relevance_magnitude_read_magnitude_keyerror_is_neutral(monkeypatch):
+    # The magnitude table (data_layer/event_symbol_magnitude.py) IS
+    # deliberately scoped to only the 94 real RELEVANT (event_type,
+    # symbol) pairs (verified directly: len(_MAGNITUDE_TABLE) == 94,
+    # exactly matching the relevant-pair count, zero missing) -- so, like
+    # the relevance table, no real RELEVANT pair can KeyError against it
+    # today either. Same defensive/future-proofing reasoning as the
+    # relevance KeyError test above -- verified here via mocking rather
+    # than relying on a currently-nonexistent real gap.
+    import webapp.predictions_service as svc
+    from data_layer.event_symbol_relevance import RelevanceJudgment, RelevanceStatus
+
+    def fake_get_relevance(event_type, symbol):
+        return RelevanceJudgment(RelevanceStatus.RELEVANT, "synthetic test fixture")
+
+    def fake_get_magnitude(event_type, symbol):
+        assert event_type == "CPI m/m"
+        assert symbol == "XAUUSD"
+        raise KeyError((event_type, symbol))
+
+    monkeypatch.setattr(svc, "get_relevance", fake_get_relevance)
+    monkeypatch.setattr(svc, "get_magnitude", fake_get_magnitude)
+    result = _relevance_magnitude_read("CPI m/m", "XAUUSD")
     assert result is None
 
 

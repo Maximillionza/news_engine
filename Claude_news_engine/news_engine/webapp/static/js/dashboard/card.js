@@ -80,9 +80,23 @@ export function tier1SentimentConflictTemplate(vm) {
 
 export function tier1ConfidenceDowngradeTemplate(vm) {
   if (!vm) return html``;
+  // vm.series is only present for the exogenous-shock trigger
+  // (webapp/predictions_service.py sets series: None for the
+  // relevance/magnitude-only trigger, since there's no detector series
+  // involved) — branch on it so the relevance/magnitude case doesn't
+  // inherit the shock case's "unexplained ... move" framing, which is
+  // semantically wrong for a documented NOT_RELEVANT/LOW-magnitude
+  // judgment (final whole-branch review finding: this is the COMMON
+  // rendering, not a rare edge case — 41/168 real pairs are low_magnitude).
+  if (vm.series) {
+    return html`<div class="tier1-confidence-downgrade">
+      ⚠ Confidence downgraded to <b>${vm.displayedConfidence}</b>
+      (was ${vm.originalConfidence}) — unexplained ${vm.series} move${vm.reason ? html`: ${vm.reason}` : html``}
+    </div>`;
+  }
   return html`<div class="tier1-confidence-downgrade">
     ⚠ Confidence downgraded to <b>${vm.displayedConfidence}</b>
-    (was ${vm.originalConfidence}) — unexplained ${vm.series} move${vm.reason ? html`: ${vm.reason}` : html``}
+    (was ${vm.originalConfidence}) — ${vm.reason}
   </div>`;
 }
 
