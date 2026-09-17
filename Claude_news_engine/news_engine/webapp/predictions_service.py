@@ -35,6 +35,9 @@ from webapp.reconciliation import reconcile_group
 from webapp.conflict import compute_tier1_sentiment_conflict
 from data_layer.discovery_detector import DETECTOR_SERIES
 from data_layer.exposure import is_exposed
+from data_layer.event_title_mapping import resolve_methodology_label
+from data_layer.event_symbol_relevance import get_relevance, RelevanceStatus
+from data_layer.event_symbol_magnitude import get_magnitude, MagnitudeTier
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +97,37 @@ def _first_exposing_shock(shocks: list, symbol_class: str):
     for shock in shocks:
         if is_exposed(shock.taxonomy_category, symbol_class):
             return shock
+    return None
+
+
+def _relevance_magnitude_read(calendar_title: str, symbol: str) -> Optional[str]:
+    """
+    Resolves calendar_title to its methodology label and consults both
+    reference tables (docs/superpowers/specs/2026-09-17-live-wiring-design.md).
+    Returns "not_relevant" (real NOT_RELEVANT relevance judgment),
+    "low_magnitude" (RELEVANT + real LOW magnitude judgment), or None
+    for every neutral case: unmapped title, UNVERIFIED in either table,
+    an unkeyed (methodology_label, symbol) pair (KeyError -- a real,
+    expected case, not a bug to raise on), or RELEVANT + MEDIUM/HIGH.
+    Never fabricates a result for a pair it doesn't recognize.
+    """
+    methodology_label = resolve_methodology_label(calendar_title)
+    if methodology_label is None:
+        return None
+    try:
+        relevance = get_relevance(methodology_label, symbol)
+    except KeyError:
+        return None
+    if relevance.status == RelevanceStatus.NOT_RELEVANT:
+        return "not_relevant"
+    if relevance.status != RelevanceStatus.RELEVANT:
+        return None  # UNVERIFIED -- neutral, not evidence of unimportant
+    try:
+        magnitude = get_magnitude(methodology_label, symbol)
+    except KeyError:
+        return None
+    if magnitude.tier == MagnitudeTier.LOW:
+        return "low_magnitude"
     return None
 
 

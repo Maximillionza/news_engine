@@ -5,6 +5,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from webapp.predictions_service import compute_tier1_sentiment_conflict
+from webapp.predictions_service import _relevance_magnitude_read
 
 
 def test_opposing_directional_calls_flagged_as_conflict():
@@ -27,6 +28,93 @@ def test_neutral_or_missing_side_is_never_a_conflict():
     assert compute_tier1_sentiment_conflict("bearish", None) is None
     assert compute_tier1_sentiment_conflict(None, None) is None
     print("PASS\n")
+
+
+def test_relevance_magnitude_read_not_relevant_case(monkeypatch):
+    # Synthetic NOT_RELEVANT fixture -- no real cell in the shipped table
+    # is NOT_RELEVANT (Phase 1 shipped 0 NOT_RELEVANT cells), so this
+    # patches get_relevance() to return one for this test only, per the
+    # spec's explicit note that this case needs a synthetic fixture.
+    from data_layer.event_symbol_relevance import RelevanceJudgment, RelevanceStatus
+    import webapp.predictions_service as svc
+
+    def fake_get_relevance(event_type, symbol):
+        assert event_type == "CPI m/m"
+        assert symbol == "XAUUSD"
+        return RelevanceJudgment(RelevanceStatus.NOT_RELEVANT, "synthetic test fixture")
+
+    monkeypatch.setattr(svc, "get_relevance", fake_get_relevance)
+    result = _relevance_magnitude_read("CPI m/m", "XAUUSD")
+    assert result == "not_relevant"
+
+
+def test_relevance_magnitude_read_low_magnitude_case():
+    # Real shipped cell: ("Retail Sales m/m", "USDJPY") is a real LOW-tier
+    # entry per docs/event-symbol-magnitude.md -- verify against the real
+    # table directly rather than mocking, since this is a real shipped case.
+    from data_layer.event_symbol_relevance import get_relevance, RelevanceStatus
+    from data_layer.event_symbol_magnitude import get_magnitude, MagnitudeTier
+    assert get_relevance("Retail Sales m/m", "USDJPY").status == RelevanceStatus.RELEVANT
+    assert get_magnitude("Retail Sales m/m", "USDJPY").tier == MagnitudeTier.LOW
+    result = _relevance_magnitude_read("Retail Sales m/m", "USDJPY")
+    assert result == "low_magnitude"
+
+
+def test_relevance_magnitude_read_relevant_medium_or_high_is_neutral():
+    # Real shipped cell: ("CPI m/m", "XAUUSD") is RELEVANT + MEDIUM.
+    result = _relevance_magnitude_read("CPI m/m", "XAUUSD")
+    assert result is None
+
+
+def test_relevance_magnitude_read_unverified_relevance_is_neutral():
+    # A real UNVERIFIED relevance cell exists in the shipped table --
+    # find one live rather than hardcoding a guess at which pair.
+    from data_layer.event_symbol_relevance import EVENT_TYPES, SYMBOLS, get_relevance, RelevanceStatus
+    unverified_pair = None
+    for event_type in EVENT_TYPES:
+        for symbol in SYMBOLS:
+            if get_relevance(event_type, symbol).status == RelevanceStatus.UNVERIFIED:
+                unverified_pair = (event_type, symbol)
+                break
+        if unverified_pair:
+            break
+    assert unverified_pair is not None, "expected at least one real UNVERIFIED relevance cell"
+    result = _relevance_magnitude_read(*unverified_pair)
+    assert result is None
+
+
+def test_relevance_magnitude_read_unverified_magnitude_is_neutral():
+    # A real UNVERIFIED magnitude cell exists in the shipped table (9 of
+    # them) -- find one live among RELEVANT pairs rather than guessing.
+    from data_layer.event_symbol_relevance import EVENT_TYPES, SYMBOLS, get_relevance, RelevanceStatus
+    from data_layer.event_symbol_magnitude import get_magnitude, MagnitudeTier
+    unverified_pair = None
+    for event_type in EVENT_TYPES:
+        for symbol in SYMBOLS:
+            if get_relevance(event_type, symbol).status != RelevanceStatus.RELEVANT:
+                continue
+            if get_magnitude(event_type, symbol).tier == MagnitudeTier.UNVERIFIED:
+                unverified_pair = (event_type, symbol)
+                break
+        if unverified_pair:
+            break
+    assert unverified_pair is not None, "expected at least one real UNVERIFIED magnitude cell"
+    result = _relevance_magnitude_read(*unverified_pair)
+    assert result is None
+
+
+def test_relevance_magnitude_read_unmapped_title_is_neutral():
+    result = _relevance_magnitude_read("Unemployment Claims", "XAUUSD")
+    assert result is None
+
+
+def test_relevance_magnitude_read_unkeyed_pair_is_neutral():
+    # "ISM Services PMI" only has real table entries for XAUUSD/EURUSD/
+    # GBPUSD/USDJPY (Phase 1's own scoped population) -- US30 is a
+    # mapped title + tracked symbol whose pair is genuinely absent from
+    # both tables (KeyError), not UNVERIFIED.
+    result = _relevance_magnitude_read("ISM Services PMI", "US30")
+    assert result is None
 
 
 if __name__ == "__main__":
