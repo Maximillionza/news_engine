@@ -11,11 +11,12 @@ import { render } from "../../vendor/lit-html.js";
 import {
   articlePredictionTemplate, tier1PredictionTemplate, tier1ConfidenceDowngradeTemplate,
   essenceArticleTemplate, otherEventsTemplate, cardTemplate,
+  relevanceMagnitudeNoteTemplate, otherEventRelevanceMagnitudeMarkerTemplate,
 } from "./card.js";
 import {
   buildArticlePredictionViewModel, buildTier1PredictionViewModel,
   buildTier1ConfidenceDowngradeViewModel, buildEssenceArticleViewModel, buildOtherEventsViewModel,
-  buildCardViewModel,
+  buildCardViewModel, buildRelevanceMagnitudeNoteViewModel,
 } from "./card-view-model.js";
 
 // lit-html's `html` tagged template constructs a TemplateResult without
@@ -48,6 +49,45 @@ test("tier1ConfidenceDowngradeTemplate omits a reason clause's TemplateResult wh
   assert.ok(result.values.includes("Likely"));
   assert.ok(result.values.includes("Certain"));
   assert.ok(result.values.includes("DXY"));
+});
+
+test("buildRelevanceMagnitudeNoteViewModel returns null for null note", () => {
+  assert.equal(buildRelevanceMagnitudeNoteViewModel(null), null);
+});
+
+test("buildRelevanceMagnitudeNoteViewModel labels not_relevant correctly", () => {
+  const vm = buildRelevanceMagnitudeNoteViewModel("not_relevant");
+  assert.equal(vm.label, "Not confirmed relevant to this symbol");
+});
+
+test("buildRelevanceMagnitudeNoteViewModel labels low_magnitude correctly", () => {
+  const vm = buildRelevanceMagnitudeNoteViewModel("low_magnitude");
+  assert.equal(vm.label, "Low expected impact");
+});
+
+test("buildRelevanceMagnitudeNoteViewModel labels unverified correctly", () => {
+  const vm = buildRelevanceMagnitudeNoteViewModel("unverified");
+  assert.equal(vm.label, "Relevance/magnitude not yet researched");
+});
+
+test("relevanceMagnitudeNoteTemplate renders an empty TemplateResult for a null vm", () => {
+  const result = relevanceMagnitudeNoteTemplate(null);
+  assert.equal(result.strings.join(""), "");
+});
+
+test("relevanceMagnitudeNoteTemplate's values include the label for a real vm", () => {
+  const result = relevanceMagnitudeNoteTemplate({ label: "Low expected impact" });
+  assert.ok(result.values.includes("Low expected impact"));
+});
+
+test("otherEventRelevanceMagnitudeMarkerTemplate renders an empty TemplateResult for a null label", () => {
+  const result = otherEventRelevanceMagnitudeMarkerTemplate(null);
+  assert.equal(result.strings.join(""), "");
+});
+
+test("otherEventRelevanceMagnitudeMarkerTemplate's values include the label when present", () => {
+  const result = otherEventRelevanceMagnitudeMarkerTemplate("Not confirmed relevant to this symbol");
+  assert.ok(result.values.includes("Not confirmed relevant to this symbol"));
 });
 
 test("essenceArticleTemplate: pending essence, no article — only one labeled span produced", () => {

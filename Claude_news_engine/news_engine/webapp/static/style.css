@@ -154,6 +154,7 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
    underlying question (an unexplained market-wide move, not a
    cross-system disagreement). */
 .tier1-confidence-downgrade { margin-top: 6px; padding: 6px 10px; border-radius: 8px; font-size: 12px; text-align: center; background: rgba(255, 152, 0, 0.12); border: 1px solid rgba(255, 152, 0, 0.4); color: #ef6c00; }
+.relevance-magnitude-note { margin-top: 6px; padding: 6px 10px; border-radius: 8px; font-size: 12px; text-align: center; background: rgba(255, 152, 0, 0.12); border: 1px solid rgba(255, 152, 0, 0.4); color: #ef6c00; }
 .low-signal-warning { margin-top: 4px; padding: 4px 8px; border-radius: 6px; font-size: 11px; background: rgba(255, 152, 0, 0.12); border: 1px solid rgba(255, 152, 0, 0.4); color: #ef6c00; }
 
 .other-events { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
@@ -183,6 +184,7 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .other-event-tier1.neutral { color: var(--neutral); }
 .other-event-tier1-conflict { flex-basis: 100%; font-size: 11px; margin-top: 2px; color: #ef6c00; }
 .other-event-tier1-downgrade { flex-basis: 100%; font-size: 11px; margin-top: 2px; color: #ef6c00; }
+.other-event-relevance-magnitude { flex-basis: 100%; font-size: 11px; margin-top: 2px; color: #ef6c00; }
 
 .day-strip { display: flex; gap: 4px; margin-top: 14px; overflow-x: auto; }
 .day-cell { flex: 0 0 auto; padding: 6px 8px; font-size: 11px; text-align: center; border-radius: 6px; border: 1px solid transparent; background: #f0f0f0; }

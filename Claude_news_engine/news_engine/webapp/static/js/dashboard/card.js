@@ -86,6 +86,13 @@ export function tier1ConfidenceDowngradeTemplate(vm) {
   </div>`;
 }
 
+export function relevanceMagnitudeNoteTemplate(vm) {
+  if (!vm) return html``;
+  return html`<div class="relevance-magnitude-note">
+    ⚠ ${vm.label}
+  </div>`;
+}
+
 export function printPredictionTemplate(vm) {
   if (!vm) return html``;
   return html`<div class="print-prediction">
@@ -127,6 +134,11 @@ export function otherEventTier1DowngradeMarkerTemplate(hasDowngrade, displayedCo
   return html`<span class="other-event-tier1-downgrade">⚠ Confidence downgraded to <b>${displayedConfidence}</b></span>`;
 }
 
+export function otherEventRelevanceMagnitudeMarkerTemplate(label) {
+  if (!label) return html``;
+  return html`<span class="other-event-relevance-magnitude">⚠ ${label}</span>`;
+}
+
 export function essenceArticleTemplate(vm) {
   const essenceHtml = vm.essence.pending
     ? html`<span class="other-event-pending">Essence: Pending</span>`
@@ -144,6 +156,7 @@ function otherEventRowTemplate(row) {
     ${otherEventTier1MarkerTemplate(row.tier1Marker)}
     ${otherEventTier1ConflictMarkerTemplate(row.hasConflict)}
     ${otherEventTier1DowngradeMarkerTemplate(row.hasDowngrade, row.downgradeDisplayedConfidence)}
+    ${otherEventRelevanceMagnitudeMarkerTemplate(row.relevanceMagnitudeNoteLabel)}
   </div>`;
 }
 
@@ -220,7 +233,7 @@ export function cardTemplate(vm, flipHandlers) {
           <div class="pending">${vm.pendingHeading}<br>
             <span class="meta-text">${formatEventDateTime(vm.eventTimeUtc)}</span></div>
           ${articlePredictionTemplate(vm.articlePrediction)}${articlePredictionConflictTemplate(vm.articlePredictionConflict)}
-          ${tier1PredictionTemplate(vm.tier1Prediction)}${tier1SentimentConflictTemplate(vm.tier1SentimentConflict)}${tier1ConfidenceDowngradeTemplate(vm.tier1ConfidenceDowngrade)}
+          ${tier1PredictionTemplate(vm.tier1Prediction)}${tier1SentimentConflictTemplate(vm.tier1SentimentConflict)}${tier1ConfidenceDowngradeTemplate(vm.tier1ConfidenceDowngrade)}${relevanceMagnitudeNoteTemplate(vm.relevanceMagnitudeNote)}
           ${printPredictionTemplate(vm.printPrediction)}${kalshiReadTemplate(vm.kalshiRead)}${trendSignalTemplate(vm.trendSignal)}
           ${otherEventsTemplate(vm.otherEvents)}${otherTrackedEventsTemplate(vm.otherTrackedEvents)}
         </div>
@@ -248,7 +261,7 @@ export function cardTemplate(vm, flipHandlers) {
           <div><div class="gauge-label ${vm.dirClass}">Essence: ${vm.directionLabel} ${vm.pct}%</div>
           <div class="meta-text">${vm.eventTitle}</div>
           ${articlePredictionTemplate(vm.articlePrediction)}${articlePredictionConflictTemplate(vm.articlePredictionConflict)}
-          ${tier1PredictionTemplate(vm.tier1Prediction)}${tier1SentimentConflictTemplate(vm.tier1SentimentConflict)}${tier1ConfidenceDowngradeTemplate(vm.tier1ConfidenceDowngrade)}
+          ${tier1PredictionTemplate(vm.tier1Prediction)}${tier1SentimentConflictTemplate(vm.tier1SentimentConflict)}${tier1ConfidenceDowngradeTemplate(vm.tier1ConfidenceDowngrade)}${relevanceMagnitudeNoteTemplate(vm.relevanceMagnitudeNote)}
           ${printPredictionTemplate(vm.printPrediction)}${kalshiReadTemplate(vm.kalshiRead)}</div></div>
         <div class="bull-bear-scale">${unsafeHTML(bullBearScaleSvg(vm.probability))}</div>
         ${otherEventsTemplate(vm.otherEvents)}${otherTrackedEventsTemplate(vm.otherTrackedEvents)}

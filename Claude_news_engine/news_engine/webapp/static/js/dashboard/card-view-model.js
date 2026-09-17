@@ -61,6 +61,19 @@ export function buildTier1ConfidenceDowngradeViewModel(downgrade) {
   };
 }
 
+const RELEVANCE_MAGNITUDE_NOTE_LABELS = {
+  not_relevant: "Not confirmed relevant to this symbol",
+  low_magnitude: "Low expected impact",
+  unverified: "Relevance/magnitude not yet researched",
+};
+
+export function buildRelevanceMagnitudeNoteViewModel(note) {
+  if (!note) return null;
+  const label = RELEVANCE_MAGNITUDE_NOTE_LABELS[note];
+  if (!label) return null;
+  return { label };
+}
+
 export function buildPrintPredictionViewModel(printPred) {
   if (!printPred) return null;
   const label = printPred.direction === "higher" ? "HIGHER than forecast"
@@ -137,6 +150,8 @@ export function buildOtherEventRowViewModel(e, symbolForCard, includeWhenLabel) 
     hasConflict: !!e.tier1_sentiment_conflict,
     hasDowngrade: !!e.tier1_confidence_downgrade,
     downgradeDisplayedConfidence: e.tier1_confidence_downgrade?.displayed_confidence ?? null,
+    hasRelevanceMagnitudeNote: !!buildRelevanceMagnitudeNoteViewModel(e.relevance_magnitude_note),
+    relevanceMagnitudeNoteLabel: buildRelevanceMagnitudeNoteViewModel(e.relevance_magnitude_note)?.label ?? null,
   };
 }
 
@@ -208,6 +223,7 @@ export function buildCardViewModel(symbolEntry, uiState = {}) {
     const trendSignal = buildTrendSignalViewModel(next.trend_signal);
     const tier1SentimentConflict = buildTier1SentimentConflictViewModel(next.tier1_sentiment_conflict);
     const tier1ConfidenceDowngrade = buildTier1ConfidenceDowngradeViewModel(next.tier1_confidence_downgrade);
+    const relevanceMagnitudeNote = buildRelevanceMagnitudeNoteViewModel(next.relevance_magnitude_note);
     // Fix (Task 9, deferred from Task 4's review): the original renderCard()'s
     // equivalent check was `tier1PredictionLine` — a STRING concatenation of
     // tier1PredictionHtml() + tier1SentimentConflictHtml() +
@@ -229,6 +245,7 @@ export function buildCardViewModel(symbolEntry, uiState = {}) {
       tier1Prediction,
       tier1SentimentConflict,
       tier1ConfidenceDowngrade,
+      relevanceMagnitudeNote,
       printPrediction, kalshiRead, trendSignal,
       otherEvents: buildOtherEventsViewModel(events, symbol),
       otherTrackedEvents: buildOtherTrackedEventsViewModel(events, symbol),
@@ -256,6 +273,7 @@ export function buildCardViewModel(symbolEntry, uiState = {}) {
     tier1Prediction: buildTier1PredictionViewModel(next.tier1_prediction, symbol),
     tier1SentimentConflict: buildTier1SentimentConflictViewModel(next.tier1_sentiment_conflict),
     tier1ConfidenceDowngrade: buildTier1ConfidenceDowngradeViewModel(next.tier1_confidence_downgrade),
+    relevanceMagnitudeNote: buildRelevanceMagnitudeNoteViewModel(next.relevance_magnitude_note),
     printPrediction: buildPrintPredictionViewModel(next.print_prediction),
     kalshiRead: buildKalshiReadViewModel(next.kalshi_read),
     trendSignal: buildTrendSignalViewModel(next.trend_signal),
