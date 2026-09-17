@@ -74,6 +74,36 @@ def test_duplicate_article_appends_source_not_new_alert():
     assert len(alerts[0].sources) == 2
 
 
+def test_cursor_advances_past_newest_article_not_exactly_to_it():
+    """
+    Regression test for a real production bug (2026-09-17): a cursor set
+    to exactly the newest article's own published_utc would still satisfy
+    RSSNewsSource's `published < since_utc` filter next cycle (equality
+    doesn't fail that check), so the same article gets refetched and
+    reprocessed for as long as it stays in the feed's window -- confirmed
+    live as 46 duplicate append_source() calls on one real alert over
+    2.5 hours. The cursor must land strictly after the article's own
+    timestamp, not exactly on it.
+    """
+    conn = store.get_connection(":memory:")
+    webapp_conn = webapp_store.get_connection(":memory:")
+    published = dt.datetime(2026, 9, 17, 12, 44, 10, tzinfo=UTC)
+
+    with patch("alerting.poll_once.RSSNewsSource") as mock_source_cls, \
+         patch("alerting.poll_once.notify_telegram.send_alert", return_value=True):
+        mock_source_cls.return_value.fetch.return_value = [
+            NewsArticle(
+                title="Strait of Hormuz closed after pipeline attack", summary="",
+                source="reuters_business", source_type="rss_reuters_business",
+                published_utc=published, url="https://example.com/a",
+            )
+        ]
+        run_poll_cycle(conn=conn, webapp_conn=webapp_conn)
+
+    cursor = store.get_cursor(conn, "reuters_business")
+    assert cursor > published
+
+
 def test_one_source_fetch_failure_does_not_block_others():
     conn = store.get_connection(":memory:")
     webapp_conn = webapp_store.get_connection(":memory:")

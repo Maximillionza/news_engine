@@ -45,8 +45,23 @@ def _poll_source(conn, webapp_conn, name: str, url: str, now: dt.datetime) -> No
     # published_utc (it falls into the gap between two poll cycles and is
     # never seen). An empty poll falls back to the existing `since` value
     # so the cursor never resets backward or gets stuck incorrectly.
-    newest_seen = max((a.published_utc for a in articles), default=since)
-    store.set_cursor(conn, name, newest_seen)
+    #
+    # +1 microsecond past the newest article's own timestamp, not exactly
+    # equal to it -- found live 2026-09-17 (real production run): since
+    # RSSNewsSource's filter is `published < since_utc` (inclusive of an
+    # exact match), setting the cursor to exactly newest_seen guarantees
+    # that same article satisfies the filter again next cycle and gets
+    # fully reprocessed -- confirmed live as 46 duplicate append_source()
+    # calls on one real alert over 2.5 hours. No functional harm (dedup
+    # already prevents a second alert/Telegram push), but pure noise in
+    # sources_json. This one-microsecond nudge closes the exact-equality
+    # gap without touching data_layer/rss_sources.py's shared filter,
+    # which other, non-alerting consumers also rely on.
+    newest_seen = max((a.published_utc for a in articles), default=None)
+    if newest_seen is not None:
+        store.set_cursor(conn, name, newest_seen + dt.timedelta(microseconds=1))
+    else:
+        store.set_cursor(conn, name, since)
 
 
 def _process_article(conn, webapp_conn, article: NewsArticle) -> None:
