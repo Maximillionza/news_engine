@@ -46,3 +46,29 @@ def test_outside_window_does_not_match():
     _seed_alert(conn, "Strait of Hormuz closed after naval clash", "energy", old)
     match = find_existing_alert("Strait of Hormuz closed following naval clash", "energy", conn, window_hours=6.0)
     assert match is None
+
+
+def test_default_window_catches_a_story_recovered_six_hours_later():
+    """
+    Regression test for a real production duplicate alert (2026-09-17):
+    the same Hormuz pipeline-attack story was re-covered by CNBC under a
+    reworded headline 6h06m after the original alert (real similarity
+    ratio 0.877), missing the old 6.0-hour default window by minutes and
+    firing a second Telegram push for the same event. Default widened to
+    24.0 hours -- this same gap must now match using the DEFAULT window
+    (no explicit window_hours override), matching how poll_once.py
+    actually calls this function in production.
+    """
+    conn = store.get_connection(":memory:")
+    original_time = dt.datetime(2026, 9, 17, 12, 46, 23, tzinfo=UTC)
+    existing_id = _seed_alert(
+        conn,
+        "U.S. oil falls below $100 as Saudi Arabia reportedly offers more crude via Hormuz after pipeline attack",
+        "energy", original_time,
+    )
+    now = original_time + dt.timedelta(hours=6, minutes=6)
+    match = find_existing_alert(
+        "Oil prices fall as Saudi Arabia reportedly offers more crude via Hormuz after pipeline attack",
+        "energy", conn, now_utc=now,
+    )
+    assert match == existing_id

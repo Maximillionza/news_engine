@@ -13,7 +13,7 @@ SIMILARITY_THRESHOLD = 0.6  # difflib.SequenceMatcher ratio -- tunable; conserva
 
 
 def find_existing_alert(
-    candidate_headline: str, category: str, conn: sqlite3.Connection, window_hours: float = 6.0,
+    candidate_headline: str, category: str, conn: sqlite3.Connection, window_hours: float = 24.0,
     now_utc: Optional[dt.datetime] = None,
 ) -> Optional[int]:
     """
@@ -24,6 +24,13 @@ def find_existing_alert(
     None (a genuinely new alert). Accepted v1 limitation: two distinct
     events with similar wording in the same window could merge -- flagged
     in the design spec, not solved here.
+
+    window_hours widened 6.0 -> 24.0, 2026-09-17: a real Hormuz
+    pipeline-attack story got re-covered by the same outlet under a
+    reworded headline ~6h06m after the original alert (similarity ratio
+    0.877 -- well above SIMILARITY_THRESHOLD) and duplicated into a
+    second Telegram push, missing the old 6h window by minutes. A full
+    day is a more realistic span for ongoing coverage of one event.
     """
     now_utc = now_utc or dt.datetime.now(dt.timezone.utc)
     since = now_utc - dt.timedelta(hours=window_hours)
