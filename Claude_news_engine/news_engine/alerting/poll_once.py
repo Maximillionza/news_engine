@@ -20,6 +20,8 @@ from webapp.store import get_connection as get_webapp_connection, list_tracked_s
 
 _DEFAULT_LOOKBACK = dt.timedelta(minutes=10)  # first-ever run for a source, or a missing cursor
 
+_SEVERITY_RANK = {"Low": 0, "Medium": 1, "High": 2}
+
 
 def run_poll_cycle(conn=None, webapp_conn=None) -> None:
     conn = conn if conn is not None else store.get_connection()
@@ -83,6 +85,7 @@ def _process_article(conn, webapp_conn, article: NewsArticle) -> None:
     existing_id = dedup.find_existing_alert(article.title, category, conn)
     if existing_id is not None:
         store.append_source(conn, existing_id, article.source, article.url, article.published_utc)
+        _maybe_escalate(conn, existing_id, category, severity, rationale)
         return
 
     tracked_symbols = list_tracked_symbols(webapp_conn)
@@ -100,6 +103,33 @@ def _process_article(conn, webapp_conn, article: NewsArticle) -> None:
         sent = notify_telegram.send_alert(
             article.title, category, severity, rationale, affected_dicts,
             [{"source": article.source, "url": article.url}],
+        )
+        store.set_delivery_status(conn, alert_id, "sent" if sent else "failed")
+
+
+def _maybe_escalate(conn, alert_id: int, new_category: str, new_severity: str, new_rationale) -> None:
+    """
+    A dedup match means this article is corroborating an ALREADY-KNOWN
+    story, already appended as a source by the caller -- but its own
+    freshly-computed severity might read more severe than the existing
+    alert's stored one (e.g. the story was first caught as Medium via
+    LLM judgment, then a later article hits an unambiguous hard-rule
+    pattern). If so, upgrade the stored severity and, if the new severity
+    is High, send a fresh Telegram push labeled as an escalation rather
+    than silently treating a genuine escalation as routine corroboration.
+    Never downgrades -- that judgment call stays manual.
+    """
+    existing = store.get_alert(conn, alert_id)
+    if existing is None:
+        return  # shouldn't happen (caller just appended to this id), but never crash on it
+    if _SEVERITY_RANK.get(new_severity, -1) <= _SEVERITY_RANK.get(existing.severity, -1):
+        return
+
+    store.set_severity(conn, alert_id, new_severity)
+    if new_severity == "High":
+        sent = notify_telegram.send_alert(
+            existing.headline, new_category, new_severity, new_rationale,
+            existing.affected_symbols, existing.sources, is_escalation=True,
         )
         store.set_delivery_status(conn, alert_id, "sent" if sent else "failed")
 

@@ -19,7 +19,7 @@ def _sleep(seconds: float) -> None:
 
 def send_alert(
     headline: str, category: str, severity: str, rationale: Optional[str],
-    affected_symbols: list[dict], sources: list[dict],
+    affected_symbols: list[dict], sources: list[dict], is_escalation: bool = False,
 ) -> bool:
     """
     Returns True on a confirmed 200 from Telegram's API, False on any
@@ -27,6 +27,13 @@ def send_alert(
     The alert row must already be persisted by the caller (alerting/
     poll_once.py) before this is called, so a False return here never
     means a lost alert -- the caller records delivery_status separately.
+
+    is_escalation=True labels the push as an update to an ALREADY-KNOWN
+    story that just got reassessed as more severe (e.g. Medium -> High),
+    rather than a brand-new event -- poll_once.py sets this when a
+    dedup-matched corroborating article's own severity exceeds the
+    existing alert's stored severity. Wording only; delivery/retry
+    behavior is identical either way.
 
     Retries up to _MAX_ATTEMPTS total attempts, with a small exponential
     backoff, on a `requests.RequestException` or a 5xx response -- both
@@ -40,8 +47,9 @@ def send_alert(
 
     symbols_line = ", ".join(f"{s['symbol']} ({s['channel']})" for s in affected_symbols) or "none currently tracked"
     source_line = sources[0]["url"] if sources else ""
+    prefix = "⬆️ ESCALATION" if is_escalation else "\U0001F6A8 HIGH"
     text = (
-        f"\U0001F6A8 HIGH -- {category}\n"
+        f"{prefix} -- {category}\n"
         f"{headline}\n"
         f"Affects: {symbols_line}\n"
         f"{rationale or ''}\n"

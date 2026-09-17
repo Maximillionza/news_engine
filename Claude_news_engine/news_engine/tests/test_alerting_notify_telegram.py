@@ -14,6 +14,22 @@ def test_missing_config_returns_false_without_network_call():
     mock_post.assert_not_called()
 
 
+def test_escalation_uses_escalation_wording_not_plain_high():
+    mock_response = MagicMock(status_code=200)
+    with patch.object(notify_telegram, "TELEGRAM_BOT_TOKEN", "fake-token"), \
+         patch.object(notify_telegram, "TELEGRAM_CHAT_ID", "12345"), \
+         patch("alerting.notify_telegram.requests.post", return_value=mock_response) as mock_post:
+        result = notify_telegram.send_alert(
+            "Strait of Hormuz closed", "energy", "High", "Escalated from an earlier Medium read",
+            [{"symbol": "XAUUSD", "channel": "safe_haven"}], [{"source": "reuters", "url": "https://x"}],
+            is_escalation=True,
+        )
+    assert result is True
+    sent_text = mock_post.call_args.kwargs["json"]["text"]
+    assert "ESCALATION" in sent_text
+    assert "HIGH --" not in sent_text
+
+
 def test_successful_send_returns_true():
     mock_response = MagicMock(status_code=200)
     with patch.object(notify_telegram, "TELEGRAM_BOT_TOKEN", "fake-token"), \

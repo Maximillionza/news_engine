@@ -200,6 +200,19 @@ def set_delivery_status(conn: sqlite3.Connection, alert_id: int, status: str) ->
     conn.commit()
 
 
+def set_severity(conn: sqlite3.Connection, alert_id: int, severity: str) -> None:
+    """
+    Upgrades an existing alert's stored severity -- used by poll_once.py
+    when a dedup-matched corroborating article turns out more severe than
+    the original assessment (e.g. a story dedup caught as Medium later
+    escalates to an unambiguous hard-rule High). Never called to
+    downgrade -- that judgment call stays manual, same discipline as
+    every other severity/direction call in this project.
+    """
+    conn.execute("UPDATE shock_alerts SET severity = ? WHERE id = ?", (severity, alert_id))
+    conn.commit()
+
+
 def get_alerts_needing_reality_check(conn: sqlite3.Connection, older_than_utc: dt.datetime) -> list[ShockAlertRow]:
     rows = conn.execute(
         "SELECT * FROM shock_alerts WHERE reality_check_at_utc IS NULL AND detected_at_utc >= ? "

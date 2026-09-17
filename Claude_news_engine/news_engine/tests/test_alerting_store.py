@@ -87,6 +87,18 @@ def test_list_recent_alerts_in_category_and_overall():
     assert [r.id for r in overall] == [recent]
 
 
+def test_set_severity_upgrades_stored_value():
+    conn = store.get_connection(":memory:")
+    alert_id = store.record_alert(
+        conn, headline="H", source="s", url="u",
+        published_utc=dt.datetime(2026, 9, 17, tzinfo=UTC), detected_at_utc=dt.datetime(2026, 9, 17, tzinfo=UTC),
+        category="energy", severity="Medium", classification_method="llm", rationale=None, affected_symbols=[],
+    )
+    store.set_severity(conn, alert_id, "High")
+    row = store.get_alert(conn, alert_id)
+    assert row.severity == "High"
+
+
 def test_record_reality_check_writes_result():
     conn = store.get_connection(":memory:")
     alert_id = store.record_alert(

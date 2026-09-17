@@ -104,6 +104,62 @@ def test_cursor_advances_past_newest_article_not_exactly_to_it():
     assert cursor > published
 
 
+def test_dedup_match_escalates_severity_and_notifies_on_upgrade():
+    """
+    Regression test for a real gap found 2026-09-17: a dedup match used
+    to silently discard the new article's own severity, so a story that
+    started Medium (LLM-judged) and later escalated to an unambiguous
+    hard-rule High event never got upgraded or re-notified -- it was
+    just appended as routine corroboration. Now it must upgrade the
+    stored severity and fire an escalation push.
+    """
+    conn = store.get_connection(":memory:")
+    webapp_conn = webapp_store.get_connection(":memory:")
+
+    existing_id = store.record_alert(
+        conn, headline="Oil prices tick up on OPEC+ chatter", source="cnbc_top_news", url="https://a",
+        published_utc=dt.datetime.now(UTC), detected_at_utc=dt.datetime.now(UTC),
+        category="energy", severity="Medium", classification_method="llm", rationale=None, affected_symbols=[],
+    )
+
+    escalating_article = _article("Oil prices tick up as Strait of Hormuz closed after naval clash")
+
+    with patch("alerting.poll_once.RSSNewsSource") as mock_source_cls, \
+         patch("alerting.poll_once.dedup.find_existing_alert", return_value=existing_id), \
+         patch("alerting.poll_once.notify_telegram.send_alert", return_value=True) as mock_send:
+        mock_source_cls.return_value.fetch.return_value = [escalating_article]
+        run_poll_cycle(conn=conn, webapp_conn=webapp_conn)
+
+    row = store.get_alert(conn, existing_id)
+    assert row.severity == "High"
+    assert mock_send.called
+    assert mock_send.call_args.kwargs.get("is_escalation") is True
+    assert row.delivery_status == "sent"
+
+
+def test_dedup_match_does_not_downgrade_or_renotify_on_equal_or_lower_severity():
+    conn = store.get_connection(":memory:")
+    webapp_conn = webapp_store.get_connection(":memory:")
+
+    existing_id = store.record_alert(
+        conn, headline="Strait of Hormuz closed after naval clash", source="cnbc_top_news", url="https://a",
+        published_utc=dt.datetime.now(UTC), detected_at_utc=dt.datetime.now(UTC),
+        category="energy", severity="High", classification_method="rule_tier", rationale=None, affected_symbols=[],
+    )
+
+    same_story_article = _article("Strait of Hormuz remains closed following naval clash")
+
+    with patch("alerting.poll_once.RSSNewsSource") as mock_source_cls, \
+         patch("alerting.poll_once.dedup.find_existing_alert", return_value=existing_id), \
+         patch("alerting.poll_once.notify_telegram.send_alert") as mock_send:
+        mock_source_cls.return_value.fetch.return_value = [same_story_article]
+        run_poll_cycle(conn=conn, webapp_conn=webapp_conn)
+
+    row = store.get_alert(conn, existing_id)
+    assert row.severity == "High"
+    mock_send.assert_not_called()
+
+
 def test_one_source_fetch_failure_does_not_block_others():
     conn = store.get_connection(":memory:")
     webapp_conn = webapp_store.get_connection(":memory:")
