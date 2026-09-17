@@ -461,13 +461,35 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
             # Batch 6 -- a settled result never gets today's speculative
             # exogenous-shock context stamped onto it.
             exposing_shock = _first_exposing_shock(todays_shocks, symbol_class.symbol_class)
+
+            # Phase 3 (docs/superpowers/specs/2026-09-17-live-wiring-design.md):
+            # a second, independent downgrade trigger reading the shipped
+            # event_symbol_relevance/event_symbol_magnitude reference
+            # tables. relevance_magnitude_note is computed unconditionally
+            # (an advisory fact about this event/symbol pair, not a
+            # speculative-context stamp) so the dashboard badge can render
+            # even for a settled event; the downgrade itself stays gated
+            # on event["actual"] is None exactly like the shock trigger.
+            relevance_magnitude_note = _relevance_magnitude_read(event["title"], ticker)
+            relevance_magnitude_downgrades = relevance_magnitude_note in ("not_relevant", "low_magnitude")
+
             tier1_confidence_downgrade = None
-            if tier1_prediction is not None and exposing_shock is not None and event["actual"] is None:
+            if (tier1_prediction is not None and event["actual"] is None
+                    and (exposing_shock is not None or relevance_magnitude_downgrades)):
+                if exposing_shock is not None:
+                    reason = exposing_shock.headline_cause
+                    series = exposing_shock.series
+                else:
+                    reason = (
+                        "not confirmed relevant to this symbol" if relevance_magnitude_note == "not_relevant"
+                        else "low expected impact on this symbol"
+                    )
+                    series = None
                 tier1_confidence_downgrade = {
                     "original_confidence": tier1_prediction["confidence"],
                     "displayed_confidence": _downgrade_one_tier(tier1_prediction["confidence"]),
-                    "reason": exposing_shock.headline_cause,
-                    "series": exposing_shock.series,
+                    "reason": reason,
+                    "series": series,
                 }
 
             # An event is only worth including in this symbol's list at
@@ -508,6 +530,7 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
                 "tier1_prediction": tier1_prediction,
                 "tier1_sentiment_conflict": None,  # computed below, after reconciliation settles article_prediction's final value
                 "tier1_confidence_downgrade": tier1_confidence_downgrade,
+                "relevance_magnitude_note": relevance_magnitude_note,
             })
 
         for time_key, predictions_by_title in accumulator_predictions_by_time_and_title.items():

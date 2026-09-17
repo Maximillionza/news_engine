@@ -2221,6 +2221,219 @@ def test_predictions_downgrades_when_a_default_exposed_category_shock_exists_alo
     print("PASS\n")
 
 
+def test_predictions_downgrades_via_not_relevant_relevance_magnitude_pair():
+    print("=== app: /api/predictions downgrades via the relevance/magnitude trigger when get_relevance() returns NOT_RELEVANT for this event/symbol pair (synthetic fixture -- no real NOT_RELEVANT cell is shipped yet) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            cpi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="CPI m/m", country="USD", impact="High",
+                               event_time_utc=cpi_time, forecast="0.2%", previous="0.0%", actual=None),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_prediction(
+                bconn, "CPI m/m", "XAUUSD", cpi_time, 0.60, "bearish", 0.5, 100, False,
+            )
+            backtest_store.record_tier1_prediction(
+                bconn, "CPI m/m", "XAUUSD", cpi_time,
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+            )
+            bconn.close()
+
+            from data_layer.event_symbol_relevance import RelevanceJudgment, RelevanceStatus
+            import webapp.predictions_service as svc
+
+            def fake_get_relevance(event_type, symbol):
+                assert event_type == "CPI m/m"
+                assert symbol == "XAUUSD"
+                return RelevanceJudgment(RelevanceStatus.NOT_RELEVANT, "synthetic test fixture")
+
+            with patch.object(svc, "get_relevance", fake_get_relevance):
+                client = webapp_app.app.test_client()
+                resp = client.get("/api/predictions")
+                events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
+                event = events["CPI m/m"]
+                downgrade = event["tier1_confidence_downgrade"]
+                assert downgrade is not None
+                assert downgrade["original_confidence"] == "Certain"
+                assert downgrade["displayed_confidence"] == "Likely"
+                assert event["relevance_magnitude_note"] == "not_relevant"
+    print("PASS\n")
+
+
+def test_predictions_downgrades_via_low_magnitude_relevance_magnitude_pair():
+    print("=== app: /api/predictions downgrades via the relevance/magnitude trigger for a real shipped RELEVANT+LOW magnitude cell (Retail Sales m/m / USDJPY) -- no mocking needed ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            rs_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="Retail Sales m/m", country="JPY", impact="Medium",
+                               event_time_utc=rs_time, forecast="0.2%", previous="0.0%", actual=None),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "USDJPY")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_prediction(
+                bconn, "Retail Sales m/m", "USDJPY", rs_time, 0.60, "bearish", 0.5, 100, False,
+            )
+            backtest_store.record_tier1_prediction(
+                bconn, "Retail Sales m/m", "USDJPY", rs_time,
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
+            event = events["Retail Sales m/m"]
+            downgrade = event["tier1_confidence_downgrade"]
+            assert downgrade is not None
+            assert downgrade["displayed_confidence"] == "Likely"
+            assert event["relevance_magnitude_note"] == "low_magnitude"
+    print("PASS\n")
+
+
+def test_relevance_magnitude_trigger_does_not_compound_with_shock_trigger():
+    print("=== app: when BOTH the exogenous-shock trigger AND the relevance/magnitude trigger fire for the same event/symbol, the displayed confidence drops exactly ONE tier, never two ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="PPI m/m", country="USD", impact="High",
+                               event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual=None),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time, 0.60, "bearish", 0.5, 100, False,
+            )
+            backtest_store.record_tier1_prediction(
+                bconn, "PPI m/m", "XAUUSD", ppi_time,
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+            )
+            today = dt.datetime.now(dt.timezone.utc).date()
+            backtest_store.record_exogenous_shock(
+                bconn, "DXY", today, move_pct=5.0, stdev_move=3.0,
+                headline_cause="Real researched cause", source="Reuters",
+            )
+            bconn.close()
+
+            from data_layer.event_symbol_relevance import RelevanceJudgment, RelevanceStatus
+            import webapp.predictions_service as svc
+
+            def fake_get_relevance(event_type, symbol):
+                assert event_type == "PPI m/m"
+                assert symbol == "XAUUSD"
+                return RelevanceJudgment(RelevanceStatus.NOT_RELEVANT, "synthetic test fixture")
+
+            with patch.object(svc, "get_relevance", fake_get_relevance):
+                client = webapp_app.app.test_client()
+                resp = client.get("/api/predictions")
+                events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
+                downgrade = events["PPI m/m"]["tier1_confidence_downgrade"]
+                assert downgrade is not None
+                assert downgrade["displayed_confidence"] == "Likely", \
+                    "both triggers fired -- must still be exactly one tier down, never 'Guessing'"
+    print("PASS\n")
+
+
+def test_no_relevance_magnitude_downgrade_for_relevant_medium_pair():
+    print("=== app: no downgrade and no note for a real shipped RELEVANT+MEDIUM cell (CPI m/m / XAUUSD) with no exogenous shock ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            cpi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="CPI m/m", country="USD", impact="High",
+                               event_time_utc=cpi_time, forecast="0.2%", previous="0.0%", actual=None),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_prediction(
+                bconn, "CPI m/m", "XAUUSD", cpi_time, 0.60, "bearish", 0.5, 100, False,
+            )
+            backtest_store.record_tier1_prediction(
+                bconn, "CPI m/m", "XAUUSD", cpi_time,
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            resp = client.get("/api/predictions")
+            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
+            event = events["CPI m/m"]
+            assert event["tier1_confidence_downgrade"] is None
+            assert event["relevance_magnitude_note"] is None
+    print("PASS\n")
+
+
+def test_relevance_magnitude_note_present_but_no_downgrade_for_settled_event():
+    print("=== app: relevance_magnitude_note is still computed for a settled event (actual is not None), but no downgrade is applied -- the note is an advisory fact, not a speculative-context stamp ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            cpi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+            _seed_calendar(db_path, [
+                EconomicEvent(title="CPI m/m", country="USD", impact="High",
+                               event_time_utc=cpi_time, forecast="0.2%", previous="0.0%", actual="0.3%"),
+            ])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_prediction(
+                bconn, "CPI m/m", "XAUUSD", cpi_time, 0.60, "bearish", 0.5, 100, False,
+            )
+            backtest_store.record_tier1_prediction(
+                bconn, "CPI m/m", "XAUUSD", cpi_time,
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+            )
+            bconn.close()
+
+            from data_layer.event_symbol_relevance import RelevanceJudgment, RelevanceStatus
+            import webapp.predictions_service as svc
+
+            def fake_get_relevance(event_type, symbol):
+                assert event_type == "CPI m/m"
+                assert symbol == "XAUUSD"
+                return RelevanceJudgment(RelevanceStatus.NOT_RELEVANT, "synthetic test fixture")
+
+            with patch.object(svc, "get_relevance", fake_get_relevance):
+                client = webapp_app.app.test_client()
+                resp = client.get("/api/predictions")
+                events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
+                event = events["CPI m/m"]
+                assert event["tier1_confidence_downgrade"] is None
+                assert event["relevance_magnitude_note"] == "not_relevant"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
