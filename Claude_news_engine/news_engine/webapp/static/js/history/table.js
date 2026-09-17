@@ -208,8 +208,15 @@ function renderHistoryTable(rows) {
       : "";
     // Numeric rows use higher/lower/in_line; text-event fallback rows use bullish/bearish/neutral.
     const predictionLabel = { higher: "Higher", lower: "Lower", in_line: "In-line", bullish: "Bullish", bearish: "Bearish", neutral: "Neutral" }[r.ne_prediction] || escapeHtml(r.ne_prediction);
-    const tier1ConflictBadge = r.tier1_conflict
-      ? ` <span style="color:#ef6c00;font-size:11px;font-weight:bold">⚠ Tier 1: ${escapeHtml(r.tier1_conflict.tier1_direction)}</span>`
+    // 2026-09-17 fix: previously only rendered when Tier 1 and sentiment
+    // genuinely disagreed (r.tier1_conflict), so a real, computed Tier 1
+    // call was invisible on the History tab whenever it happened to AGREE
+    // with sentiment (the common case) — the underlying data was always
+    // there (webapp/history.py's tier1_prediction field), just never shown.
+    // Now renders whenever a real Tier 1 call exists for this row at all;
+    // the conflict case additionally gets the warning color/icon.
+    const tier1Badge = r.tier1_prediction
+      ? ` <span style="color:${r.tier1_conflict ? "#ef6c00" : "#555"};font-size:11px;font-weight:bold">${r.tier1_conflict ? "⚠ " : ""}Tier 1: ${escapeHtml(r.tier1_prediction.predicted_direction)} (${escapeHtml(r.tier1_prediction.confidence)})</span>`
       : "";
     // Batch 10 (dashboard-review-2026-09-11.md live UI walkthrough):
     // "Confirmed" read ambiguously as "the actual print is confirmed"
@@ -250,7 +257,7 @@ function renderHistoryTable(rows) {
       <td>${escapeHtml(r.previous ?? "—")}</td>
       <td>${escapeHtml(r.forecast ?? "—")}</td>
       <td>${actualCell}</td>
-      <td>${predictionLabel} <span class="${confidenceColorClass(Math.round(r.ne_confidence * 100))}" style="font-size:11px">(${Math.round(r.ne_confidence * 100)}% conf.)</span>${tier1ConflictBadge}</td>
+      <td>${predictionLabel} <span class="${confidenceColorClass(Math.round(r.ne_confidence * 100))}" style="font-size:11px">(${Math.round(r.ne_confidence * 100)}% conf.)</span>${tier1Badge}</td>
       <td>${outcomeLabel}</td>
     </tr>${r.instrument ? `<tr class="history-drill-row" id="${drillId}" style="display:none"><td colspan="7"><div class="history-panel" data-loaded="false">Loading…</div></td></tr>` : ""}`;
   }).join("");

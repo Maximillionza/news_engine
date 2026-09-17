@@ -97,6 +97,7 @@ def test_resolved_event_with_shrug_print_call_falls_back_to_real_accumulator_pre
         event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
 
         dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
         store.upsert_event_history(
             dash_conn, _resolved_event("CPI m/m", event_time, "0.2%", "0.0%", "0.5%"),
             "higher", now=event_time,
@@ -139,6 +140,7 @@ def test_resolved_event_in_line_surprise_graded_against_real_outcome_not_the_num
         event_time = dt.datetime(2026, 9, 3, 12, 30, tzinfo=UTC_TZ)
 
         dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
         store.upsert_event_history(
             dash_conn, _resolved_event("Unemployment Claims", event_time, "205K", "203K", "206K"),
             "in_line", now=event_time,
@@ -237,6 +239,7 @@ def test_resolved_numeric_event_falls_back_to_accumulator_prediction_when_no_pri
         event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
 
         dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
         # "CPI m/m" is higher_bullish. Actual beat forecast -> surprise_direction='higher'.
         store.upsert_event_history(
             dash_conn, _resolved_event("CPI m/m", event_time, "0.1%", "-0.4%", "0.4%"),
@@ -275,6 +278,7 @@ def test_resolved_numeric_event_fallback_missed_when_direction_mismatches():
         event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
 
         dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
         store.upsert_event_history(
             dash_conn, _resolved_event("CPI m/m", event_time, "0.1%", "-0.4%", "0.4%"),
             "higher", now=event_time,
@@ -306,6 +310,7 @@ def test_resolved_numeric_event_fallback_neutral_direction_not_judged():
         event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
 
         dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
         store.upsert_event_history(
             dash_conn, _resolved_event("CPI m/m", event_time, "0.1%", "-0.4%", "0.4%"),
             "higher", now=event_time,
@@ -336,6 +341,8 @@ def test_resolved_numeric_event_fallback_produces_one_row_per_instrument():
         event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
 
         dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
+        store.add_tracked_symbol(dash_conn, "US30")
         store.upsert_event_history(
             dash_conn, _resolved_event("CPI m/m", event_time, "0.1%", "-0.4%", "0.4%"),
             "higher", now=event_time,
@@ -495,6 +502,7 @@ def test_text_only_event_with_prediction_produces_fallback_row():
         now = event_time + dt.timedelta(hours=1)
 
         dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
         store.upsert_event_history(
             dash_conn, _resolved_event("FOMC Statement", event_time, None, None, None),
             None, now=now,
@@ -533,6 +541,7 @@ def test_text_only_event_confirmed_outcome_judged_correctly():
         now = event_time + dt.timedelta(hours=1)
 
         dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
         store.upsert_event_history(
             dash_conn, _resolved_event("FOMC Statement", event_time, None, None, None),
             None, now=now,
@@ -563,6 +572,8 @@ def test_text_only_event_missing_prediction_for_one_instrument_produces_no_row_f
         now = event_time + dt.timedelta(hours=1)
 
         dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
+        store.add_tracked_symbol(dash_conn, "US30")
         store.upsert_event_history(
             dash_conn, _resolved_event("FOMC Statement", event_time, None, None, None),
             None, now=now,
@@ -762,6 +773,7 @@ def test_text_only_low_confidence_prediction_not_judged():
         now = event_time + dt.timedelta(hours=1)
 
         dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
         store.upsert_event_history(
             dash_conn, _resolved_event("FOMC Statement", event_time, None, None, None),
             None, now=now,
@@ -836,6 +848,7 @@ def test_fallback_row_recognizes_cloud_web_fallback_source():
         event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
 
         dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
         store.upsert_event_history(
             dash_conn, _resolved_event("CPI m/m", event_time, "0.1%", "-0.4%", "0.4%"),
             "higher", now=event_time, source="cloud_web_fallback",
@@ -868,6 +881,7 @@ def test_fallback_row_flags_tier1_sentiment_conflict():
         event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
 
         dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
         store.upsert_event_history(
             dash_conn, _resolved_event("PPI m/m", event_time, "0.4%", "0.0%", "0.4%"),
             "higher_bullish", now=event_time,
@@ -903,6 +917,7 @@ def test_fallback_row_no_conflict_when_tier1_agrees():
         event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
 
         dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
         store.upsert_event_history(
             dash_conn, _resolved_event("PPI m/m", event_time, "0.4%", "0.0%", "0.4%"),
             "higher_bullish", now=event_time,
@@ -938,6 +953,7 @@ def test_fallback_row_no_tier1_conflict_field_when_no_tier1_row_exists():
         event_time = dt.datetime(2026, 9, 4, 12, 30, tzinfo=UTC_TZ)
 
         dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
         store.upsert_event_history(
             dash_conn, _resolved_event("Unemployment Rate", event_time, "4.1%", "4.1%", "4.1%"),
             "in_line", now=event_time,
@@ -957,6 +973,188 @@ def test_fallback_row_no_tier1_conflict_field_when_no_tier1_row_exists():
 
         assert len(rows) == 1
         assert rows[0].tier1_conflict is None
+    print("PASS\n")
+
+
+# --- tier1_prediction on fallback/text-only rows (2026-09-17 fix: the raw
+# Tier 1 call, not just the tier1_conflict flag, is now carried on History
+# rows -- previously invisible on the Dashboard the moment an event passed
+# into the past, and never actually surfaced anywhere in History either) ---
+
+def test_fallback_row_carries_real_tier1_prediction():
+    print("=== build_print_call_history: a fallback numeric row carries the real Tier1PredictionRow, not just the conflict flag ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
+        store.upsert_event_history(
+            dash_conn, _resolved_event("PPI m/m", event_time, "0.4%", "0.0%", "0.4%"),
+            "higher_bullish", now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
+            probability=0.56, direction="bullish", confidence=0.4, article_count=142,
+            contradiction_flag=False, source="live", scored_at_utc=event_time,
+        )
+        backtest_store.record_tier1_prediction(
+            bt_conn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
+            value="Muted, non-reaccelerating call", confidence="Certain", source="ISM Prices Paid",
+            predicted_direction="bullish", logged_at_utc=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].tier1_prediction == {
+            "value": "Muted, non-reaccelerating call", "confidence": "Certain",
+            "source": "ISM Prices Paid", "predicted_direction": "bullish",
+        }
+    print("PASS\n")
+
+
+def test_fallback_row_tier1_prediction_none_when_no_tier1_row_exists():
+    print("=== build_print_call_history: tier1_prediction stays None when no Tier 1 row was ever logged ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 4, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
+        store.upsert_event_history(
+            dash_conn, _resolved_event("Unemployment Rate", event_time, "4.1%", "4.1%", "4.1%"),
+            "in_line", now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, event_title="Unemployment Rate", instrument="XAUUSD", event_time_utc=event_time,
+            probability=0.46, direction="bearish", confidence=0.35, article_count=89,
+            contradiction_flag=False, source="live", scored_at_utc=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].tier1_prediction is None
+    print("PASS\n")
+
+
+def test_text_only_row_carries_real_tier1_prediction():
+    print("=== build_print_call_history: a text-only fallback row (e.g. FOMC Statement) also carries the real Tier1PredictionRow ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 16, 18, 0, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
+        store.upsert_event_history(
+            dash_conn, _resolved_event("FOMC Statement", event_time, None, None, None),
+            None, now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, event_title="FOMC Statement", instrument="XAUUSD", event_time_utc=event_time,
+            probability=0.6, direction="bearish", confidence=0.5, article_count=40,
+            contradiction_flag=False, source="live", scored_at_utc=event_time,
+        )
+        backtest_store.record_tier1_prediction(
+            bt_conn, event_title="FOMC Statement", instrument="XAUUSD", event_time_utc=event_time,
+            value="85.5% probability of a 25bp hike", confidence="Certain", source="CME FedWatch",
+            predicted_direction="bearish", logged_at_utc=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].tier1_prediction == {
+            "value": "85.5% probability of a 25bp hike", "confidence": "Certain",
+            "source": "CME FedWatch", "predicted_direction": "bearish",
+        }
+    print("PASS\n")
+
+
+# --- Live tracked-symbols, not config.settings.INSTRUMENTS (2026-09-17 fix) ---
+
+def test_fallback_row_appears_for_a_tracked_symbol_never_in_config_settings_instruments():
+    print("=== build_print_call_history: a fallback row is produced for ANY tracked symbol, not just the 2 hardcoded in config.settings.INSTRUMENTS ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        # XAGUSD (silver) -- never a config.settings.INSTRUMENTS key (that
+        # dict only ever had XAUUSD/US30). Before the 2026-09-17 fix, this
+        # symbol's real, tracked, computed prediction would never have
+        # produced a History row at all, regardless of what was actually
+        # tracked.
+        store.add_tracked_symbol(dash_conn, "XAGUSD")
+        store.upsert_event_history(
+            dash_conn, _resolved_event("PPI m/m", event_time, "0.4%", "0.0%", "0.4%"),
+            "higher_bullish", now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, event_title="PPI m/m", instrument="XAGUSD", event_time_utc=event_time,
+            probability=0.56, direction="bullish", confidence=0.4, article_count=90,
+            contradiction_flag=False, source="live", scored_at_utc=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 1
+        assert rows[0].instrument == "XAGUSD"
+    print("PASS\n")
+
+
+def test_fallback_row_absent_for_an_untracked_symbol_even_with_real_prediction_data():
+    print("=== build_print_call_history: no row for a symbol that was never tracked, even if a real prediction row exists for it ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        # Deliberately NOT tracked.
+        store.upsert_event_history(
+            dash_conn, _resolved_event("PPI m/m", event_time, "0.4%", "0.0%", "0.4%"),
+            "higher_bullish", now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, event_title="PPI m/m", instrument="EURUSD", event_time_utc=event_time,
+            probability=0.56, direction="bullish", confidence=0.4, article_count=90,
+            contradiction_flag=False, source="live", scored_at_utc=event_time,
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history()
+
+        assert len(rows) == 0
     print("PASS\n")
 
 

@@ -44,9 +44,10 @@ import datetime as dt
 from dataclasses import dataclass
 from typing import Optional
 
-from config.settings import EVENT_SURPRISE_DIRECTION, INSTRUMENTS
+from config.settings import EVENT_SURPRISE_DIRECTION
 from scoring.print_direction import NO_HIT_CONFIDENCE
-from webapp.store import get_connection, get_resolved_event_history, get_text_only_resolved_events
+from webapp.predictions_service import _tier1_prediction_dict
+from webapp.store import get_connection, get_resolved_event_history, get_text_only_resolved_events, list_tracked_symbols
 from webapp.symbols import classify_symbol
 from webapp.conflict import compute_tier1_sentiment_conflict
 
@@ -78,14 +79,16 @@ MIN_TEXT_EVENT_CONFIDENCE = NO_HIT_CONFIDENCE
 # Those are not the same unit (final whole-branch review, 2026-09-11 —
 # Finding 3): both of build_print_call_history()'s branches (the
 # fallback-numeric branch and the text-only branch) can emit ONE ROW PER
-# INSTRUMENT for a single event, so with INSTRUMENTS at 2 entries today,
-# total rows can run up to roughly 2x the event count. That means this
-# limit's true row-level coverage can silently shrink to roughly half of
-# STATS_LOOKBACK_LIMIT once real event volume (that produces a row for
-# every instrument) exceeds half this number — the rollup would then stop
-# reflecting the full window without any visible sign of it. Raise this
-# (and PRE_FILTER_LIMIT, since they're intentionally kept equal) if that
-# ever becomes a real problem in practice.
+# TRACKED INSTRUMENT for a single event (2026-09-17 fix: previously one row
+# per config.settings.INSTRUMENTS entry, a static 2-key dict — now one row
+# per webapp.store.list_tracked_symbols() entry, so this can grow past 2 as
+# more symbols are tracked), so total rows can run up to roughly N_symbols
+# times the event count. That means this limit's true row-level coverage
+# can silently shrink well below STATS_LOOKBACK_LIMIT once real event
+# volume (that produces a row for every tracked instrument) grows — the
+# rollup would then stop reflecting the full window without any visible
+# sign of it. Raise this (and PRE_FILTER_LIMIT, since they're intentionally
+# kept equal) if that ever becomes a real problem in practice.
 STATS_LOOKBACK_LIMIT = PRE_FILTER_LIMIT
 
 
@@ -202,6 +205,7 @@ class HistoryRow:
     unjudged_reason: Optional[str]  # None when outcome is a real verdict; else 'shrug' | 'unknown_surprise' | 'pending'
     source: str                     # 'live' | 'seeded' | 'live_web_fallback' | 'fred' — for numeric rows, 'seeded' wins if either side of the join disagrees, else 'live_web_fallback' wins if either side is 'live_web_fallback', else 'fred' wins if either side is 'fred', else 'live'
     tier1_conflict: Optional[dict] = None  # {"sentiment_direction": str, "tier1_direction": str} when Tier 1 and this occurrence's own sentiment call genuinely disagree; None otherwise — see build_print_call_history() for which row shapes this applies to
+    tier1_prediction: Optional[dict] = None  # the real Tier1PredictionRow, shaped via webapp.predictions_service._tier1_prediction_dict() (value/confidence/source/predicted_direction) -- None when no Tier1 row exists for this occurrence/instrument, or for a print-call-backed row (instrument=None, same reasoning as tier1_conflict above: no single instrument to attach a Tier1 call to)
 
 
 def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[dt.datetime] = None) -> list[HistoryRow]:
@@ -249,6 +253,14 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
     try:
         numeric_resolved = get_resolved_event_history(dash_conn, limit=PRE_FILTER_LIMIT)
         text_only_resolved = get_text_only_resolved_events(dash_conn, now=now, limit=PRE_FILTER_LIMIT)
+        # Live tracked-symbols list (2026-09-17 fix), not config.settings.INSTRUMENTS
+        # -- that was a static 2-key dict (XAUUSD, US30) that silently
+        # excluded every other real tracked instrument from History's
+        # fallback/text-only rows, the same class of bug already fixed for
+        # _implied_surprise_direction() above on 2026-09-13. Read while
+        # dash_conn is still open -- tracked_symbols lives in the dashboard
+        # DB, not the backtest DB the rest of this function reads from.
+        tracked_symbols = list_tracked_symbols(dash_conn)
     finally:
         dash_conn.close()
 
@@ -274,7 +286,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
     # build.
     event_titles = list({event.event_title for event in numeric_resolved} | {event.event_title for event in text_only_resolved})
     try:
-        tier1_by_occurrence = get_latest_tier1_predictions_bulk(bt_conn, event_titles, list(INSTRUMENTS.keys()))
+        tier1_by_occurrence = get_latest_tier1_predictions_bulk(bt_conn, event_titles, tracked_symbols)
     except Exception as exc:  # noqa: BLE001 — one bad bulk lookup must not crash the whole build
         print(f"[webapp.history] WARNING: could not read tier1 bulk data: {exc}")
         tier1_by_occurrence = {}
@@ -299,7 +311,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                 # fall back to the accumulator's own main prediction
                 # (predictions table), which precursor/trend/Kalshi signals
                 # alone can drive without any qualifying article at all.
-                for instrument in INSTRUMENTS.keys():
+                for instrument in tracked_symbols:
                     try:
                         prediction = get_latest_prediction_for_occurrence(bt_conn, event.event_title, instrument, event_time)
                     except Exception as exc:  # noqa: BLE001 — one bad lookup must not crash the whole build
@@ -368,6 +380,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                             else "live"
                         ),
                         tier1_conflict=fallback_tier1_conflict,
+                        tier1_prediction=_tier1_prediction_dict(tier1_row) if tier1_row is not None else None,
                     ))
                 continue  # resolved event, no print-direction call — either shown via the fallback above or excluded per-instrument, never with blanks
 
@@ -426,7 +439,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
 
         for event in text_only_resolved:
             event_time = dt.datetime.fromisoformat(event.event_time_utc)
-            for instrument in INSTRUMENTS.keys():
+            for instrument in tracked_symbols:
                 try:
                     prediction = get_latest_prediction_for_occurrence(bt_conn, event.event_title, instrument, event_time)
                 except Exception as exc:  # noqa: BLE001 — one bad lookup must not crash the whole build
@@ -469,6 +482,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                     unjudged_reason=text_unjudged_reason,
                     source=prediction.source,
                     tier1_conflict=text_tier1_conflict,
+                    tier1_prediction=_tier1_prediction_dict(tier1_row) if tier1_row is not None else None,
                 ))
     finally:
         bt_conn.close()

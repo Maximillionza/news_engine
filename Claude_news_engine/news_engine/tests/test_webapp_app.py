@@ -1204,6 +1204,7 @@ def test_history_endpoint_includes_tier1_conflict_key_when_conflict_exists():
                 forecast="0.4%", previous="0.0%", actual="0.4%",
             )
             conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
             store.upsert_event_history(conn, event, "higher_bullish", now=event_time)
             conn.close()
 
