@@ -11,10 +11,19 @@ published in the window too — confirmed live 2026-08-19: unrelated Apple/
 Nvidia headlines showed up in FOMC's top-3 contributing articles for
 XAUUSD. This filter is a second, event-title-keyed pass over the merged
 article set: relevant if title+summary contains any of that event's
-configured keywords, case-insensitive. An event title with no configured
-keywords is NOT filtered at all (fail-open, same "absent, not fabricated"
-contract as the rest of this pipeline) — silently guessing keywords for an
-event nobody's curated would risk dropping genuinely relevant coverage.
+configured keywords, case-insensitive.
+
+2026-09-17 fix: an event title with no configured keywords now FAILS
+CLOSED (zero articles, loudly logged) — was previously fail-open (return
+everything unfiltered). The fail-open default was found, via a real
+2026-09-17 audit of scoring/backtest_log.db's top_contributions_json, to
+be silently letting genuinely off-topic articles (a Chipotle restaurant
+opening, a TSMC earnings report, a regional bank's CEO succession) score
+real, non-trivial weight into events that had no curated keyword list at
+all — 13+ of this project's tracked event titles, not just the couple this
+suite originally covered. Fail-closed makes an uncurated event's missing
+coverage loud and visible (an empty score) instead of silently plausible
+(a garbage-fed one).
 """
 import sys
 import os
@@ -83,12 +92,13 @@ def test_relevance_keyword_match_is_case_insensitive_and_checks_summary_too():
     print("PASS\n")
 
 
-def test_event_with_no_configured_keywords_is_not_filtered_at_all():
-    print("=== event_context: an event title with no keyword mapping gets NO filtering (fail-open, not a guessed filter) ===")
+def test_event_with_no_configured_keywords_fails_closed_to_zero_articles():
+    print("=== event_context: an event title with no keyword mapping now FAILS CLOSED to zero articles (2026-09-17 fix — was fail-open) ===")
     unrelated_looking = _article("Apple to change app data consent rules, German regulator says")
-    source = _StubSource([unrelated_looking])
+    even_a_real_looking_one = _article("Big Uncurated Event beats forecast, markets react")
+    source = _StubSource([unrelated_looking, even_a_real_looking_one])
     bundle = _build(_event("Some Untracked Event Title"), source)
-    assert len(bundle.articles) == 1  # kept — no keyword list exists for this title, so nothing is dropped
+    assert bundle.articles == []  # dropped — no keyword list exists for this title, so nothing is scored unfiltered
     print("PASS\n")
 
 
@@ -133,10 +143,86 @@ def test_cpi_keyword_list_shared_across_all_four_title_variants():
     print("PASS\n")
 
 
+# --- 2026-09-17 audit: real off-topic articles pulled from
+# scoring/backtest_log.db's top_contributions_json, each one a real,
+# non-trivial-weight contribution to a real scored prediction for the
+# named event before this fix. Reproduces the exact live evidence, same
+# discipline as test_cpi_off_topic_article_is_dropped_reproducing_the_diagnosed_dilution
+# above. ---
+
+def test_nfp_drops_the_real_chipotle_article_that_previously_contributed_weight():
+    print("=== event_context: Non-Farm Employment Change drops the real off-topic Chipotle article (2026-09-04 live evidence, 2.3% weight, +0.84 USD sentiment before this fix) ===")
+    on_topic = _article("US adds 180,000 jobs in August, unemployment rate steady", "Non-farm payrolls beat expectations")
+    off_topic = _article("Chipotle enters Asian market with first restaurant in Seoul")
+    source = _StubSource([on_topic, off_topic])
+    bundle = _build(_event("Non-Farm Employment Change"), source)
+    titles = [a.title for a in bundle.articles]
+    assert on_topic.title in titles
+    assert off_topic.title not in titles
+    print("PASS\n")
+
+
+def test_ppi_drops_the_real_tsmc_article_that_previously_contributed_weight():
+    print("=== event_context: PPI m/m drops the real off-topic TSMC revenue article (2026-09-10 live evidence, 1.9% weight, +0.95 USD sentiment before this fix) ===")
+    on_topic = _article("US producer prices rise 0.3% in August, above forecast", "PPI data shows wholesale inflation ticking up")
+    off_topic = _article("World's largest contract chipmaker TSMC sees August revenue surge over 53% to record high")
+    source = _StubSource([on_topic, off_topic])
+    bundle = _build(_event("PPI m/m"), source)
+    titles = [a.title for a in bundle.articles]
+    assert on_topic.title in titles
+    assert off_topic.title not in titles
+    print("PASS\n")
+
+
+def test_ism_manufacturing_drops_the_real_venezuela_oil_article_that_previously_contributed_weight():
+    print("=== event_context: ISM Manufacturing PMI drops the real off-topic Venezuela oil-deal article (2026-09-01 live evidence, 3.5% weight before this fix) ===")
+    on_topic = _article("ISM Manufacturing PMI expands to 52.1, factory activity picks up", "Purchasing managers index beats forecast")
+    off_topic = _article("Firms including Chevron, ONGC, GE Vernova on track to sign final pacts in Venezuela, sources say")
+    source = _StubSource([on_topic, off_topic])
+    bundle = _build(_event("ISM Manufacturing PMI"), source)
+    titles = [a.title for a in bundle.articles]
+    assert on_topic.title in titles
+    assert off_topic.title not in titles
+    print("PASS\n")
+
+
+def test_retail_sales_drops_the_real_huntington_bank_article_that_previously_contributed_weight():
+    print("=== event_context: Retail Sales m/m drops the real off-topic Huntington Bank CEO-succession article (2026-09-16 live evidence, 1.5% weight before this fix) ===")
+    on_topic = _article("US retail sales rise 0.6% in August, consumer spending strong", "Retail sales data beats forecast")
+    off_topic = _article("Huntington Bank promotes executive likely to become its next CEO")
+    source = _StubSource([on_topic, off_topic])
+    bundle = _build(_event("Retail Sales m/m"), source)
+    titles = [a.title for a in bundle.articles]
+    assert on_topic.title in titles
+    assert off_topic.title not in titles
+    print("PASS\n")
+
+
+def test_unemployment_claims_drops_the_real_intel_sk_hynix_article_that_previously_contributed_weight():
+    print("=== event_context: Unemployment Claims drops the real off-topic Intel/SK Hynix chip-manufacturing article (2026-09-17 live evidence, 3.1% weight before this fix) ===")
+    on_topic = _article("Weekly jobless claims fall to 215,000, labor market resilient", "Unemployment claims data shows continued strength")
+    off_topic = _article("Intel, SK Hynix shares jump on report they're discussing U.S. memory chip manufacturing")
+    source = _StubSource([on_topic, off_topic])
+    bundle = _build(_event("Unemployment Claims"), source)
+    titles = [a.title for a in bundle.articles]
+    assert on_topic.title in titles
+    assert off_topic.title not in titles
+    print("PASS\n")
+
+
+def test_fomc_relevance_keywords_still_match_the_current_fed_chair_warsh():
+    print("=== event_context: FOMC relevance keywords match 'Warsh' too, not just the stale 'Powell' (Kevin Warsh confirmed Fed Chair 2026-05-13) ===")
+    on_topic = _article("Fed Chair Warsh signals data-dependent approach to rate decisions")
+    source = _StubSource([on_topic])
+    bundle = _build(_event("FOMC Statement"), source)
+    assert len(bundle.articles) == 1
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_off_topic_article_is_dropped_for_an_event_with_configured_keywords()
     test_relevance_keyword_match_is_case_insensitive_and_checks_summary_too()
-    test_event_with_no_configured_keywords_is_not_filtered_at_all()
+    test_event_with_no_configured_keywords_fails_closed_to_zero_articles()
     test_relevance_filter_runs_before_dedup_but_does_not_break_it()
     test_cpi_off_topic_article_is_dropped_reproducing_the_diagnosed_dilution()
     test_cpi_keyword_list_shared_across_all_four_title_variants()

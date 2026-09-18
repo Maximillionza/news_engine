@@ -630,31 +630,96 @@ _CPI_RELEVANCE_KEYWORDS = [
     "bureau of labor statistics", "core cpi", "consumer inflation",
 ]
 
-# Only the FOMC family and CPI are populated for now (the ones confirmed
-# to actually need it) — "Federal Funds Rate" and "FOMC Statement" are
-# Forex Factory's other FOMC-decision title variants (see
-# KALSHI_RATE_DECISION_SERIES / EVENT_SURPRISE_DIRECTION's comments on
-# this same title family).
+# 2026-09-17: "powell" alone is now stale (Kevin Warsh confirmed as Fed
+# Chair 2026-05-13, per Layer1_Event_to_USD's 2026-05-13-FED-CHAIR-VOTE
+# row) — both names kept so historical Powell-era coverage and current
+# Warsh-era coverage both match, same "never drop real coverage" reasoning
+# as everything else in this dict.
+_FOMC_RELEVANCE_KEYWORDS = [
+    "fomc", "federal reserve", "federal funds rate", "fed rate", "fed chair",
+    "fed meeting", "fed minutes", "interest rate decision", "monetary policy",
+    "rate hike", "rate cut", "powell", "warsh", "dot plot", "central bank",
+    "fed press conference", "economic projections",
+]
+
+# 2026-09-17 audit finding: EVENT_RELEVANCE_KEYWORDS_BY_TITLE only covered
+# the FOMC family and CPI — every other real tracked event title (13+)
+# fell through _filter_relevant()'s fail-open path (data_layer/event_context.py)
+# with NO topic filtering at all, since fetching itself is event-agnostic
+# (query="" everywhere — see that module's docstring). Live-confirmed via
+# real top_contributions_json rows in scoring/backtest_log.db: a Chipotle
+# restaurant-opening article contributed 2.3% weight and +0.84 USD
+# sentiment to a real Non-Farm Employment Change score; a Huntington Bank
+# CEO-succession article contributed to Retail Sales m/m; a TSMC revenue
+# article contributed to PPI m/m — none topically related to the event
+# they were scored against. This batch closes that gap for every real
+# tracked title. Grouped the same way CPI/FOMC's own variants already are
+# — shared list across framing variants of the same underlying release,
+# not because filtering leniency differs across variants.
+_JOBS_RELEVANCE_KEYWORDS = [
+    "non-farm payroll", "nonfarm payroll", "payrolls", "jobs report",
+    "unemployment rate", "unemployment claims", "jobless claims",
+    "labor market", "hiring", "layoffs", "job cuts", "average hourly earnings",
+    "wage growth", "bureau of labor statistics", "employment situation",
+]
+_PPI_RELEVANCE_KEYWORDS = [
+    "ppi", "producer price index", "producer prices", "wholesale inflation",
+    "wholesale prices", "import prices", "input costs", "bureau of labor statistics",
+]
+_ISM_RELEVANCE_KEYWORDS = [
+    "ism", "institute for supply management", "manufacturing pmi", "services pmi",
+    "purchasing managers", "factory activity", "manufacturing activity",
+    "prices paid",
+]
+_RETAIL_SALES_RELEVANCE_KEYWORDS = [
+    "retail sales", "consumer spending", "consumer demand", "store sales",
+]
+_GDP_RELEVANCE_KEYWORDS = [
+    "gdp", "gross domestic product", "economic growth", "gdp nowcast",
+    "economic output", "recession", "gdp report",
+]
+
+# Only the groups confirmed to actually need it (the ones this project
+# tracks Tier1/accumulator predictions for) are populated — an event title
+# added later with no entry here still fails open per
+# data_layer/event_context.py's own documented contract, same "absent, not
+# fabricated" reasoning as the rest of this pipeline.
 EVENT_RELEVANCE_KEYWORDS_BY_TITLE = {
-    "FOMC Meeting Minutes": [
-        "fomc", "federal reserve", "federal funds rate", "fed rate", "fed chair",
-        "fed meeting", "fed minutes", "interest rate decision", "monetary policy",
-        "rate hike", "rate cut", "powell", "dot plot", "central bank",
-    ],
-    "FOMC Statement": [
-        "fomc", "federal reserve", "federal funds rate", "fed rate", "fed chair",
-        "fed meeting", "fed minutes", "interest rate decision", "monetary policy",
-        "rate hike", "rate cut", "powell", "dot plot", "central bank",
-    ],
-    "Federal Funds Rate": [
-        "fomc", "federal reserve", "federal funds rate", "fed rate", "fed chair",
-        "fed meeting", "fed minutes", "interest rate decision", "monetary policy",
-        "rate hike", "rate cut", "powell", "dot plot", "central bank",
-    ],
+    "FOMC Meeting Minutes": _FOMC_RELEVANCE_KEYWORDS,
+    "FOMC Statement": _FOMC_RELEVANCE_KEYWORDS,
+    "Federal Funds Rate": _FOMC_RELEVANCE_KEYWORDS,
+    "FOMC Press Conference": _FOMC_RELEVANCE_KEYWORDS,
+    "FOMC Economic Projections": _FOMC_RELEVANCE_KEYWORDS,
+    "Fed Chairman Warsh Speaks": _FOMC_RELEVANCE_KEYWORDS,
     "CPI m/m": _CPI_RELEVANCE_KEYWORDS,
     "CPI y/y": _CPI_RELEVANCE_KEYWORDS,
     "Core CPI m/m": _CPI_RELEVANCE_KEYWORDS,
     "Core CPI y/y": _CPI_RELEVANCE_KEYWORDS,
+    "Non-Farm Employment Change": _JOBS_RELEVANCE_KEYWORDS,
+    "ADP Non-Farm Employment Change": _JOBS_RELEVANCE_KEYWORDS,
+    "Average Hourly Earnings m/m": _JOBS_RELEVANCE_KEYWORDS,
+    "Unemployment Rate": _JOBS_RELEVANCE_KEYWORDS,
+    "Unemployment Claims": _JOBS_RELEVANCE_KEYWORDS,
+    "Challenger Job Cuts y/y": _JOBS_RELEVANCE_KEYWORDS,
+    "Prelim Benchmark Payrolls Revision": _JOBS_RELEVANCE_KEYWORDS,
+    "PPI m/m": _PPI_RELEVANCE_KEYWORDS,
+    "Core PPI m/m": _PPI_RELEVANCE_KEYWORDS,
+    "Import Prices m/m": _PPI_RELEVANCE_KEYWORDS,
+    "ISM Manufacturing PMI": _ISM_RELEVANCE_KEYWORDS,
+    "ISM Services PMI": _ISM_RELEVANCE_KEYWORDS,
+    "Retail Sales m/m": _RETAIL_SALES_RELEVANCE_KEYWORDS,
+    "Core Retail Sales m/m": _RETAIL_SALES_RELEVANCE_KEYWORDS,
+    "Prelim GDP q/q": _GDP_RELEVANCE_KEYWORDS,
+    "Advance GDP q/q": _GDP_RELEVANCE_KEYWORDS,
+    "GDP q/q": _GDP_RELEVANCE_KEYWORDS,
+    "Core PCE Price Index m/m": [
+        "pce", "personal consumption expenditures", "core pce", "fed's preferred inflation gauge",
+        "fed's preferred inflation measure", "inflation gauge",
+    ],
+    "Prelim UoM Consumer Sentiment": [
+        "consumer sentiment", "university of michigan", "umich", "consumer confidence",
+        "consumer expectations",
+    ],
 }
 
 # Trust weight for a precursor's structured surprise contribution — high,

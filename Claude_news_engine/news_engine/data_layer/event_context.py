@@ -38,14 +38,40 @@ def _is_relevant(article: NewsArticle, keywords: list[str]) -> bool:
 
 def _filter_relevant(articles: list[NewsArticle], event_title: str) -> list[NewsArticle]:
     """
-    Applies EVENT_RELEVANCE_KEYWORDS_BY_TITLE's keyword filter, if this
-    event's title has an entry — fail-open (returns articles unchanged) if
-    it doesn't, same "absent, not fabricated" contract the rest of this
-    pipeline uses. See that dict's docstring in config/settings.py.
+    Applies EVENT_RELEVANCE_KEYWORDS_BY_TITLE's keyword filter. An event
+    title with no entry FAILS CLOSED (returns no articles at all), not
+    open (2026-09-17 fix — was previously "return articles unchanged").
+
+    Why fail-closed: fetching itself is event-agnostic (every NewsSource
+    is called with query="" — see this module's own build_event_news_bundle()
+    and news_feed.py's docstrings), so this filter is the ONLY thing
+    standing between "whatever the broad macro-news feed happened to
+    return" and this event's sentiment score. The old fail-open behavior
+    let that broad, unrelated feed straight through for any event without
+    a curated keyword list — live-confirmed via real top_contributions_json
+    rows in scoring/backtest_log.db: a Chipotle restaurant-opening article
+    contributed 2.3% weight and +0.84 USD sentiment to a real Non-Farm
+    Employment Change score; similar real off-topic contributions found for
+    PPI m/m, ISM Manufacturing PMI, Retail Sales m/m, and Unemployment
+    Claims — none topically related to the event they were scored against.
+
+    A genuinely uncurated event title now gets zero articles (loudly
+    logged) rather than a silently-diluted score — the same "never
+    fabricate, fail loud" discipline this project applies everywhere else,
+    now applied here too. Add a real, curated keyword list to
+    config.settings.EVENT_RELEVANCE_KEYWORDS_BY_TITLE before this event
+    can get article-based sentiment coverage again.
     """
     keywords = EVENT_RELEVANCE_KEYWORDS_BY_TITLE.get(event_title)
     if not keywords:
-        return articles
+        print(
+            f"[event_context] WARNING: no relevance keywords configured for "
+            f"{event_title!r} — dropping all {len(articles)} fetched article(s) "
+            f"rather than scoring them unfiltered. Add an entry to "
+            f"config.settings.EVENT_RELEVANCE_KEYWORDS_BY_TITLE to restore "
+            f"article-based sentiment coverage for this event."
+        )
+        return []
     return [a for a in articles if _is_relevant(a, keywords)]
 
 
