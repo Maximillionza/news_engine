@@ -415,3 +415,67 @@ category of bug and someone will hit it the day this EA runs multi-symbol.
 - `Models/ASE_Config.mqh`: `ASE_VERSION_TAG` and the `InpMagicNumber`
   default converted to override-before-include macros, as above.
   `ACE_v4.0.0.mq5`/`ACE_v3.14.17.mq5` behavior unchanged.
+
+---
+
+## Addendum 6 — Order Block detector (v4.0.1, added to this same fork)
+
+Highest-priority item from the confluence-gap review earlier in this
+session: Order Block is named in this project's own ICT/SMC concept list
+(BOS, CHoCH, FVG, OB, liquidity sweeps, kill zones, AMD) but had no
+detector anywhere in the codebase — FVG and EMA pullback were the only
+entry-zone evidence types. Added as `EVID_ORDER_BLOCK` /
+`CASE_SetupEngine::CheckOrderBlock()`, delivered directly into this
+already-forked `ACE_v4.0.1.mq5` rather than another new side-by-side
+fork, since v4.0.1 is itself still an unreleased/unvalidated experimental
+build (no separate isolation need yet — only one build wanted this).
+
+**Definition used, stated explicitly because ICT/SMC literature is not
+uniform on this point:** the last opposite-colour M15 candle immediately
+before a same-direction displacement candle whose close breaks beyond
+that candle's high/low (a mini BOS — required, not optional; without it
+"last red candle before a green one" fires on noise). Zone = the OB
+candle's full high/low range, matching this file's existing FVG
+convention of wick-to-wick zones rather than body-only. A block is
+treated as fully invalidated (excluded, not just weighted down) the
+moment any subsequent bar closes cleanly through it — stricter than
+FVG's depth-penetration gate, because OB literature generally treats a
+clean close-through as the block having failed outright, not merely
+faded.
+
+**Wiring:**
+- `Models/ASE_EvidenceTypes.mqh` — `EVID_ORDER_BLOCK = 16`.
+- `Models/ASE_ConfluenceTypes.mqh` — DNA tag `"OB"`.
+- `Core/ASE_ConfluenceEngine.mqh` — weight 6.0, `FAM_LOCATION` (same
+  family as FVG 8 + EMA pullback 5; family cap is 20, so 19 total still
+  has headroom). Interim nominal weight, same caveat as Addendum 4's two
+  promotions: not evidence-derived, no backtest behind the number.
+- `Core/ASE_SetupEngine.mqh` — new private `CheckOrderBlock()`, called
+  ONLY from `EvaluateAllEvidence()`. The legacy `Evaluate()` cascade
+  (the method that actually gates v3.14.17/v4.0.0/v4.0.1's real
+  execution decisions) has zero lines changed — verified by diff, same
+  standard this project has applied to every other v4 addition.
+- `Models/ASE_Config.mqh` — four new inputs: `InpEnableOrderBlock` (kill
+  switch), `InpOBLookback` (scan window, mirrors FVG's), `InpOBMaxBars`
+  (age gate, same rationale as `InpFVGMaxBars`), `InpOBDispMultiplier`
+  (ATR body-size threshold for the confirming displacement candle).
+
+**Deliberately NOT done:** not added to any `CoreCheck*()` in
+`ASE_SetupClassifier.mqh` — ships as enhancer-only (scored, but not
+required for any archetype to qualify), same reasoning given earlier in
+this session for the compression/EMA-align promotions: no observation
+data exists yet to justify making a brand-new, unvalidated detector a
+hard requirement for setup classification. `ASE_MAX_EVIDENCE` capacity
+checked — M15 evidence collection goes from 8 to 9 items per bar,
+nowhere near the 24-item cap.
+
+**Not done in this session (per explicit instruction — one item per
+session, not all four):** kill-zone/AMD-phase timing evidence, DXY/real-
+yield correlation evidence, liquidity-pool (equal highs/lows, PDH/PDL)
+mapping. Still queued in that priority order.
+
+**Verification performed:** brace/paren balance confirmed on every
+touched file. Not verified: actual detection behavior against real price
+data — no MT5 runtime in this environment, same limitation stated
+throughout this changelog. This detector has never fired once on real
+data. Do not treat its presence as validated until it has.

@@ -507,4 +507,20 @@ input int InpAceV4FreshnessMaxM1Bars = 5;    // trigger evidence expiry window
 input int InpAceV4FreshnessMaxM15Bars = 8;   // location/momentum evidence expiry window
 input int InpAceV4FreshnessMaxH1Bars = 12;   // structure evidence expiry window
 
+// v4.0.1 — Order Block detector (EVID_ORDER_BLOCK, CASE_SetupEngine::
+// CheckOrderBlock). V4-evidence-only: wired into EvaluateAllEvidence(),
+// never into the legacy Evaluate() cascade, so it carries zero risk to
+// v3.14.17/v4.0.0/v4.0.1's existing execution decisions. Operational
+// definition used (one of several valid ICT/SMC variants, documented
+// rather than assumed canonical — see CheckOrderBlock() header comment
+// for the full reasoning and CHANGELOG_v4.0.0.md Addendum 6 for why this
+// definition was chosen): the last opposite-colour M15 candle immediately
+// before a displacement candle that closes beyond it (a mini BOS), full
+// candle range as the zone, unmitigated (no subsequent close has fully
+// broken through it) and price currently trading back inside it.
+input bool   InpEnableOrderBlock    = true;  // Allow Order Block evidence collection (V4 evidence only — no legacy effect)
+input int    InpOBLookback          = 20;    // M15 bars scanned back for a qualifying OB candle (same window as FVG)
+input int    InpOBMaxBars           = 15;    // reject an OB older than this many M15 bars (0 = off); edge decays with age, same rationale as InpFVGMaxBars
+input double InpOBDispMultiplier    = 0.60;  // min body size (× M15 ATR) the post-OB candle needs to count as a displacement/BOS confirming the block
+
 #endif // ASE_CONFIG_MQH

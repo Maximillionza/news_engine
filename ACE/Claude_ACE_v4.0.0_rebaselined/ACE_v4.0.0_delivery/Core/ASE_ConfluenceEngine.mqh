@@ -54,6 +54,7 @@ private:
          case EVID_VOLATILITY_STATE: return 8.0;   // Environment: regime 5 + volatility expansion 3, folded (one regime detector)
          case EVID_SESSION_QUALITY:  return 2.0;   // Environment: session
          case EVID_SPREAD_QUALITY:   return 5.0;   // Execution: spread 2 + drift 3, folded (drift has no pre-execution detector)
+         case EVID_ORDER_BLOCK:      return 6.0;   // v4.0.1 — new detector (CASE_SetupEngine::CheckOrderBlock), not a plan §22 fold. Location family, same bucket as FVG/EMA pullback (familyMax[FAM_LOCATION]=20; FVG 8 + EMAPullback 5 + this 6 = 19, still under cap). Interim weight, no observation data yet — see CHANGELOG_v4.0.0.md Addendum 6.
          default:                    return 0.0;
       }
    }
