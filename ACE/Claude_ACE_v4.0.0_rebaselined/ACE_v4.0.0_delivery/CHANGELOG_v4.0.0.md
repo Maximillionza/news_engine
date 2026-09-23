@@ -809,3 +809,64 @@ session if wanted:** none — the original four-item priority queue
 now complete. Any further confluence work from here is either (a) the
 family-cap decision above, or (b) a fresh gap review now that this
 session's five additions exist to react to.
+
+**Family-cap decision (Addendum 10) explicitly deferred, not forgotten**
+— user's own instruction: hold it until real observation data exists to
+inform it, rather than resize caps on estimates. Review performed on
+request in the meantime (see conversation, not a separate addendum
+since no code changed): STRUCTURE 40/25 is pre-existing and left alone;
+MOMENTUM 22/20 and LOCATION 19/20 need nothing; LIQUIDITY 29/20 and
+ENVIRONMENT 19/10 (corrected from this addendum's own understated 16 —
+`EVID_M15_COMPRESSION`'s FAM_ENVIRONMENT tag was missed in the original
+tally) are the real candidates. Recommended fix when the time comes:
+split `EVID_MACRO_CORRELATION` into its own family rather than sharing
+`FAM_ENVIRONMENT` with regime/session/compression, since it isn't
+correlated with any of them — capping it alongside signals it shares no
+redundancy with discounts it for a correlation it doesn't have.
+
+---
+
+## Addendum 11 — ACE_v4.0.1.mq5 compiled successfully in MetaEditor
+
+Resolves the single limitation repeated in every addendum above:
+"MetaEditor compilation... not claimed because no MT5 runtime is
+available in this environment." User compiled `ACE_v4.0.1.mq5` with zero
+errors. This is the first real validation checkpoint for everything in
+this changelog — Addenda 1 through 10 were all written against static
+analysis only (brace/paren balance, manual trace, legacy-path diffing),
+never against a compiler.
+
+**What a clean compile confirms:** every new evidence type, input, and
+`Check*()` method added across this session is syntactically valid MQL5,
+type-correct, and resolves against the existing engine/model headers —
+including the override-before-include macro mechanism from the prior
+session (`ASE_VERSION_TAG`/`ASE_MAGIC_DEFAULT`), which depends on
+preprocessor ordering that only a real compile can confirm actually
+works as designed rather than as reasoned-through.
+
+**What it does NOT confirm — still open, still needs a Strategy Tester
+run or live/demo attachment to check:**
+- Whether any of the five new detectors (Order Block, Kill Zone, AMD
+  Phase, Macro Correlation, Liquidity Pool) actually fire correctly
+  against real price data, or fire at all.
+- Whether `InpMacroCorrSymbol`'s default (`"USDX"`) resolves on this
+  broker — check the Journal on `OnInit()` for the `[SETUP] WARNING —
+  macro correlation symbol '...' not found/selectable` line. If that
+  warning appears, `EVID_MACRO_CORRELATION` is silently inactive and the
+  input needs to be set to whatever this broker's actual dollar-index
+  symbol is named, found in Market Watch.
+- Whether the Asian-range `iBarShift`/`CopyHigh`/`CopyLow` math in
+  `CheckAMDPhase()` behaves correctly against real broker history
+  (weekend gaps, holiday-shortened sessions, etc.) rather than the clean
+  contiguous-bars assumption it was written against.
+- Whether `InpLiqPoolEqualTolerance`'s default (0.10 × ATR) is a sane
+  equal-highs/equal-lows clustering threshold for XAUUSD specifically —
+  chosen as a reasonable starting guess, never checked against data.
+- Any actual backtest/live behavior at all — compilation proves the code
+  is valid, not that it does anything useful.
+
+**Next real checkpoint:** a Strategy Tester run (or demo attachment) with
+`InpAceV4Mode=ACEV4_EVIDENCE` (the default — zero execution authority
+either way) long enough to accumulate opportunity-log rows, then reading
+that log for whether each new evidence type is firing at plausible
+frequency and DNA-tagging correctly (`OB`, `KZ`, `AMD`, `DXY`, `LP`).
