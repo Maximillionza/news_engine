@@ -59,6 +59,7 @@ Users unlock PropWise and CompWise mini-games inside TradeWise by hitting Career
 | `ARCHITECTURE.md` | Infrastructure, stack, cross-app design |
 | `MONETISATION.md` | IAP, subscriptions, cosmetics, pricing |
 | `CONTENT_SPEC.md` | Confluence definitions, dataset curation, curriculum arc |
+| `COURSE_CATALOGUE.md` | Full course/lesson content, quiz questions, Test Your Knowledge item banks |
 | `REGULATORY_NOTES.md` | Competitions, prizes, disclaimers, jurisdiction risks |
 | `ROADMAP.md` | Phasing questions, MVP vs post-MVP scope |
 

@@ -1,0 +1,241 @@
+<title>ACE Tuning Map</title>
+<style>
+:root{
+  --bg:#faf7f1; --surface:#ffffff; --surface-2:#f1ece1; --border:#ded5c2;
+  --text:#221d15; --text-dim:#6b6152; --accent:#8a5a2b; --accent-2:#2f6b52;
+  --warn:#a13f2c; --mono-bg:#eee6d4; --shadow:0 1px 2px rgba(40,30,10,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#171410; --surface:#211d17; --surface-2:#2a251d; --border:#3a3327;
+    --text:#f1ead9; --text-dim:#a89a80; --accent:#d99a53; --accent-2:#5cbd93;
+    --warn:#e3785f; --mono-bg:#1c1811; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#171410; --surface:#211d17; --surface-2:#2a251d; --border:#3a3327;
+  --text:#f1ead9; --text-dim:#a89a80; --accent:#d99a53; --accent-2:#5cbd93;
+  --warn:#e3785f; --mono-bg:#1c1811; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--text);margin:0;padding-inline:16px;
+  font:15px/1.55 'IBM Plex Sans',system-ui,sans-serif;}
+h1,h2,h3{font-family:'IBM Plex Serif',Georgia,serif;font-weight:600;letter-spacing:-0.01em;}
+code,.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;}
+.wrap{max-width:920px;margin:0 auto;padding-block:32px 80px;}
+header{margin-bottom:8px;}
+header h1{font-size:clamp(28px,5vw,38px);margin:0 0 6px;text-wrap:balance;}
+header p{color:var(--text-dim);margin:0;max-width:60ch;}
+nav.toc{display:flex;flex-wrap:wrap;gap:6px;margin:22px 0 36px;padding:14px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:10px;}
+nav.toc a{font-size:12.5px;color:var(--accent);text-decoration:none;border:1px solid var(--border);
+  padding:4px 9px;border-radius:999px;background:var(--surface);white-space:nowrap;}
+section{margin-bottom:44px;scroll-margin-top:16px;}
+section h2{font-size:20px;margin:0 0 4px;display:flex;align-items:baseline;gap:10px;}
+section h2 .num{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--accent);}
+section > p.lede{color:var(--text-dim);margin:0 0 16px;max-width:68ch;}
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;overflow:hidden;box-shadow:var(--shadow);}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);
+  background:var(--surface-2);padding:9px 12px;border-bottom:1px solid var(--border);}
+td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top;font-size:13.5px;}
+tr:last-child td{border-bottom:none;}
+td.param{white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--accent);}
+td.default{white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--accent-2);}
+td.effect{color:var(--text);}
+.tag{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:5px;margin-left:6px;
+  background:var(--mono-bg);color:var(--text-dim);border:1px solid var(--border);}
+.tag.caution{background:transparent;border-color:var(--warn);color:var(--warn);}
+.callout{background:var(--surface-2);border-left:3px solid var(--accent);padding:10px 14px;
+  border-radius:0 8px 8px 0;font-size:13.5px;color:var(--text-dim);margin:10px 0 16px;}
+.callout b{color:var(--text);}
+footer{color:var(--text-dim);font-size:12.5px;border-top:1px solid var(--border);padding-top:16px;margin-top:40px;}
+@media(max-width:600px){ td.param,td.default{white-space:normal;} }
+</style>
+
+<div class="wrap">
+<header>
+<h1>ACE Tuning Map</h1>
+<p>Every <code>input</code> in ASE_Config.mqh (153 of them), grouped by what part of the machine it touches, in plain language: what turning it up or down actually changes downstream. Defaults shown are the file's current values, not recommendations.</p>
+</header>
+
+<div class="callout"><b>How to read this</b> — most knobs here feed the <i>legacy score cascade</i> (the system that actually places trades today). A separate block near the bottom belongs to the v4 evidence/adaptive layer, which currently only observes — changing those numbers won't move a live trade until that layer is given execution authority.</div>
+
+<nav class="toc">
+<a href="#risk">Risk & sizing</a><a href="#atr">Stops/targets (ATR)</a><a href="#bias">Bias & structure (H4/H1/M15/M1)</a>
+<a href="#exec">Execution & identity</a><a href="#sessions">Sessions & kill zones</a><a href="#scoring">Scoring gate</a>
+<a href="#modes">Setup-class switches</a><a href="#reset">Daily reset & staleness</a><a href="#logging">Logging & alerts</a>
+<a href="#survival">Drawdown survival</a><a href="#resilience">Order execution resilience</a><a href="#profiles">Per-regime profiles</a>
+<a href="#v4auth">V4 authority & learning rate</a><a href="#v4evidence">V4 evidence detectors</a>
+</nav>
+
+<section id="risk">
+<h2><span class="num">01</span> Risk & position sizing</h2>
+<p class="lede">Controls how big a trade is and what reward ACE insists on before it'll take one.</p>
+<table><tr><th>Input</th><th>Default</th><th>What moving it does</th></tr>
+<tr><td class="param">InpRiskPercent</td><td class="default">0.50</td><td class="effect">% of account risked per trade. Double it and every position size doubles — same win rate, double the swings in both directions.</td></tr>
+<tr><td class="param">InpMinRR</td><td class="default">2.0</td><td class="effect">Minimum reward-to-risk ACE will accept. Raise it and fewer setups qualify (TP has to be further from entry than SL), but the ones that do pay more per win. Lower it and more setups pass, with smaller average wins.</td></tr>
+</table>
+</section>
+
+<section id="atr">
+<h2><span class="num">02</span> Stops & targets (ATR-based)</h2>
+<p class="lede">ATR (Average True Range) is the ruler ACE uses for "how far is a normal move right now." Every SL/TP is a multiple of it.</p>
+<table><tr><th>Input</th><th>Default</th><th>What moving it does</th></tr>
+<tr><td class="param">InpATRPeriod</td><td class="default">14</td><td class="effect">How many M15 bars the ruler is averaged over. Smaller = ruler reacts faster to a sudden vol change but gets noisier; larger = smoother but slower to adapt.</td></tr>
+<tr><td class="param">InpATRMultiplierSL</td><td class="default">1.0</td><td class="effect">Baseline SL distance (used in Compression). Raise it → wider stop, fewer stop-outs on noise, bigger loss when wrong.</td></tr>
+<tr><td class="param">InpATRMultiplierSL_Wide</td><td class="default">1.5</td><td class="effect">Same idea for Ranging regime specifically — kept separate because ranging price chops more.</td></tr>
+<tr><td class="param">InpATRSLCap</td><td class="default">15.0</td><td class="effect">Hard ceiling on SL in points regardless of ATR — a sanity backstop so a volatility spike can't blow the stop out to something unreasonable. 0 removes the ceiling.</td></tr>
+<tr><td class="param">InpATRMultiplierTP1 / TP2</td><td class="default">2.0 / 4.0</td><td class="effect">First/second target distance, ATR mode only. TP1 is usually where partial profit is taken; TP2 is the "let it run" target.</td></tr>
+<tr><td class="param">InpATRTrailMultiplier</td><td class="default">1.5</td><td class="effect">How far behind price the trailing stop sits once trailing is active. Tighter = locks in profit sooner but gets shaken out of trends more; wider = rides trends further but gives back more on a reversal.</td></tr>
+<tr><td class="param">InpTP1Mode / InpTP2Mode</td><td class="default">TP_ATR</td><td class="effect">Global fallback: fixed ATR multiple (consistent everywhere) vs structural (aims at an actual swing level, more precise but not always available) vs hybrid (structural, clamped inside ATR bounds). Per-regime overrides below take priority when set.</td></tr>
+</table>
+</section>
+
+<section id="bias">
+<h2><span class="num">03</span> Directional bias & structure (H4 → H1 → M15 → M1)</h2>
+<p class="lede">This is the top-down chain that decides which direction ACE is even allowed to look for a trade in, before any entry logic runs.</p>
+<table><tr><th>Input</th><th>Default</th><th>What moving it does</th></tr>
+<tr><td class="param">InpH4FastEMA / SlowEMA</td><td class="default">20 / 50</td><td class="effect">H4 bias vote: fast above slow = long bias, below = short. Shrinking the gap between the two periods makes the H4 vote flip direction more often (more reactive, more whipsaw); widening it makes the vote sticky.</td></tr>
+<tr><td class="param">InpH1SwingPivot</td><td class="default">2</td><td class="effect">Bars either side needed to confirm an H1 swing high/low. Raise to 3+ for fewer, more "real" pivots; direction changes become rarer and later.</td></tr>
+<tr><td class="param">InpH1SwingLookback</td><td class="default">10</td><td class="effect">How far back (H1 bars) it scans for swing points. Wider window = catches older structure, narrower = only reacts to recent price.</td></tr>
+<tr><td class="param">InpPivotBackfillBars</td><td class="default">200</td><td class="effect">One-time historical scan depth at EA startup to seed the pivot registry. Mostly a startup-only setting.</td></tr>
+<tr><td class="param">InpPivotMaxAgeBars</td><td class="default">120</td><td class="effect">An unbroken H1 pivot expires after this many bars (~5 trading days) and stops counting as a valid BOS target. Shorten it and old levels get discarded faster; lengthen it and stale levels linger longer.</td></tr>
+<tr><td class="param">InpBiasInvalidATRMult</td><td class="default">2.0</td><td class="effect">If price runs this many H4-ATRs against the held bias, the bias resets to neutral rather than staying locked on an old view. Lower it = bias gives up sooner on adverse moves; 0 disables this safety check entirely.</td></tr>
+<tr><td class="param">InpH1BiasStaleBars</td><td class="default">120</td><td class="effect">If no fresh H1 BOS fires within this many bars, bias goes stale and resets to neutral — stops a Monday bias from still driving Thursday's trade. 0 disables it.</td></tr>
+<tr><td class="param">InpM15EMA</td><td class="default">21</td><td class="effect">The M15 dynamic support/resistance line several setup checks reference.</td></tr>
+<tr><td class="param">InpM1FastEMA / SlowEMA</td><td class="default">9 / 21</td><td class="effect">Feeds the weakest of the four M1 trigger types (EMA-aligned fallback). Narrower gap = fires more often but with less conviction behind each signal.</td></tr>
+</table>
+</section>
+
+<section id="exec">
+<h2><span class="num">04</span> Execution basics & instance identity</h2>
+<table><tr><th>Input</th><th>Default</th><th>What moving it does</th></tr>
+<tr><td class="param">InpMaxSpread</td><td class="default">70pt</td><td class="effect">Hard gate — no trade at all if live spread exceeds this, regardless of everything else.</td></tr>
+<tr><td class="param">InpSpreadBaseline</td><td class="default">35</td><td class="effect">The "as good as it gets" spread for the score curve — spreads near this score close to full marks, not just "under the cap."</td></tr>
+<tr><td class="param">InpMaxPositions</td><td class="default">1</td><td class="effect">Concurrent open positions allowed. Raising it lets ACE stack trades — increases exposure and correlation risk fast on a single-symbol EA.</td></tr>
+<tr><td class="param">InpCooldownBars</td><td class="default">5 (M15)</td><td class="effect">Forced pause after a close before ACE will look again (~75 min at default). Shorter = re-enters faster after a stop-out; longer = avoids revenge-trading the same failed level.</td></tr>
+<tr><td class="param">InpMagicNumber</td><td class="default">203157 / 204001 (v4.0.1)</td><td class="effect">Instance identity — must differ between two builds run side by side, or each one's trade-management code will act on the other's live positions.</td></tr>
+</table>
+</section>
+
+<section id="sessions">
+<h2><span class="num">05</span> Sessions & kill zones — <span class="tag">your London example lives here</span></h2>
+<p class="lede">Controls when ACE is even allowed to be looking for trades, and how it scores "time of day" as part of the entry score.</p>
+<table><tr><th>Input</th><th>Default</th><th>What moving it does</th></tr>
+<tr><td class="param">InpUseLondon / InpUseNY</td><td class="default">true / true</td><td class="effect">Master on/off switches per session. Turn one off and ACE won't look for entries during that window at all.</td></tr>
+<tr><td class="param">InpTrade24_7</td><td class="default">false</td><td class="effect">Overrides everything above — ignores session filtering entirely if true.</td></tr>
+<tr><td class="param">InpKillZoneEnabled</td><td class="default">true</td><td class="effect">Gives the ICT kill-zone windows a session-quality bonus (10.0 vs 9.5 for plain overlap). Off = all session time scored the same, no kill-zone premium.</td></tr>
+<tr><td class="param">InpLondonStartHour/Min</td><td class="default">06:00 UTC</td><td class="effect"><b>Your example</b> — set this from 7 to 6 and ACE starts treating 06:00–07:00 UTC as inside the London session an hour earlier: it becomes eligible for session score, kill-zone scoring (if that hour falls in the fixed 08:00–11:00 KZ window it won't change, since KZ times are separate constants — see below), and the whole WAIT_SETUP/WAIT_TRIGGER pipeline gets an extra hour of "session is open" runway. It does not move the ICT kill zone itself.</td></tr>
+<tr><td class="param">InpLondonEndHour/Min</td><td class="default">12:30 UTC</td><td class="effect">Same logic at the other end — later close = more session-open hours per day.</td></tr>
+<tr><td class="param">InpNYStartHour/Min, InpNYEndHour/Min</td><td class="default">12:30–21:00 UTC</td><td class="effect">Same mechanics as London, for the NY window.</td></tr>
+</table>
+<div class="callout">The <b>08:00–11:00 London / 13:00–16:00 NY kill-zone windows are separate fixed constants</b> inside the code comments (not their own input here) — moving <code>InpLondonStartHour</code> widens or shrinks the <i>session</i>, it does not relocate the kill zone itself. If you want the kill zone to shift, that's a different, currently-hardcoded value.</div>
+</section>
+
+<section id="scoring">
+<h2><span class="num">06</span> Composite scoring gate</h2>
+<table><tr><th>Input</th><th>Default</th><th>What moving it does</th></tr>
+<tr><td class="param">InpScoreThreshold</td><td class="default">60.0</td><td class="effect">Global minimum composite score (0–100) to enter — per-regime profiles below override this per market condition.</td></tr>
+<tr><td class="param">InpMinBiasScore</td><td class="default">0 (off)</td><td class="effect">If set, the H4-bias component alone must clear this raw floor, no matter how high other components score — stops a weak bias being "rescued" by a strong M15 setup.</td></tr>
+<tr><td class="param">InpMinSetupScore</td><td class="default">0 (off)</td><td class="effect">Same idea for the M15 setup-class component.</td></tr>
+</table>
+</section>
+
+<section id="modes">
+<h2><span class="num">07</span> Setup-class & trigger-class switches</h2>
+<p class="lede">On/off toggles per pattern type, mostly added after backtests showed a specific combination losing money in a specific regime.</p>
+<table><tr><th>Input</th><th>Default</th><th>What moving it does</th></tr>
+<tr><td class="param">InpBiasReEvalBars</td><td class="default">8</td><td class="effect">How long a bias-block from a 4/4 M15 conflict holds before it auto-clears. Lower = ACE gets unstuck faster after disagreement; higher = more conservative, waits longer before trying again.</td></tr>
+<tr><td class="param">InpBiasFlipCycles</td><td class="default">3</td><td class="effect">How many full re-block cycles of persistent conflict before ACE forces a fresh H4 read and accepts even a flipped direction.</td></tr>
+<tr><td class="param">InpFVGMaxBars</td><td class="default">10 (~2.5h)</td><td class="effect">Rejects a fair-value-gap setup once it's older than this — edge decays with age. 0 = no age limit.</td></tr>
+<tr><td class="param">InpEnableFVG / Displacement / CompressionBO / EMAPullback</td><td class="default">true</td><td class="effect">Per-setup-class kill switches. Turn one off after your own attribution data shows it's a net loser in a specific regime.</td></tr>
+<tr><td class="param">InpEMAFallbackInRanging</td><td class="default"><b>false</b></td><td class="effect">Blocked by default — backtest showed this the worst-performing trigger in Ranging (avg −$21/trade). Setting true restores it.</td></tr>
+<tr><td class="param">InpEMAFallbackInTrending</td><td class="default"><b>false</b></td><td class="effect">Same trigger, blocked in Trending too — it drove almost all of Trending's net loss in a 335-trade backtest.</td></tr>
+<tr><td class="param">InpWeakShortTriggersInTrending</td><td class="default"><b>false</b></td><td class="effect">Blocks Rejection/Displacement triggers specifically on SHORT in Trending (Disp+mBOS stays exempt) — Trending+Short was the weakest cell found in backtest (37% WR vs 52% for Long).</td></tr>
+<tr><td class="param">InpRegimeFilterEnabled</td><td class="default">true</td><td class="effect">Master switch for regime-based gating entirely. Off = one set of rules for every market condition.</td></tr>
+<tr><td class="param">InpLiquidityConfirm</td><td class="default">true</td><td class="effect">Requires a liquidity-sweep confirmation on top of the M1 trigger. Off = trades on trigger + score alone, faster but less confirmed.</td></tr>
+<tr><td class="param">InpPartialTPEnabled / InpPartialTPPercent</td><td class="default">true / 50%</td><td class="effect">Whether/how much position closes at TP1. Higher % locks in more profit early, leaves less size to run to TP2.</td></tr>
+<tr><td class="param">InpATRTrailEnabled</td><td class="default">true</td><td class="effect">Whether the ATR-based trailing stop is active at all once a position is open.</td></tr>
+</table>
+</section>
+
+<section id="reset">
+<h2><span class="num">08</span> Daily reset & staleness guards</h2>
+<table><tr><th>Input</th><th>Default</th><th>What moving it does</th></tr>
+<tr><td class="param">InpDailyResetHour</td><td class="default">0 (midnight UTC)</td><td class="effect">When the pipeline clears gate state and starts a fresh evaluation each day (only if flat). Structural memory (H1 pivots/BOS) survives the reset if still fresh.</td></tr>
+<tr><td class="param">InpOffSessionBiasGuard</td><td class="default">true</td><td class="effect">Blocks off-session entries until the new UTC day's first H1 bar has processed — stops yesterday's bias carrying into pre-London hours with stale context. Added after two overnight losses traced to exactly this.</td></tr>
+</table>
+</section>
+
+<section id="logging">
+<h2><span class="num">09</span> Logging, news, alerts, walk-forward</h2>
+<table><tr><th>Input</th><th>Default</th><th>What moving it does</th></tr>
+<tr><td class="param">InpStateLogEnabled</td><td class="default">true</td><td class="effect">All the CSVs we've been reading this whole conversation. Off = zero files written — recommended for a live account you don't intend to analyse, since files accumulate daily.</td></tr>
+<tr><td class="param">InpNewsBlockMinutes</td><td class="default">0</td><td class="effect">Minutes around a news event to block entries. 0 = no news filtering at all currently.</td></tr>
+<tr><td class="param">InpHoldoutDays</td><td class="default">90</td><td class="effect">Days reserved as an out-of-sample holdout for anti-curve-fitting checks. 0 disables the concept entirely.</td></tr>
+<tr><td class="param">InpAlertsEnabled</td><td class="default">false</td><td class="effect">MT5 push notifications on trade events.</td></tr>
+<tr><td class="param">InpHeartbeatMinutes</td><td class="default">5</td><td class="effect">How often a "still alive" heartbeat is expected — used to detect a stalled session.</td></tr>
+</table>
+</section>
+
+<section id="survival">
+<h2><span class="num">10</span> Drawdown survival</h2>
+<table><tr><th>Input</th><th>Default</th><th>What moving it does</th></tr>
+<tr><td class="param">InpDDHaltPct</td><td class="default">30%</td><td class="effect">Drawdown % that halts trading entirely. Risk is already tiered down in thirds on the way there (1.00× → 0.75× → 0.50× → halt). Raise it and ACE tolerates a deeper hole before stopping; lower it and it stops earlier but more often on normal variance. 0 disables the halt — not recommended live.</td></tr>
+<tr><td class="param">InpDDRecoveryMode</td><td class="default">true</td><td class="effect">If true, a halt starts a "recovery phase" measured from the reduced balance instead of stopping until manual reload — see the long lifecycle comment in the file for the exact phase logic. False = old behaviour, one halt and it's over until you restart the EA.</td></tr>
+<tr><td class="param">InpSpreadSpikeMultiplier</td><td class="default">1.5×</td><td class="effect">How far spread has to jump above its entry-time value before trade management treats it as a spike event.</td></tr>
+</table>
+</section>
+
+<section id="resilience">
+<h2><span class="num">11</span> Order execution resilience</h2>
+<table><tr><th>Input</th><th>Default</th><th>What moving it does</th></tr>
+<tr><td class="param">InpExecRetries</td><td class="default">3</td><td class="effect">Order-send retry attempts before giving up on a fill.</td></tr>
+<tr><td class="param">InpExecSpreadShockMult</td><td class="default">2.5×</td><td class="effect">Aborts execution outright if spread at the moment of sending is this many times the average — protects against fat-finger fills during a liquidity gap.</td></tr>
+<tr><td class="param">InpSlippageGateATRMult</td><td class="default">0.8</td><td class="effect">If price has drifted this many M1-ATRs from the trigger bar's close by the time the order actually fires, the entry is aborted. Lower = stricter about fill quality, more valid setups get vetoed on ordinary drift; 0 disables the gate.</td></tr>
+<tr><td class="param">InpSlippageAdverseOnly</td><td class="default">true</td><td class="effect">Only counts drift that made the fill worse against the gate above — a better-than-expected fill no longer aborts a good trade (this was a real bug fixed in v3.14.5).</td></tr>
+</table>
+</section>
+
+<section id="profiles">
+<h2><span class="num">12</span> Per-regime profiles (Trending / Ranging / Compression / Manipulation)</h2>
+<p class="lede">Each market regime gets its own SL width, score bar, spread cap, and TP mode — because a Trending-day setting applied to a choppy Ranging day (or vice versa) is where most of ACE's historical losses trace back to. High-Vol has no profile; it's a hard block.</p>
+<table><tr><th>Regime</th><th>SL ×ATR</th><th>Score bar</th><th>Notable override</th></tr>
+<tr><td class="effect"><b>Trending</b></td><td class="default">1.8, cap 15pt</td><td class="default">60.0</td><td class="effect">TP modes set to Structural (aims at real swing levels — trend has momentum to reach them). Counter-trend gates (<code>InpCTEMASepThreshold</code> etc.) add extra scrutiny to trades against a strongly-separated H4 EMA.</td></tr>
+<tr><td class="effect"><b>Ranging</b></td><td class="default">2.4, cap 20pt</td><td class="default">55.0</td><td class="effect">Widest SL of the four (oscillation needs room) but the lowest score bar — deliberately easier to qualify since ranging setups are more common and lower-conviction by nature.</td></tr>
+<tr><td class="effect"><b>Compression</b></td><td class="default">1.8, cap 8pt</td><td class="default">75.0</td><td class="effect"><code>InpCompressionMode=0</code> — new entries are <b>blocked entirely by default</b>, breakout-watch only. A 335-trade backtest showed compression trading at 16% win rate / −$532 net; this mode was flipped off after that data came in.</td></tr>
+<tr><td class="effect"><b>Manipulation</b></td><td class="default">1.6, cap 14pt</td><td class="default">75.0</td><td class="effect">Tightest SL, same high score bar as Compression (sweep/reversal setups need to be genuinely strong to qualify). TP1 targets the swept level structurally rather than a fixed ATR multiple.</td></tr>
+</table>
+<div class="callout">Each regime also has its own <code>InpSpread_*</code> and <code>InpBiasConf_*</code> — same mechanics as the global versions above, just scoped to that regime.</div>
+</section>
+
+<section id="v4auth">
+<h2><span class="num">13</span> V4 authority & adaptive learning <span class="tag">observation-only by default</span></h2>
+<p class="lede">This block governs whether the confluence/archetype system is allowed to trade at all, and how cautiously it's allowed to earn that trust.</p>
+<table><tr><th>Input</th><th>Default</th><th>What moving it does</th></tr>
+<tr><td class="param">InpAceV4Mode</td><td class="default"><b>ACEV4_EVIDENCE</b></td><td class="effect">Legacy = v4 pipeline doesn't run at all. Evidence = today's setting, watches/logs/learns, zero execution power. Advisory = visible but still no authority. Conditional/Active = can actually place trades once validated. This is the single most consequential switch in the whole file for "will the new system ever fire a trade."</td></tr>
+<tr><td class="param">InpAceV4AuthCautiousMin / ControlledMin / ValidatedMin</td><td class="default">20 / 50 / 100</td><td class="effect">Observation counts (per archetype bucket) required before each trust tier unlocks. Lower these and the system earns authority faster on thinner evidence; raise them for a more conservative rollout.</td></tr>
+<tr><td class="param">InpAceV4MinSeparation</td><td class="default">15</td><td class="effect">Minimum long-vs-short score gap required before a direction is even considered — too close a contest and it stays flat.</td></tr>
+<tr><td class="param">InpAceV4ResearchOnly</td><td class="default">false</td><td class="effect">Hard override — set true and V4 can never get execution authority no matter what mode or validation says. The safety switch of last resort.</td></tr>
+<tr><td class="param">InpAceV4AdaptLearningRate</td><td class="default">0.20</td><td class="effect">How aggressively the adaptive layer nudges its own thresholds per observation batch. Higher = adapts faster but risks chasing noise; lower = more stable, slower to react to genuine regime shifts.</td></tr>
+<tr><td class="param">InpAceV4OOSMinSamples / MinOOSRetention</td><td class="default">20 / 0.85</td><td class="effect">Out-of-sample validation bar a candidate archetype/threshold must clear before being trusted — retention is how much of the in-sample edge has to survive on unseen data.</td></tr>
+<tr><td class="param">InpAceV4FreshnessMax(M1/M15/H1)Bars</td><td class="default">5 / 8 / 12</td><td class="effect">How stale a piece of evidence is allowed to be before it's discarded from the confluence read — trigger-level evidence goes stale fastest (5 M1 bars), structure-level slowest (12 H1 bars).</td></tr>
+</table>
+</section>
+
+<section id="v4evidence">
+<h2><span class="num">14</span> V4.0.1 evidence detectors <span class="tag">new this version</span></h2>
+<p class="lede">Everything here only feeds the observation layer above — none of it touches the legacy cascade that actually places today's trades.</p>
+<table><tr><th>Input</th><th>Default</th><th>What moving it does</th></tr>
+<tr><td class="param">InpEnableOrderBlock, InpOBLookback/MaxBars/DispMultiplier</td><td class="default">on, 20/15/0.60</td><td class="effect">Order-block detection window and how strong the confirming displacement candle must be. Loosen DispMultiplier and more (weaker) blocks qualify as evidence.</td></tr>
+<tr><td class="param">InpEnableKillZoneEvidence, InpEnableAMDPhase</td><td class="default">on, on</td><td class="effect">Surfaces kill-zone timing and the Accumulation-Manipulation-Distribution phase as their own named, DNA-tagged evidence items rather than folding them into a generic session score.</td></tr>
+<tr><td class="param">InpAsianStartHour/End, InpAMDLookbackBars</td><td class="default">00:00–07:00 UTC, 12 bars</td><td class="effect">Defines the Asian range the AMD phase logic measures a kill-zone sweep against.</td></tr>
+<tr><td class="param">InpEnableMacroCorrelation + 6× InpDXYSymbol*</td><td class="default">on, EURUSD/USDJPY/GBPUSD/USDCAD/USDSEK/USDCHF</td><td class="effect">The 6-pair DXY-basket rebuild from yesterday's changelog. <code>InpMacroBasketMinCoverage</code> (0.70) is the real safety knob here — if fewer than 70% of the basket's weight resolves on this broker, the whole macro-correlation reading reports inactive rather than trusting a partial basket.</td></tr>
+<tr><td class="param">InpMacroCorrLookbackBars / ROCThreshold</td><td class="default">8 bars / 0.15%</td><td class="effect">How far back the basket's rate-of-change is measured, and how big that move needs to be to count as a meaningful macro signal rather than noise.</td></tr>
+<tr><td class="param">InpEnableLiquidityPool, InpLiqPoolLookback/EqualTolerance/SweepBars</td><td class="default">on, 20/0.10/8</td><td class="effect">PDH/PDL and equal-highs/lows pool detection — EqualTolerance controls how close two highs need to be (as a fraction of M15 ATR) to count as "the same level" worth sweeping.</td></tr>
+</table>
+</section>
+
+<footer>Source: ASE_Config.mqh, current working tree (v4.0.1). Values and comments reflect the file's own documentation — nothing here is inferred behavior not stated in code.</footer>
+</div>

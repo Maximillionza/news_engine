@@ -164,56 +164,76 @@ All fields must be populated before a dataset is marked `active = true`.
 
 ---
 
-## 5. Learning Module Content Outline
+## 5. Course Catalogue Content Outline (restructured v0.4)
 
-### Section 1: What Is a Financial Market (4–6 slides)
-- Markets overview: Forex, Metals, Crypto, Stocks
-- Who participates and why
-- Supply and demand drives price (simplified)
-- Quiz: 3 conceptual questions
+The 7 original sections are regrouped into a **5-course catalogue**. Mapping shown for traceability — no content requirement below is new relative to v0.2 except where marked **[NEW]**. Full lesson prose, quiz Qs/answers, and image briefs are maintained in `COURSE_CATALOGUE.md` (generated from this outline) rather than duplicated here.
 
-### Section 2: Reading a Candlestick Chart (5–7 slides)
-- OHLC explanation with illustrated candle
-- Bullish vs bearish candles
-- Timeframes explained (5M, 15M, 1H, 4H, D1)
-- How to read left-to-right
-- Quiz: 3 questions (including "what does this candle tell us")
+| Course | Tier | Maps to v0.2 sections | Lessons |
+|---|---|---|---|
+| 1. Market Foundations | Basic, free | Sections 1–3 | 9 |
+| 2. Confluence & Setups | Intermediate, free | Section 4 + the 5 core setups (§1 above) | 5 |
+| 3. Risk & Money Management | Intermediate, free | Sections 5–6 | 4 |
+| 4. Trading Plans & Discipline | Intermediate, free | Section 7 + No-Trade discipline (LEARNING_THEORY.md §4) | 4 |
+| 5. Multi-Timeframe Mastery & Advanced Strategies | Advanced, paywalled | Setups 4–5 (§1 above) + trap library depth + **[NEW]** expectancy/R-multiples, strategy-framework primer | 5 |
 
-### Section 3: Market Structure (5–7 slides)
-- Uptrend: higher highs and higher lows
-- Downtrend: lower highs and lower lows
-- Range: equal highs and lows
-- Key levels: support and resistance
-- Quiz: 3 questions (including structure identification from chart)
+**Course 1 — Market Foundations** (Basic) — **[REVISED v0.4]** expanded from 4 to 9 lessons, BabyPips-style plain-language pacing, after feedback that the original 4-lesson version read as intermediate rather than basic
+1. Trading Terms Every Beginner Needs to Know — pip, bid/ask/spread, long vs short (glossary primer, avoids assuming prior jargon)
+2. What Is a Financial Market — markets overview (Forex, Metals, Crypto, Stocks), participants, supply and demand
+3. What Is a Candle — OHLC, bullish vs bearish, what a wick tells you
+4. Types of Candles — Marubozu, Doji, Spinning Top
+5. Candle Formations — what turns a shape into a signal (context/trend), single-candle vs multi-candle formations
+6. Most Common Candle Patterns — Bullish/Bearish Engulfing, Hammer, Shooting Star, Morning Star, Evening Star
+7. Timeframes & Chart Navigation — 5M/15M/1H/4H/D1, reading left-to-right
+8. Trends & Ranges — uptrend, downtrend, range
+9. Support & Resistance — key levels, in context
 
-### Section 4: What Is a Confluence (6–8 slides)
-- Definition: independent signals agreeing on direction
-- Why one signal is insufficient
-- Introduction to each of the 5 setups (brief — depth through practice)
-- What makes a setup valid vs a trap
-- Quiz: 3 questions on confluence concept
+**Course 2 — Confluence & Setups** (Intermediate)
+1. What Is a Confluence — independent signals agreeing on direction, why one signal is insufficient
+2. Setup 1: Key Level + Candlestick Confirmation
+3. Setup 2: Trend Continuation + Fibonacci Retracement
+4. Setup 3: Market Structure Break + Retest
+5. Spotting Traps — ambiguous candles, false breaks, counter-trend entries (Stage 1–2 trap library)
 
-### Section 5: Risk Management (7–8 slides)
-- Stop Loss: what it is, why it is non-negotiable
-- Take Profit: what it is
-- Lot size explained (what 0.01 lots means on EURUSD)
-- Pip value calculation: worked example ("0.01 lot on EURUSD = $0.10 per pip")
-- Risk per trade %: the 1% rule explained
-- Worked example: "$500 account. 1% risk = $5. SL is 50 pips. Max lot size = 0.01 lots."
-- Quiz: 3 questions including a calculation
+**Course 3 — Risk & Money Management** (Intermediate)
+1. Stop Loss & Take Profit — what they are, why SL is non-negotiable
+2. Lot Size & Pip Value — worked example: "0.01 lot on EURUSD = $0.10 per pip"
+3. The 1% Risk Rule — worked example: "$500 account, 1% risk = $5, 50-pip SL → max 0.01 lots"
+4. Margin & Leverage — amplification, margin as collateral, why TradeWise starts at 1:10, margin calls
 
-### Section 6: Margin and Leverage (5–6 slides)
-- What leverage means (amplification in both directions)
-- What margin is (collateral, not a fee)
-- Why TradeWise starts at 1:10 (low leverage = learning)
-- What a margin call is and how to avoid it
-- Quiz: 3 questions
+**Course 4 — Trading Plans & Discipline** (Intermediate)
+1. Why a Trading Plan Removes Emotion
+2. The Three Questions — what to trade, when, how much risk
+3. The Power of "No Trade" — overtrading as the top cause of retail losses (LEARNING_THEORY.md §4)
+4. Reading Your Own Performance — plain-language intro to the Career Readiness Rating (FR-035), with the same disclaimer language used everywhere else it appears
 
-### Section 7: What Is a Trading Plan (4–5 slides)
-- Why a plan removes emotion from decisions
-- The three questions: What do I trade? When? How much risk?
-- Career Mode as the practice environment for developing answers
-- Quiz: 3 questions
+**Course 5 — Multi-Timeframe Mastery & Advanced Strategies** (Advanced, paywalled)
+1. Setup 4: Multi-Timeframe Confluence
+2. Setup 5: Compression Breakout
+3. Advanced Trap Library — false breaks / liquidity sweeps, counter-trend traps, news-simulation spikes (Stage 3 traps)
+4. **[NEW]** Session Risk Budgeting & Expectancy — R-multiples, why a single trade shouldn't exceed 2% risk (ties to LEARNING_THEORY.md Stage 3 risk-budget concept)
+5. **[NEW]** Intro to Strategy Frameworks — a teaser primer on the strategy families sold in full via the Strategies Pack ($9.99, MONETISATION.md §2.1): ICT-inspired concepts, SMC structure, momentum continuation
 
-**Estimated completion time:** 40–55 minutes.  
-**All slide illustrations must be produced before module is built.** Minimum 30 illustrations total.
+Each lesson: 3-question quiz, 2/3 to pass, unlimited retries (unchanged from v0.2 FR-006). Each course ends with a **Test Your Knowledge** prompted-tagging assessment — see §6.
+
+**Estimated completion time:** Basic + 3 Intermediate ≈ 55–70 minutes combined (increased from v0.2 by Course 1's 4→9 lesson expansion). Advanced course: additional 20–25 minutes.
+**All slide illustrations must be produced before a course is built.** Minimum 34 illustrations for the free tier (increased from v0.2's 30 by Course 1's expansion), plus a further ~12 for the Advanced course.
+
+---
+
+## 6. Test Your Knowledge — Prompted Multi-Label Content Requirements **[REVISED v0.4]**
+
+Each course's Test Your Knowledge assessment presents **one image at a time**, each paired with up to 5 candidate labels; the user selects every label that genuinely applies to that image — most images have exactly one correct label, but several are deliberately built with two correct labels at once (e.g. a chart showing both a downtrend *and* a support bounce), to train the idea that a single chart can carry more than one true observation. This replaced an earlier one-label-per-target drag-and-drop board after user feedback that the board read as too "list format" — the prompted, one-item-at-a-time flow is closer to how BabyPips-style quizzes present a single chart and ask what's on it.
+
+Scoring is **judgment accuracy**, not item-pass/fail: every label decision (correctly selecting an applicable label, or correctly leaving a non-applicable one unselected) counts toward the total. Pass threshold is 70% of all label decisions across the assessment (PRD.md FR-036).
+
+| Course | Images | Candidate-label pool(s) | Items with 2 correct labels | Minimum items |
+|---|---|---|---|---|
+| Market Foundations | Single candles, chart snippets, named patterns | Candle types (Bullish/Bearish/Doji/Marubozu/Spinning Top); structure + levels (Uptrend/Downtrend/Range/Support/Resistance); timeframes; named patterns | 4 (Marubozu example, support/resistance-in-context, both timeframe examples) | 14 |
+| Confluence & Setups | Chart snapshots, one per setup + trap examples | 3 setups + Fib/structure-break sub-labels; 4 trap types + No Setup | 2 (Setup 2 chart also shows the Fib level; Setup 3 chart also shows the structure break) | 10 |
+| Risk & Money Management | Definition cards, worked-example scenario cards | Term pairs per item (SL/TP/Margin/Leverage/etc.); sizing-scenario labels | 0 | 10 |
+| Trading Plans & Discipline | Scenario cards | Trade / No Trade / Wait for Confirmation / Missing Setup Component / Counter-Trend Risk | 4 (each No Trade scenario also names *why*) | 8 |
+| Multi-Timeframe Mastery & Advanced Strategies | Chart snapshots, risk-budget scenario cards, framework definitions | Setups 4–5 + 3 trap types; risk-budget/R-multiple outcomes; 3 framework names | 0 | 12 |
+
+Each label set carries a 1-sentence explanation shown in the post-assessment review (reuse the coaching-card tone and template from §4 above). Item banks must be finalised before a course's Test Your Knowledge is marked `active = true`, mirroring the dataset-activation rule in §4.
+
+**Future enhancement, not yet scoped or built:** a spatial variant using real chart snapshots, where instead of tagging the whole image, the user clicks the specific location on the chart where a prompted concept appears (e.g. "click the candle that completes the Bullish Engulfing pattern"). This is a materially different interaction (coordinate-based hit-testing against an authored answer region per image) and needs its own FR and DATA_SCHEMA design before being built — logged here per the user's explicit instruction to defer it.

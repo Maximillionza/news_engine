@@ -1,0 +1,2579 @@
+{
+  "courses": [
+    {
+      "id": "course1",
+      "slug": "market-foundations",
+      "title": "Market Foundations",
+      "tier": "basic",
+      "paywalled": false,
+      "price": null,
+      "description": "Start here. Plain-language trading terms, what markets are, how to read a candlestick and its most common patterns, how timeframes work, and how to read trend, range and key levels on a chart.",
+      "badgeName": "Bronze Learning Badge",
+      "lessons": [
+        {
+          "id": "c1l1",
+          "title": "Trading Terms Every Beginner Needs to Know",
+          "slides": [
+            {
+              "heading": "A shorthand worth learning",
+              "body": "Every new field has its own vocabulary, and trading is no different. This lesson covers the handful of plain-language terms you'll see again and again \u2014 learn them once here, in one place, so nothing later on has to stop and explain itself.",
+              "image": "term-intro"
+            },
+            {
+              "heading": "Pip",
+              "body": "A pip is the smallest standard unit price is usually measured in \u2014 on most currency pairs, the 4th decimal place. If EUR/USD moves from 1.1000 to 1.1010, it moved 10 pips. It's the 'inch' or 'centimetre' of price movement.",
+              "image": "term-pip"
+            },
+            {
+              "heading": "Bid, Ask & Spread",
+              "body": "The Bid is the price you can sell at right now. The Ask is the price you can buy at right now. The Ask is always slightly higher \u2014 that small gap is the spread, a built-in cost on every trade, paid to whoever is making the market.",
+              "image": "term-bidask"
+            },
+            {
+              "heading": "Long vs Short",
+              "body": "Going long means buying first, expecting the price to rise so you can sell it later for more. Going short means selling first, expecting the price to fall so you can buy it back later for less. Both directions are always available.",
+              "image": "term-longshort"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What is a pip?",
+              "options": [
+                "A type of candlestick",
+                "The smallest standard unit price is measured in",
+                "A trading fee charged by brokers",
+                "The name of a chart pattern"
+              ],
+              "correctIndex": 1,
+              "explanation": "A pip is the standard smallest unit of price movement \u2014 on most pairs, the 4th decimal place."
+            },
+            {
+              "question": "What is the spread?",
+              "options": [
+                "A bonus paid to winning traders",
+                "The gap between the Bid (sell) price and the Ask (buy) price",
+                "Another name for leverage",
+                "The total number of pips in a day"
+              ],
+              "correctIndex": 1,
+              "explanation": "The spread is the small gap between the price you can sell at (Bid) and the price you can buy at (Ask) \u2014 a built-in cost on every trade."
+            },
+            {
+              "question": "You expect a currency pair's price to fall and want to profit from that. What do you do?",
+              "options": [
+                "Go long (buy first)",
+                "Go short (sell first)",
+                "Wait \u2014 you can only ever buy",
+                "Increase your leverage"
+              ],
+              "correctIndex": 1,
+              "explanation": "Going short means selling first, expecting to buy it back later at a lower price \u2014 the way to profit from an expected decline."
+            }
+          ]
+        },
+        {
+          "id": "c1l2",
+          "title": "What Is a Financial Market",
+          "slides": [
+            {
+              "heading": "Markets, in one sentence",
+              "body": "A financial market is a place where people agree on a price to exchange something \u2014 a currency, a company's shares, a commodity like gold \u2014 either right now or for future delivery.",
+              "image": "market-overview"
+            },
+            {
+              "heading": "The four markets in TradeWise",
+              "body": "Forex (currency pairs like EUR/USD), Metals (gold, silver), Crypto (BTC, ETH), and Stocks (company shares). TradeWise starts you on Forex \u2014 EUR/USD specifically \u2014 because it's deep, liquid, and its chart behaviour is the clearest to learn confluence from.",
+              "image": "four-markets"
+            },
+            {
+              "heading": "Who's on the other side of your trade",
+              "body": "Banks, hedge funds, corporations hedging currency exposure, and other retail traders. You are never trading against an abstract 'market' \u2014 every trade has a real counterparty taking the opposite side.",
+              "image": "participants"
+            },
+            {
+              "heading": "Why price actually moves",
+              "body": "Simplified supply and demand: more buyers than sellers at a price pushes it up, more sellers than buyers pushes it down. Everything else you learn in this app is about reading the visible footprints of that imbalance on a chart.",
+              "image": "supply-demand"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "Which of these is NOT one of the four market types covered in TradeWise?",
+              "options": [
+                "Forex",
+                "Stocks",
+                "Real Estate",
+                "Crypto"
+              ],
+              "correctIndex": 2,
+              "explanation": "Real estate investing lives in the separate PropWise app. TradeWise covers Forex, Metals, Crypto, and Stocks."
+            },
+            {
+              "question": "Why does TradeWise start you on Forex specifically?",
+              "options": [
+                "It never loses value",
+                "It has deep liquidity and the clearest chart behaviour to learn from",
+                "It doesn't involve real prices",
+                "It requires no risk management"
+              ],
+              "correctIndex": 1,
+              "explanation": "Forex \u2014 and EUR/USD in particular \u2014 is deep and liquid, which produces cleaner, more learnable chart structure than thinner markets."
+            },
+            {
+              "question": "What fundamentally moves price in a market?",
+              "options": [
+                "Government announcements only",
+                "The balance of buyers and sellers at a given price",
+                "Random chance",
+                "The app's internal algorithm"
+              ],
+              "correctIndex": 1,
+              "explanation": "Price is the visible result of supply and demand \u2014 more buyers than sellers pushes price up, and vice versa."
+            }
+          ]
+        },
+        {
+          "id": "c1l3",
+          "title": "What Is a Candle",
+          "slides": [
+            {
+              "heading": "What one candle represents",
+              "body": "A single candlestick shows four numbers for a fixed time window: Open, High, Low, Close (OHLC). The 'body' spans open-to-close; the thin 'wicks' show the high and low reached during that window.",
+              "image": "candle-ohlc"
+            },
+            {
+              "heading": "Bullish vs bearish",
+              "body": "A bullish (typically green) candle closes higher than it opened \u2014 buyers won that window. A bearish (typically red) candle closes lower than it opened \u2014 sellers won.",
+              "image": "candle-bull-bear"
+            },
+            {
+              "heading": "What a long wick tells you",
+              "body": "A long wick means price reached further in that direction but got rejected and closed back the other way \u2014 a visible sign that side lost control before the window closed.",
+              "image": "candle-wick"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What does the 'body' of a candlestick represent?",
+              "options": [
+                "The highest and lowest price reached",
+                "The range between the open and close price",
+                "The trading volume",
+                "The next candle's likely direction"
+              ],
+              "correctIndex": 1,
+              "explanation": "The body spans from the open price to the close price. The wicks (thin lines) show the high and low reached during the window."
+            },
+            {
+              "question": "A candle opens at 1.1000 and closes at 1.0950. What is it?",
+              "options": [
+                "Bullish",
+                "Bearish",
+                "Neutral",
+                "A doji"
+              ],
+              "correctIndex": 1,
+              "explanation": "It closed lower than it opened, so sellers won that window \u2014 that's a bearish candle."
+            },
+            {
+              "question": "A candle has a long upper wick and a small body near the bottom. What does that suggest?",
+              "options": [
+                "Buyers pushed price up and held it there",
+                "Price pushed higher but was rejected and closed back down",
+                "The candle has no meaningful information",
+                "Volume was zero"
+              ],
+              "correctIndex": 1,
+              "explanation": "A long upper wick with the close near the low means buyers tried to push price up during the window but were rejected \u2014 sellers regained control before the close."
+            }
+          ]
+        },
+        {
+          "id": "c1l4",
+          "title": "Types of Candles",
+          "slides": [
+            {
+              "heading": "Marubozu \u2014 full conviction",
+              "body": "A long body with almost no wick on either end. Open and close sit right at the extremes \u2014 one side controlled the entire window, start to finish, with no meaningful pushback.",
+              "image": "candle-marubozu"
+            },
+            {
+              "heading": "Doji \u2014 pure indecision",
+              "body": "Open and close are nearly identical, even though price may have moved noticeably in both directions during the window. Neither buyers nor sellers won \u2014 it's a dead heat.",
+              "image": "candle-doji-example"
+            },
+            {
+              "heading": "Spinning Top \u2014 a tug of war",
+              "body": "A small body with long wicks on both sides. Price pushed meaningfully higher and lower before settling near where it started \u2014 real disagreement, no clear winner.",
+              "image": "candle-spinningtop"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What defines a Marubozu candle?",
+              "options": [
+                "A tiny body with long wicks both sides",
+                "A long body with almost no wick on either end",
+                "Open and close are nearly equal",
+                "It only appears on the 1H timeframe"
+              ],
+              "correctIndex": 1,
+              "explanation": "A Marubozu has almost no wick \u2014 the body runs nearly the full high-to-low range, showing one side in complete control."
+            },
+            {
+              "question": "What does a Doji tell you?",
+              "options": [
+                "One side was in total control",
+                "Neither side won \u2014 open and close are nearly equal despite price moving both ways",
+                "The market is closed",
+                "Price broke a key level"
+              ],
+              "correctIndex": 1,
+              "explanation": "A Doji shows a dead heat \u2014 open and close land almost exactly together, even if price wandered during the window."
+            },
+            {
+              "question": "A candle has a small body with long wicks on both the top and bottom. What is it?",
+              "options": [
+                "Marubozu",
+                "Doji",
+                "Spinning Top",
+                "Bullish engulfing"
+              ],
+              "correctIndex": 2,
+              "explanation": "That's a Spinning Top \u2014 real pushes in both directions, but neither side held on by the close."
+            }
+          ]
+        },
+        {
+          "id": "c1l5",
+          "title": "Candle Formations",
+          "slides": [
+            {
+              "heading": "One candle is a hint, not a story",
+              "body": "A chart is a sequence of candles read left to right. Any single candle's shape only becomes meaningful once you know what came before it \u2014 the same shape can mean something different depending on context.",
+              "image": "candle-sequence"
+            },
+            {
+              "heading": "What turns a shape into a formation",
+              "body": "A formation is a specific candle shape (or small group of candles) appearing in a specific place \u2014 usually after a clear prior trend. A hammer shape after a decline is a formation; the exact same shape in the middle of a flat range isn't telling you much.",
+              "image": "candle-wick"
+            },
+            {
+              "heading": "Single-candle formations vs multi-candle formations",
+              "body": "Some formations are a single candle read against the prior trend (like a hammer or shooting star). Others need two or three candles working together (like an engulfing pattern or a star pattern). Both types are covered next.",
+              "image": "candle-marubozu"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "Why does the same candle shape mean different things in different places on a chart?",
+              "options": [
+                "It doesn't \u2014 shape alone always means the same thing",
+                "A formation depends on context, especially the trend leading into it",
+                "Only the most recent candle ever matters",
+                "Candle shapes are decorative and carry no information"
+              ],
+              "correctIndex": 1,
+              "explanation": "Context is what turns a shape into a signal \u2014 the same hammer shape means something different after a decline than in the middle of a flat range."
+            },
+            {
+              "question": "What is a formation, as distinct from a single candle shape?",
+              "options": [
+                "Any random candle on the chart",
+                "A specific shape (or small group of candles) appearing in a specific place, usually after a clear prior trend",
+                "A candle with high trading volume",
+                "A candle that appears on the Daily timeframe only"
+              ],
+              "correctIndex": 1,
+              "explanation": "A formation is a shape plus context \u2014 most commonly, that shape appearing right after a clear trend has been established."
+            },
+            {
+              "question": "Which of these is a multi-candle formation, needing two or three candles working together?",
+              "options": [
+                "A single hammer",
+                "A single shooting star",
+                "An engulfing pattern",
+                "A single Marubozu"
+              ],
+              "correctIndex": 2,
+              "explanation": "An engulfing pattern is defined by two candles together \u2014 one body swallowing the other. Hammer, shooting star, and Marubozu are all single-candle formations."
+            }
+          ]
+        },
+        {
+          "id": "c1l6",
+          "title": "Most Common Candle Patterns",
+          "slides": [
+            {
+              "heading": "Bullish Engulfing",
+              "body": "After a decline, a bearish candle is immediately followed by a larger bullish candle whose body fully swallows the prior one. It signals buyers have decisively taken over.",
+              "image": "pattern-bullish-engulfing"
+            },
+            {
+              "heading": "Bearish Engulfing",
+              "body": "The mirror image: after an advance, a bullish candle is immediately followed by a larger bearish candle whose body fully swallows it. Sellers have decisively taken over.",
+              "image": "pattern-bearish-engulfing"
+            },
+            {
+              "heading": "Hammer",
+              "body": "After a decline, a candle with a small body and a long lower wick \u2014 price pushed well below, then buyers rejected the lower prices and closed back up near the open.",
+              "image": "pattern-hammer"
+            },
+            {
+              "heading": "Shooting Star",
+              "body": "After an advance, a candle with a small body and a long upper wick \u2014 price pushed well above, then sellers rejected the higher prices and closed back down near the open.",
+              "image": "pattern-shootingstar"
+            },
+            {
+              "heading": "Morning Star",
+              "body": "A 3-candle reversal after a decline: a big bearish candle, a small indecisive candle, then a big bullish candle \u2014 the market's mood visibly turning from selling to buying.",
+              "image": "pattern-morningstar"
+            },
+            {
+              "heading": "Evening Star",
+              "body": "The mirror image after an advance: a big bullish candle, a small indecisive candle, then a big bearish candle \u2014 the mood turning from buying to selling.",
+              "image": "pattern-eveningstar"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "After a decline, a bearish candle is followed by a larger bullish candle whose body fully swallows it. What pattern is this?",
+              "options": [
+                "Bearish Engulfing",
+                "Bullish Engulfing",
+                "Shooting Star",
+                "Evening Star"
+              ],
+              "correctIndex": 1,
+              "explanation": "That's a Bullish Engulfing pattern \u2014 the larger bullish body fully swallowing the prior bearish body after a decline."
+            },
+            {
+              "question": "A candle after a decline has a small body and a long lower wick. What is it?",
+              "options": [
+                "Shooting Star",
+                "Hammer",
+                "Bearish Engulfing",
+                "Marubozu"
+              ],
+              "correctIndex": 1,
+              "explanation": "A Hammer \u2014 small body, long lower wick, appearing after a decline, signals a rejection of lower prices."
+            },
+            {
+              "question": "Big bearish candle \u2192 small indecisive candle \u2192 big bullish candle, after a decline. What pattern is this?",
+              "options": [
+                "Evening Star",
+                "Morning Star",
+                "Bearish Engulfing",
+                "Spinning Top"
+              ],
+              "correctIndex": 1,
+              "explanation": "That three-candle sequence \u2014 bearish, indecisive, bullish \u2014 after a decline is a Morning Star, one of the clearest reversal signals covered here."
+            }
+          ]
+        },
+        {
+          "id": "c1l7",
+          "title": "Timeframes & Chart Navigation",
+          "slides": [
+            {
+              "heading": "What a timeframe is",
+              "body": "Each timeframe (5M, 15M, 1H, 4H, D1) sets how much time one candle covers. A 5-minute (5M) candle covers 5 minutes of trading; a Daily (D1) candle covers a full day.",
+              "image": "timeframes-grid"
+            },
+            {
+              "heading": "Zooming out for context, zooming in for precision",
+              "body": "Higher timeframes (1H, 4H) show the bigger trend and the key levels that matter. Lower timeframes (5M) show the precise moment to act. TradeWise's core mechanic uses 5M for decisions, with 1H available as context.",
+              "image": "timeframe-context"
+            },
+            {
+              "heading": "Why TradeWise pauses before you decide",
+              "body": "The chart pauses at a 5M decision point before you commit \u2014 not after price has already moved. This is the single most important habit this app is built to train: deciding under uncertainty, not labelling in hindsight.",
+              "image": "pre-hoc"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What does a '1H' candle represent?",
+              "options": [
+                "1 hour of price action",
+                "1 trade",
+                "100 candles",
+                "1 day"
+              ],
+              "correctIndex": 0,
+              "explanation": "1H means each candle on that chart covers one hour of trading."
+            },
+            {
+              "question": "Why would you check a higher timeframe like 1H before acting on a 5M setup?",
+              "options": [
+                "You wouldn't \u2014 lower timeframes are always sufficient alone",
+                "To see the bigger trend and key levels that give the 5M setup context",
+                "Because 5M charts are inaccurate",
+                "To slow down your internet connection"
+              ],
+              "correctIndex": 1,
+              "explanation": "A higher timeframe shows the broader trend and major levels \u2014 context that tells you whether a 5M setup is trading with or against the bigger picture."
+            },
+            {
+              "question": "Why does the chart pause before you commit to a trade in TradeWise?",
+              "options": [
+                "To save battery",
+                "Because that's how live trading works \u2014 you always see the outcome first",
+                "To force a real decision under uncertainty, not a hindsight judgement",
+                "It's a loading screen, nothing more"
+              ],
+              "correctIndex": 2,
+              "explanation": "TradeWise's core mechanic is pre-hoc: you commit direction, size, SL and TP before the outcome plays out \u2014 the same conditions as real trading."
+            }
+          ]
+        },
+        {
+          "id": "c1l8",
+          "title": "Trends & Ranges",
+          "slides": [
+            {
+              "heading": "Uptrend",
+              "body": "A series of higher highs and higher lows. Each pullback finds a floor above the last one \u2014 buyers are progressively more willing to pay more.",
+              "image": "structure-uptrend"
+            },
+            {
+              "heading": "Downtrend",
+              "body": "A series of lower highs and lower lows \u2014 the mirror image. Each rally fails below the last one.",
+              "image": "structure-downtrend"
+            },
+            {
+              "heading": "Range",
+              "body": "Price oscillates between a repeated ceiling and floor with no clear higher-highs/higher-lows or lower-highs/lower-lows progression. Neither side is in control yet.",
+              "image": "structure-range"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What defines an uptrend?",
+              "options": [
+                "Equal highs and equal lows",
+                "A series of higher highs and higher lows",
+                "Any green candle",
+                "Price moving sideways"
+              ],
+              "correctIndex": 1,
+              "explanation": "An uptrend is specifically a pattern of higher highs and higher lows \u2014 each pullback holding above the prior low."
+            },
+            {
+              "question": "What defines a downtrend?",
+              "options": [
+                "A series of higher highs and higher lows",
+                "A series of lower highs and lower lows",
+                "Price bouncing in a flat range",
+                "Any red candle"
+              ],
+              "correctIndex": 1,
+              "explanation": "A downtrend is a series of lower highs and lower lows \u2014 the mirror image of an uptrend, with each rally failing below the last one."
+            },
+            {
+              "question": "Price is bouncing between the same ceiling and floor with no clear higher-highs/higher-lows pattern. What structure is this?",
+              "options": [
+                "Uptrend",
+                "Downtrend",
+                "Range",
+                "Compression breakout"
+              ],
+              "correctIndex": 2,
+              "explanation": "That's a range \u2014 neither buyers nor sellers have taken clear control, so price oscillates between a repeated ceiling and floor."
+            }
+          ]
+        },
+        {
+          "id": "c1l9",
+          "title": "Support & Resistance",
+          "slides": [
+            {
+              "heading": "Key levels, defined",
+              "body": "A support level is a floor price has bounced off more than once. A resistance level is a ceiling price has been rejected from more than once. These are the levels every confluence setup in Course 2 is built around.",
+              "image": "structure-levels"
+            },
+            {
+              "heading": "Support in context",
+              "body": "Support usually shows up after a decline \u2014 price falls toward a level and buyers step back in, at least twice, before you can call it a real floor.",
+              "image": "chart-support"
+            },
+            {
+              "heading": "Resistance in context",
+              "body": "Resistance usually shows up after an advance \u2014 price rises toward a level and sellers step back in, at least twice, before you can call it a real ceiling.",
+              "image": "chart-resistance"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What is a support level?",
+              "options": [
+                "A price ceiling price has been rejected from repeatedly",
+                "A price floor price has bounced off repeatedly",
+                "The opening price of the day",
+                "A random horizontal line"
+              ],
+              "correctIndex": 1,
+              "explanation": "Support is a floor \u2014 a price where buying pressure has repeatedly stepped in and held price up."
+            },
+            {
+              "question": "What is a resistance level?",
+              "options": [
+                "A price floor price has bounced off repeatedly",
+                "A price ceiling price has been rejected from repeatedly",
+                "The closing price of the day",
+                "The same thing as a support level"
+              ],
+              "correctIndex": 1,
+              "explanation": "Resistance is a ceiling \u2014 a price where selling pressure has repeatedly stepped in and turned price back down."
+            },
+            {
+              "question": "Why do support and resistance levels matter so much for the confluence setups in Course 2?",
+              "options": [
+                "They don't \u2014 Course 2 ignores levels entirely",
+                "Every core setup is built around price reacting at a key level, not just a candlestick pattern in isolation",
+                "They only matter on the Daily timeframe",
+                "They guarantee a reversal every time price touches them"
+              ],
+              "correctIndex": 1,
+              "explanation": "Course 2's setups all combine a key level with a confirming signal \u2014 levels are the 'where', candlestick patterns are the 'what', and neither is enough alone."
+            }
+          ]
+        }
+      ],
+      "tyk": {
+        "passThreshold": 70,
+        "items": [
+          {
+            "image": "candle-bull-example",
+            "candidateLabels": [
+              "Bullish candle",
+              "Bearish candle",
+              "Doji",
+              "Marubozu",
+              "Spinning Top"
+            ],
+            "correctLabels": [
+              "Bullish candle"
+            ],
+            "explanation": "It closed above where it opened, with wicks on both sides that aren't extreme enough to call it a Marubozu \u2014 just a plain bullish candle.",
+            "remediationLessons": [
+              "c1l3"
+            ]
+          },
+          {
+            "image": "candle-bear-example",
+            "candidateLabels": [
+              "Bullish candle",
+              "Bearish candle",
+              "Doji",
+              "Marubozu",
+              "Spinning Top"
+            ],
+            "correctLabels": [
+              "Bearish candle"
+            ],
+            "explanation": "It closed below where it opened \u2014 a plain bearish candle.",
+            "remediationLessons": [
+              "c1l3"
+            ]
+          },
+          {
+            "image": "candle-doji-example",
+            "candidateLabels": [
+              "Bullish candle",
+              "Bearish candle",
+              "Doji",
+              "Marubozu",
+              "Spinning Top"
+            ],
+            "correctLabels": [
+              "Doji"
+            ],
+            "explanation": "Open and close are nearly identical despite wicks on both sides \u2014 that's the definition of a Doji, indecision rather than a directional read.",
+            "remediationLessons": [
+              "c1l4"
+            ]
+          },
+          {
+            "image": "candle-marubozu",
+            "candidateLabels": [
+              "Bullish candle",
+              "Bearish candle",
+              "Doji",
+              "Marubozu",
+              "Spinning Top"
+            ],
+            "correctLabels": [
+              "Bullish candle",
+              "Marubozu"
+            ],
+            "explanation": "It closed above where it opened (bullish) with almost no wick on either end (Marubozu) \u2014 both labels are genuinely true here.",
+            "remediationLessons": [
+              "c1l4"
+            ]
+          },
+          {
+            "image": "candle-spinningtop",
+            "candidateLabels": [
+              "Bullish candle",
+              "Bearish candle",
+              "Doji",
+              "Marubozu",
+              "Spinning Top"
+            ],
+            "correctLabels": [
+              "Spinning Top"
+            ],
+            "explanation": "The small body sits inside long wicks on both sides \u2014 the real story is the tug of war, not the tiny directional lean of the body.",
+            "remediationLessons": [
+              "c1l4"
+            ]
+          },
+          {
+            "image": "chart-uptrend",
+            "candidateLabels": [
+              "Uptrend",
+              "Downtrend",
+              "Range",
+              "Support level",
+              "Resistance level"
+            ],
+            "correctLabels": [
+              "Uptrend"
+            ],
+            "explanation": "Each swing high and swing low is higher than the last \u2014 that's an uptrend.",
+            "remediationLessons": [
+              "c1l8"
+            ]
+          },
+          {
+            "image": "chart-downtrend",
+            "candidateLabels": [
+              "Uptrend",
+              "Downtrend",
+              "Range",
+              "Support level",
+              "Resistance level"
+            ],
+            "correctLabels": [
+              "Downtrend"
+            ],
+            "explanation": "Each swing high and swing low is lower than the last \u2014 that's a downtrend.",
+            "remediationLessons": [
+              "c1l8"
+            ]
+          },
+          {
+            "image": "chart-range",
+            "candidateLabels": [
+              "Uptrend",
+              "Downtrend",
+              "Range",
+              "Support level",
+              "Resistance level"
+            ],
+            "correctLabels": [
+              "Range"
+            ],
+            "explanation": "Price is oscillating between the same two levels with no higher-highs/higher-lows or lower-highs/lower-lows progression.",
+            "remediationLessons": [
+              "c1l8"
+            ]
+          },
+          {
+            "image": "chart-support",
+            "candidateLabels": [
+              "Uptrend",
+              "Downtrend",
+              "Range",
+              "Support level",
+              "Resistance level"
+            ],
+            "correctLabels": [
+              "Downtrend",
+              "Support level"
+            ],
+            "explanation": "Price fell into the level (a downtrend) before finding buyers there more than once \u2014 both labels apply to this chart at once.",
+            "remediationLessons": [
+              "c1l8",
+              "c1l9"
+            ]
+          },
+          {
+            "image": "chart-resistance",
+            "candidateLabels": [
+              "Uptrend",
+              "Downtrend",
+              "Range",
+              "Support level",
+              "Resistance level"
+            ],
+            "correctLabels": [
+              "Uptrend",
+              "Resistance level"
+            ],
+            "explanation": "Price rose into the level (an uptrend) before being turned back there more than once \u2014 both labels apply to this chart at once.",
+            "remediationLessons": [
+              "c1l8",
+              "c1l9"
+            ]
+          },
+          {
+            "image": "chart-5m",
+            "candidateLabels": [
+              "5M timeframe",
+              "1H timeframe",
+              "Uptrend",
+              "Downtrend",
+              "Range"
+            ],
+            "correctLabels": [
+              "5M timeframe",
+              "Uptrend"
+            ],
+            "explanation": "Each candle here spans 5 minutes, and the sequence is also climbing in higher highs and higher lows \u2014 both labels are true together.",
+            "remediationLessons": [
+              "c1l7",
+              "c1l8"
+            ]
+          },
+          {
+            "image": "chart-1h",
+            "candidateLabels": [
+              "5M timeframe",
+              "1H timeframe",
+              "Uptrend",
+              "Downtrend",
+              "Range"
+            ],
+            "correctLabels": [
+              "1H timeframe",
+              "Uptrend"
+            ],
+            "explanation": "Each candle here spans 1 hour, used for context, and it's also showing a clear uptrend \u2014 both labels are true together.",
+            "remediationLessons": [
+              "c1l7",
+              "c1l8"
+            ]
+          },
+          {
+            "image": "pattern-bullish-engulfing",
+            "candidateLabels": [
+              "Bullish Engulfing",
+              "Bearish Engulfing",
+              "Hammer",
+              "Shooting Star",
+              "Morning Star"
+            ],
+            "correctLabels": [
+              "Bullish Engulfing"
+            ],
+            "explanation": "A bullish body fully swallowing the prior bearish body, right after a decline \u2014 a textbook Bullish Engulfing.",
+            "remediationLessons": [
+              "c1l6"
+            ]
+          },
+          {
+            "image": "pattern-morningstar",
+            "candidateLabels": [
+              "Bullish Engulfing",
+              "Hammer",
+              "Morning Star",
+              "Evening Star",
+              "Shooting Star"
+            ],
+            "correctLabels": [
+              "Morning Star"
+            ],
+            "explanation": "Big bearish candle, small indecisive candle, big bullish candle, after a decline \u2014 the three-candle Morning Star reversal.",
+            "remediationLessons": [
+              "c1l6"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "course2",
+      "slug": "confluence-setups",
+      "title": "Confluence & Setups",
+      "tier": "intermediate",
+      "paywalled": false,
+      "price": null,
+      "description": "Why one signal is never enough, and the first three of TradeWise's five core confluence setups \u2014 plus how to spot the traps designed to look like them.",
+      "badgeName": "Silver Learning Badge (combined with Courses 3 & 4)",
+      "lessons": [
+        {
+          "id": "c2l1",
+          "title": "What Is a Confluence",
+          "slides": [
+            {
+              "heading": "One signal is never enough",
+              "body": "A confluence is two or more independent signals agreeing on direction at the same time and place. A candlestick pattern alone, or a level alone, is not a trade \u2014 TradeWise never scores a single signal as sufficient.",
+              "image": "confluence-intro"
+            },
+            {
+              "heading": "Why this matters",
+              "body": "Markets are noisy. Any one signal produces false positives constantly. Requiring agreement between independent signals is what filters noise from a genuine edge.",
+              "image": "confluence-noise"
+            },
+            {
+              "heading": "The 5 core setups, at a glance",
+              "body": "Across this course and the Advanced course you'll learn 5 confluence setups: Key Level + Candlestick, Trend + Fibonacci Retracement, Structure Break + Retest, Multi-Timeframe Confluence, and Compression Breakout. This course covers the first three.",
+              "image": "confluence-five"
+            },
+            {
+              "heading": "What separates a valid setup from a trap",
+              "body": "A trap looks like a setup at first glance but is missing a component, or one component actively contradicts another. Spotting traps is as much a skill as spotting valid setups \u2014 Lesson 5 is built entirely around it.",
+              "image": "confluence-trap-intro"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What is a confluence?",
+              "options": [
+                "Any single candlestick pattern",
+                "Two or more independent signals agreeing on direction",
+                "A type of chart timeframe",
+                "The opening price of the trading day"
+              ],
+              "correctIndex": 1,
+              "explanation": "A confluence requires two or more independent signals pointing the same direction \u2014 never just one."
+            },
+            {
+              "question": "Why does TradeWise require multiple agreeing signals instead of trading off one?",
+              "options": [
+                "Because a single signal produces too many false positives on its own",
+                "Because the app is designed to reduce how often you trade for its own sake",
+                "Single signals are against the rules of the game",
+                "It doesn't \u2014 one clean signal is always enough"
+              ],
+              "correctIndex": 0,
+              "explanation": "Any one signal alone is noisy and unreliable. Requiring agreement between independent signals filters out much of that noise."
+            },
+            {
+              "question": "How many core confluence setups does TradeWise teach in total (Course 2 + the Advanced course)?",
+              "options": [
+                "3",
+                "5",
+                "7",
+                "10"
+              ],
+              "correctIndex": 1,
+              "explanation": "There are 5 core setups total \u2014 3 covered in this course, and 2 more (Multi-Timeframe Confluence and Compression Breakout) in the Advanced course."
+            }
+          ]
+        },
+        {
+          "id": "c2l2",
+          "title": "Setup 1: Key Level + Candlestick Confirmation",
+          "slides": [
+            {
+              "heading": "The two components",
+              "body": "Component A: price is at a key level (support or resistance) with at least 2 prior touches. Component B: a reversal candlestick forms right at that level \u2014 bullish engulfing, bearish engulfing, pin bar, hammer, or shooting star.",
+              "image": "setup1-components"
+            },
+            {
+              "heading": "Valid buy / valid sell",
+              "body": "Valid BUY: a touch of support plus a bullish engulfing or pin bar at the level. Valid SELL: a touch of resistance plus a bearish engulfing or shooting star at the level.",
+              "image": "setup1-valid"
+            },
+            {
+              "heading": "The trap version",
+              "body": "Price approaches the level but the confirming candle is a doji or has an ambiguous body \u2014 no clean directional signal. The correct call is No Trade, not a guess.",
+              "image": "setup1-trap"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What are the two components of Setup 1?",
+              "options": [
+                "A key level and a reversal candlestick at that level",
+                "Two moving averages crossing",
+                "High volume and a news event",
+                "A Fibonacci level and RSI reading"
+              ],
+              "correctIndex": 0,
+              "explanation": "Setup 1 is a key level (support/resistance with 2+ prior touches) plus a reversal candlestick confirming right at that level."
+            },
+            {
+              "question": "Price touches resistance and a bearish engulfing candle forms right at the level. What's the valid call?",
+              "options": [
+                "Buy",
+                "Sell",
+                "No Trade \u2014 needs a third signal",
+                "Wait for a doji"
+              ],
+              "correctIndex": 1,
+              "explanation": "Resistance + bearish engulfing at the level is exactly the valid SELL version of Setup 1."
+            },
+            {
+              "question": "Price touches support but the candle at the level is a doji. What's the correct call?",
+              "options": [
+                "Buy \u2014 support always holds",
+                "Sell \u2014 doji means reversal",
+                "No Trade \u2014 no clean confirming candle",
+                "Buy with a wider stop"
+              ],
+              "correctIndex": 2,
+              "explanation": "A doji shows indecision, not a confirming reversal candle. Without a clean Component B, this is the trap version \u2014 No Trade is correct."
+            }
+          ]
+        },
+        {
+          "id": "c2l3",
+          "title": "Setup 2: Trend Continuation + Fibonacci Retracement",
+          "slides": [
+            {
+              "heading": "The components",
+              "body": "Component A: a clear 1H trend (3+ swing points confirming direction). Component B: price retraces to the 50% or 61.8% Fibonacci level of the most recent impulse move on the 5M chart. Component C (optional, strengthens the setup): a candlestick confirmation right at the Fib level.",
+              "image": "setup2-components"
+            },
+            {
+              "heading": "Valid buy / valid sell",
+              "body": "Valid BUY: 1H uptrend, pullback to the 50%/61.8% Fib level, plus a bullish candle. Valid SELL: 1H downtrend, retrace to the 50%/61.8% Fib level, plus a bearish candle.",
+              "image": "setup2-valid"
+            },
+            {
+              "heading": "The trap version",
+              "body": "Price hits the Fib level, but the 1H trend is actually ranging, not trending \u2014 there's no higher-timeframe context to trade with. Correct call: No Trade.",
+              "image": "setup2-trap"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "Which Fibonacci levels does this setup use?",
+              "options": [
+                "23.6% and 38.2%",
+                "50% and 61.8%",
+                "100% and 161.8%",
+                "0% and 25%"
+              ],
+              "correctIndex": 1,
+              "explanation": "Setup 2 looks for a retracement to the 50% or 61.8% Fibonacci level of the most recent impulse."
+            },
+            {
+              "question": "What is Component A of Setup 2, and why does it matter?",
+              "options": [
+                "Trading volume \u2014 it filters low-liquidity moves",
+                "A clear 1H trend \u2014 it gives the retracement a direction to continue",
+                "A round number price level",
+                "The time of day"
+              ],
+              "correctIndex": 1,
+              "explanation": "Without a clear higher-timeframe trend, a retracement to a Fib level has nothing to continue \u2014 that's what makes it valid rather than a coin flip."
+            },
+            {
+              "question": "Price hits the 61.8% Fib level, but the 1H chart is ranging rather than trending. What's the correct call?",
+              "options": [
+                "Buy \u2014 Fib levels always hold",
+                "Sell \u2014 ranging means reversal",
+                "No Trade \u2014 there's no trend for the retracement to continue",
+                "Wait for volume to increase"
+              ],
+              "correctIndex": 2,
+              "explanation": "Component A (a clear 1H trend) is missing. Without it, this is the trap version \u2014 No Trade is correct."
+            }
+          ]
+        },
+        {
+          "id": "c2l4",
+          "title": "Setup 3: Market Structure Break & Retest",
+          "slides": [
+            {
+              "heading": "The components",
+              "body": "Component A: a clear break of a prior swing high (for a buy) or swing low (for a sell) on the 5M chart, closing beyond it by 10+ pips. Component B: price returns to retest the broken level. Component C: a candlestick confirmation at the retest.",
+              "image": "setup3-components"
+            },
+            {
+              "heading": "Valid buy / valid sell",
+              "body": "Valid BUY: prior resistance breaks, price retests it from above, and a bullish confirmation candle forms. Valid SELL: prior support breaks, price retests from below, and a bearish confirmation candle forms.",
+              "image": "setup3-valid"
+            },
+            {
+              "heading": "The trap version \u2014 false break",
+              "body": "Price breaks the level, but on the 'retest' it aggressively pushes straight back through and continues past \u2014 that's not a retest, it's a false break (liquidity sweep). Correct call: No Trade.",
+              "image": "setup3-trap"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What has to happen before Setup 3 is even in play?",
+              "options": [
+                "A clear break of a prior swing high or low, closing beyond it",
+                "A doji at a support level",
+                "Three consecutive green candles",
+                "The 1H timeframe must be ranging"
+              ],
+              "correctIndex": 0,
+              "explanation": "Setup 3 starts with a genuine structure break \u2014 a close beyond a prior swing high/low by 10+ pips \u2014 before the retest is even relevant."
+            },
+            {
+              "question": "After a break of resistance, what confirms a valid retest entry?",
+              "options": [
+                "Any touch of the old level",
+                "Price retesting the broken level from above with a bullish confirmation candle",
+                "Price immediately reversing through the level and continuing",
+                "A gap in the chart"
+              ],
+              "correctIndex": 1,
+              "explanation": "The retest needs to hold from the correct side (above, after a resistance break) and get a confirming candle \u2014 that's what makes it a valid Setup 3 entry, not just a random touch."
+            },
+            {
+              "question": "Price breaks support, then aggressively pushes back up through the level and keeps going. What is this?",
+              "options": [
+                "A textbook valid retest",
+                "A false break / liquidity sweep \u2014 the trap version",
+                "Setup 2 in disguise",
+                "Guaranteed continuation downward"
+              ],
+              "correctIndex": 1,
+              "explanation": "This is the trap version of Setup 3 \u2014 the 'retest' is actually a false break. The correct read is No Trade, not treating it as a valid retest."
+            }
+          ]
+        },
+        {
+          "id": "c2l5",
+          "title": "Spotting Traps",
+          "slides": [
+            {
+              "heading": "Why traps exist in this curriculum",
+              "body": "Real markets don't announce which setups are genuine. Training you to spot a trap is exactly as valuable as training you to spot a valid setup \u2014 both protect your Practice Capital.",
+              "image": "traps-why"
+            },
+            {
+              "heading": "Ambiguous candle",
+              "body": "A doji or inside bar at a level \u2014 no directional signal despite being 'at the right spot'.",
+              "image": "trap-ambiguous"
+            },
+            {
+              "heading": "False break",
+              "body": "Price breaks a level intracandle but closes back inside it \u2014 the break isn't confirmed.",
+              "image": "trap-falsebreak"
+            },
+            {
+              "heading": "Counter-trend entry",
+              "body": "A setup that looks locally valid but goes directly against a strong higher-timeframe trend \u2014 one of the most common ways traders lose money chasing a 'perfect-looking' local pattern.",
+              "image": "trap-countertrend"
+            },
+            {
+              "heading": "Open space",
+              "body": "Price sitting between levels with no identifiable structure at all \u2014 there's nothing to confirm, so there's nothing to trade.",
+              "image": "trap-openspace"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What makes a doji at a key level a trap rather than a valid Setup 1?",
+              "options": [
+                "Dojis are always bearish",
+                "A doji shows indecision \u2014 it's not a directional confirming candle",
+                "The level itself is invalid",
+                "It only applies on the 1H timeframe"
+              ],
+              "correctIndex": 1,
+              "explanation": "Component B of Setup 1 requires a directional reversal candle. A doji shows indecision, not confirmation \u2014 that's what makes it a trap, not a signal."
+            },
+            {
+              "question": "What is a 'false break'?",
+              "options": [
+                "A break that closes beyond the level and holds",
+                "A break that touches beyond the level intracandle but closes back inside",
+                "Any break on a 5M chart",
+                "A break with high volume"
+              ],
+              "correctIndex": 1,
+              "explanation": "A false break pokes through a level but fails to close beyond it \u2014 the break was never confirmed, which is why it's a trap rather than Setup 3's genuine break."
+            },
+            {
+              "question": "A setup looks valid on the 5M chart but runs directly against a strong 1H trend. What should you do?",
+              "options": [
+                "Take it \u2014 the 5M signal is all that matters",
+                "Treat it with heavy suspicion as a counter-trend trap and likely skip it",
+                "Double your position size to compensate",
+                "Ignore the 1H chart entirely"
+              ],
+              "correctIndex": 1,
+              "explanation": "A locally clean-looking setup that fights the higher-timeframe trend is one of the most common traps \u2014 this is exactly why higher-timeframe context (Course 1, Lesson 3) matters."
+            }
+          ]
+        }
+      ],
+      "tyk": {
+        "passThreshold": 70,
+        "items": [
+          {
+            "image": "chart-setup1",
+            "candidateLabels": [
+              "Setup 1: Key Level + Candlestick",
+              "Setup 2: Trend + Fib Retracement",
+              "Setup 3: Structure Break + Retest",
+              "Fibonacci 61.8% Retracement",
+              "Structure Break Confirmation"
+            ],
+            "correctLabels": [
+              "Setup 1: Key Level + Candlestick"
+            ],
+            "explanation": "A key level with 2+ prior touches, confirmed by a reversal candle right at the level.",
+            "remediationLessons": [
+              "c2l2"
+            ]
+          },
+          {
+            "image": "chart-setup2",
+            "candidateLabels": [
+              "Setup 1: Key Level + Candlestick",
+              "Setup 2: Trend + Fib Retracement",
+              "Setup 3: Structure Break + Retest",
+              "Fibonacci 61.8% Retracement",
+              "Structure Break Confirmation"
+            ],
+            "correctLabels": [
+              "Setup 2: Trend + Fib Retracement",
+              "Fibonacci 61.8% Retracement"
+            ],
+            "explanation": "A clear higher-timeframe trend retracing to the 61.8% Fib level with a confirming candle \u2014 both labels genuinely apply.",
+            "remediationLessons": [
+              "c2l3"
+            ]
+          },
+          {
+            "image": "chart-setup3",
+            "candidateLabels": [
+              "Setup 1: Key Level + Candlestick",
+              "Setup 2: Trend + Fib Retracement",
+              "Setup 3: Structure Break + Retest",
+              "Fibonacci 61.8% Retracement",
+              "Structure Break Confirmation"
+            ],
+            "correctLabels": [
+              "Setup 3: Structure Break + Retest",
+              "Structure Break Confirmation"
+            ],
+            "explanation": "A genuine structure break, retested from the correct side, with a confirming candle \u2014 both labels genuinely apply.",
+            "remediationLessons": [
+              "c2l4"
+            ]
+          },
+          {
+            "image": "chart-fib618",
+            "candidateLabels": [
+              "Setup 1: Key Level + Candlestick",
+              "Setup 2: Trend + Fib Retracement",
+              "Setup 3: Structure Break + Retest",
+              "Fibonacci 61.8% Retracement",
+              "Structure Break Confirmation"
+            ],
+            "correctLabels": [
+              "Fibonacci 61.8% Retracement"
+            ],
+            "explanation": "The 61.8% retracement is one of the two levels Setup 2 watches for a pullback entry.",
+            "remediationLessons": [
+              "c2l3"
+            ]
+          },
+          {
+            "image": "chart-structurebreak",
+            "candidateLabels": [
+              "Setup 1: Key Level + Candlestick",
+              "Setup 2: Trend + Fib Retracement",
+              "Setup 3: Structure Break + Retest",
+              "Fibonacci 61.8% Retracement",
+              "Structure Break Confirmation"
+            ],
+            "correctLabels": [
+              "Structure Break Confirmation"
+            ],
+            "explanation": "A genuine break needs a close beyond the prior swing level, not just a wick through it.",
+            "remediationLessons": [
+              "c2l4"
+            ]
+          },
+          {
+            "image": "chart-trap-ambiguous",
+            "candidateLabels": [
+              "Trap: Ambiguous Candle",
+              "Trap: False Break",
+              "Trap: Counter-Trend Entry",
+              "Trap: Open Space",
+              "No Setup / No Trade"
+            ],
+            "correctLabels": [
+              "Trap: Ambiguous Candle"
+            ],
+            "explanation": "A doji at a level shows indecision, not confirmation \u2014 No Trade.",
+            "remediationLessons": [
+              "c2l5"
+            ]
+          },
+          {
+            "image": "chart-trap-falsebreak",
+            "candidateLabels": [
+              "Trap: Ambiguous Candle",
+              "Trap: False Break",
+              "Trap: Counter-Trend Entry",
+              "Trap: Open Space",
+              "No Setup / No Trade"
+            ],
+            "correctLabels": [
+              "Trap: False Break"
+            ],
+            "explanation": "The break wasn't confirmed by a close beyond the level \u2014 No Trade.",
+            "remediationLessons": [
+              "c2l5"
+            ]
+          },
+          {
+            "image": "chart-trap-countertrend",
+            "candidateLabels": [
+              "Trap: Ambiguous Candle",
+              "Trap: False Break",
+              "Trap: Counter-Trend Entry",
+              "Trap: Open Space",
+              "No Setup / No Trade"
+            ],
+            "correctLabels": [
+              "Trap: Counter-Trend Entry"
+            ],
+            "explanation": "A locally valid-looking setup fighting a strong higher-timeframe trend is a classic trap.",
+            "remediationLessons": [
+              "c2l5"
+            ]
+          },
+          {
+            "image": "chart-trap-openspace",
+            "candidateLabels": [
+              "Trap: Ambiguous Candle",
+              "Trap: False Break",
+              "Trap: Counter-Trend Entry",
+              "Trap: Open Space",
+              "No Setup / No Trade"
+            ],
+            "correctLabels": [
+              "Trap: Open Space"
+            ],
+            "explanation": "With no identifiable level or structure, there's nothing to confirm \u2014 No Trade.",
+            "remediationLessons": [
+              "c2l5"
+            ]
+          },
+          {
+            "image": "chart-nosetup",
+            "candidateLabels": [
+              "Trap: Ambiguous Candle",
+              "Trap: False Break",
+              "Trap: Counter-Trend Entry",
+              "Trap: Open Space",
+              "No Setup / No Trade"
+            ],
+            "correctLabels": [
+              "No Setup / No Trade"
+            ],
+            "explanation": "A trend alone, with no level, retracement, or break in play, is not yet a setup.",
+            "remediationLessons": [
+              "c2l1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "course3",
+      "slug": "risk-money-management",
+      "title": "Risk & Money Management",
+      "tier": "intermediate",
+      "paywalled": false,
+      "price": null,
+      "description": "Stop Loss and Take Profit, lot size and pip value, the 1% risk rule, and how margin and leverage actually work. Always accessible standalone, independent of course order.",
+      "badgeName": "Silver Learning Badge (combined with Courses 2 & 4)",
+      "lessons": [
+        {
+          "id": "c3l1",
+          "title": "Stop Loss & Take Profit",
+          "slides": [
+            {
+              "heading": "Stop Loss: non-negotiable",
+              "body": "A Stop Loss (SL) is the price at which you accept you were wrong and exit automatically. Every single trade in TradeWise requires one before it locks in \u2014 there is no version of this app where you can trade without one.",
+              "image": "risk-sl"
+            },
+            {
+              "heading": "Take Profit",
+              "body": "A Take Profit (TP) is the price at which you exit having been right. Setting it in advance \u2014 before you see the outcome \u2014 is what keeps a plan a plan instead of an emotional decision made mid-trade.",
+              "image": "risk-tp"
+            },
+            {
+              "heading": "Why both are set before the chart plays",
+              "body": "TradeWise's core mechanic locks in SL and TP before the outcome plays out \u2014 exactly like real trading, where you don't get to change your exit after seeing what happens next.",
+              "image": "risk-prehoc"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What is a Stop Loss?",
+              "options": [
+                "The price at which you exit having been right",
+                "The price at which you exit accepting you were wrong, set in advance",
+                "A bonus reward for a winning trade",
+                "An optional setting you can skip if confident"
+              ],
+              "correctIndex": 1,
+              "explanation": "A Stop Loss is your predetermined exit if the trade goes against you \u2014 non-negotiable and required on every trade."
+            },
+            {
+              "question": "Why does TradeWise require SL and TP to be set before the chart plays, not after?",
+              "options": [
+                "To make the game harder for no reason",
+                "To train real decision-making under uncertainty, the same as live trading",
+                "Because the app can't calculate them afterward",
+                "It doesn't \u2014 you can adjust them anytime"
+              ],
+              "correctIndex": 1,
+              "explanation": "Setting exits in advance is what separates a disciplined pre-hoc decision from an emotional reaction to price already having moved."
+            },
+            {
+              "question": "What is a Take Profit?",
+              "options": [
+                "The price at which you exit having been right, set in advance",
+                "A stop loss with a different name",
+                "The maximum lot size allowed",
+                "A leverage setting"
+              ],
+              "correctIndex": 0,
+              "explanation": "Take Profit is your predetermined exit target on the winning side \u2014 set before you see the outcome."
+            }
+          ]
+        },
+        {
+          "id": "c3l2",
+          "title": "Lot Size & Pip Value",
+          "slides": [
+            {
+              "heading": "What a lot size controls",
+              "body": "Lot size determines how much money moves per pip of price movement. A bigger lot size means bigger swings in your Practice Capital for the same price move \u2014 it's the volume dial on your risk.",
+              "image": "risk-lotsize"
+            },
+            {
+              "heading": "Worked example: pip value",
+              "body": "0.01 lots on EUR/USD \u2248 $0.10 per pip. So a 50-pip move against a 0.01 lot position costs about $5. Scale that up: 0.10 lots at 50 pips costs about $50.",
+              "image": "risk-pipvalue"
+            },
+            {
+              "heading": "Why this isn't optional maths",
+              "body": "Every lot size decision has a real, calculable dollar consequence on your $500 starting Practice Capital. This is exactly why TradeWise shows you the live risk % before you can lock in a trade.",
+              "image": "risk-consequence"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What does lot size primarily control?",
+              "options": [
+                "The direction of the trade",
+                "How much money moves per pip of price movement",
+                "The timeframe you're trading on",
+                "Your TradePoints balance"
+              ],
+              "correctIndex": 1,
+              "explanation": "Lot size is the volume dial \u2014 it scales how many dollars each pip of movement is worth."
+            },
+            {
+              "question": "Roughly what is the pip value of 0.01 lots on EUR/USD?",
+              "options": [
+                "$0.10 per pip",
+                "$10 per pip",
+                "$1.00 per pip",
+                "$100 per pip"
+              ],
+              "correctIndex": 0,
+              "explanation": "0.01 lots (a 'micro lot') on EUR/USD is approximately $0.10 per pip."
+            },
+            {
+              "question": "At 0.01 lots, roughly what would a 50-pip stop loss cost if hit?",
+              "options": [
+                "$0.50",
+                "$5",
+                "$50",
+                "$500"
+              ],
+              "correctIndex": 1,
+              "explanation": "50 pips \u00d7 $0.10/pip \u2248 $5 \u2014 a small, controlled loss on a $500 account, which is the point of trading small lot sizes."
+            }
+          ]
+        },
+        {
+          "id": "c3l3",
+          "title": "The 1% Risk Rule",
+          "slides": [
+            {
+              "heading": "The rule itself",
+              "body": "Risk no more than 1% of your Practice Capital on any single trade. On a $500 account, that's $5 maximum risk per trade \u2014 regardless of how confident you feel.",
+              "image": "risk-1pct"
+            },
+            {
+              "heading": "Worked example",
+              "body": "$500 account. 1% risk = $5. Your Stop Loss is 50 pips away. At $0.10/pip (0.01 lots), 50 pips = $5 risked. That's your maximum lot size for this trade: 0.01 lots.",
+              "image": "risk-worked-example"
+            },
+            {
+              "heading": "Why 1% instead of 'whatever feels right'",
+              "body": "At 1% risk, it takes many consecutive losses in a row to meaningfully damage your account \u2014 giving your edge time to play out. At 10% risk per trade, a short losing streak can wipe you out before your edge ever gets a fair test.",
+              "image": "risk-why1pct"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "On a $500 Practice Capital account, what is 1% risk in dollars?",
+              "options": [
+                "$0.50",
+                "$5",
+                "$50",
+                "$1"
+              ],
+              "correctIndex": 1,
+              "explanation": "1% of $500 is $5 \u2014 the maximum you'd risk on a single trade under the 1% rule."
+            },
+            {
+              "question": "Your account is $500, your SL is 50 pips away, and pip value at 0.01 lots is $0.10/pip. What's the max lot size that keeps risk at 1% ($5)?",
+              "options": [
+                "0.001 lots",
+                "0.01 lots",
+                "0.10 lots",
+                "1.00 lots"
+              ],
+              "correctIndex": 1,
+              "explanation": "50 pips \u00d7 $0.10/pip (0.01 lots) = $5 risked \u2014 exactly 1% of $500. That's the correct lot size for this SL distance."
+            },
+            {
+              "question": "Why does the 1% rule matter more than 'trading with conviction'?",
+              "options": [
+                "It doesn't \u2014 conviction should always override sizing",
+                "It lets your edge survive a normal losing streak instead of being wiped out by one",
+                "It guarantees a profit over time",
+                "It's only a suggestion, not a real constraint"
+              ],
+              "correctIndex": 1,
+              "explanation": "Small, consistent risk per trade means a losing streak \u2014 which will happen even with a real edge \u2014 doesn't end your account before that edge has time to prove out."
+            }
+          ]
+        },
+        {
+          "id": "c3l4",
+          "title": "Margin & Leverage",
+          "slides": [
+            {
+              "heading": "What leverage means",
+              "body": "Leverage lets you control a larger position than your capital alone would allow. It amplifies outcomes in both directions \u2014 the same 50-pip move produces a bigger dollar swing at higher leverage.",
+              "image": "risk-leverage"
+            },
+            {
+              "heading": "What margin actually is",
+              "body": "Margin is collateral held against your open position, not a fee charged to you. It's returned when the position closes \u2014 it just can't be used for anything else while the trade is open.",
+              "image": "risk-margin"
+            },
+            {
+              "heading": "Why TradeWise starts at 1:10",
+              "body": "Low leverage means smaller amplification while you're still building the habit of correct position sizing. Higher leverage tiers unlock later, gated by TradePoints earned through disciplined play \u2014 not by account balance alone.",
+              "image": "risk-why-1-10"
+            },
+            {
+              "heading": "What a margin call is",
+              "body": "A margin call happens when losses eat too far into your available capital to support open positions \u2014 the broker (or in TradeWise, the simulation) starts closing things down to protect what's left. Correct position sizing is how you avoid ever seeing one.",
+              "image": "risk-margincall"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What does leverage do?",
+              "options": [
+                "Guarantees profit on every trade",
+                "Amplifies outcomes \u2014 both gains and losses \u2014 relative to your capital",
+                "Removes the need for a Stop Loss",
+                "Only applies to Stock trading"
+              ],
+              "correctIndex": 1,
+              "explanation": "Leverage lets you control a bigger position with the same capital, which amplifies both wins and losses proportionally."
+            },
+            {
+              "question": "What is margin?",
+              "options": [
+                "A fee taken from every trade",
+                "Collateral held against an open position, returned when it closes",
+                "A bonus for high-leverage trades",
+                "Another word for Stop Loss"
+              ],
+              "correctIndex": 1,
+              "explanation": "Margin is collateral, not a cost \u2014 it's tied up while the position is open and released when it closes."
+            },
+            {
+              "question": "Why does TradeWise start every user at 1:10 leverage instead of higher?",
+              "options": [
+                "Higher leverage isn't technically possible",
+                "Lower leverage limits amplification while the habit of correct sizing is still being built",
+                "1:10 is a legal maximum everywhere",
+                "It has nothing to do with learning \u2014 it's arbitrary"
+              ],
+              "correctIndex": 1,
+              "explanation": "Starting low keeps early mistakes small while position-sizing discipline is still developing. Higher leverage unlocks later, earned through TradePoints."
+            }
+          ]
+        }
+      ],
+      "tyk": {
+        "passThreshold": 70,
+        "items": [
+          {
+            "image": "def-sl",
+            "candidateLabels": [
+              "Stop Loss",
+              "Take Profit",
+              "Margin",
+              "Leverage",
+              "1% Risk Rule"
+            ],
+            "correctLabels": [
+              "Stop Loss"
+            ],
+            "explanation": "A Stop Loss is your predetermined exit accepting you were wrong \u2014 set before the trade plays out.",
+            "remediationLessons": [
+              "c3l1"
+            ]
+          },
+          {
+            "image": "def-tp",
+            "candidateLabels": [
+              "Stop Loss",
+              "Take Profit",
+              "Lot Size",
+              "Pip Value",
+              "Margin"
+            ],
+            "correctLabels": [
+              "Take Profit"
+            ],
+            "explanation": "Take Profit is your predetermined exit target if the trade goes your way.",
+            "remediationLessons": [
+              "c3l1"
+            ]
+          },
+          {
+            "image": "def-lotsize",
+            "candidateLabels": [
+              "Lot Size",
+              "Pip Value",
+              "Leverage",
+              "Margin",
+              "1% Risk Rule"
+            ],
+            "correctLabels": [
+              "Lot Size"
+            ],
+            "explanation": "Lot size scales how many dollars each pip of movement is worth.",
+            "remediationLessons": [
+              "c3l2"
+            ]
+          },
+          {
+            "image": "def-pipvalue",
+            "candidateLabels": [
+              "Lot Size",
+              "Pip Value",
+              "Take Profit",
+              "Stop Loss",
+              "Margin"
+            ],
+            "correctLabels": [
+              "Pip Value"
+            ],
+            "explanation": "At 0.01 lots on EUR/USD, each pip is worth roughly $0.10.",
+            "remediationLessons": [
+              "c3l2"
+            ]
+          },
+          {
+            "image": "def-margin",
+            "candidateLabels": [
+              "Margin",
+              "Leverage",
+              "Lot Size",
+              "1% Risk Rule",
+              "Take Profit"
+            ],
+            "correctLabels": [
+              "Margin"
+            ],
+            "explanation": "Margin is collateral held against an open position \u2014 returned when it closes.",
+            "remediationLessons": [
+              "c3l4"
+            ]
+          },
+          {
+            "image": "def-leverage",
+            "candidateLabels": [
+              "Margin",
+              "Leverage",
+              "Pip Value",
+              "Stop Loss",
+              "1% Risk Rule"
+            ],
+            "correctLabels": [
+              "Leverage"
+            ],
+            "explanation": "Leverage lets you control a bigger position, amplifying gains and losses alike.",
+            "remediationLessons": [
+              "c3l4"
+            ]
+          },
+          {
+            "image": "def-1pct",
+            "candidateLabels": [
+              "1% Risk Rule",
+              "Leverage",
+              "Margin",
+              "Lot Size",
+              "Take Profit"
+            ],
+            "correctLabels": [
+              "1% Risk Rule"
+            ],
+            "explanation": "Risking no more than 1% per trade means a losing streak doesn't end the account.",
+            "remediationLessons": [
+              "c3l3"
+            ]
+          },
+          {
+            "image": "scenario-worked1",
+            "candidateLabels": [
+              "Correctly Sized (1% Risk)",
+              "Oversized (10% Risk)",
+              "Margin Call",
+              "Take Profit Hit",
+              "Stop Loss Too Tight"
+            ],
+            "correctLabels": [
+              "Correctly Sized (1% Risk)"
+            ],
+            "explanation": "50 pips \u00d7 $0.10/pip = $5, which is exactly 1% of a $500 account \u2014 correct sizing.",
+            "remediationLessons": [
+              "c3l3"
+            ]
+          },
+          {
+            "image": "scenario-worked2",
+            "candidateLabels": [
+              "Correctly Sized (1% Risk)",
+              "Oversized (10% Risk)",
+              "Margin Call",
+              "Take Profit Hit",
+              "Stop Loss Too Tight"
+            ],
+            "correctLabels": [
+              "Oversized (10% Risk)"
+            ],
+            "explanation": "At 0.10 lots, the same 50-pip SL now risks $50 \u2014 10% of the account, ten times the 1% rule.",
+            "remediationLessons": [
+              "c3l3"
+            ]
+          },
+          {
+            "image": "scenario-margincall",
+            "candidateLabels": [
+              "Correctly Sized (1% Risk)",
+              "Oversized (10% Risk)",
+              "Margin Call",
+              "Take Profit Hit",
+              "Stop Loss Too Tight"
+            ],
+            "correctLabels": [
+              "Margin Call"
+            ],
+            "explanation": "A margin call is the simulation protecting remaining capital once losses eat too far into it.",
+            "remediationLessons": [
+              "c3l4"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "course4",
+      "slug": "trading-plans-discipline",
+      "title": "Trading Plans & Discipline",
+      "tier": "intermediate",
+      "paywalled": false,
+      "price": null,
+      "description": "Why a plan beats improvisation, the three questions every plan answers, the discipline of No Trade, and a plain-language read on the Career Readiness Rating.",
+      "badgeName": "Silver Learning Badge (combined with Courses 2 & 3)",
+      "lessons": [
+        {
+          "id": "c4l1",
+          "title": "Why a Trading Plan Removes Emotion",
+          "slides": [
+            {
+              "heading": "The problem a plan solves",
+              "body": "Decisions made in the moment, under uncertainty, with money at stake, are vulnerable to fear and excitement. A plan made in advance \u2014 when you're calm \u2014 is what you fall back on when you're not.",
+              "image": "plan-why"
+            },
+            {
+              "heading": "A plan isn't a prediction",
+              "body": "A trading plan doesn't predict what the market will do. It predicts what you will do in response to specific, pre-defined conditions \u2014 which is the only thing you actually control.",
+              "image": "plan-not-prediction"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What problem does a trading plan primarily solve?",
+              "options": [
+                "It predicts future price movement",
+                "It replaces emotional in-the-moment decisions with pre-committed ones",
+                "It guarantees a winning trade",
+                "It removes the need for a Stop Loss"
+              ],
+              "correctIndex": 1,
+              "explanation": "A plan is a pre-commitment device \u2014 it gives you something calm to follow instead of an emotional reaction in the moment."
+            },
+            {
+              "question": "What does a good trading plan actually predict?",
+              "options": [
+                "What the market will do next",
+                "What you will do given specific pre-defined conditions",
+                "Your exact profit for the month",
+                "Nothing \u2014 plans are symbolic only"
+              ],
+              "correctIndex": 1,
+              "explanation": "You can't control the market, but a plan lets you pre-commit to your own response to conditions you define in advance."
+            },
+            {
+              "question": "When is a trading plan created?",
+              "options": [
+                "In the middle of a losing trade",
+                "In advance, when you're calm and not under pressure",
+                "Only after a big win, to celebrate",
+                "It's created automatically by the app for you"
+              ],
+              "correctIndex": 1,
+              "explanation": "A plan is written in advance, precisely so it's available to lean on later when emotion is running high."
+            }
+          ]
+        },
+        {
+          "id": "c4l2",
+          "title": "The Three Questions",
+          "slides": [
+            {
+              "heading": "What do I trade?",
+              "body": "Which instrument, which setups, which timeframes. Being specific here prevents chasing whatever looks exciting in the moment.",
+              "image": "plan-what"
+            },
+            {
+              "heading": "When do I trade?",
+              "body": "Which sessions, which conditions, and \u2014 just as importantly \u2014 when you don't trade at all (no clear setup, tired, tilted after a loss).",
+              "image": "plan-when"
+            },
+            {
+              "heading": "How much do I risk?",
+              "body": "Your per-trade risk % (the 1% rule from Course 3) and your session risk budget \u2014 the ceiling on total risk you'll take in one sitting, win or lose.",
+              "image": "plan-howmuch"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What are the three questions a trading plan answers?",
+              "options": [
+                "What to trade, when to trade, how much to risk",
+                "How much profit, how many trades, what colour theme",
+                "Who to trade with, where to trade, why to trade",
+                "What time zone, what currency, what broker"
+              ],
+              "correctIndex": 0,
+              "explanation": "A trading plan answers what you trade, when you trade (and when you don't), and how much you risk."
+            },
+            {
+              "question": "Why does 'when do I trade' also include 'when I don't trade'?",
+              "options": [
+                "It doesn't \u2014 you should always be in a position",
+                "Knowing your no-trade conditions (tired, tilted, no clear setup) is as important as knowing your entry conditions",
+                "The app forces trades on a schedule",
+                "Timing never actually matters"
+              ],
+              "correctIndex": 1,
+              "explanation": "A plan that only defines entries is incomplete \u2014 defining when to stand aside protects you from the most common source of losses: trading when you shouldn't."
+            },
+            {
+              "question": "What does 'how much do I risk' refer to in a trading plan?",
+              "options": [
+                "Your total account balance",
+                "Your per-trade risk % and your total session risk budget",
+                "The number of TradePoints you own",
+                "Your leverage tier"
+              ],
+              "correctIndex": 1,
+              "explanation": "This question covers both the 1% per-trade rule and a session-level ceiling on cumulative risk taken."
+            }
+          ]
+        },
+        {
+          "id": "c4l3",
+          "title": "The Power of \"No Trade\"",
+          "slides": [
+            {
+              "heading": "Overtrading is the top cause of retail losses",
+              "body": "New traders take a position on every setup because sitting out feels like wasted time. In reality, the most disciplined traders skip the majority of potential setups they see.",
+              "image": "notrade-overtrading"
+            },
+            {
+              "heading": "Why No Trade is scored, not just allowed",
+              "body": "TradeWise awards points for a correct No Trade call, and never penalises an incorrect No Trade (skipping a valid setup) \u2014 because sitting out is always the safer error to make.",
+              "image": "notrade-scoring"
+            },
+            {
+              "heading": "No Trade is a skill, not an absence of one",
+              "body": "Recognising 'this isn't a real setup' requires the same pattern knowledge as recognising a valid one. It's an active decision, not a default.",
+              "image": "notrade-skill"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "Why is overtrading described as the top cause of retail trading losses?",
+              "options": [
+                "Because trading is inherently unprofitable",
+                "Because traders take positions on setups that aren't actually valid, out of a feeling that inaction wastes opportunity",
+                "Because brokers charge fees per trade",
+                "It isn't \u2014 overtrading is a myth"
+              ],
+              "correctIndex": 1,
+              "explanation": "The instinct that 'not trading' is wasted time leads traders into low-quality setups they'd otherwise skip \u2014 this is the single most cited driver of retail losses."
+            },
+            {
+              "question": "How does TradeWise score an incorrect No Trade (skipping a setup that was actually valid)?",
+              "options": [
+                "Large point penalty",
+                "Zero points lost \u2014 sitting out is always the safer error",
+                "Automatic account blow-up",
+                "Same penalty as a losing trade"
+              ],
+              "correctIndex": 1,
+              "explanation": "Skipping a valid setup costs you the upside, but never costs points \u2014 the app is deliberately built to never punish caution more than it punishes recklessness."
+            },
+            {
+              "question": "Is correctly identifying 'No Trade' considered a real trading skill?",
+              "options": [
+                "No \u2014 it's just doing nothing",
+                "Yes \u2014 it requires the same pattern recognition as spotting a valid setup, applied to recognising when one is absent",
+                "Only at Advanced level",
+                "Only in Arcade Mode, not Career Mode"
+              ],
+              "correctIndex": 1,
+              "explanation": "Recognising the absence of a valid setup uses the same underlying knowledge as recognising a valid one \u2014 it's an active skill, not a passive default."
+            }
+          ]
+        },
+        {
+          "id": "c4l4",
+          "title": "Reading Your Own Performance",
+          "slides": [
+            {
+              "heading": "The Career Readiness Rating, in plain language",
+              "body": "A 0\u2013100 score built from your win rate, correct No-Trade rate, risk consistency, and how many sessions you've completed. It's a mirror on your practice quality \u2014 nothing more.",
+              "image": "readiness-plain"
+            },
+            {
+              "heading": "What it is not",
+              "body": "It is never a qualification, a guarantee, or a signal that you're ready to trade with real money. Every place this score appears in the app carries that same disclaimer, deliberately.",
+              "image": "readiness-not"
+            },
+            {
+              "heading": "Why the labels matter",
+              "body": "Early Stage, Developing, Progressing, Practice-Ready \u2014 the labels describe practice quality, not permission. Even 'Practice-Ready' users are told explicitly: this reflects simulated performance only.",
+              "image": "readiness-labels"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What does the Career Readiness Rating measure?",
+              "options": [
+                "Whether you're ready to trade live with real money",
+                "Your simulated practice quality \u2014 win rate, No-Trade accuracy, risk consistency, sessions completed",
+                "Your TradePoints balance",
+                "Your leverage tier"
+              ],
+              "correctIndex": 1,
+              "explanation": "It's a composite of practice-quality signals \u2014 never a live-trading qualification."
+            },
+            {
+              "question": "What does the 'Practice-Ready' label mean?",
+              "options": [
+                "You are certified to trade with real money",
+                "Your simulated practice performance has reached a high standard \u2014 the label always carries a disclaimer that this reflects practice only",
+                "You've unlocked the highest leverage tier automatically",
+                "Nothing \u2014 it's purely cosmetic"
+              ],
+              "correctIndex": 1,
+              "explanation": "Even at the top label, the app is explicit that this reflects simulated practice performance only, never a real-money readiness guarantee."
+            },
+            {
+              "question": "Which of these does NOT feed into the Career Readiness Rating?",
+              "options": [
+                "Win rate over recent trades",
+                "Correct No-Trade rate",
+                "Your account's cosmetic chart theme",
+                "Risk consistency across trades"
+              ],
+              "correctIndex": 2,
+              "explanation": "Cosmetic purchases like chart themes have zero bearing on the score \u2014 it's built entirely from trading behaviour and outcomes."
+            }
+          ]
+        }
+      ],
+      "tyk": {
+        "passThreshold": 70,
+        "items": [
+          {
+            "image": "scenario-trade1",
+            "candidateLabels": [
+              "Trade",
+              "No Trade",
+              "Wait for Confirmation",
+              "Missing Setup Component",
+              "Counter-Trend Risk"
+            ],
+            "correctLabels": [
+              "Trade"
+            ],
+            "explanation": "A genuine, complete confluence setup \u2014 this is a Trade, not a skip.",
+            "remediationLessons": [
+              "c4l3"
+            ]
+          },
+          {
+            "image": "scenario-notrade1",
+            "candidateLabels": [
+              "Trade",
+              "No Trade",
+              "Wait for Confirmation",
+              "Missing Setup Component",
+              "Counter-Trend Risk"
+            ],
+            "correctLabels": [
+              "No Trade",
+              "Missing Setup Component"
+            ],
+            "explanation": "Missing the confirming component \u2014 this is correctly a No Trade.",
+            "remediationLessons": [
+              "c4l3"
+            ]
+          },
+          {
+            "image": "scenario-notrade2",
+            "candidateLabels": [
+              "Trade",
+              "No Trade",
+              "Wait for Confirmation",
+              "Missing Setup Component",
+              "Counter-Trend Risk"
+            ],
+            "correctLabels": [
+              "No Trade",
+              "Missing Setup Component"
+            ],
+            "explanation": "With no identifiable structure, there's nothing to confirm \u2014 No Trade.",
+            "remediationLessons": [
+              "c4l3"
+            ]
+          },
+          {
+            "image": "scenario-trade2",
+            "candidateLabels": [
+              "Trade",
+              "No Trade",
+              "Wait for Confirmation",
+              "Missing Setup Component",
+              "Counter-Trend Risk"
+            ],
+            "correctLabels": [
+              "Trade"
+            ],
+            "explanation": "All three components present and confirmed \u2014 a valid Trade.",
+            "remediationLessons": [
+              "c4l3"
+            ]
+          },
+          {
+            "image": "scenario-notrade3",
+            "candidateLabels": [
+              "Trade",
+              "No Trade",
+              "Wait for Confirmation",
+              "Missing Setup Component",
+              "Counter-Trend Risk"
+            ],
+            "correctLabels": [
+              "No Trade",
+              "Counter-Trend Risk"
+            ],
+            "explanation": "A counter-trend trap \u2014 correctly skipped as No Trade.",
+            "remediationLessons": [
+              "c4l3"
+            ]
+          },
+          {
+            "image": "scenario-wait1",
+            "candidateLabels": [
+              "Trade",
+              "No Trade",
+              "Wait for Confirmation",
+              "Missing Setup Component",
+              "Counter-Trend Risk"
+            ],
+            "correctLabels": [
+              "Wait for Confirmation"
+            ],
+            "explanation": "An unconfirmed, still-forming pattern calls for waiting, not acting early.",
+            "remediationLessons": [
+              "c4l3"
+            ]
+          },
+          {
+            "image": "scenario-trade3",
+            "candidateLabels": [
+              "Trade",
+              "No Trade",
+              "Wait for Confirmation",
+              "Missing Setup Component",
+              "Counter-Trend Risk"
+            ],
+            "correctLabels": [
+              "Trade"
+            ],
+            "explanation": "All of Setup 2's components are present \u2014 a valid Trade.",
+            "remediationLessons": [
+              "c4l3"
+            ]
+          },
+          {
+            "image": "scenario-notrade4",
+            "candidateLabels": [
+              "Trade",
+              "No Trade",
+              "Wait for Confirmation",
+              "Missing Setup Component",
+              "Counter-Trend Risk"
+            ],
+            "correctLabels": [
+              "No Trade",
+              "Missing Setup Component"
+            ],
+            "explanation": "A false break, not a genuine retest \u2014 correctly No Trade.",
+            "remediationLessons": [
+              "c4l3"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "course5",
+      "slug": "advanced-strategies",
+      "title": "Multi-Timeframe Mastery & Advanced Strategies",
+      "tier": "advanced",
+      "paywalled": true,
+      "price": "$6.99 one-time, or included with TradeWise Pro",
+      "description": "The final two confluence setups, the advanced trap library, session risk budgeting and expectancy, and a primer on the strategy frameworks behind the Strategies Pack.",
+      "badgeName": "Gold Learning Badge (requires all 5 courses)",
+      "lessons": [
+        {
+          "id": "c5l1",
+          "title": "Setup 4: Multi-Timeframe Confluence",
+          "slides": [
+            {
+              "heading": "The components",
+              "body": "Component A: a key level visible on the 1H chart. Component B: a market structure shift on the 5M chart right at that 1H level. Component C: a candlestick confirmation on the 5M chart.",
+              "image": "setup4-components"
+            },
+            {
+              "heading": "Valid buy / valid sell",
+              "body": "Valid BUY: 1H key support, plus a 5M structure shift upward at that level, plus a 5M bullish candle. Valid SELL: 1H key resistance, plus a 5M downward structure shift, plus a 5M bearish candle.",
+              "image": "setup4-valid"
+            },
+            {
+              "heading": "The trap version",
+              "body": "The 1H level is genuinely there, but the 5M structure hasn't actually shifted yet \u2014 price is still making lower highs against 1H support, for example. Correct call: No Trade, wait for the shift to actually happen.",
+              "image": "setup4-trap"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What are the three components of Setup 4?",
+              "options": [
+                "A 1H key level, a 5M structure shift at that level, and a 5M confirming candle",
+                "Two Fibonacci levels and a volume spike",
+                "A doji and a moving average cross",
+                "Three consecutive 1H candles"
+              ],
+              "correctIndex": 0,
+              "explanation": "Setup 4 combines a higher-timeframe level with a lower-timeframe structure shift and confirmation \u2014 true multi-timeframe agreement."
+            },
+            {
+              "question": "Price is at 1H support, but the 5M chart is still making lower highs with no structure shift yet. What's correct?",
+              "options": [
+                "Buy immediately \u2014 the 1H level is enough on its own",
+                "No Trade \u2014 wait for the 5M structure to actually shift",
+                "Sell \u2014 lower highs mean continuation down",
+                "Increase lot size to compensate for uncertainty"
+              ],
+              "correctIndex": 1,
+              "explanation": "Setup 4 needs all three components. A 1H level alone, without a 5M structure shift, is the trap version \u2014 patience is the correct call."
+            },
+            {
+              "question": "Why is Setup 4 introduced only after Setups 1\u20133?",
+              "options": [
+                "It uses a completely unrelated skill set",
+                "It builds directly on structure-reading (Course 1) and structure breaks (Setup 3), combined across two timeframes at once",
+                "It's easier than the earlier setups",
+                "There's no particular reason"
+              ],
+              "correctIndex": 1,
+              "explanation": "Multi-timeframe confluence layers structure-reading and break/retest skills across two timeframes simultaneously \u2014 it depends on the earlier setups being solid first."
+            }
+          ]
+        },
+        {
+          "id": "c5l2",
+          "title": "Setup 5: Compression Breakout",
+          "slides": [
+            {
+              "heading": "The components",
+              "body": "Component A: a narrowing range \u2014 lower highs and higher lows \u2014 visible over 10+ candles on the 5M chart. Component B: a breakout candle closing outside the compression with a body at least 1.5\u00d7 the average body size of the compression period. Component C: the breakout direction aligns with the 15M trend or momentum.",
+              "image": "setup5-components"
+            },
+            {
+              "heading": "Valid buy / valid sell",
+              "body": "Valid BUY: compression, then a bullish breakout candle closing above the range, with the 15M trend up or neutral. Valid SELL: compression, then a bearish breakout closing below the range, with the 15M confirming.",
+              "image": "setup5-valid"
+            },
+            {
+              "heading": "The trap version",
+              "body": "A breakout wick pokes outside the range but the candle doesn't close beyond it \u2014 or the breakout fires directly against a strong 1H trend. Both are correctly No Trade.",
+              "image": "setup5-trap"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What defines the 'compression' in Compression Breakout?",
+              "options": [
+                "A single large candle",
+                "A narrowing range \u2014 lower highs and higher lows \u2014 over 10+ candles",
+                "Any sideways price action, regardless of shape",
+                "A gap between two candles"
+              ],
+              "correctIndex": 1,
+              "explanation": "Compression specifically means the range is narrowing candle over candle \u2014 lower highs meeting higher lows, squeezing toward a point."
+            },
+            {
+              "question": "What size does the breakout candle's body need to be, relative to the compression period?",
+              "options": [
+                "Any size at all",
+                "At least 1.5\u00d7 the average body size of the compression candles",
+                "Exactly the same size as the previous candle",
+                "Smaller than the compression candles"
+              ],
+              "correctIndex": 1,
+              "explanation": "The breakout needs real conviction behind it \u2014 a body at least 1.5\u00d7 the compression period's average, not just a marginal push outside the range."
+            },
+            {
+              "question": "A breakout candle wicks outside the compression range but closes back inside it. What's correct?",
+              "options": [
+                "Trade the breakout direction anyway",
+                "No Trade \u2014 the close never confirmed the breakout",
+                "Always trade against the wick",
+                "Increase lot size since volatility is rising"
+              ],
+              "correctIndex": 1,
+              "explanation": "Component B requires a close outside the range, not just a wick. Without that close, it's the trap version of Setup 5."
+            }
+          ]
+        },
+        {
+          "id": "c5l3",
+          "title": "Advanced Trap Library",
+          "slides": [
+            {
+              "heading": "False break / liquidity sweep, revisited",
+              "body": "At this level, false breaks get sharper: price can sweep through a level aggressively \u2014 designed to trigger stop losses clustered just beyond it \u2014 before reversing hard the other way.",
+              "image": "advtrap-liquiditysweep"
+            },
+            {
+              "heading": "Counter-trend traps",
+              "body": "A setup with every local component present, but positioned directly against a strong, well-established higher-timeframe trend. These are the most convincing traps precisely because the local pattern is genuinely clean.",
+              "image": "advtrap-countertrend"
+            },
+            {
+              "heading": "News-simulation spikes",
+              "body": "A sharp, fast directional move with no structural basis \u2014 no level, no break, no compression. It's volatility without a story. Trading it as if it were a valid setup is a Stage 3+ trap.",
+              "image": "advtrap-newsspike"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What is a liquidity sweep?",
+              "options": [
+                "A slow, gradual price drift",
+                "An aggressive push through a level \u2014 often to trigger clustered stop losses \u2014 before reversing",
+                "A type of candlestick pattern",
+                "A guaranteed reversal signal"
+              ],
+              "correctIndex": 1,
+              "explanation": "A liquidity sweep is a sharp move through a level, frequently understood as clearing out stop losses sitting just beyond it, before price reverses."
+            },
+            {
+              "question": "Why are counter-trend traps described as 'the most convincing'?",
+              "options": [
+                "Because they never actually look valid",
+                "Because the local pattern genuinely is clean \u2014 it's only the higher-timeframe context that makes it a trap",
+                "Because they only occur on weekends",
+                "Because they always involve a doji"
+              ],
+              "correctIndex": 1,
+              "explanation": "The local setup can be textbook-correct in isolation \u2014 what makes it a trap is fighting the higher-timeframe trend, which is easy to miss if you only look at the immediate chart."
+            },
+            {
+              "question": "What structurally distinguishes a news-simulation spike from a valid Setup 5 breakout?",
+              "options": [
+                "Nothing \u2014 they look identical",
+                "The spike has no compression, level, or structural basis behind the move",
+                "It only happens on EUR/USD",
+                "It always aligns with the 15M trend"
+              ],
+              "correctIndex": 1,
+              "explanation": "A valid breakout has a structural setup behind it (compression). A news-spike is volatility with no such basis \u2014 trading it as a setup is the trap."
+            }
+          ]
+        },
+        {
+          "id": "c5l4",
+          "title": "Session Risk Budgeting & Expectancy",
+          "slides": [
+            {
+              "heading": "Beyond per-trade risk: the session budget",
+              "body": "The 1% rule caps a single trade. A session risk budget caps how much you're willing to risk across an entire sitting \u2014 a warning triggers if any single trade exceeds 2% of Practice Capital, even though it's not blocked outright.",
+              "image": "advrisk-sessionbudget"
+            },
+            {
+              "heading": "What an R-multiple is",
+              "body": "An R-multiple expresses a trade's result relative to what you risked. Risk $5 (1R) and make $10, that's a +2R trade. Risk $5 and lose it, that's -1R. Thinking in R lets you compare trades of different sizes fairly.",
+              "image": "advrisk-rmultiple"
+            },
+            {
+              "heading": "Expectancy, in one line",
+              "body": "Expectancy = (win rate \u00d7 average R won) \u2212 (loss rate \u00d7 average R lost). A positive expectancy system can still have more losing trades than winning ones and be profitable overall \u2014 this is why a single loss (or win) never tells the whole story.",
+              "image": "advrisk-expectancy"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What does a session risk budget add on top of the 1% per-trade rule?",
+              "options": [
+                "Nothing \u2014 they're the same thing",
+                "A ceiling on total risk taken across an entire session, not just one trade",
+                "A guarantee against any losses",
+                "A higher leverage allowance"
+              ],
+              "correctIndex": 1,
+              "explanation": "The 1% rule governs one trade; the session budget governs the cumulative risk across everything you do in one sitting."
+            },
+            {
+              "question": "You risk $5 (1R) and the trade closes at +$15 profit. What R-multiple is that?",
+              "options": [
+                "+1R",
+                "+2R",
+                "+3R",
+                "-1R"
+              ],
+              "correctIndex": 2,
+              "explanation": "$15 profit against $5 risked is 3\u00d7 the risk \u2014 a +3R result."
+            },
+            {
+              "question": "Can a trading system with more losing trades than winning trades still be profitable overall?",
+              "options": [
+                "No \u2014 win rate above 50% is always required",
+                "Yes \u2014 if the average size of wins (in R) sufficiently outweighs the average size of losses",
+                "Only if leverage is very high",
+                "Only in Arcade Mode"
+              ],
+              "correctIndex": 1,
+              "explanation": "Expectancy depends on win rate AND average R per win/loss together \u2014 a system that wins less often but wins bigger can still have positive expectancy overall."
+            }
+          ]
+        },
+        {
+          "id": "c5l5",
+          "title": "Intro to Strategy Frameworks",
+          "slides": [
+            {
+              "heading": "Why frameworks, not just setups",
+              "body": "The 5 core setups are individual patterns. A strategy framework is a broader lens for reading the market that several setups can sit inside \u2014 this lesson is a primer, not the full depth (see the Strategies Pack for that).",
+              "image": "framework-why"
+            },
+            {
+              "heading": "ICT-inspired concepts",
+              "body": "A family of ideas centred on liquidity \u2014 where clusters of stop losses likely sit, and how price is drawn toward them before reversing. You've already seen a piece of this in the liquidity sweep trap.",
+              "image": "framework-ict"
+            },
+            {
+              "heading": "SMC (Smart Money Concepts) structure",
+              "body": "A framework built around identifying where larger participants are likely positioned, using structure breaks and order-flow-style reasoning rather than indicators.",
+              "image": "framework-smc"
+            },
+            {
+              "heading": "Momentum continuation",
+              "body": "A framework focused on trading in the direction of established momentum rather than looking for reversals \u2014 the opposite instinct to trading every level as a turning point.",
+              "image": "framework-momentum"
+            }
+          ],
+          "quiz": [
+            {
+              "question": "What is a 'strategy framework' as distinct from one of the 5 core setups?",
+              "options": [
+                "Exactly the same thing, just a different name",
+                "A broader lens for reading the market that multiple individual setups can operate within",
+                "A type of candlestick pattern",
+                "A leverage tier"
+              ],
+              "correctIndex": 1,
+              "explanation": "A framework is a bigger-picture approach to reading the market \u2014 setups are specific patterns; a framework is the lens you view many patterns through."
+            },
+            {
+              "question": "Which core concept from this course connects directly to ICT-inspired thinking?",
+              "options": [
+                "Compression breakout body size",
+                "The liquidity sweep / false break trap",
+                "The 1% risk rule",
+                "Candlestick colour"
+              ],
+              "correctIndex": 1,
+              "explanation": "Liquidity sweeps \u2014 price pushing through a level to clear out stop losses before reversing \u2014 are a foundational ICT-inspired idea you already met as a trap pattern."
+            },
+            {
+              "question": "What does 'momentum continuation' focus on, in contrast to reversal-based setups like Setup 1?",
+              "options": [
+                "Trading in the direction of established momentum rather than looking for turning points",
+                "Only trading during news spikes",
+                "Ignoring all structure entirely",
+                "Trading exclusively on the 1-minute timeframe"
+              ],
+              "correctIndex": 0,
+              "explanation": "Where Setup 1 looks for reversals at a level, momentum continuation looks the other way \u2014 trading with an already-established directional move."
+            }
+          ]
+        }
+      ],
+      "tyk": {
+        "passThreshold": 70,
+        "items": [
+          {
+            "image": "chart-setup4",
+            "candidateLabels": [
+              "Setup 4: Multi-Timeframe Confluence",
+              "Setup 5: Compression Breakout",
+              "Liquidity Sweep",
+              "Counter-Trend Trap",
+              "News-Simulation Spike"
+            ],
+            "correctLabels": [
+              "Setup 4: Multi-Timeframe Confluence"
+            ],
+            "explanation": "1H level, 5M structure shift, and 5M confirmation all present together.",
+            "remediationLessons": [
+              "c5l1"
+            ]
+          },
+          {
+            "image": "chart-setup5",
+            "candidateLabels": [
+              "Setup 4: Multi-Timeframe Confluence",
+              "Setup 5: Compression Breakout",
+              "Liquidity Sweep",
+              "Counter-Trend Trap",
+              "News-Simulation Spike"
+            ],
+            "correctLabels": [
+              "Setup 5: Compression Breakout"
+            ],
+            "explanation": "Compression, a conviction breakout candle, and 15M alignment together.",
+            "remediationLessons": [
+              "c5l2"
+            ]
+          },
+          {
+            "image": "chart-liquiditysweep",
+            "candidateLabels": [
+              "Setup 4: Multi-Timeframe Confluence",
+              "Setup 5: Compression Breakout",
+              "Liquidity Sweep",
+              "Counter-Trend Trap",
+              "News-Simulation Spike"
+            ],
+            "correctLabels": [
+              "Liquidity Sweep"
+            ],
+            "explanation": "An aggressive sweep through clustered stops, followed by reversal \u2014 not a valid break.",
+            "remediationLessons": [
+              "c5l3"
+            ]
+          },
+          {
+            "image": "chart-advcountertrend",
+            "candidateLabels": [
+              "Setup 4: Multi-Timeframe Confluence",
+              "Setup 5: Compression Breakout",
+              "Liquidity Sweep",
+              "Counter-Trend Trap",
+              "News-Simulation Spike"
+            ],
+            "correctLabels": [
+              "Counter-Trend Trap"
+            ],
+            "explanation": "The local pattern is clean, but fights a well-established higher-timeframe trend.",
+            "remediationLessons": [
+              "c5l3"
+            ]
+          },
+          {
+            "image": "chart-newsspike",
+            "candidateLabels": [
+              "Setup 4: Multi-Timeframe Confluence",
+              "Setup 5: Compression Breakout",
+              "Liquidity Sweep",
+              "Counter-Trend Trap",
+              "News-Simulation Spike"
+            ],
+            "correctLabels": [
+              "News-Simulation Spike"
+            ],
+            "explanation": "Volatility without any structural basis \u2014 not a Setup 5 breakout.",
+            "remediationLessons": [
+              "c5l3"
+            ]
+          },
+          {
+            "image": "scenario-withinbudget",
+            "candidateLabels": [
+              "Within Risk Budget",
+              "Exceeds Risk Budget",
+              "+2R Outcome",
+              "-1R Outcome",
+              "Margin Call"
+            ],
+            "correctLabels": [
+              "Within Risk Budget"
+            ],
+            "explanation": "Under the 2% single-trade warning threshold \u2014 within budget.",
+            "remediationLessons": [
+              "c5l4"
+            ]
+          },
+          {
+            "image": "scenario-exceedsbudget",
+            "candidateLabels": [
+              "Within Risk Budget",
+              "Exceeds Risk Budget",
+              "+2R Outcome",
+              "-1R Outcome",
+              "Margin Call"
+            ],
+            "correctLabels": [
+              "Exceeds Risk Budget"
+            ],
+            "explanation": "Above the 2% single-trade threshold \u2014 a risk-budget warning case.",
+            "remediationLessons": [
+              "c5l4"
+            ]
+          },
+          {
+            "image": "scenario-plus2r",
+            "candidateLabels": [
+              "Within Risk Budget",
+              "Exceeds Risk Budget",
+              "+2R Outcome",
+              "-1R Outcome",
+              "Margin Call"
+            ],
+            "correctLabels": [
+              "+2R Outcome"
+            ],
+            "explanation": "$10 profit against $5 risked is twice the risk \u2014 a +2R result.",
+            "remediationLessons": [
+              "c5l4"
+            ]
+          },
+          {
+            "image": "scenario-minus1r",
+            "candidateLabels": [
+              "Within Risk Budget",
+              "Exceeds Risk Budget",
+              "+2R Outcome",
+              "-1R Outcome",
+              "Margin Call"
+            ],
+            "correctLabels": [
+              "-1R Outcome"
+            ],
+            "explanation": "A full loss of the risked amount is exactly -1R.",
+            "remediationLessons": [
+              "c5l4"
+            ]
+          },
+          {
+            "image": "def-ict",
+            "candidateLabels": [
+              "ICT-Inspired Concepts",
+              "SMC (Smart Money Concepts)",
+              "Momentum Continuation",
+              "Setup 5: Compression Breakout",
+              "Setup 4: Multi-Timeframe Confluence"
+            ],
+            "correctLabels": [
+              "ICT-Inspired Concepts"
+            ],
+            "explanation": "ICT-inspired thinking centres on where liquidity (stop losses) clusters and how price is drawn to it.",
+            "remediationLessons": [
+              "c5l5"
+            ]
+          },
+          {
+            "image": "def-smc",
+            "candidateLabels": [
+              "ICT-Inspired Concepts",
+              "SMC (Smart Money Concepts)",
+              "Momentum Continuation",
+              "Setup 5: Compression Breakout",
+              "Setup 4: Multi-Timeframe Confluence"
+            ],
+            "correctLabels": [
+              "SMC (Smart Money Concepts)"
+            ],
+            "explanation": "SMC reasons about structure breaks as evidence of where larger participants are positioned.",
+            "remediationLessons": [
+              "c5l5"
+            ]
+          },
+          {
+            "image": "def-momentum",
+            "candidateLabels": [
+              "ICT-Inspired Concepts",
+              "SMC (Smart Money Concepts)",
+              "Momentum Continuation",
+              "Setup 5: Compression Breakout",
+              "Setup 4: Multi-Timeframe Confluence"
+            ],
+            "correctLabels": [
+              "Momentum Continuation"
+            ],
+            "explanation": "This framework trades in the direction of existing momentum rather than hunting reversals.",
+            "remediationLessons": [
+              "c5l5"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

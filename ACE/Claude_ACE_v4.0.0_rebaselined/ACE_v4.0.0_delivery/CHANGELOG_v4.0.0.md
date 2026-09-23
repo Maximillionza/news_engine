@@ -178,15 +178,25 @@ neither gets "fixed" a second time under the belief it's still missing.
 
 Default remains `ACEV4_EVIDENCE` (1) — unchanged behaviour unless you
 deliberately raise it. `ACEV4_CONDITIONAL`/`ACEV4_ACTIVE` are now REAL, not
-declared-and-inert: `CanActivate()` requires `TrendContinuation` specifically,
-`REGIME_TRENDING`, `samples >= InpAceV4AuthValidatedMin`, and
-`m_live[i].validated` — which itself requires positive recent AND long-term
-AND OOS-retained R, drawdown under 20R, and stability across both sample
-halves. That is a real, non-trivial gate, not a rubber stamp — but it has
-never fired once, on any data, because nothing has been backtested yet.
+declared-and-inert: `CanActivate()` (as of this addendum — see Addendum 14
+for the generalised version) requires `samples >= InpAceV4AuthValidatedMin`
+and `m_live[i].validated` for the setup's own archetype — which itself
+requires positive recent AND long-term AND OOS-retained R, drawdown under
+20R, and stability across both sample halves. That is a real, non-trivial
+gate, not a rubber stamp — but it has never fired once, on any data, because
+nothing has been backtested yet.
 Do not raise `InpAceV4Mode` above `ACEV4_EVIDENCE` on a live account before
 that validation gate has been exercised against real history and you've
 reviewed what it actually promoted and why.
+
+**Note (Addendum 14 supersedes the archetype/regime restriction described
+above):** at the time this addendum was written, `CanActivate()` additionally
+required the archetype to be `TrendContinuation` specifically and the regime
+to be `REGIME_TRENDING` — a hard-coded restriction on top of the validation
+gate, not a description of the gate itself. That restriction was removed in
+Addendum 14; the validation gate described in this paragraph is unchanged
+and still applies, now to whichever archetype the setup actually classified
+as.
 
 ---
 
@@ -1068,3 +1078,110 @@ ranges. Flagged here because it directly affects how much to trust
 `adaptive2.csv`/opportunity-log output, not because anything about it was
 changed in this build. Not fixed in this pass — no code change was made;
 this addendum is documentation of an operational gotcha, not a patch.
+
+---
+
+## Addendum 14 — CanActivate() and the shadow-model policies generalised to all 5 archetypes
+
+Traced a live trade on 2026-09-23 (SHORT, Manipulation regime, DNA matched
+TrendContinuation's evidence core at 4/5 — only the regime==TRENDING core
+item was unmet) back through `ProcessTrigger()`. Confirmed the trade
+executed via the legacy score cascade, not V4 — because `CanActivate()`
+would have rejected it outright regardless of the classifier outcome:
+regime was Manipulation, and `CanActivate()` required both
+`a == ARCH_TREND_CONTINUATION` and `regime == REGIME_TRENDING` as hard
+prerequisites, on top of the validation gate described in the "What this
+means for InpAceV4Mode" section above.
+
+**Confirmed first, before changing anything:** `Observe()` and the
+`m_live[i].validated` computation already run per-archetype-index for all
+five archetypes unconditionally (`adaptive2.csv` already showed live
+sample/win/OOS data for PullbackContinuation, LiquidityReversal, etc., not
+just TrendContinuation). So the learning/validation math was never
+archetype-restricted — only the execution-authority gate was. No archetype
+needs to "re-learn" anything as a result of this change; each one's
+existing sample history is picked up as-is.
+
+**Fixed — `CanActivate()` generalised** (`ASE_AdaptiveEngine.mqh`):
+removed the `a != ARCH_TREND_CONTINUATION` hard-reject and the blanket
+`regime != REGIME_TRENDING` reject. Each archetype's own
+`validated`/`samples`/`threshold` state (already tracked by `Observe()`)
+now gates its own authority. No regime check remains in `CanActivate()`
+itself — TrendContinuation's regime requirement is already enforced one
+layer up, as a CORE evidence item inside `CheckTrendContinuation()`
+(`ASE_SetupClassifier.mqh`): a setup can never even be *classified* as
+TrendContinuation outside Trending, so the duplicate check in
+`CanActivate()` was redundant for archetype 0 and wrongly blocking the
+other four, none of which carry a regime restriction in their own core
+check.
+
+**Fixed — `LivePolicy()`/`ShadowPolicyA()`/`ShadowPolicyB()` generalised**
+(same file): these had the identical `ARCH_TREND_CONTINUATION` +
+`REGIME_TRENDING` hard-lock, meaning the shadow-model A/B infrastructure
+was silently never testing a shadow policy against any archetype but
+TrendContinuation. Same fix applied — archetype/regime restriction removed,
+each policy now evaluates against whichever archetype/regime the setup
+actually has.
+
+**Fixed — APEX_B execution path reconciled between `LivePolicy()` and
+`CanActivate()`.** These had diverged: `LivePolicy()` (an advisory/logging
+flag only) gated grade B on `InpAceV4AllowBConditional && separation>=25.0`;
+`CanActivate()` (the actual execution-authority gate) gated grade B on
+`m_live[i].threshold<=80.0` alone and never consulted
+`InpAceV4AllowBConditional` at all — meaning that input, despite being
+documented as "APEX B may execute only when adaptive authority validates
+it," had zero effect on real execution authority. `CanActivate()` now takes
+an added `separation` argument and requires
+`InpAceV4AllowBConditional && separation>=25.0 && threshold<=80.0` for
+grade B — the union of both prior checks, which makes the live gate
+*stricter* than either was alone, not looser. Call site updated in
+`ASE_StateMachine.mqh` (`ProcessTrigger()`) to pass `v4conf.separation`
+through.
+
+**Follow-up, same session — fixed:** `CompressionExpansion`'s classifier
+core check now requires `regime == REGIME_COMPRESSION`
+(`CheckCompressionExpansion()`, `ASE_SetupClassifier.mqh`, core total
+raised 3→4). The original comment's reasoning for skipping this ("regime
+having just left COMPRESSION is not observable from one evidence set")
+doesn't hold up: `ASE_RegimeEngine`'s classifier applies a 2-consecutive-
+H1-bar stability/hysteresis rule before flipping regimes, so at the moment
+M15/M1 breakout evidence first fires, the regime tag has almost always not
+yet had time to flip away from COMPRESSION — it's directly observable via
+the same `regime` parameter every other archetype's core check already
+reads. Without this, the archetype (checked LAST in `Classify()`'s
+precedence order) was matching any regime's leftover compression-shaped
+evidence, including Manipulation, where a local micro-consolidation right
+before a stop-hunt sweep looks identical to the core-4 checklist but isn't
+the same setup.
+
+**Caution flagged alongside this fix, not resolved by it:** `InpCompressionMode`
+defaults to `0` (block all new entries) specifically because a 335-trade
+backtest showed Compression-regime trading at 16.2% win rate / PF 0.55 /
+−$532 net under the *legacy* cascade (`ASE_Config.mqh` comment, Fix 13).
+That backtest covers Compression-regime trades generally, not this specific
+5-evidence combination — but it's the same underlying market condition this
+archetype now correctly requires. Making the classifier semantically
+correct is not the same claim as this archetype being safe to let execute;
+that should wait for its own validated track record under
+`InpAceV4Mode >= ACEV4_CONDITIONAL`, same as every other archetype.
+
+**Compiled — 2026-09-26.** `ACE_v4.0.1.mq5` recompiled clean with all four
+changes above (generalised `CanActivate()`, generalised shadow policies,
+reconciled APEX_B path, `CompressionExpansion` regime gate).
+`ACE_v4.0.0.mq5` was deliberately left untouched/uncompiled — it remains
+the unmodified control build for the side-by-side comparison established
+in Addendum 5. `InpAceV4Mode` is still `ACEV4_EVIDENCE` by default in this
+build, so none of today's changes have execution effect yet; they change
+what gets classified/observed/shadow-tested going forward, not what
+trades. Next real checkpoint is the same as every prior addendum: enough
+live/backtest runtime to see `CompressionExpansion` actually classify
+under the new regime gate, and to confirm no v4-attributed trade appears
+before `InpAceV4Mode` is deliberately raised.
+
+**Not recompiled or deployed.** This addendum covers `ASE_AdaptiveEngine.mqh`
+and one call site in `ASE_StateMachine.mqh` — shared `#include` source
+between the live `ACE_v4.0.0.mq5` and `ACE_v4.0.1.mq5` builds currently
+running side by side. Neither running instance picks this up until a
+deliberate recompile; decide which build(s) should carry it before doing
+so, per the Fix 16 magic-number/version-tag isolation note this file
+already documents for exactly this two-builds-one-terminal scenario.

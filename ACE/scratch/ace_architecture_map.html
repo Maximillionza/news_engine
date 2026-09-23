@@ -1,0 +1,211 @@
+<title>ACE Pipeline Map</title>
+<style>
+:root{
+  --bg:#faf7f1; --surface:#ffffff; --surface-2:#f1ece1; --border:#ded5c2;
+  --text:#221d15; --text-dim:#6b6152; --accent:#8a5a2b; --accent-2:#2f6b52;
+  --warn:#a13f2c; --mono-bg:#eee6d4; --line:#c9bc9e;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#171410; --surface:#211d17; --surface-2:#2a251d; --border:#3a3327;
+    --text:#f1ead9; --text-dim:#a89a80; --accent:#d99a53; --accent-2:#5cbd93;
+    --warn:#e3785f; --mono-bg:#1c1811; --line:#4a4130; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#171410; --surface:#211d17; --surface-2:#2a251d; --border:#3a3327;
+  --text:#f1ead9; --text-dim:#a89a80; --accent:#d99a53; --accent-2:#5cbd93;
+  --warn:#e3785f; --mono-bg:#1c1811; --line:#4a4130; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--text);margin:0;padding-inline:16px;
+  font:15px/1.55 'IBM Plex Sans',system-ui,sans-serif;}
+h1,h2,h3{font-family:'IBM Plex Serif',Georgia,serif;font-weight:600;letter-spacing:-0.01em;}
+code{font-family:'IBM Plex Mono',ui-monospace,monospace;}
+.wrap{max-width:1040px;margin:0 auto;padding-block:32px 60px;}
+header h1{font-size:clamp(26px,5vw,36px);margin:0 0 6px;text-wrap:balance;}
+header p{color:var(--text-dim);margin:0 0 24px;max-width:66ch;}
+.diagram{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:8px;overflow-x:auto;}
+svg{display:block;min-width:940px;}
+.legend{display:flex;flex-wrap:wrap;gap:18px;margin:16px 0 32px;font-size:13px;color:var(--text-dim);}
+.legend span{display:inline-flex;align-items:center;gap:7px;}
+.swatch{width:12px;height:12px;border-radius:3px;display:inline-block;}
+section{margin:36px 0;}
+section h2{font-size:19px;margin:0 0 10px;}
+section p{color:var(--text);max-width:70ch;margin:0 0 10px;}
+.callout{background:var(--surface-2);border-left:3px solid var(--accent);padding:10px 14px;
+  border-radius:0 8px 8px 0;font-size:13.5px;color:var(--text-dim);margin:14px 0;}
+.callout b{color:var(--text);}
+footer{color:var(--text-dim);font-size:12.5px;border-top:1px solid var(--border);padding-top:16px;margin-top:40px;}
+</style>
+
+<div class="wrap">
+<header>
+<h1>ACE Pipeline Map</h1>
+<p>The 8-state loop every tick moves through, and the fork inside WAIT_TRIGGER where two independent decision systems run side by side — only one of which currently has the authority to place a trade.</p>
+</header>
+
+<div class="legend">
+<span><i class="swatch" style="background:var(--accent)"></i>State machine (always active)</span>
+<span><i class="swatch" style="background:var(--accent-2)"></i>Legacy score cascade — <b>this places every live trade today</b></span>
+<span><i class="swatch" style="background:var(--warn)"></i>V4 evidence / adaptive layer — observes &amp; learns only</span>
+</div>
+
+<div class="diagram">
+<svg viewBox="0 0 1400 760" xmlns="http://www.w3.org/2000/svg" font-family="IBM Plex Sans, system-ui, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--line)"/>
+    </marker>
+    <marker id="arrowAccent2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--accent-2)"/>
+    </marker>
+    <marker id="arrowWarn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--warn)"/>
+    </marker>
+  </defs>
+
+  <!-- ===== TOP ROW: state machine spine ===== -->
+  <g font-size="13" font-weight="600">
+    <!-- IDLE -->
+    <rect x="10" y="20" width="120" height="46" rx="9" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1.5"/>
+    <text x="70" y="48" text-anchor="middle" fill="var(--text)">IDLE</text>
+
+    <rect x="170" y="20" width="150" height="46" rx="9" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1.5"/>
+    <text x="245" y="42" text-anchor="middle" fill="var(--text)">WAIT_HTF</text>
+    <text x="245" y="58" text-anchor="middle" fill="var(--text-dim)" font-size="10" font-weight="400">H4/H1 bias vote</text>
+
+    <rect x="360" y="20" width="150" height="46" rx="9" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1.5"/>
+    <text x="435" y="42" text-anchor="middle" fill="var(--text)">WAIT_SETUP</text>
+    <text x="435" y="58" text-anchor="middle" fill="var(--text-dim)" font-size="10" font-weight="400">M15 pattern match</text>
+
+    <rect x="550" y="20" width="160" height="46" rx="9" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="2"/>
+    <text x="630" y="42" text-anchor="middle" fill="var(--text)">WAIT_TRIGGER</text>
+    <text x="630" y="58" text-anchor="middle" fill="var(--text-dim)" font-size="10" font-weight="400">the fork — see below</text>
+
+    <rect x="750" y="20" width="170" height="46" rx="9" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1.5"/>
+    <text x="835" y="42" text-anchor="middle" fill="var(--text)">WAIT_EXECUTION</text>
+    <text x="835" y="58" text-anchor="middle" fill="var(--text-dim)" font-size="10" font-weight="400">order sent to broker</text>
+
+    <rect x="960" y="20" width="130" height="46" rx="9" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1.5"/>
+    <text x="1025" y="42" text-anchor="middle" fill="var(--text)">MANAGE</text>
+    <text x="1025" y="58" text-anchor="middle" fill="var(--text-dim)" font-size="10" font-weight="400">trail / partial TP</text>
+
+    <rect x="1130" y="20" width="140" height="46" rx="9" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1.5"/>
+    <text x="1200" y="42" text-anchor="middle" fill="var(--text)">COOLDOWN</text>
+    <text x="1200" y="58" text-anchor="middle" fill="var(--text-dim)" font-size="10" font-weight="400">forced pause</text>
+
+    <path d="M130,43 H170" stroke="var(--line)" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M320,43 H360" stroke="var(--line)" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M510,43 H550" stroke="var(--line)" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M710,43 H750" stroke="var(--line)" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M920,43 H960" stroke="var(--line)" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M1090,43 H1130" stroke="var(--line)" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M1200,66 V90 Q1200,110 1180,110 H90 Q70,110 70,90 V66" fill="none" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#arrow)"/>
+    <text x="635" y="123" text-anchor="middle" fill="var(--text-dim)" font-size="10" font-weight="400">any gate failure at any stage also returns straight to IDLE (not drawn per-stage, for clarity)</text>
+  </g>
+
+  <!-- ===== THE FORK ===== -->
+  <text x="700" y="165" text-anchor="middle" fill="var(--text)" font-size="15" font-weight="700">Inside WAIT_TRIGGER: two systems evaluate the same tick, independently</text>
+  <path d="M630,66 V150" stroke="var(--accent)" stroke-width="2" stroke-dasharray="2 4"/>
+
+  <!-- Legacy column -->
+  <g font-size="12.5">
+    <rect x="60" y="190" width="560" height="440" rx="14" fill="none" stroke="var(--accent-2)" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <text x="340" y="215" text-anchor="middle" fill="var(--accent-2)" font-weight="700" font-size="14">LEGACY SCORE CASCADE — has execution authority</text>
+
+    <rect x="90" y="235" width="220" height="44" rx="8" fill="var(--surface-2)" stroke="var(--accent-2)"/>
+    <text x="200" y="262" text-anchor="middle" fill="var(--text)">M1 trigger evaluate (Disp / mBOS / Rejection / EMA)</text>
+
+    <rect x="350" y="235" width="240" height="44" rx="8" fill="var(--surface-2)" stroke="var(--accent-2)"/>
+    <text x="470" y="255" text-anchor="middle" fill="var(--text)">Regime-specific trigger filters</text>
+    <text x="470" y="270" text-anchor="middle" fill="var(--text-dim)" font-size="10">EMA-Fallback bans, weak-SHORT-in-Trending ban</text>
+
+    <rect x="90" y="305" width="220" height="44" rx="8" fill="var(--surface-2)" stroke="var(--accent-2)"/>
+    <text x="200" y="332" text-anchor="middle" fill="var(--text)">Score pre-filter (skip liq scan if unreachable)</text>
+
+    <rect x="350" y="305" width="240" height="44" rx="8" fill="var(--surface-2)" stroke="var(--accent-2)"/>
+    <text x="470" y="332" text-anchor="middle" fill="var(--text)">Liquidity sweep gate (if InpLiquidityConfirm)</text>
+
+    <rect x="150" y="375" width="340" height="48" rx="8" fill="var(--surface-2)" stroke="var(--accent-2)" stroke-width="2"/>
+    <text x="320" y="397" text-anchor="middle" fill="var(--text)" font-weight="600">Composite score ≥ regime threshold?</text>
+    <text x="320" y="412" text-anchor="middle" fill="var(--text-dim)" font-size="10">h4Bias+m15Setup+m1Trigger+vol+session+spread+liq</text>
+
+    <rect x="150" y="450" width="340" height="44" rx="8" fill="var(--accent-2)" opacity="0.15" stroke="var(--accent-2)" stroke-width="2"/>
+    <text x="320" y="477" text-anchor="middle" fill="var(--text)" font-weight="700">→ WAIT_EXECUTION (trade fires)</text>
+
+    <path d="M310,257 H350" stroke="var(--accent-2)" marker-end="url(#arrowAccent2)"/>
+    <path d="M470,279 V305" stroke="var(--accent-2)" marker-end="url(#arrowAccent2)"/>
+    <path d="M200,349 V375 M200,349 H320" stroke="var(--accent-2)" fill="none" marker-end="url(#arrowAccent2)"/>
+    <path d="M320,423 V450" stroke="var(--accent-2)" marker-end="url(#arrowAccent2)"/>
+    <path d="M470,349 V400 H490" stroke="var(--accent-2)" fill="none"/>
+
+    <rect x="90" y="520" width="500" height="90" rx="10" fill="var(--mono-bg)" stroke="var(--border)"/>
+    <text x="340" y="542" text-anchor="middle" fill="var(--text)" font-size="12" font-weight="600">This is what actually decided your v4.0.0 vs v4.0.1 entry-time gap</text>
+    <text x="340" y="562" text-anchor="middle" fill="var(--text-dim)" font-size="11">Same cascade, unchanged since v3.14.17 — the difference came from whatever</text>
+    <text x="340" y="577" text-anchor="middle" fill="var(--text-dim)" font-size="11">moved this composite score across threshold ~40min sooner, not the DNA evidence below.</text>
+  </g>
+
+  <!-- V4 column -->
+  <g font-size="12.5">
+    <rect x="660" y="190" width="680" height="440" rx="14" fill="none" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <text x="1000" y="215" text-anchor="middle" fill="var(--warn)" font-weight="700" font-size="14">V4 EVIDENCE / CONFLUENCE / ADAPTIVE — observation only (InpAceV4Mode = EVIDENCE)</text>
+
+    <rect x="690" y="235" width="280" height="44" rx="8" fill="var(--surface-2)" stroke="var(--warn)"/>
+    <text x="830" y="255" text-anchor="middle" fill="var(--text)">Collect ~15 evidence items</text>
+    <text x="830" y="270" text-anchor="middle" fill="var(--text-dim)" font-size="10">OB, FVG, KZ, AMD, macro-DXY, liq-pool, sweeps...</text>
+
+    <rect x="1000" y="235" width="300" height="44" rx="8" fill="var(--surface-2)" stroke="var(--warn)"/>
+    <text x="1150" y="262" text-anchor="middle" fill="var(--text)">Confluence engine → long/short score, separation</text>
+
+    <rect x="690" y="305" width="280" height="52" rx="8" fill="var(--surface-2)" stroke="var(--warn)"/>
+    <text x="830" y="324" text-anchor="middle" fill="var(--text)">Classifier: match 5 archetypes' core checklists</text>
+    <text x="830" y="339" text-anchor="middle" fill="var(--text-dim)" font-size="10">Trend/Pullback Continuation, Liquidity/Structural Reversal, Compression</text>
+    <text x="830" y="352" text-anchor="middle" fill="var(--text-dim)" font-size="10">first COMPLETE match wins → coreMet/coreTotal, Grade, DNA string</text>
+
+    <rect x="1000" y="305" width="300" height="52" rx="8" fill="var(--surface-2)" stroke="var(--warn)"/>
+    <text x="1150" y="326" text-anchor="middle" fill="var(--text)">Adaptive engine observes result</text>
+    <text x="1150" y="342" text-anchor="middle" fill="var(--text-dim)" font-size="10">per-archetype LIVE/SHADOW_A/SHADOW_B win-rate</text>
+    <text x="1150" y="356" text-anchor="middle" fill="var(--text-dim)" font-size="10">buckets, sample counts, OOS validation</text>
+
+    <rect x="820" y="385" width="360" height="48" rx="8" fill="var(--surface-2)" stroke="var(--warn)" stroke-width="2"/>
+    <text x="1000" y="407" text-anchor="middle" fill="var(--text)" font-weight="600">CanActivate()? mode ≥ CONDITIONAL, archetype validated,</text>
+    <text x="1000" y="421" text-anchor="middle" fill="var(--text-dim)" font-size="10">regime==TRENDING, grade ≥ APEX_B</text>
+
+    <rect x="700" y="455" width="330" height="44" rx="8" fill="var(--warn)" opacity="0.12" stroke="var(--warn)" stroke-width="2"/>
+    <text x="865" y="482" text-anchor="middle" fill="var(--text)" font-weight="700">NO (today's default) → log only, no trade</text>
+
+    <rect x="1050" y="455" width="260" height="44" rx="8" fill="var(--accent-2)" opacity="0.12" stroke="var(--accent-2)" stroke-width="2"/>
+    <text x="1180" y="482" text-anchor="middle" fill="var(--text)" font-weight="700">YES → jumps straight to WAIT_EXECUTION</text>
+
+    <path d="M970,257 H1000" stroke="var(--warn)" marker-end="url(#arrowWarn)"/>
+    <path d="M830,279 V305" stroke="var(--warn)" marker-end="url(#arrowWarn)"/>
+    <path d="M1150,279 V305" stroke="var(--warn)" marker-end="url(#arrowWarn)"/>
+    <path d="M830,357 V385 H820" stroke="var(--warn)" fill="none" marker-end="url(#arrowWarn)"/>
+    <path d="M1150,357 V385 H1180" stroke="var(--warn)" fill="none" marker-end="url(#arrowWarn)"/>
+    <path d="M950,433 V455 H865" stroke="var(--warn)" fill="none" marker-end="url(#arrowWarn)"/>
+    <path d="M1050,433 V455 H1180" stroke="var(--accent-2)" fill="none" marker-end="url(#arrowAccent2)"/>
+
+    <rect x="700" y="520" width="610" height="90" rx="10" fill="var(--mono-bg)" stroke="var(--border)"/>
+    <text x="1005" y="542" text-anchor="middle" fill="var(--text)" font-size="12" font-weight="600">This is where the Manipulation/TrendContinuation-4-of-5 setup lives</text>
+    <text x="1005" y="562" text-anchor="middle" fill="var(--text-dim)" font-size="11">Regime gate is hard-coded inside the classifier core check — a setup can never</text>
+    <text x="1005" y="577" text-anchor="middle" fill="var(--text-dim)" font-size="11">reach the adaptive bucket if regime≠TRENDING, no matter how often it repeats.</text>
+  </g>
+
+  <!-- shared exit -->
+  <path d="M320,494 V630 H835 V90" stroke="var(--accent-2)" stroke-width="1.5" fill="none" stroke-dasharray="4 3" marker-end="url(#arrowAccent2)"/>
+  <path d="M1180,499 V650 H835" stroke="var(--accent-2)" stroke-width="1.5" fill="none" stroke-dasharray="4 3"/>
+  <text x="700" y="648" text-anchor="middle" fill="var(--text-dim)" font-size="11">Both paths that reach WAIT_EXECUTION call the SAME ExecutionEngine — one broker, one risk/discipline layer, regardless of which system authorised it</text>
+</svg>
+</div>
+
+<section>
+<h2>What each color means for you, tuning-wise</h2>
+<p><b style="color:var(--accent-2)">Green box parameters</b> (Section 1–12 of the Tuning Map — risk, ATR, bias, sessions, scoring, regime profiles, execution resilience) are live: change one and your next trade behaves differently.</p>
+<p><b style="color:var(--warn)">Amber box parameters</b> (Tuning Map section 13–14 — V4 authority, adaptive thresholds, evidence detectors) currently only reshape what gets logged and what the adaptive engine learns from. They become live the moment <code>InpAceV4Mode</code> moves to <code>CONDITIONAL</code> or <code>ACTIVE</code> — at which point the amber path can jump straight to WAIT_EXECUTION, same as the green one.</p>
+<div class="callout"><b>The one thing to hold onto</b> — right now you effectively have one trading system and one research system running on the same tick, sharing a chart and a magic number, but only one of them can pull a trigger. Every "why did it enter here" question should start on the green side; every "should this become an archetype" question lives on the amber side.</div>
+</section>
+
+<footer>Traced directly from ASE_StateMachine.mqh (ProcessTrigger), ASE_TriggerEngine.mqh, ASE_SetupClassifier.mqh and ASE_AdaptiveEngine.mqh — current v4.0.1 working tree.</footer>
+</div>

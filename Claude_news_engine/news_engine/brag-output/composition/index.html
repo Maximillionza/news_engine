@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <title>News Fundamental Engine — Brag</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 1920px; height: 1080px; overflow: hidden;
+        background: #fafafa; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #fafafa; }
+      .clip { position: absolute; inset: 0; }
+
+      /* ---------- shared ---------- */
+      .headline {
+        position: absolute; top: 96px; left: 50%; transform: translateX(-50%);
+        font-size: 44px; font-weight: 700; letter-spacing: 0.04em; color: #222;
+        text-transform: uppercase;
+      }
+      .kicker {
+        position: absolute; bottom: 84px; left: 50%; transform: translateX(-50%);
+        font-size: 24px; color: #666; letter-spacing: 0.03em;
+      }
+
+      /* ---------- scene 1: hook meter ---------- */
+      #s1-symbol { position: absolute; top: 360px; left: 50%; transform: translateX(-50%);
+        font-size: 30px; font-weight: 700; color: #222; letter-spacing: 0.02em; }
+      #s1-bar-wrap { position: absolute; top: 430px; left: 50%; width: 900px; margin-left: -450px; }
+      .meter-bar {
+        position: relative; height: 28px; border-radius: 14px;
+        background: linear-gradient(to right, #c62828, #ddd 48%, #ddd 52%, #2e7d32);
+        border: 1px solid #ddd;
+      }
+      .meter-needle {
+        position: absolute; top: -10px; width: 6px; height: 48px; border-radius: 3px;
+        background: #222;
+      }
+      .meter-labels { display: flex; justify-content: space-between; margin-top: 14px;
+        font-size: 20px; color: #666; letter-spacing: 0.05em; }
+      #s1-readout { position: absolute; top: 560px; left: 0; right: 0; text-align: center;
+        font-size: 56px; font-weight: 800; color: #2e7d32; }
+      #s1-title { position: absolute; top: 700px; left: 0; right: 0; text-align: center;
+        font-size: 64px; font-weight: 800; letter-spacing: 0.06em; color: #222; text-transform: uppercase; }
+
+      /* ---------- scene 2: dashboard cards ---------- */
+      .dash-cards { position: absolute; top: 300px; left: 50%; transform: translateX(-50%);
+        display: flex; gap: 48px; }
+      .dash-card { width: 520px; background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 32px; }
+      .dash-card h3 { font-size: 30px; color: #222; margin-bottom: 8px; }
+      .dash-card .sub { font-size: 18px; color: #666; margin-bottom: 22px; }
+      .dash-card .meter-bar { height: 20px; border-radius: 10px; }
+      .dash-card .meter-needle { height: 36px; top: -8px; width: 5px; }
+      .dash-card .readout { margin-top: 16px; font-size: 26px; font-weight: 700; color: #2e7d32; }
+      .reversal-badge {
+        margin-top: 20px; background: #fff3cd; border: 1px solid #e0c46c; border-radius: 8px;
+        padding: 14px 18px; font-size: 18px; color: #7a5c00;
+      }
+      .reversal-badge b { color: #c62828; }
+
+      /* ---------- scene 3: calendar ---------- */
+      #cal-grid { position: absolute; top: 300px; left: 50%; transform: translateX(-50%);
+        display: grid; grid-template-columns: repeat(7, 140px); grid-gap: 14px; }
+      .cal-cell { width: 140px; height: 110px; background: #fff; border: 1px solid #ddd; border-radius: 8px;
+        padding: 10px; font-size: 18px; color: #444; position: relative; }
+      .cal-dots { position: absolute; bottom: 12px; left: 12px; display: flex; gap: 6px; }
+      .cal-dot { width: 12px; height: 12px; border-radius: 50%; }
+      .dot-high { background: #c62828; }
+      .dot-med { background: #e08a2e; }
+      .dot-grey { background: #bbb; }
+
+      /* ---------- scene 4: history scorecard ---------- */
+      #hist-header { position: absolute; top: 280px; left: 0; right: 0; text-align: center; }
+      #hist-header .stat-line { font-size: 46px; font-weight: 800; color: #222; }
+      #hist-header .stat-line b { color: #c62828; }
+      #hist-table { position: absolute; top: 420px; left: 50%; transform: translateX(-50%);
+        width: 1200px; background: #fff; border: 1px solid #ddd; border-radius: 10px; overflow: hidden; }
+      #hist-table .row {
+        display: grid; grid-template-columns: 1.6fr 1fr 1fr 0.6fr; align-items: center;
+        padding: 16px 28px; border-bottom: 1px solid #eee; font-size: 22px; color: #333;
+      }
+      #hist-table .row:last-child { border-bottom: none; }
+      #hist-table .event { font-weight: 600; color: #222; }
+      #hist-table .event .date { display: block; font-size: 16px; color: #666; font-weight: 400; }
+      #hist-table .pred { color: #2e7d32; font-weight: 600; }
+      .outcome-wrong { color: #c62828; font-weight: 800; text-align: right; }
+      .outcome-correct { color: #2e7d32; font-weight: 800; text-align: right; }
+
+      /* ---------- scene 5: shock alerts ---------- */
+      #alert-stack { position: absolute; top: 300px; left: 50%; transform: translateX(-50%); width: 1300px; }
+      .alert-card {
+        background: #fff; border: 1px solid #ddd; border-left: 6px solid #c62828; border-radius: 6px;
+        padding: 24px 28px; margin-bottom: 20px;
+      }
+      .alert-card.medium { border-left-color: #e08a2e; }
+      .alert-card .tag { font-size: 16px; text-transform: uppercase; letter-spacing: 0.06em; color: #666; font-weight: 700; }
+      .alert-card h4 { font-size: 26px; color: #222; margin: 8px 0 10px; font-weight: 700; }
+      .alert-card .err { font-family: "Courier New", monospace; font-size: 16px; color: #a33; background: #fff6f6;
+        border: 1px solid #f0d0d0; border-radius: 4px; padding: 10px 14px; }
+
+      /* ---------- scene 6: outro ---------- */
+      #outro { display: flex; align-items: center; justify-content: center; }
+      #outro-text { text-align: center; }
+      #outro-text .name { font-size: 52px; font-weight: 800; color: #222; }
+      #outro-text .tag { margin-top: 18px; font-size: 28px; color: #666; }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-at0g" id="root" data-composition-id="main" data-start="0" data-duration="20" data-width="1920" data-height="1080">
+
+      <!-- SCENE 1: 0 - 3s — the meter hook -->
+      <section data-hf-id="hf-ciki" id="scene1" class="clip" data-start="0" data-duration="3" data-track-index="0">
+        <div data-hf-id="hf-4bo8" id="s1-symbol">XAUUSD</div>
+        <div data-hf-id="hf-mgy6" id="s1-bar-wrap">
+          <div data-hf-id="hf-7683" class="meter-bar">
+            <div data-hf-id="hf-wx72" id="s1-needle" class="meter-needle" style="left:0"></div>
+          </div>
+          <div data-hf-id="hf-4it5" class="meter-labels"><span data-hf-id="hf-jag7">BEAR</span><span data-hf-id="hf-v2vw">BULL</span></div>
+        </div>
+        <div data-hf-id="hf-j919" id="s1-readout">BUY 53%</div>
+        <div data-hf-id="hf-fq8h" id="s1-title">Live Market Intelligence</div>
+      </section>
+
+      <!-- SCENE 2: 3 - 7s — dashboard cards -->
+      <section data-hf-id="hf-4kdj" id="scene2" class="clip" data-start="3" data-duration="4" data-track-index="0">
+        <div data-hf-id="hf-vsj4" class="headline">Two Markets. Every Major Print.</div>
+        <div data-hf-id="hf-aa7y" class="dash-cards">
+          <div data-hf-id="hf-h5cl" id="card-us30" class="dash-card">
+            <h3 data-hf-id="hf-562z">US30</h3>
+            <div data-hf-id="hf-p0yi" class="sub">Unemployment Claims — 2:30 PM</div>
+            <div data-hf-id="hf-qchv" class="meter-bar"><div data-hf-id="hf-zt0e" class="meter-needle" style="left:54%"></div></div>
+            <div data-hf-id="hf-h7ok" class="readout">BUY 54%</div>
+          </div>
+          <div data-hf-id="hf-eh3q" id="card-xau" class="dash-card">
+            <h3 data-hf-id="hf-ez86">XAUUSD</h3>
+            <div data-hf-id="hf-v3ge" class="sub">Unemployment Claims — 2:30 PM</div>
+            <div data-hf-id="hf-py6u" class="meter-bar"><div data-hf-id="hf-3f5z" class="meter-needle" style="left:53%"></div></div>
+            <div data-hf-id="hf-7ndn" class="readout">BUY 53%</div>
+            <div data-hf-id="hf-cai8" id="reversal" class="reversal-badge">Reversal: was SELL 55% → now <b data-hf-id="hf-wvmf">BUY 54%</b></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCENE 3: 7 - 10s — calendar heatmap -->
+      <section data-hf-id="hf-k4d1" id="scene3" class="clip" data-start="7" data-duration="3" data-track-index="0">
+        <div data-hf-id="hf-sqau" class="headline">Every High-Impact Release, Mapped.</div>
+        <div data-hf-id="hf-86h0" id="cal-grid"></div>
+      </section>
+
+      <!-- SCENE 4: 10 - 16s — the scorecard -->
+      <section data-hf-id="hf-3yjf" id="scene4" class="clip" data-start="10" data-duration="6" data-track-index="0">
+        <div data-hf-id="hf-vau9" id="hist-header">
+          <div data-hf-id="hf-6wvf" class="stat-line">Overall (last 200 events): <b data-hf-id="hf-f3dc">20/43 correct (47%)</b>, 12 no-call</div>
+        </div>
+        <div data-hf-id="hf-ha1e" id="hist-table">
+          <div data-hf-id="hf-thy4" class="row"><div data-hf-id="hf-er4a" class="event">FOMC Press Conference<span data-hf-id="hf-1lxm" class="date">Sep 16</span></div><div data-hf-id="hf-135b">US30</div><div data-hf-id="hf-jed0" class="pred">Bullish (19% conf)</div><div data-hf-id="hf-7oqp" class="outcome-wrong">Wrong</div></div>
+          <div data-hf-id="hf-lt04" class="row"><div data-hf-id="hf-ov0w" class="event">Retail Sales m/m<span data-hf-id="hf-ahhq" class="date">Sep 16</span></div><div data-hf-id="hf-ktgq">XAUUSD</div><div data-hf-id="hf-tyr1" class="pred">Bullish (36% conf)</div><div data-hf-id="hf-1lp1" class="outcome-wrong">Wrong</div></div>
+          <div data-hf-id="hf-km31" class="row"><div data-hf-id="hf-6xvu" class="event">Core CPI m/m<span data-hf-id="hf-3lgr" class="date">Sep 11</span></div><div data-hf-id="hf-ama7">US30</div><div data-hf-id="hf-u05a" class="pred">Bullish (17% conf)</div><div data-hf-id="hf-2sm4" class="outcome-wrong">Wrong</div></div>
+          <div data-hf-id="hf-l0e2" class="row"><div data-hf-id="hf-r59n" class="event">Nonfarm Payrolls<span data-hf-id="hf-kcp0" class="date">Sep 5</span></div><div data-hf-id="hf-bi0e">XAUUSD</div><div data-hf-id="hf-eyro" class="pred">Bearish (41% conf)</div><div data-hf-id="hf-81jl" class="outcome-correct">Correct</div></div>
+          <div data-hf-id="hf-mzx7" class="row"><div data-hf-id="hf-q961" class="event">PCE Price Index<span data-hf-id="hf-kagt" class="date">Aug 29</span></div><div data-hf-id="hf-a7z6">US30</div><div data-hf-id="hf-8sdq" class="pred">Bullish (22% conf)</div><div data-hf-id="hf-2eb3" class="outcome-wrong">Wrong</div></div>
+        </div>
+      </section>
+
+      <!-- SCENE 5: 16 - 18s — the error hiding in plain sight -->
+      <section data-hf-id="hf-7ahk" id="scene5" class="clip" data-start="16" data-duration="2" data-track-index="0">
+        <div data-hf-id="hf-4zsu" class="headline">Every Signal, Same Straight Face.</div>
+        <div data-hf-id="hf-1dcm" id="alert-stack">
+          <div data-hf-id="hf-84t5" class="alert-card">
+            <div data-hf-id="hf-kc8c" class="tag">High — Energy</div>
+            <h4 data-hf-id="hf-czw3">U.S. oil falls below $100 as Saudi Arabia reportedly offers more crude via Hormuz</h4>
+          </div>
+          <div data-hf-id="hf-d106" class="alert-card medium">
+            <div data-hf-id="hf-2omx" class="tag">Medium — Geopolitical Conflict</div>
+            <h4 data-hf-id="hf-b8hs">UN mission finds evidence signaling U.S. war crimes in Iran; Washington rejects report</h4>
+            <div data-hf-id="hf-co32" class="err">LLM classification failed (Error code: 400) — "credit balance is too low" — falling back to rule-tier category.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCENE 6: 18 - 20s — outro -->
+      <section data-hf-id="hf-uu9p" id="scene6" class="clip" data-start="18" data-duration="2" data-track-index="0" style="display:flex; align-items:center; justify-content:center;">
+        <div data-hf-id="hf-v55u" id="outro-text">
+          <div data-hf-id="hf-clq9" class="name">News Fundamental Engine</div>
+          <div data-hf-id="hf-axi8" class="tag">Right about half the time. We show our work.</div>
+        </div>
+      </section>
+
+      <!-- audio -->
+      <audio data-hf-id="hf-xhgj" id="bg-music" data-start="0" data-duration="18" data-track-index="10" data-volume="0.15" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+      <audio data-hf-id="hf-cw98" id="sfx-needle" data-start="0.85" data-duration="0.11" data-track-index="11" data-volume="0.5" src="assets/sfx/interface/drop_001.ogg"></audio>
+      <audio data-hf-id="hf-wf3i" id="sfx-card1" data-start="3.15" data-duration="0.19" data-track-index="12" data-volume="0.45" src="assets/sfx/interface/drop_002.ogg"></audio>
+      <audio data-hf-id="hf-lq45" id="sfx-card2" data-start="3.65" data-duration="0.19" data-track-index="13" data-volume="0.45" src="assets/sfx/interface/drop_002.ogg"></audio>
+      <audio data-hf-id="hf-m0ng" id="sfx-row1" data-start="12.4" data-duration="0.12" data-track-index="14" data-volume="0.35" src="assets/sfx/impact/impactSoft_medium_000.ogg"></audio>
+      <audio data-hf-id="hf-dohn" id="sfx-row2" data-start="12.9" data-duration="0.19" data-track-index="15" data-volume="0.35" src="assets/sfx/impact/impactSoft_medium_001.ogg"></audio>
+      <audio data-hf-id="hf-2u53" id="sfx-row3" data-start="13.4" data-duration="0.12" data-track-index="16" data-volume="0.35" src="assets/sfx/impact/impactSoft_medium_000.ogg"></audio>
+      <audio data-hf-id="hf-htms" id="sfx-row4" data-start="13.9" data-duration="0.19" data-track-index="17" data-volume="0.35" src="assets/sfx/impact/impactSoft_medium_001.ogg"></audio>
+      <audio data-hf-id="hf-pfxe" id="sfx-row5" data-start="14.4" data-duration="0.12" data-track-index="18" data-volume="0.35" src="assets/sfx/impact/impactSoft_medium_000.ogg"></audio>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+
+      /* ---------- Scene 1 ---------- */
+      tl.fromTo("#s1-needle", { x: 177 }, { x: 471, duration: 0.7, ease: "power2.out" }, 0.15);
+      tl.fromTo("#s1-readout", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.3 }, 0.8);
+      tl.fromTo("#s1-title", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 1.0);
+
+      /* ---------- Scene 2 ---------- */
+      tl.fromTo("#card-us30", { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 3.15);
+      tl.fromTo("#card-xau", { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 3.65);
+      tl.fromTo("#reversal", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.35 }, 4.2);
+
+      /* ---------- Scene 3: build calendar grid + populate dots ---------- */
+      (function buildCalendar() {
+        const grid = document.getElementById("cal-grid");
+        const days = 28;
+        const dotPlan = { 8: ["grey"], 12: ["med", "grey"], 16: ["med", "grey", "grey", "high", "grey"], 20: ["med", "grey"] };
+        for (let i = 1; i <= days; i++) {
+          const cell = document.createElement("div");
+          cell.className = "cal-cell";
+          cell.innerHTML = i + '<div class="cal-dots" id="cal-dots-' + i + '"></div>';
+          grid.appendChild(cell);
+          if (dotPlan[i]) {
+            const dotsWrap = cell.querySelector(".cal-dots");
+            dotPlan[i].forEach((kind) => {
+              const dot = document.createElement("span");
+              dot.className = "cal-dot dot-" + kind;
+              dotsWrap.appendChild(dot);
+            });
+          }
+        }
+      })();
+      tl.fromTo(".cal-dot", { opacity: 0, scale: 0 },
+        { opacity: 1, scale: 1, duration: 0.25, ease: "back.out(2)", stagger: 0.06 }, 7.3);
+
+      /* ---------- Scene 4 ---------- */
+      tl.fromTo("#hist-header", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.4 }, 10.2);
+      tl.fromTo("#hist-table .row", { opacity: 0, y: 14 },
+        { opacity: 1, y: 0, duration: 0.3, stagger: 0.5 }, 12.4);
+
+      /* ---------- Scene 6 ---------- */
+      tl.fromTo("#outro-text", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 18.15);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

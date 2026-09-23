@@ -68,31 +68,55 @@ Monthly structured events. Users compete on a defined metric (e.g. highest % acc
 
 ---
 
-### 4.2 Learning Module
+### 4.2 Course Catalogue (formerly "Learning Module" — restructured v0.3, revised v0.4)
 
-**FR-005: Core curriculum — 7 sections**
-1. What is a financial market
-2. How to read a candlestick chart
-3. Market structure
-4. What is a confluence (5 core setups — see CONTENT_SPEC.md)
-5. Risk management (lot size, SL, pip value, risk %)
-6. Margin and leverage
-7. What is a trading plan
+The single 7-section Learning Module is restructured into a **5-course catalogue**: 1 Basic + 3 Intermediate courses (free) + 1 Advanced course (paywalled — see MONETISATION.md §0 for the pricing decision and the reasoning for this documented exception to the no-paywall-on-education principle). Full lesson-by-lesson content lives in CONTENT_SPEC.md §5 and COURSE_CATALOGUE.md.
 
-**FR-006: Module format**
-- Slide-based, illustration per slide, max 8 slides per section
-- 3-question quiz at end of each section (2/3 to pass, unlimited retries)
+**FR-005: Course catalogue structure**
+
+| # | Course | Tier | Access | Lessons |
+|---|---|---|---|---|
+| 1 | Market Foundations | Basic | Free | 9 |
+| 2 | Confluence & Setups | Intermediate | Free | 5 |
+| 3 | Risk & Money Management | Intermediate | Free | 4 |
+| 4 | Trading Plans & Discipline | Intermediate | Free | 4 |
+| 5 | Multi-Timeframe Mastery & Advanced Strategies | Advanced | **Paywalled** | 5 |
+
+Courses are sequential by default (Basic → Advanced) but not access-gated on each other — a user may jump to any unlocked course. The Advanced course tile shows a lock state with price and "Unlock with Pro" until purchased or subscribed (see UX Rules — mini-game tab precedent: locked state is shown here, unlike the hidden-tab pattern for mini-games, because a course a user hasn't paid for is a legitimate upsell surface, not a progression reward).
+
+**[v0.4]** Market Foundations expanded from 4 to 9 lessons after user feedback that the original pacing read as intermediate rather than basic. It now opens with a plain-language trading-terms primer and a dedicated candlestick track (What Is a Candle → Types of Candles → Candle Formations → Most Common Candle Patterns), BabyPips-style, before reaching timeframes and market structure. See CONTENT_SPEC.md §5.
+
+**FR-006: Lesson format**
+- Slide-based, illustration per slide, max 8 slides per lesson
+- 3-question quiz at end of every lesson (2/3 to pass, unlimited retries)
 - Progress saved, resumable
+- Every course ends with a **Test Your Knowledge** prompted multi-label assessment (FR-036) covering that course's concepts
 
 **FR-007: Learning badge on completion**
-- Beginner → Bronze Learning Badge
-- Amateur → Silver Learning Badge
-- Professional → Gold Learning Badge
+- Beginner → Bronze Learning Badge (Basic course only)
+- Amateur → Silver Learning Badge (Basic + 3 Intermediate)
+- Professional → Gold Learning Badge (all 5 courses, including Advanced)
 
-**FR-008: Risk management module (standalone)**
-- Always accessible from main menu and Career Mode session screen
+**FR-008: Risk management content (standalone access)**
+- The Risk & Money Management course is always accessible from the main menu and Career Mode session screen, independent of course sequence
 - Covers lot sizing, SL placement, margin, risk % worked examples
-- Not gated behind main module completion
+- Not gated behind Basic course completion
+
+**FR-036: Test Your Knowledge (prompted multi-label assessment) — [REVISED v0.4]**
+- Available per-course after all lessons in that course are viewed, and as a combined cross-course mode from the main menu
+- Mechanic: one image is shown at a time, alongside up to 5 candidate labels; the user selects every label that genuinely applies to that image before moving to the next (an image may have one correct label or several — this replaced an earlier one-label-per-target drag-and-drop board after user feedback that the board felt too "list format")
+- On finishing the last image: shows a full review (every image, every label decision marked correct/incorrect) plus an overall score
+- Scoring is **judgment accuracy**: every label decision (correctly selected or correctly left unselected) counts, not just whether each image was fully "solved"
+- **Pass threshold: 70% of all label decisions.** Below 70%, the result screen routes the user back into the specific lesson(s) covering the missed concepts (not just the course start) with a "Review this, then retry" CTA
+- At or above 70%: pass state, badge/progress credit awarded, "Retry for a higher score" remains available (does not lower a previously achieved pass)
+- Unlimited retries, no cooldown — this is formative practice, not a gate with consequences beyond routing
+- Content requirements (item banks, per-course) in CONTENT_SPEC.md §6
+- **Future enhancement, not yet scoped:** a spatial variant using real chart snapshots where the user clicks the specific location on the chart where a prompted concept appears, rather than tagging the image as a whole — deferred per explicit user instruction (CONTENT_SPEC.md §6)
+
+**FR-037: Course paywall gate**
+- Attempting to open a locked course (Advanced, pre-purchase) shows a preview: course title, lesson list, first lesson free-to-preview, "Unlock" CTA → Shop
+- Never interstitial, never blocking navigation elsewhere in the app (consistent with UX Rule 1 in FEATURE_SPEC.md)
+- Entitlement check: `course_advanced` (see MONETISATION.md §4)
 
 ---
 
@@ -385,7 +409,8 @@ Full badge catalogue in GAME_DESIGN.md.
 | Day-7 retention | 18% |
 | Day-30 retention | 10% |
 | Sessions per active user per week | 4 |
-| Learning module completion (Beginner) | 70% |
+| Basic course completion (Beginner) | 70% |
+| Advanced course conversion (of Silver-badge users) | 10% |
 | IAP conversion (any purchase) | 8% of 30-day actives |
 | Subscription conversion | 12% of 30-day actives |
 | Career Mode blow-up rate (first 30 days) | Track only — no target yet |

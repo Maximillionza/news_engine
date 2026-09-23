@@ -184,7 +184,7 @@ input bool   InpKillZoneEnabled    = true;   // Score kill zones at 10.0 (vs Ove
 // Default values match GOLD/FX standard sessions.
 // To use ICT kill zones only: London 08:00–11:00, NY 13:00–16:00.
 // To use DAX Frankfurt-led:   London 07:00–10:00, NY 13:00–17:30.
-input int    InpLondonStartHour    = 7;      // London open  — hour   (UTC)
+input int    InpLondonStartHour    = 6;      // London open  — hour   (UTC)
 input int    InpLondonStartMin     = 0;      // London open  — minute (UTC)
 input int    InpLondonEndHour      = 12;     // London close — hour   (UTC)
 input int    InpLondonEndMin       = 30;     // London close — minute (UTC)
@@ -301,10 +301,10 @@ input bool   InpOffSessionBiasGuard = true; // Block Off-Session entries before 
 // accumulating and to avoid overwriting live trade records with
 // backtest data. When disabled, NO files are opened or written —
 // the logger is a complete no-op.
-input bool   InpStateLogEnabled    = false;  // Write daily CSV state log (disable on live)
+input bool   InpStateLogEnabled    = true;  // Write daily CSV state log (disable on live)
 
 // ── News ──────────────────────────────────────────────────────────
-input int    InpNewsBlockMinutes   = 30;    // Minutes to block around news
+input int    InpNewsBlockMinutes   = 0;    // Minutes to block around news
 
 // ── Walk-Forward / Anti-Curve-Fit ─────────────────────────────────
 input int    InpHoldoutDays        = 90;    // Holdout period (days, 0=disabled)

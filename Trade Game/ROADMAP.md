@@ -1,7 +1,10 @@
 # ROADMAP.md — TradeWise Delivery Roadmap
 
-**Version:** 0.3 (Risk-hardened)  
+**Version:** 0.6  
 **Owner:** Masood  
+**Change from v0.5:** Phase 6 expanded with a new alternative "$299 Mentor Package" plan (up to 250 free-access members bundled with the Mentor's own membership), optional (not mandatory) course authoring, tier re-bucketing on a Mentor's own course, a PC-only Web App authoring tool, embedded video-link uploads, and the paywall-auto-unlock-on-join rule — all per Masood's 2026-08-25 follow-up. Several new open questions logged (billing cadence, overflow beyond 250 users, coexistence with the per-user plan).
+**Change from v0.4:** Phase 6 revenue split resolved (flat $1/active-user Mentor payout — platform-side pricing cliff still open) and live-event Q&A chat mechanic clarified, both per Masood's 2026-08-25 follow-up. Course 1 (Market Foundations) expanded from 4 to 9 lessons and Test Your Knowledge redesigned as prompted multi-label tagging — see CONTENT_SPEC.md §5–6, PRD.md §4.2.
+**Change from v0.3:** Added Phase 6 (Mentor Program & Live Events) — proposed and logged at Masood's request on 2026-08-25, not yet viable to build, open pricing/infrastructure questions flagged inline. All prior content unchanged.
 **Change from v0.2:** All mitigations from RISK_REGISTER.md integrated as explicit checkboxes. New milestones 0.6 (economy model) and 0.7 (App Store pre-submission) added. Phase 1 exit criteria tightened. Launch buffer added.
 
 ---
@@ -426,6 +429,57 @@
 
 ---
 
+## Phase 6 — Mentor Program & Live Events
+
+**Status: Proposed, 2026-08-25. Logged at Masood's request. NOT viable to build now — no backend, payment infrastructure, or content-moderation pipeline exists yet (Phase 0 status per CLAUDE.md). This section documents the requirement precisely as given so design work can start without losing detail; it does not commit to the open questions raised below.**
+
+**Prerequisite:** MVP live with proven retention (same bar as Phase 3/4) — a creator marketplace and live-streaming feature are both significant net-new surface area, not incremental features on the existing course catalogue.
+
+### 6.1 — Mentor Program
+
+A Mentor is a paying user tier that can build and sell course content to their own enrolled users.
+
+- [ ] Mentor subscription: **$9.99/month**. Grants: all 5 course tiers unlocked (including the Advanced course, at no extra charge) for the Mentor's own account, plus access to the course-authoring tools below.
+- [ ] **Authoring is optional, not required — clarified 2026-08-25:** a Mentor does not have to build course material from scratch. By default they can simply customise their own "start course" using the prebuilt app defaults (the existing 5-course library) as-is or lightly re-branded. Building an original course is available but is the advanced path, not the on-ramp.
+- [ ] Mentor can create and structure their own course material, using COURSE_CATALOGUE.md's library (all tiers) as reusable building blocks
+- [ ] **Tier re-bucketing — clarified 2026-08-25:** course material is in tier buckets (Basic/Intermediate/Advanced) by default, but when a Mentor is building their own course, they may move an item from one tier bucket to another at their discretion (e.g. an Intermediate lesson into their course's "Basic" section, or vice versa). This is a per-Mentor-course override, not a change to the canonical TradeWise tier assignment.
+- [ ] **Course-building requires a desktop — clarified 2026-08-25:** the authoring tool is a companion **Web App**, not a screen inside the mobile app. Building/editing a Mentor's own course needs a PC; consuming it as an enrolled member still works on mobile as normal.
+- [ ] **Mentor-uploaded material — clarified 2026-08-25:** course text, images, and a **video link** (not an uploaded video file) which TradeWise embeds in-platform, so playback never redirects the member outside the app and no video needs to be hosted on TradeWise's own infrastructure or the Mentor's device. (Slides/documents/quizzes as originally scoped are still separate open items — see below.)
+- [ ] Mentor's enrolled users pay **$1.99/month** standard
+- [ ] Volume discount: Mentors with **50 or more enrolled users** get their users' price reduced to **$1.50/month** (a $0.49 discount)
+- [ ] **Paywall auto-unlock — clarified 2026-08-25:** for a member who joins under a Mentor, the paywall unlocks automatically on joining — access is bundled into their Mentor-membership payment, not a separate purchase. **Price-point note, my read of Masood's instruction, unconfirmed:** for a Mentor-sourced member the relevant unlock price is the **$1.99** membership fee, not the standalone **$6.99** one-time Advanced-course price quoted elsewhere in this doc set (MONETISATION.md §2.1a, COURSE_CATALOGUE.md) — that $6.99 price is for a non-Mentor user buying the Advanced course directly and is untouched by this note. No Mentor-member paywall screen exists yet to get this wrong in practice; this is guidance for whenever one is built.
+
+**Revenue split — resolved 2026-08-25:** the Mentor receives a flat **$1.00 per active enrolled user**, regardless of whether that user is on the $1.99 or discounted $1.50 tier. The platform retains the remainder ($0.99/user at full price, $0.50/user at the discounted price).
+
+**New alternative plan — "$299 Mentor Package", proposed 2026-08-25, not priced/built:** instead of (or alongside) the per-user model above, a bundled package where the Mentor pays **$299** covering their own Mentor Membership plus **up to 250 of their enrolled users at no cost to those users** ("members are free from the costs"). Masood's stated net breakdown: **$250 + the Mentor fee + an additional ~$40** (≈ $250 + $9.99 + $40 ≈ $299) — the $250 read most naturally as 250 free-access users valued at $1 each (the same $1/user figure as the standard plan, here flowing the other way: the Mentor prepays it instead of the platform paying it out). Masood has flagged the ~$40 as currently un-backed margin, to be justified later by adding to the value proposition — not a blocker to using this structure now.
+
+**Open questions — need Masood's decision before this can be priced or built (not resolved by this document):**
+- [ ] **Discount mechanics — pricing cliff partially resolved, platform-revenue side still open:** the flat $1/user Mentor payout removes the cliff from the *Mentor's* income (49 users × $1 = $49 vs 50 × $1 = $50 — smooth). But the *platform's* retained share still cliffs hard at the 50-user threshold: 49 users at $1.99 → platform keeps 49 × $0.99 = $48.51/month; 50 users at $1.50 → platform keeps 50 × $0.50 = $25.00/month. Total cohort revenue to the platform drops sharply at the exact threshold a Mentor is meant to be rewarded for reaching. A marginal discount (only users 50+ get $1.50, users 1–49 stay at $1.99) avoids this cliff entirely and is the more standard SaaS tiering pattern — worth deciding deliberately rather than by default.
+- [ ] **$299 package — billing cadence not specified:** is this a one-time charge or a recurring (monthly, most likely, or annual) subscription? The $250+$9.99+$40 net math only holds up as an ongoing business model if it recurs — a one-time $299 charge would mean the platform forgoes all further revenue from that Mentor and their 250 members indefinitely, which likely isn't the intent. Flagging rather than assuming.
+- [ ] **$299 package — overflow beyond 250 users not specified:** does a 251st member pay the standard $1.99 (or $1.50 at that Mentor's own 50+ discount), does the Mentor need to buy a second $299 package, or is there a per-additional-user add-on rate? Not stated.
+- [ ] **$299 package — coexistence with the standard per-user plan not specified:** does every Mentor eventually move to the $299 package, is it an optional upsell tier alongside the $9.99 + $1.99/$1.50 model, or does it replace that model entirely? Read here as an *additional* plan option, since Masood said "we will offer plans" (plural), but worth confirming.
+- [ ] Content moderation/review pipeline for Mentor-uploaded material (financial-education content carries real regulatory exposure — see REGULATORY_NOTES.md; unreviewed third-party trading content is a materially different risk profile than TradeWise's own trader-validated curriculum in CONTENT_SPEC.md) — applies to uploaded text/images/video-links same as originally scoped
+- [ ] Payment split infrastructure for the flat $1/user Mentor payout (e.g. Stripe Connect or App Store/Play Store's own subscription-with-partner mechanics — platform fee (15–30%) applies before any split, which the $9.99/$1.99/$1.50/$1.00/$299 figures above don't yet account for)
+- [ ] Mentor-facing authoring UI — now known to be a separate Web App requiring a PC, not a mobile screen (screens themselves not yet specified — would need their own FEATURE_SPEC.md addition, and likely a new architecture doc entry given it's a second client surface)
+- [ ] Data model for Mentor accounts, Mentor-authored courses, tier-reassignment overrides, embedded video links, and enrollment (would need its own DATA_SCHEMA.md addition — distinct from the `courses`/`course_lessons` tables, which assume TradeWise-authored content)
+
+### 6.2 — Live Event Hosting
+
+**Explicitly scoped by Masood as a later option within Phase 6, not required for the initial Mentor Program build.**
+
+Two modes requested:
+- **Locked / view-only:** viewers watch, no interaction — **clarified 2026-08-25: no user chat at all in this mode.** Useful when the Mentor is hosting a session that shares general information rather than teaching content. Industry-standard fit: one-to-many broadcast (HLS/RTMP) via a managed service — e.g. Mux, AWS IVS, Cloudflare Stream — is the standard, cost-effective approach for this mode and does not require a real-time SFU.
+- **Full interactive, video optional:** viewers can participate live, with video as an opt-in rather than a requirement (audio/chat-only participation must work for anyone who doesn't want camera on). Includes a Q&A chat: **clarified 2026-08-25** — the Mentor clicks on each question/comment to mark it complete (answered). Later enhancement, not required now: an AI/algorithm groups similar questions under one answer, and notifies the asker their question was answered along with a reference to the moment the Mentor marked it complete — with a buffer window around that timestamp (the verbal answer may land moments before or after the click) so they can jump to and listen to the response in the recording. Industry-standard fit: a real-time SFU platform — e.g. LiveKit, Agora, Daily.co, 100ms — built for exactly this multi-party, optional-video pattern. (Twilio Programmable Video, a common older recommendation, was deprecated industry-wide — worth ruling out explicitly if this comes up in vendor conversations.)
+
+**Not yet specified, needed before this is buildable:**
+- [ ] Vendor selection and cost-per-minute modelling against expected event size/frequency
+- [ ] Moderation controls (mute/remove a participant, disable chat) — standard on all the vendors above, but which controls TradeWise actually needs isn't decided
+- [ ] Recording/VOD policy — are live events saved into the course library afterward, and if so, under which course/tier? (Now more concrete given the Q&A-answer-timestamp feature above, which assumes a recording exists)
+- [ ] Whether live events are a Mentor-only feature or also available to TradeWise's own team
+- [ ] The similar-question-grouping AI/algorithm — explicitly a later enhancement, not part of the initial Q&A build
+
+---
+
 ## Phase 5 — 6-Month Post-Launch Review Gates
 
 *Mitigates: RISK-07 (revenue), RISK-11 (regulatory)*
@@ -456,7 +510,9 @@ Phase 1 (MVP Build + Launch) [14–18 weeks including App Store buffer]
               │
               └──── Phase 4 (PropWise + CompWise Apps)
                         │
-                        └──── Phase 5 (6-Month Review) ← runs at +6 months from launch
+                        ├──── Phase 5 (6-Month Review) ← runs at +6 months from launch
+                        │
+                        └──── Phase 6 (Mentor Program & Live Events) ← proposed, open questions unresolved
 ```
 
 ---

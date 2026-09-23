@@ -31,6 +31,10 @@ users (Supabase Auth)
  │    └── arcade_answers (1:many)
  ├── user_badges (1:many)
  ├── user_quests (1:many)
+ ├── user_course_progress (1:many)
+ │    └── user_lesson_progress (1:many)
+ │         └── user_quiz_attempts (1:many)
+ ├── user_tyk_attempts (1:many)
  ├── minigame_propwise (1:1)
  │    └── propwise_properties (1:many)
  ├── minigame_compwise (1:1)
@@ -42,6 +46,13 @@ datasets
       └── decision_points (1:many)
 
 arcade_challenge_pool (static content table)
+
+courses (static content table)
+ └── course_lessons (1:many)
+      └── lesson_quiz_questions (1:many)
+
+tyk_exercises (static content table) — one per course
+ └── tyk_items (1:many)
 
 competitions (Post-MVP)
  └── competition_entries (1:many)
@@ -246,6 +257,139 @@ Static content table. Pre-populated by content team. Not user-writable.
 | highlight_candle_index | integer | | candle to highlight for pattern questions |
 | active | boolean | not null, default true | |
 | created_at | timestamptz | | |
+
+---
+
+### `courses`
+Static content table. 5 rows in MVP (Basic, 3× Intermediate, Advanced).
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| slug | text unique | e.g. `market_foundations`, `advanced_strategies` |
+| title | text | |
+| tier | text | enum: `basic`,`intermediate`,`advanced` |
+| sort_order | smallint | catalogue display order, 1–5 |
+| is_paywalled | boolean | not null, default false | true only for Advanced course |
+| required_entitlement | text | null unless paywalled; `course_advanced` for Advanced |
+| lesson_count | smallint | | |
+| active | boolean | default true | |
+
+---
+
+### `course_lessons`
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| course_id | uuid FK → courses.id | |
+| sort_order | smallint | 1-indexed within course |
+| title | text | |
+| slide_content | jsonb | array of {illustration_asset_id, body_text} |
+| created_at | timestamptz | |
+
+---
+
+### `lesson_quiz_questions`
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| lesson_id | uuid FK → course_lessons.id | |
+| question_text | text | |
+| options | jsonb | array of 3–4 strings |
+| correct_option_index | smallint | |
+| explanation | text | shown after answering |
+
+---
+
+### `user_course_progress`
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| user_id | uuid FK | |
+| course_id | uuid FK | |
+| status | text | enum: `not_started`,`in_progress`,`complete` |
+| lessons_completed | smallint | not null, default 0 |
+| started_at | timestamptz | |
+| completed_at | timestamptz | |
+
+**Unique:** `(user_id, course_id)`
+
+---
+
+### `user_lesson_progress`
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| user_id | uuid FK | |
+| lesson_id | uuid FK → course_lessons.id | |
+| viewed | boolean | not null, default false |
+| quiz_passed | boolean | not null, default false | 2/3 threshold, FR-006 |
+| best_quiz_score | smallint | out of 3 |
+| completed_at | timestamptz | |
+
+**Unique:** `(user_id, lesson_id)`
+
+---
+
+### `user_quiz_attempts`
+Every attempt logged (unlimited retries — see FR-006).
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| user_id | uuid FK | |
+| lesson_id | uuid FK → course_lessons.id | |
+| score | smallint | out of 3 |
+| passed | boolean | score >= 2 |
+| answers | jsonb | array of {question_id, selected_index, correct} |
+| attempted_at | timestamptz | |
+
+---
+
+### `tyk_exercises`
+Static content table. One row per course (Test Your Knowledge — FR-036).
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| course_id | uuid FK → courses.id unique | |
+| pass_threshold_pct | smallint | not null, default 70 |
+| active | boolean | default true |
+
+---
+
+### `tyk_items` **[REVISED v0.4 — prompted multi-label tagging, was a 1:1 label/target pair]**
+One prompt item: one image, up to 5 candidate labels, and the subset of those labels that genuinely apply. See CONTENT_SPEC.md §6 for minimum counts per course and per-course candidate-label pools.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| tyk_exercise_id | uuid FK | |
+| image_asset_id | uuid | chart snapshot, candle illustration, or scenario/definition card asset |
+| candidate_labels | jsonb | array of up to 5 label strings shown for this image |
+| correct_labels | jsonb | subset of candidate_labels that genuinely apply (1 or more) |
+| explanation | text | shown in the post-assessment review for this item |
+| remediation_lesson_ids | jsonb | array of course_lessons.id (FK values) to route back to — an item can implicate more than one lesson |
+
+---
+
+### `user_tyk_attempts` **[REVISED v0.4 — scoring is judgment accuracy across label decisions, not item pass/fail]**
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| user_id | uuid FK | |
+| tyk_exercise_id | uuid FK | |
+| decisions_total | smallint | count of (item × candidate label) decisions across the attempt |
+| decisions_correct | smallint | decisions where "should this label apply" matched what the user selected |
+| score_pct | numeric(5,2) | decisions_correct / decisions_total * 100 |
+| passed | boolean | score_pct >= tyk_exercises.pass_threshold_pct |
+| item_results | jsonb | array of {tyk_item_id, selected_labels, correct_labels} |
+| attempted_at | timestamptz | |
 
 ---
 
@@ -473,6 +617,10 @@ All tables have RLS enabled.
 | user_badges | Read own. Write via server-side functions only. |
 | fund_transfers | Read own. Insert via server-side function only (cap enforcement). |
 | minigame_* | Read/write own rows only. |
+| courses / course_lessons / lesson_quiz_questions | Read: all authenticated (Advanced course rows visible for preview; slide/quiz content for locked lessons withheld client-side until `course_advanced` entitlement present). Write: none. |
+| user_course_progress / user_lesson_progress / user_quiz_attempts | Read/write own rows only. |
+| tyk_exercises / tyk_items | Read: all authenticated. Write: none. |
+| user_tyk_attempts | Read/write own rows only. |
 | datasets | Read: all authenticated. Write: none (admin only). |
 | dataset_candles | Read: all authenticated. Write: none. |
 | decision_points | Read: all authenticated. Write: none. |
