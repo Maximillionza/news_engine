@@ -39,6 +39,7 @@ HARD_RULE_PATTERNS: dict[str, list[str]] = {
         "bab el-mandeb closed",
         "opec+ agrees to cut",
         "opec+ agrees to increase",
+        "opec+ output cut confirmed",
         "oil export ban",
         "tanker attacked",
         "pipeline attack",
