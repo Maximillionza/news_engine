@@ -3,6 +3,7 @@
 #include "../Models/ASE_Structs.mqh"
 #include "../Models/ASE_Config.mqh"
 #include "../Models/ASE_EvidenceTypes.mqh"   // v4.0 — EvaluateAllEvidence() below
+#include "../Utilities/ASE_Time.mqh"          // v4.0.1 — CheckKillZone()/CheckAMDPhase() below
 //+------------------------------------------------------------------+
 //| ASE v3 — M15 Setup Engine                                        |
 //| FIX #10: Removed dead member variables m_compBarsCount,          |
@@ -275,6 +276,26 @@ public:
          ValidationResult res = CheckOrderBlock(direction, price, hi, lo, cl, op, atrVal);
          e.Clear();
          e.evidType = EVID_ORDER_BLOCK; e.family = FAM_LOCATION; e.direction = direction;
+         e.active = res.passed; e.strength = res.score; e.reason = res.reason;
+         e.timestamp = now; e.sourceTF = PERIOD_M15; e.priceRef = price;
+         if(ev.Add(e)) added++;
+      }
+      // v4.0.1 — Kill Zone / AMD phase. Same V4-evidence-only wiring as
+      // the checks above; neither is called from legacy Evaluate().
+      if(InpEnableKillZoneEvidence)
+      {
+         ValidationResult res = CheckKillZone(direction);
+         e.Clear();
+         e.evidType = EVID_KILL_ZONE; e.family = FAM_ENVIRONMENT; e.direction = direction;
+         e.active = res.passed; e.strength = res.score; e.reason = res.reason;
+         e.timestamp = now; e.sourceTF = PERIOD_CURRENT;
+         if(ev.Add(e)) added++;
+      }
+      if(InpEnableAMDPhase)
+      {
+         ValidationResult res = CheckAMDPhase(direction, price);
+         e.Clear();
+         e.evidType = EVID_AMD_PHASE; e.family = FAM_LIQUIDITY; e.direction = direction;
          e.active = res.passed; e.strength = res.score; e.reason = res.reason;
          e.timestamp = now; e.sourceTF = PERIOD_M15; e.priceRef = price;
          if(ev.Add(e)) added++;
@@ -645,6 +666,122 @@ private:
             return r;
          }
       }
+      return r;
+   }
+
+   //------------------------------------------------------------------
+   // v4.0.1 — Kill Zone (discrete evidence). CASE_Time::IsKillZone() is
+   // NOT new — it has existed since v3.7.0 and already feeds a
+   // continuous session-quality SCORE via ASE_SessionEngine::
+   // GetSessionScore() (10.0 inside a kill zone vs 9.5/8.0/7.0/0.0).
+   // What's new here is only that this surfaces it as its own discrete,
+   // DNA-tagged evidence item rather than an anonymous ingredient folded
+   // into EVID_SESSION_QUALITY. Direction-agnostic — a kill zone is a
+   // property of the clock, not the setup — so both directions receive
+   // the same active/inactive read for a given bar, same convention
+   // EVID_SESSION_QUALITY and EVID_VOLATILITY_STATE already use.
+   //------------------------------------------------------------------
+   ValidationResult CheckKillZone(ENUM_TRADE_DIRECTION dir)
+   {
+      ValidationResult r;
+      r.passed = CASE_Time::IsKillZone();
+      r.score  = r.passed ? 10.0 : 0.0;
+      r.reason = r.passed ? "Inside ICT kill zone" : "Outside kill zone";
+      return r;
+   }
+
+   //------------------------------------------------------------------
+   // v4.0.1 — AMD phase (Accumulation / Manipulation / Distribution).
+   // Genuinely new logic, not a re-identified existing check.
+   //
+   //   Accumulation — today's Asian-session (UTC) M15 high/low range.
+   //   Manipulation — within the current kill zone, a swept high/low
+   //                  BEYOND that range on the side OPPOSITE the setup
+   //                  direction (the liquidity grab the AMD model
+   //                  describes before the real move).
+   //   Distribution — price currently trading back through the swept
+   //                  level on the setup's actual direction.
+   //
+   // Only evaluated while CASE_Time::IsKillZone() is true: outside a
+   // kill zone, "was there a sweep" isn't the AMD manipulation phase,
+   // it's just ordinary liquidity evidence — EVID_LIQUIDITY_SWEEP
+   // already covers that independently, this is not a duplicate of it.
+   //
+   // Known limitation, stated rather than silently assumed: does not
+   // handle an Asian-session window configured to cross midnight UTC
+   // (InpAsianEndHour/Min <= InpAsianStartHour/Min) — reports the
+   // misconfiguration via r.reason instead of computing a wrong range.
+   //------------------------------------------------------------------
+   ValidationResult CheckAMDPhase(ENUM_TRADE_DIRECTION dir, double price)
+   {
+      ValidationResult r;
+      r.passed = false; r.score = 0.0; r.reason = "No AMD phase";
+
+      if(!CASE_Time::IsKillZone()) { r.reason = "Not in kill zone"; return r; }
+
+      // Accumulation — today's Asian range, from today's UTC calendar date.
+      // Safe to assume "today" here: kill zones (08:00+ UTC) always fall
+      // after the Asian window (00:00-07:00 UTC default) on the SAME day.
+      MqlDateTime dtNow;
+      TimeToStruct(TimeGMT(), dtNow);
+      MqlDateTime aStart = dtNow, aEnd = dtNow;
+      aStart.hour = InpAsianStartHour; aStart.min = InpAsianStartMin; aStart.sec = 0;
+      aEnd.hour   = InpAsianEndHour;   aEnd.min   = InpAsianEndMin;   aEnd.sec   = 0;
+      datetime asianStart = StructToTime(aStart);
+      datetime asianEnd   = StructToTime(aEnd);
+      if(asianEnd <= asianStart)
+      {
+         r.reason = "Asian window misconfigured (end<=start) — midnight wraparound not supported";
+         return r;
+      }
+
+      int shiftNewest = iBarShift(_Symbol, PERIOD_M15, asianEnd);
+      int shiftOldest  = iBarShift(_Symbol, PERIOD_M15, asianStart);
+      if(shiftOldest <= shiftNewest) { r.reason = "Insufficient Asian-session bar history"; return r; }
+
+      int aCount = shiftOldest - shiftNewest + 1;
+      double aHi[], aLo[];
+      ArraySetAsSeries(aHi, true); ArraySetAsSeries(aLo, true);
+      if(CopyHigh(_Symbol, PERIOD_M15, shiftNewest, aCount, aHi) < aCount) { r.reason = "Asian H buffer fail"; return r; }
+      if(CopyLow( _Symbol, PERIOD_M15, shiftNewest, aCount, aLo) < aCount) { r.reason = "Asian L buffer fail"; return r; }
+
+      double asianHigh = aHi[ArrayMaximum(aHi)];
+      double asianLow  = aLo[ArrayMinimum(aLo)];
+      if(asianHigh <= asianLow) { r.reason = "Degenerate Asian range"; return r; }
+
+      // Manipulation — scan the kill-zone-so-far window for a sweep of the
+      // Asian range opposite the setup direction. Reuses the standard
+      // hi/lo/cl series convention (index 1 = last closed bar) already
+      // established by CheckFVG/CheckDisplacement/CheckOrderBlock above.
+      int kzLookback = MathMax(1, InpAMDLookbackBars);
+      int needed = kzLookback + 1;
+      double hi[], lo[];
+      ArraySetAsSeries(hi, true); ArraySetAsSeries(lo, true);
+      if(CopyHigh(_Symbol, PERIOD_M15, 0, needed, hi) < needed) { r.reason = "KZ H buffer fail"; return r; }
+      if(CopyLow( _Symbol, PERIOD_M15, 0, needed, lo) < needed) { r.reason = "KZ L buffer fail"; return r; }
+
+      bool sweptOpposite = false; int sweepBar = -1;
+      for(int i = 1; i <= kzLookback; i++)
+      {
+         if(dir == DIR_LONG  && lo[i] < asianLow)  { sweptOpposite = true; sweepBar = i; break; }  // sell-side liquidity swept below Asian low
+         if(dir == DIR_SHORT && hi[i] > asianHigh) { sweptOpposite = true; sweepBar = i; break; }  // buy-side liquidity swept above Asian high
+      }
+      if(!sweptOpposite)
+      {
+         r.reason = StringFormat("No %s-side Asian sweep yet [%.5f-%.5f]",
+                                  dir == DIR_LONG ? "sell" : "buy", asianLow, asianHigh);
+         return r;
+      }
+
+      // Distribution — price currently back through the swept level, on
+      // the setup's actual direction.
+      bool distributing = (dir == DIR_LONG) ? (price > asianLow) : (price < asianHigh);
+      if(!distributing) { r.reason = "Swept but not yet distributing back through the range"; return r; }
+
+      r.passed = true;
+      r.score  = 12.0 + (sweepBar <= 2 ? 3.0 : 0.0);
+      r.reason = StringFormat("AMD %s | Asian[%.5f-%.5f] swept bar=%d price=%.5f",
+                               dir == DIR_LONG ? "LONG" : "SHORT", asianLow, asianHigh, sweepBar, price);
       return r;
    }
 

@@ -55,6 +55,8 @@ private:
          case EVID_SESSION_QUALITY:  return 2.0;   // Environment: session
          case EVID_SPREAD_QUALITY:   return 5.0;   // Execution: spread 2 + drift 3, folded (drift has no pre-execution detector)
          case EVID_ORDER_BLOCK:      return 6.0;   // v4.0.1 — new detector (CASE_SetupEngine::CheckOrderBlock), not a plan §22 fold. Location family, same bucket as FVG/EMA pullback (familyMax[FAM_LOCATION]=20; FVG 8 + EMAPullback 5 + this 6 = 19, still under cap). Interim weight, no observation data yet — see CHANGELOG_v4.0.0.md Addendum 6.
+         case EVID_KILL_ZONE:        return 2.0;   // v4.0.1 — surfaces existing CASE_Time::IsKillZone() as discrete evidence. Environment family (familyMax[FAM_ENVIRONMENT]=10; VOLATILITY_STATE 8 + SESSION_QUALITY 2 already = 10, AT cap) — this will typically contribute ~0 marginal score whenever either of those is also active, which is common. Kept in the table (not 0.0) because family-capped ≠ worthless: it still counts toward enhancer completeness and DNA tagging. See CHANGELOG_v4.0.0.md Addendum 7 for the honest accounting.
+         case EVID_AMD_PHASE:        return 5.0;   // v4.0.1 — new detector (CASE_SetupEngine::CheckAMDPhase). Liquidity family (familyMax[FAM_LIQUIDITY]=20; LIQUIDITY_SWEEP 12 + M1_REJECTION 8 already = 20, AT cap) — same cap-saturation caveat as EVID_KILL_ZONE above; AMD phase requires a sweep by definition, so it will very often co-occur with EVID_LIQUIDITY_SWEEP already being active, capping its own marginal contribution most of the time it fires. See CHANGELOG_v4.0.0.md Addendum 7.
          default:                    return 0.0;
       }
    }

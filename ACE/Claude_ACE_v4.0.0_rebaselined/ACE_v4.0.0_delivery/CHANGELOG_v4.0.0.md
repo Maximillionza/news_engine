@@ -479,3 +479,117 @@ touched file. Not verified: actual detection behavior against real price
 data — no MT5 runtime in this environment, same limitation stated
 throughout this changelog. This detector has never fired once on real
 data. Do not treat its presence as validated until it has.
+
+---
+
+## Addendum 7 — Kill Zone + AMD-phase evidence
+
+Second item from the confluence-gap priority queue, same v4.0.1 fork.
+
+**`EVID_KILL_ZONE` is a surfacing, not a new detector.**
+`CASE_Time::IsKillZone()` has existed since v3.7.0 and already feeds a
+continuous session-quality score (`ASE_SessionEngine::GetSessionScore()`:
+10.0 inside a kill zone, 9.5 overlap, 8.0/7.0 plain London/NY, 0.0
+off-session) — but only as one anonymous ingredient of
+`EVID_SESSION_QUALITY`. This change adds nothing to detection; it only
+gives that already-correct signal its own discrete, DNA-tagged evidence
+slot so it can be reasoned about independently once observation data
+exists.
+
+**`EVID_AMD_PHASE` is genuinely new logic**, built on the Accumulation /
+Manipulation / Distribution model this project's own CLAUDE.md lists as
+an in-scope ICT/SMC concept but had no detector for:
+- Accumulation = today's Asian-session (UTC) M15 high/low range. New
+  `CASE_Time::IsAsianSession()` added for symmetry with the file's
+  existing London/NY/overlap helpers, though `CheckAMDPhase()` computes
+  the actual range directly via `iBarShift`/`CopyHigh`/`CopyLow` over the
+  configured window rather than calling it per-bar.
+- Manipulation = within the CURRENT kill zone, a swept high/low beyond
+  that Asian range, on the side OPPOSITE the setup direction (the
+  liquidity grab the model describes happening before the real move).
+- Distribution = price currently trading back through the swept level,
+  on the setup's actual direction.
+- Gated on `CASE_Time::IsKillZone()` being true at evaluation time —
+  outside a kill zone this isn't the AMD manipulation phase, it's just
+  ordinary liquidity evidence, which `EVID_LIQUIDITY_SWEEP` already
+  covers independently. Not a duplicate of that evidence type; a
+  narrower, time-gated, directionally-opposite-sweep-specific read.
+
+**Known limitation, stated rather than silently handled:** neither
+`CASE_Time::IsAsianSession()` nor `CheckAMDPhase()`'s range computation
+supports an Asian window configured to cross midnight UTC
+(`InpAsianEndHour/Min <= InpAsianStartHour/Min`). `CheckAMDPhase()`
+detects that misconfiguration and reports it via `r.reason` rather than
+silently computing a wrong range. Not a problem with the shipped
+defaults (00:00–07:00 UTC), only with a hand-edited config that crosses
+midnight.
+
+**Found during this addition, worth being direct about — both new
+evidence types are family-capped to near-zero marginal score contribution
+in the common case, and that's not a defect, it's what the weight table
+already implies once you check the numbers:**
+- `EVID_KILL_ZONE` → `FAM_ENVIRONMENT`, weight 2.0. `familyMax[FAM_ENVIRONMENT]`
+  is 10; `EVID_VOLATILITY_STATE` (8) + `EVID_SESSION_QUALITY` (2) already
+  sum to exactly 10. A kill zone is, by construction, also inside London
+  or NY, so `EVID_SESSION_QUALITY` is essentially always active alongside
+  it — meaning `EVID_KILL_ZONE` will typically add ~0 to the actual
+  directional score even when it fires.
+- `EVID_AMD_PHASE` → `FAM_LIQUIDITY`, weight 5.0. `familyMax[FAM_LIQUIDITY]`
+  is 20; `EVID_LIQUIDITY_SWEEP` (12) + `EVID_M1_REJECTION` (8) already sum
+  to exactly 20. `EVID_AMD_PHASE` requires a sweep by its own definition,
+  so it will very often co-occur with `EVID_LIQUIDITY_SWEEP` already being
+  active — same near-zero marginal-score outcome in the common case.
+
+Both are kept in the weight table (not set to 0.0) rather than treated as
+dead on arrival, because family-capped isn't the same as worthless: they
+still count toward the classifier's enhancer-completeness tally, they're
+DNA-tagged (`KZ`, `AMD`) so future analytics can query for them
+specifically, and the moment observation data justifies rebalancing which
+families deserve more headroom, these are already wired and ready rather
+than needing to be built from scratch. But be clear-eyed about what
+"scored" means here today: in the setups where these are most likely to
+fire, they are largely along for the ride, not moving the number. Not
+raising any family cap in this pass — that's a broader score-calibration
+decision affecting every existing evidence type, not something to change
+as a side effect of adding two new ones, and not something asked for.
+
+**Wiring:**
+- `Models/ASE_EvidenceTypes.mqh` — `EVID_KILL_ZONE = 17`, `EVID_AMD_PHASE = 18`.
+- `Models/ASE_ConfluenceTypes.mqh` — DNA tags `"KZ"`, `"AMD"`.
+- `Core/ASE_ConfluenceEngine.mqh` — weights as above, with the cap-math
+  documented inline at each `case`, not just here.
+- `Core/ASE_SetupEngine.mqh` — new `CheckKillZone()`/`CheckAMDPhase()`,
+  called ONLY from `EvaluateAllEvidence()`. Legacy `Evaluate()` cascade
+  has zero lines changed — same standard applied to every prior addition.
+  New `#include "../Utilities/ASE_Time.mqh"` (wasn't previously included
+  in this file).
+- `Utilities/ASE_Time.mqh` — new `IsAsianSession()`, additive only;
+  `IsTradingSession()` and every other existing method unchanged, so the
+  EA's actual London/NY trading-session gate is untouched.
+- `Models/ASE_Config.mqh` — six new inputs: `InpEnableKillZoneEvidence`,
+  `InpEnableAMDPhase` (kill switches), `InpAsianStartHour/Min`,
+  `InpAsianEndHour/Min` (Asian window), `InpAMDLookbackBars` (kill-zone
+  sweep scan depth, default 12 M15 bars ≈ 3h, one full kill-zone window).
+
+**Also not added to any `CoreCheck*()` in `ASE_SetupClassifier.mqh`** —
+same enhancer-only reasoning as Order Block: no observation data yet to
+justify a hard requirement for a brand-new detector, doubly true for one
+that's currently family-capped to near-zero score impact anyway.
+
+**`ASE_MAX_EVIDENCE` capacity checked:** M15 evidence collection is now
+11 items per bar (was 9 after Order Block, 8 before this build started).
+Still well under the 24-item cap.
+
+**Not done this session (per explicit instruction — complete an item,
+check usage, continue only if enough remains):** DXY/real-yield
+correlation evidence, liquidity-pool (equal highs/lows, PDH/PDL) mapping.
+Still queued in that order — see the usage check immediately following
+this commit for whether either was attempted this session.
+
+**Verification performed:** brace/paren balance confirmed on every
+touched file (`ASE_SetupEngine.mqh`, `ASE_ConfluenceEngine.mqh`,
+`ASE_EvidenceTypes.mqh`, `ASE_ConfluenceTypes.mqh`, `ASE_Config.mqh`,
+`ASE_Time.mqh`). Not verified: actual detection behavior against real
+price data or the Asian-range `iBarShift`/`CopyHigh`/`CopyLow` math under
+real broker history gaps — no MT5 runtime in this environment. Neither
+detector has fired once on real data.

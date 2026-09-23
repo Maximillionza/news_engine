@@ -161,6 +161,8 @@ string ASE_BuildSetupDNA(ENUM_SETUP_ARCHETYPE archetype,
          case EVID_M1_REJECTION:     tag = "M1R";  break;
          case EVID_M1_EMA_ALIGN:     tag = "M1E";  break;
          case EVID_ORDER_BLOCK:      tag = "OB";   break;
+         case EVID_KILL_ZONE:        tag = "KZ";   break;
+         case EVID_AMD_PHASE:        tag = "AMD";  break;
          default: continue;   // environment/execution evidence not part of the DNA signature
       }
       dna += "-" + tag;

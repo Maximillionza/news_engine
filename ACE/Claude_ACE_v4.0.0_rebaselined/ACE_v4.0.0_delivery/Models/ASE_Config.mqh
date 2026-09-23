@@ -523,4 +523,27 @@ input int    InpOBLookback          = 20;    // M15 bars scanned back for a qual
 input int    InpOBMaxBars           = 15;    // reject an OB older than this many M15 bars (0 = off); edge decays with age, same rationale as InpFVGMaxBars
 input double InpOBDispMultiplier    = 0.60;  // min body size (× M15 ATR) the post-OB candle needs to count as a displacement/BOS confirming the block
 
+// v4.0.1 — Kill Zone + AMD-phase evidence (EVID_KILL_ZONE, EVID_AMD_PHASE;
+// CASE_SetupEngine::CheckKillZone()/CheckAMDPhase()). Same V4-evidence-only
+// wiring as Order Block above — never touches the legacy Evaluate() cascade.
+// InpKillZoneEnabled/CASE_Time::IsKillZone() already existed (v3.7.0) and
+// already fed a continuous session-quality SCORE (ASE_SessionEngine::
+// GetSessionScore()); EVID_KILL_ZONE is new only in that it surfaces that
+// existing detector as its own discrete, DNA-tagged evidence item rather
+// than an anonymous ingredient folded into EVID_SESSION_QUALITY.
+// EVID_AMD_PHASE is genuinely new logic: Accumulation = today's Asian-
+// session UTC range, Manipulation = a kill-zone-window sweep of that range
+// opposite to the setup direction, Distribution = price currently back
+// through the swept level on the setup's actual direction. Only evaluated
+// while CASE_Time::IsKillZone() is true — outside a kill zone, "was there
+// a sweep" isn't the AMD manipulation phase, it's just liquidity evidence
+// (which EVID_LIQUIDITY_SWEEP already covers independently).
+input bool   InpEnableKillZoneEvidence = true;  // Allow discrete kill-zone evidence collection (V4 evidence only)
+input bool   InpEnableAMDPhase         = true;  // Allow AMD-phase evidence collection (V4 evidence only)
+input int    InpAsianStartHour         = 0;     // Asian session start — hour (UTC). Default 00:00–07:00 UTC (02:00–09:00 SAST), ends at London open.
+input int    InpAsianStartMin          = 0;     // Asian session start — minute (UTC)
+input int    InpAsianEndHour           = 7;     // Asian session end — hour (UTC)
+input int    InpAsianEndMin            = 0;     // Asian session end — minute (UTC)
+input int    InpAMDLookbackBars        = 12;    // M15 bars scanned back for a kill-zone sweep of the Asian range (~3h — covers one full kill-zone window)
+
 #endif // ASE_CONFIG_MQH

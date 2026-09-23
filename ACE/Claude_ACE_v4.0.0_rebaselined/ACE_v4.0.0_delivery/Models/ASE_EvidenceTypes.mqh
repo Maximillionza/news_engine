@@ -49,7 +49,9 @@ enum ENUM_EVIDENCE_TYPE
    EVID_VOLATILITY_STATE    = 13,  // regime/ATR state
    EVID_SESSION_QUALITY     = 14,
    EVID_SPREAD_QUALITY      = 15,
-   EVID_ORDER_BLOCK         = 16   // v4.0.1 — CASE_SetupEngine::CheckOrderBlock(); new detector, not a re-identified existing check (see file header of CheckOrderBlock)
+   EVID_ORDER_BLOCK         = 16,  // v4.0.1 — CASE_SetupEngine::CheckOrderBlock(); new detector, not a re-identified existing check (see file header of CheckOrderBlock)
+   EVID_KILL_ZONE           = 17,  // v4.0.1 — surfaces the existing CASE_Time::IsKillZone() (v3.7.0) as discrete evidence; not a new detector
+   EVID_AMD_PHASE           = 18   // v4.0.1 — CASE_SetupEngine::CheckAMDPhase(); new detector (Accumulation/Manipulation/Distribution)
 };
 
 // One piece of evidence. Deliberately flat/POD so it can sit in a
