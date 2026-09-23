@@ -339,6 +339,17 @@ public:
          e.timestamp = now; e.sourceTF = PERIOD_M15;
          if(ev.Add(e)) added++;
       }
+      // v4.0.1 — Liquidity Pool (PDH/PDL + equal highs/lows). Same
+      // V4-evidence-only wiring; never called from legacy Evaluate().
+      if(InpEnableLiquidityPool)
+      {
+         ValidationResult res = CheckLiquidityPool(direction, price, hi, lo, atrVal);
+         e.Clear();
+         e.evidType = EVID_LIQUIDITY_POOL; e.family = FAM_LIQUIDITY; e.direction = direction;
+         e.active = res.passed; e.strength = res.score; e.reason = res.reason;
+         e.timestamp = now; e.sourceTF = PERIOD_M15; e.priceRef = price;
+         if(ev.Add(e)) added++;
+      }
       return added;
    }
 
@@ -885,6 +896,106 @@ private:
       r.score  = 10.0 + (MathAbs(roc) >= InpMacroCorrROCThreshold * 2 ? 3.0 : 0.0);
       r.reason = StringFormat("%s ROC=%.4f%% aligned with %s gold setup (inverse correlation)",
                                InpMacroCorrSymbol, roc * 100, dir == DIR_LONG ? "LONG" : "SHORT");
+      return r;
+   }
+
+   //------------------------------------------------------------------
+   // v4.0.1 — Liquidity Pool (PDH/PDL + equal highs/lows). Last item of
+   // the original confluence-gap priority queue. New detector, distinct
+   // from CASE_LiquidityEngine::DetectSweep() (EVID_LIQUIDITY_SWEEP),
+   // which identifies individual swing pivots — this identifies two
+   // specifically NAMED, commonly-recognized pool types instead:
+   //
+   //   PDH/PDL — previous completed daily candle's high/low (D1 bar[1]).
+   //   Equal highs/lows (EQH/EQL) — two or more M15 highs (or lows)
+   //   within InpLiqPoolEqualTolerance × ATR of each other over the scan
+   //   window — a cluster, which is what actually makes a level an
+   //   obvious resting-liquidity target rather than an arbitrary pivot.
+   //
+   // Active when a mapped pool on the side OPPOSITE the setup direction
+   // has been swept within InpLiqPoolSweepBars and price is now trading
+   // back through it — same sweep-then-distribute shape as
+   // CheckAMDPhase(), applied per named pool rather than the Asian range,
+   // so the reason string identifies WHICH known level was targeted.
+   // PDH/PDL checked first (a universally-recognized level) then EQH/EQL.
+   //------------------------------------------------------------------
+   ValidationResult CheckLiquidityPool(ENUM_TRADE_DIRECTION dir, double price,
+                                        const double &hi[], const double &lo[], double atr)
+   {
+      ValidationResult r;
+      r.passed = false; r.score = 0.0; r.reason = "No liquidity pool";
+      if(dir == DIR_NONE) return r;
+
+      double pdHi[], pdLo[];
+      ArraySetAsSeries(pdHi, true); ArraySetAsSeries(pdLo, true);
+      bool havePD = (CopyHigh(_Symbol, PERIOD_D1, 1, 1, pdHi) == 1 && CopyLow(_Symbol, PERIOD_D1, 1, 1, pdLo) == 1);
+      double pdh = havePD ? pdHi[0] : 0.0;
+      double pdl = havePD ? pdLo[0] : 0.0;
+
+      int lookback   = MathMax(5, InpLiqPoolLookback);
+      int scanLimit  = MathMin(lookback, ArraySize(hi) - 1);
+      double tol     = atr * InpLiqPoolEqualTolerance;
+      double eqHigh = 0.0, eqLow = 0.0;
+      bool haveEQH = false, haveEQL = false;
+      for(int i = 1; i < scanLimit && !(haveEQH && haveEQL); i++)
+      {
+         for(int j = i + 1; j <= scanLimit; j++)
+         {
+            if(!haveEQH && MathAbs(hi[i] - hi[j]) <= tol) { eqHigh = MathMax(hi[i], hi[j]); haveEQH = true; }
+            if(!haveEQL && MathAbs(lo[i] - lo[j]) <= tol) { eqLow  = MathMin(lo[i], lo[j]); haveEQL = true; }
+         }
+      }
+
+      int sweepLookback = MathMax(1, MathMin(InpLiqPoolSweepBars, scanLimit));
+
+      if(dir == DIR_LONG)
+      {
+         if(havePD && pdl > 0.0 && price > pdl)
+         {
+            for(int i = 1; i <= sweepLookback; i++)
+               if(lo[i] < pdl)
+               {
+                  r.passed = true; r.score = 10.0;
+                  r.reason = StringFormat("PDL pool [%.5f] swept bar=%d, price=%.5f distributing LONG", pdl, i, price);
+                  return r;
+               }
+         }
+         if(haveEQL && price > eqLow)
+         {
+            for(int i = 1; i <= sweepLookback; i++)
+               if(lo[i] < eqLow)
+               {
+                  r.passed = true; r.score = 8.0;
+                  r.reason = StringFormat("EQL pool [%.5f] swept bar=%d, price=%.5f distributing LONG", eqLow, i, price);
+                  return r;
+               }
+         }
+         r.reason = StringFormat("No sell-side pool swept (PDL=%s EQL=%s)", havePD ? "mapped" : "n/a", haveEQL ? "mapped" : "n/a");
+      }
+      else if(dir == DIR_SHORT)
+      {
+         if(havePD && pdh > 0.0 && price < pdh)
+         {
+            for(int i = 1; i <= sweepLookback; i++)
+               if(hi[i] > pdh)
+               {
+                  r.passed = true; r.score = 10.0;
+                  r.reason = StringFormat("PDH pool [%.5f] swept bar=%d, price=%.5f distributing SHORT", pdh, i, price);
+                  return r;
+               }
+         }
+         if(haveEQH && price < eqHigh)
+         {
+            for(int i = 1; i <= sweepLookback; i++)
+               if(hi[i] > eqHigh)
+               {
+                  r.passed = true; r.score = 8.0;
+                  r.reason = StringFormat("EQH pool [%.5f] swept bar=%d, price=%.5f distributing SHORT", eqHigh, i, price);
+                  return r;
+               }
+         }
+         r.reason = StringFormat("No buy-side pool swept (PDH=%s EQH=%s)", havePD ? "mapped" : "n/a", haveEQH ? "mapped" : "n/a");
+      }
       return r;
    }
 

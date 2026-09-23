@@ -569,4 +569,23 @@ input string InpMacroCorrSymbol        = "USDX"; // Broker symbol for a DXY/USD-
 input int    InpMacroCorrLookbackBars  = 8;      // M15 bars for the correlation-symbol rate-of-change window (~2h)
 input double InpMacroCorrROCThreshold  = 0.0015; // minimum |rate-of-change| (fraction, e.g. 0.0015 = 0.15%) for the correlation symbol's move to count as meaningful
 
+// v4.0.1 — Liquidity Pool evidence (EVID_LIQUIDITY_POOL,
+// CASE_SetupEngine::CheckLiquidityPool()). Last item of the original
+// confluence-gap priority queue. Same V4-evidence-only wiring as every
+// other v4.0.1 addition — never touches the legacy Evaluate() cascade.
+// Distinct from the existing EVID_LIQUIDITY_SWEEP (CASE_LiquidityEngine::
+// DetectSweep(), which uses individual swing-pivot detection): this maps
+// two specifically NAMED, commonly-recognized pool types — the previous
+// day's high/low (PDH/PDL, from the D1 timeframe) and equal highs/lows
+// (a cluster of two or more M15 highs or lows within a small tolerance —
+// an obvious resting-liquidity target DetectSweep()'s pivot logic doesn't
+// identify) — then checks whether either was actually swept and price is
+// now distributing back through it. A sweep with a named, mapped pool
+// behind it is a different (arguably higher-conviction) signal than an
+// unattributed swing-pivot sweep.
+input bool   InpEnableLiquidityPool    = true;  // Allow liquidity-pool evidence collection (V4 evidence only)
+input int    InpLiqPoolLookback        = 20;    // M15 bars scanned for an equal-highs/equal-lows cluster (same window as FVG/OB)
+input double InpLiqPoolEqualTolerance  = 0.10;  // max distance (× M15 ATR) between two highs/lows to count as "equal" (a pool)
+input int    InpLiqPoolSweepBars       = 8;     // M15 bars scanned back for a sweep of a mapped PDH/PDL/EQH/EQL pool
+
 #endif // ASE_CONFIG_MQH

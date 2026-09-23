@@ -701,3 +701,111 @@ This is the least-verified addition in this changelog — treat it as a
 hypothesis wired into the evidence set, not a working feature, until
 someone checks the Journal for the `[SETUP] WARNING` line and confirms
 the symbol actually resolves.
+
+---
+
+## Addendum 9 — Liquidity Pool (PDH/PDL + equal highs/lows) evidence
+
+Fourth and last item of the original confluence-gap priority queue, same
+session, same v4.0.1 fork. Usage re-checked after Addendum 8 (5-hour
+window 16%, weekly 5%) and confirmed sufficient to continue.
+
+**Distinct from the existing `EVID_LIQUIDITY_SWEEP`
+(`CASE_LiquidityEngine::DetectSweep()`), which uses individual
+swing-pivot detection** — checked before building this, to avoid
+duplicating it. This adds two specifically NAMED, commonly-recognized
+pool types instead: the previous completed day's high/low (PDH/PDL, D1
+bar[1]) and equal highs/lows (EQH/EQL — two or more M15 highs, or lows,
+within `InpLiqPoolEqualTolerance × ATR` of each other over the scan
+window, i.e. an actual cluster, which is what makes a level an obvious
+resting-liquidity target rather than an arbitrary pivot). Active when a
+mapped pool on the side OPPOSITE the setup direction has been swept
+within `InpLiqPoolSweepBars` and price is now trading back through it —
+same sweep-then-distribute shape as `CheckAMDPhase()` (Addendum 7),
+applied per named pool instead of the Asian range. PDH/PDL checked first
+(a level any serious participant is watching), then EQH/EQL.
+
+**Wiring:**
+- `Models/ASE_EvidenceTypes.mqh` — `EVID_LIQUIDITY_POOL = 20`.
+- `Models/ASE_ConfluenceTypes.mqh` — DNA tag `"LP"`.
+- `Core/ASE_ConfluenceEngine.mqh` — weight 4.0, `FAM_LIQUIDITY`.
+- `Core/ASE_SetupEngine.mqh` — new `CheckLiquidityPool()`, called ONLY
+  from `EvaluateAllEvidence()`. Legacy `Evaluate()` cascade has zero
+  lines changed — same standard applied to every addition this build.
+- `Models/ASE_Config.mqh` — four new inputs: `InpEnableLiquidityPool`
+  (kill switch), `InpLiqPoolLookback` (EQH/EQL scan window, mirrors
+  FVG/OB), `InpLiqPoolEqualTolerance` (× ATR, default 0.10), `InpLiqPool
+  SweepBars` (sweep-recency window, default 8).
+
+Enhancer-only in the classifier, same reasoning as every other addition
+this session. `ASE_MAX_EVIDENCE` capacity checked: M15 evidence
+collection is now 13 items per bar (was 8 before this session started —
+five new evidence types added across four commits). Still well under the
+24-item cap.
+
+**Verification performed:** brace/paren balance confirmed on every
+touched file. Not verified: actual detection behavior against real price
+data, or whether `InpLiqPoolEqualTolerance`'s default (0.10 × ATR) is a
+sane clustering threshold for XAUUSD specifically — chosen as a
+reasonable starting guess, not derived from data. No MT5 runtime
+available to check either.
+
+---
+
+## Addendum 10 — closing this session: family caps need a deliberate pass
+
+This session shipped five new evidence types across four commits (Order
+Block, Kill Zone, AMD Phase, Macro Correlation, Liquidity Pool) —
+everything from the original confluence-gap priority queue. Before
+picking a NEW gap to fill next, the more urgent finding surfaced
+repeatedly while building these five is worth stating together instead
+of scattered across four separate addenda:
+
+**Every family a new evidence type landed in this session was already at
+or over its cap before this session started, and is now more
+oversubscribed:**
+- `FAM_LOCATION` (cap 20): FVG 8 + EMA pullback 5 = 13 before this
+  session → +Order Block 6 = 19. One point of headroom left.
+- `FAM_ENVIRONMENT` (cap 10): regime 8 + session 2 = 10 before this
+  session (already exactly at cap) → +Kill Zone 2 +Macro Correlation 4 =
+  16 nominal against a 10 cap.
+- `FAM_LIQUIDITY` (cap 20): sweep 12 + rejection 8 = 20 before this
+  session (already exactly at cap) → +AMD Phase 5 +Liquidity Pool 4 = 29
+  nominal against a 20 cap. The most oversubscribed family in the table.
+
+**What this means concretely:** in any setup where more than one
+same-family evidence type is active — which, given the correlations
+between them (a kill zone often coincides with active session scoring; a
+genuine liquidity-pool sweep will often also trigger the generic sweep
+detector; an AMD-phase read requires a sweep by definition) is the
+COMMON case, not the exception — only the family's cap worth of
+contribution reaches the actual score, regardless of how many distinct
+signals fired. The five detectors built this session are real, wired
+correctly, structurally sound, and mostly along for the ride on the
+score that matters for grading/qualification, in typical co-occurrence
+patterns.
+
+**This is not presented as a defect to silently patch.** Family caps
+exist specifically to stop correlated evidence from being treated as
+independent confirmation (see `ASE_ConfluenceEngine.mqh`'s own header
+comment on family capping) — the caps doing their job is not a bug. But
+five additions in one session make the current cap sizing (set against a
+much smaller evidence set, before this session) worth a deliberate,
+data-informed pass rather than leaving it as an accumulating side effect
+of feature addition. Two honest options going forward, presented as a
+decision to make, not a change made unilaterally here: (1) leave the
+caps as-is and treat everything added this session primarily as
+enhancer/DNA/analytics value until real observation data justifies
+which, if any, deserve more headroom, or (2) revisit the cap sizing now,
+informed by which families accumulated the most new competing evidence.
+Recommend (1) until there's real data to inform (2) — rebalancing caps
+on guesses would just replace one set of unvalidated numbers with
+another, same caveat that has applied to every interim weight chosen in
+this changelog.
+
+**Remaining gap-review items, not yet built, still queued for a future
+session if wanted:** none — the original four-item priority queue
+(Order Block, Kill Zone/AMD, DXY correlation, liquidity-pool mapping) is
+now complete. Any further confluence work from here is either (a) the
+family-cap decision above, or (b) a fresh gap review now that this
+session's five additions exist to react to.

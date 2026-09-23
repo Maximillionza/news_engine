@@ -52,7 +52,8 @@ enum ENUM_EVIDENCE_TYPE
    EVID_ORDER_BLOCK         = 16,  // v4.0.1 — CASE_SetupEngine::CheckOrderBlock(); new detector, not a re-identified existing check (see file header of CheckOrderBlock)
    EVID_KILL_ZONE           = 17,  // v4.0.1 — surfaces the existing CASE_Time::IsKillZone() (v3.7.0) as discrete evidence; not a new detector
    EVID_AMD_PHASE           = 18,  // v4.0.1 — CASE_SetupEngine::CheckAMDPhase(); new detector (Accumulation/Manipulation/Distribution)
-   EVID_MACRO_CORRELATION   = 19   // v4.0.1 — CASE_SetupEngine::CheckMacroCorrelation(); new detector, first cross-symbol (non-_Symbol) read anywhere in this codebase
+   EVID_MACRO_CORRELATION   = 19,  // v4.0.1 — CASE_SetupEngine::CheckMacroCorrelation(); new detector, first cross-symbol (non-_Symbol) read anywhere in this codebase
+   EVID_LIQUIDITY_POOL      = 20   // v4.0.1 — CASE_SetupEngine::CheckLiquidityPool(); new detector (PDH/PDL + equal highs/lows), distinct from EVID_LIQUIDITY_SWEEP's swing-pivot logic
 };
 
 // One piece of evidence. Deliberately flat/POD so it can sit in a
