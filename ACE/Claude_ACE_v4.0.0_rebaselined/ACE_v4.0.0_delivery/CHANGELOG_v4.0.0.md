@@ -992,3 +992,79 @@ enough to actually reach `WAIT_TRIGGER` and produce real opportunity-log
 rows with DNA tags — that's the first point any of this build's new
 evidence types get checked against real behavior rather than static
 review or a compile.
+
+---
+
+## Addendum 13 — first real backtest reviewed: all five new evidence types fire; found a real data-integrity issue
+
+User ran a proper Strategy Tester backtest (188 trading days, roughly
+January through September 2026) and shared the resulting opportunity
+logs from `FILE_COMMON`. This is the first genuine behavioral check any
+of this build has had — everything before this addendum was static
+review, a compile, or a two-minute live attach that never reached
+`WAIT_TRIGGER`.
+
+**All five new v4.0.1 evidence types fire on real data.** Counted DNA-tag
+presence across all 188 `ASE_v4.0.1_opportunities_*.csv` files:
+
+| Evidence type | Fires in | % of days |
+|---|---|---|
+| `LP` (Liquidity Pool) | 185/188 | 98% |
+| `KZ` (Kill Zone) | 179/188 | 95% |
+| `OB` (Order Block) | 126/188 | 67% |
+| `DXY` (Macro Correlation) | 79/188 | 42% |
+| `AMD` (AMD Phase) | 29/188 | 15% |
+
+`AMD` being rarest matches its own design, not a concern — it requires
+kill-zone timing AND an Asian-range sweep AND confirmed distribution
+simultaneously, the most compound condition of the five, so a lower hit
+rate is the expected outcome, not a red flag. A first eyeballed single
+day (`2026.08.05`) happened to show none of `OB`/`AMD`/`DXY` and was
+initially reported as a concern in conversation before the full-dataset
+grep corrected that — worth recording so the false read doesn't
+resurface: one quiet day is not evidence of a broken detector, and
+checking a single day's file for a 15%-hit-rate evidence type is not a
+representative sample.
+
+**Real finding, not cosmetic — opportunity/state files silently
+duplicate across repeated Strategy Tester runs.** `2026.08.05`'s
+opportunity file: 78 total data rows, only 26 distinct
+`(timestamp, SetupDNA)` pairs — each real opportunity duplicated roughly
+3×. Root cause: `CASE_SetupAnalytics::OpenFile()` opens the opportunity
+CSV with `FILE_WRITE|FILE_READ` and seeks to the file's end (append, not
+overwrite) — by design, so a live/demo instance's log survives a
+terminal restart without being wiped. `SaveState()`/`LoadState()` for
+`adaptive2.csv`/`v4state2.csv` persist the same way. That design is
+correct for live/demo continuity, but it means **re-running Strategy
+Tester more than once over an overlapping date range keeps appending to
+the same FILE_COMMON files instead of starting clean** — the EA has no
+way to distinguish "a fresh backtest replaying old data" from "a live
+restart resuming where it left off."
+
+**Consequence: the `adaptive2.csv` sample counts read earlier in this
+changelog (TrendContinuation 152, PullbackContinuation 319, etc.) are
+almost certainly inflated by the same duplication factor**, if that
+backtest range was run more than once without clearing state first. This
+is not cosmetic — those counts drive the authority-tier gate
+(`InpAceV4AuthCautiousMin`/`ControlledMin`/`ValidatedMin` = 20/50/100)
+directly. A nominal 152 samples reads as past `Validated`; a real ~50
+would sit at `Controlled` instead. No live trading impact while
+`InpAceV4Mode=ACEV4_EVIDENCE` (the default, unchanged), but **no
+accumulated learning number from any past run should be trusted as a
+real observation count until state is cleared and a single clean run is
+taken.**
+
+**Recommended before trusting any further backtest output:** delete (or
+move aside) every `ASE_v4.0.1_*` file under
+`%APPDATA%\MetaQuotes\Terminal\Common\Files\ASE_StateLogs\` before
+starting a fresh, single, continuous Strategy Tester run over the
+intended date range. Do not re-run the same range twice without clearing
+first; clear between iterations when re-testing after a code change.
+
+**Not a bug introduced this session or last** — this is existing
+v3/v4.0.0 `FILE_COMMON` persistence architecture (designed for live
+continuity) colliding with a backtesting workflow that reruns overlapping
+ranges. Flagged here because it directly affects how much to trust
+`adaptive2.csv`/opportunity-log output, not because anything about it was
+changed in this build. Not fixed in this pass — no code change was made;
+this addendum is documentation of an operational gotcha, not a patch.
