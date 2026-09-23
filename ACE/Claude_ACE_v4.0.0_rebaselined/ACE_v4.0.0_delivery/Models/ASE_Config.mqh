@@ -546,4 +546,27 @@ input int    InpAsianEndHour           = 7;     // Asian session end — hour (U
 input int    InpAsianEndMin            = 0;     // Asian session end — minute (UTC)
 input int    InpAMDLookbackBars        = 12;    // M15 bars scanned back for a kill-zone sweep of the Asian range (~3h — covers one full kill-zone window)
 
+// v4.0.1 — Macro correlation evidence (EVID_MACRO_CORRELATION,
+// CASE_SetupEngine::CheckMacroCorrelation()). Same V4-evidence-only
+// wiring as every other v4.0.1 addition above — never touches the legacy
+// Evaluate() cascade. Genuinely new class of signal for this codebase:
+// every other detector reads only _Symbol; this reads a SECOND symbol
+// (a DXY/USD-index proxy) and checks it moved opposite to the gold setup
+// direction over a short lookback, on the standard (not universal, but
+// dominant) assumption that gold and the US dollar trade inversely.
+//
+// InpMacroCorrSymbol IS NOT VERIFIED to exist on XM (or any broker) in
+// this environment — no MT5 runtime available to check Market Watch.
+// "USDX" is a common ticker for a dollar-index CFD but naming varies
+// by broker and some brokers don't offer one at all. CASE_SetupEngine::
+// Initialize() calls SymbolSelect() once and caches the result; if it
+// fails, EVID_MACRO_CORRELATION stays permanently inactive (logged once
+// at startup) and nothing else in the EA is affected — verify the exact
+// symbol name in Market Watch and update this input before relying on
+// this evidence type for anything.
+input bool   InpEnableMacroCorrelation = true;   // Allow macro-correlation evidence collection (V4 evidence only — degrades to inactive if InpMacroCorrSymbol is unavailable)
+input string InpMacroCorrSymbol        = "USDX"; // Broker symbol for a DXY/USD-index proxy — VERIFY this matches an actual symbol in Market Watch before relying on this evidence
+input int    InpMacroCorrLookbackBars  = 8;      // M15 bars for the correlation-symbol rate-of-change window (~2h)
+input double InpMacroCorrROCThreshold  = 0.0015; // minimum |rate-of-change| (fraction, e.g. 0.0015 = 0.15%) for the correlation symbol's move to count as meaningful
+
 #endif // ASE_CONFIG_MQH

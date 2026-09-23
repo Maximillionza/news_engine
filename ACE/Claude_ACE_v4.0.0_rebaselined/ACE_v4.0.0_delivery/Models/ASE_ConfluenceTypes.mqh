@@ -163,6 +163,7 @@ string ASE_BuildSetupDNA(ENUM_SETUP_ARCHETYPE archetype,
          case EVID_ORDER_BLOCK:      tag = "OB";   break;
          case EVID_KILL_ZONE:        tag = "KZ";   break;
          case EVID_AMD_PHASE:        tag = "AMD";  break;
+         case EVID_MACRO_CORRELATION:tag = "DXY";  break;
          default: continue;   // environment/execution evidence not part of the DNA signature
       }
       dna += "-" + tag;

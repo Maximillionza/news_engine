@@ -593,3 +593,111 @@ touched file (`ASE_SetupEngine.mqh`, `ASE_ConfluenceEngine.mqh`,
 price data or the Asian-range `iBarShift`/`CopyHigh`/`CopyLow` math under
 real broker history gaps — no MT5 runtime in this environment. Neither
 detector has fired once on real data.
+
+---
+
+## Addendum 8 — Macro correlation (DXY/USD-index) evidence
+
+Third item, same session, same v4.0.1 fork — usage checked after
+Addendum 7 confirmed enough remained (5-hour window at 13%, weekly at
+5%) to continue rather than stop, per this session's explicit
+instruction to complete at least one item and continue only while
+budget clearly allows.
+
+**This is a different category of change from every other v4.0.1
+addition so far.** Order Block, Kill Zone, and AMD phase are all new
+DETECTORS, but they all read `_Symbol` — same class of signal as
+everything already in the evidence set. `EVID_MACRO_CORRELATION` is the
+first evidence type, and the first code anywhere in this codebase
+(confirmed by grep across `Core/`/`Utilities/` before writing this), to
+read a SECOND symbol. Rationale: gold's dominant macro driver is real
+yields/the US dollar, not its own chart structure, and every other
+evidence type in this engine is blind to that by construction.
+
+**What it does:** simple rate-of-change on a configurable correlation
+symbol (`InpMacroCorrSymbol`, default `"USDX"`) over
+`InpMacroCorrLookbackBars` M15 bars (default 8, ~2h). A LONG gold setup
+is corroborated by the correlation symbol showing recent downward
+momentum past `InpMacroCorrROCThreshold`; a SHORT setup by upward
+momentum — the standard (not universal — this assumption breaks down in
+some regimes) gold/USD inverse-correlation read. Deliberately the
+simplest possible measure (ROC, not a rolling correlation coefficient)
+so this first version is easy to audit against real data before anything
+more elaborate gets built on top of it.
+
+**`InpMacroCorrSymbol` is UNVERIFIED against any real broker in this
+environment — flagging this loudly because it matters:** no MT5 runtime
+was available to check Market Watch, so `"USDX"` is a guess at a common
+dollar-index CFD ticker, not a confirmed XM (or any broker) symbol name.
+Symbol naming for index CFDs varies significantly by broker, and some
+brokers don't offer one at all. Handled defensively, not by hoping the
+default is right:
+- `CASE_SetupEngine::Initialize()` now calls `SymbolSelect()` once on
+  `InpMacroCorrSymbol` and caches the result in a new `m_corrSymbolValid`
+  member — resolved once at startup, not re-checked every bar.
+- If resolution fails, one warning is printed at startup naming the
+  problem input, and `EVID_MACRO_CORRELATION` stays permanently inactive
+  from then on. This is explicitly NOT allowed to fail EA `Initialize()`
+  — an unavailable correlation symbol degrades one evidence type to
+  always-off, nothing else in the EA is affected.
+- **Action needed before this evidence type does anything useful:**
+  verify the actual dollar-index (or similar) symbol name this broker
+  offers, in Market Watch, and set `InpMacroCorrSymbol` to match. Until
+  that happens, `EVID_MACRO_CORRELATION` will silently sit inactive on
+  every bar — check the startup Journal for the `[SETUP] WARNING` line to
+  confirm one way or the other.
+
+**Family cap finding — flagging plainly rather than repeating the same
+caveat a third time without comment:** `EVID_MACRO_CORRELATION` is
+`FAM_ENVIRONMENT`, weight 4.0. That family's cap (`familyMax[FAM_ENVIRONMENT]`
+= 10) was already fully consumed by `EVID_VOLATILITY_STATE` (8) +
+`EVID_SESSION_QUALITY` (2) before this session started, and Addendum 7
+already added `EVID_KILL_ZONE` on top of that same saturated cap. This
+addition makes THREE independent signal types — market regime, session
+timing, and now macro correlation — competing for a 10-point ceiling
+sized when the family held one detector. It is now structurally
+impossible for more than one of these three to meaningfully move the
+score at the same time, regardless of how many are genuinely active.
+This is worth a deliberate decision (raise the cap, or accept that
+`FAM_ENVIRONMENT` evidence is informational/enhancer-only in practice) —
+not made here, same reasoning as Addendum 7: a cap change affects every
+existing evidence type's calibration, not just the ones added this
+session, and isn't something to change as a side effect of adding new
+detectors.
+
+**Wiring:**
+- `Models/ASE_EvidenceTypes.mqh` — `EVID_MACRO_CORRELATION = 19`.
+- `Models/ASE_ConfluenceTypes.mqh` — DNA tag `"DXY"`.
+- `Core/ASE_ConfluenceEngine.mqh` — weight 4.0, cap-saturation documented
+  inline.
+- `Core/ASE_SetupEngine.mqh` — new `m_corrSymbolValid` member, symbol
+  resolution added to `Initialize()` (does not affect its return value),
+  new `CheckMacroCorrelation()`, called ONLY from `EvaluateAllEvidence()`.
+  Legacy `Evaluate()` cascade has zero lines changed — same standard
+  applied to every prior addition this build.
+- `Models/ASE_Config.mqh` — four new inputs: `InpEnableMacroCorrelation`
+  (kill switch), `InpMacroCorrSymbol` (broker ticker — VERIFY before
+  trusting), `InpMacroCorrLookbackBars`, `InpMacroCorrROCThreshold`.
+
+**Also not added to any `CoreCheck*()` in `ASE_SetupClassifier.mqh`** —
+enhancer-only, same reasoning as every other addition this session, and
+doubly warranted here given the symbol availability is unverified.
+
+**`ASE_MAX_EVIDENCE` capacity checked:** M15 evidence collection is now
+12 items per bar (was 11 after Addendum 7, 8 before this build started).
+Still well under the 24-item cap.
+
+**Not done this session:** liquidity-pool (equal highs/lows, PDH/PDL)
+mapping — last item in the original priority queue, now queued for the
+next session.
+
+**Verification performed:** brace/paren balance confirmed on every
+touched file. Not verified, and cannot be from this environment: whether
+`InpMacroCorrSymbol`'s default actually resolves on any real broker,
+whether `CopyClose()` against a second symbol behaves as expected under
+real market data/history gaps, or whether the gold/USD inverse-
+correlation assumption holds over the configured lookback in practice.
+This is the least-verified addition in this changelog — treat it as a
+hypothesis wired into the evidence set, not a working feature, until
+someone checks the Journal for the `[SETUP] WARNING` line and confirms
+the symbol actually resolves.

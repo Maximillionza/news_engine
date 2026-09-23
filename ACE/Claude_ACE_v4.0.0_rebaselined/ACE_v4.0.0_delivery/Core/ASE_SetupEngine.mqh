@@ -25,14 +25,41 @@ private:
    //   double m_compRangeHigh;   (was never written post-init)
    //   double m_compRangeLow;    (was never written post-init)
 
+   // v4.0.1 — resolved once at Initialize(), not re-checked per bar.
+   // Genuinely new territory for this file (and this codebase — grepped
+   // before writing this: every existing SymbolInfoDouble/CopyClose call
+   // anywhere in Core/Utilities is scoped to _Symbol; nothing reads a
+   // second symbol). Broker symbol availability for a DXY/USD-index proxy
+   // is NOT verified in this environment (no MT5 runtime) — this must
+   // fail soft, never block the EA, if InpMacroCorrSymbol doesn't exist
+   // on the connected broker.
+   bool   m_corrSymbolValid;
+
 public:
    CASE_SetupEngine() : m_emaHandle(INVALID_HANDLE),
-                        m_atrHandle(INVALID_HANDLE) {}
+                        m_atrHandle(INVALID_HANDLE),
+                        m_corrSymbolValid(false) {}
 
    bool Initialize()
    {
       m_emaHandle = iMA(_Symbol, PERIOD_M15, InpM15EMA, 0, MODE_EMA, PRICE_CLOSE);
       m_atrHandle = iATR(_Symbol, PERIOD_M15, InpATRPeriod);
+
+      // v4.0.1 — macro correlation symbol. Deliberately NOT part of the
+      // return value below: an unresolvable correlation symbol degrades
+      // EVID_MACRO_CORRELATION to permanently inactive (see
+      // CheckMacroCorrelation()), it must never fail EA Initialize().
+      m_corrSymbolValid = false;
+      if(InpEnableMacroCorrelation && StringLen(InpMacroCorrSymbol) > 0)
+      {
+         m_corrSymbolValid = SymbolSelect(InpMacroCorrSymbol, true);
+         if(!m_corrSymbolValid)
+            Print("[SETUP] WARNING — macro correlation symbol '", InpMacroCorrSymbol,
+                  "' not found/selectable on this broker. EVID_MACRO_CORRELATION will stay ",
+                  "inactive until InpMacroCorrSymbol (ASE_Config.mqh) is set to a symbol this ",
+                  "broker actually offers — verify the exact ticker in Market Watch first.");
+      }
+
       return (m_emaHandle != INVALID_HANDLE && m_atrHandle != INVALID_HANDLE);
    }
 
@@ -298,6 +325,18 @@ public:
          e.evidType = EVID_AMD_PHASE; e.family = FAM_LIQUIDITY; e.direction = direction;
          e.active = res.passed; e.strength = res.score; e.reason = res.reason;
          e.timestamp = now; e.sourceTF = PERIOD_M15; e.priceRef = price;
+         if(ev.Add(e)) added++;
+      }
+      // v4.0.1 — Macro correlation. Same V4-evidence-only wiring; never
+      // called from legacy Evaluate(). Degrades to inactive-only if the
+      // correlation symbol isn't available — see CheckMacroCorrelation().
+      if(InpEnableMacroCorrelation)
+      {
+         ValidationResult res = CheckMacroCorrelation(direction);
+         e.Clear();
+         e.evidType = EVID_MACRO_CORRELATION; e.family = FAM_ENVIRONMENT; e.direction = direction;
+         e.active = res.passed; e.strength = res.score; e.reason = res.reason;
+         e.timestamp = now; e.sourceTF = PERIOD_M15;
          if(ev.Add(e)) added++;
       }
       return added;
@@ -782,6 +821,70 @@ private:
       r.score  = 12.0 + (sweepBar <= 2 ? 3.0 : 0.0);
       r.reason = StringFormat("AMD %s | Asian[%.5f-%.5f] swept bar=%d price=%.5f",
                                dir == DIR_LONG ? "LONG" : "SHORT", asianLow, asianHigh, sweepBar, price);
+      return r;
+   }
+
+   //------------------------------------------------------------------
+   // v4.0.1 — Macro correlation. Genuinely new signal CLASS for this
+   // codebase, not just a new detector — every other Check* method in
+   // this file (and every SymbolInfoDouble/CopyClose call anywhere in
+   // Core/Utilities, confirmed by grep before writing this) reads only
+   // _Symbol. This reads a SECOND symbol.
+   //
+   // Rationale: gold's dominant macro driver is real yields/the US
+   // dollar, not its own chart structure — every other evidence type in
+   // this engine is symbol-internal and blind to that. Standard (not
+   // universal — regimes exist where it decouples) assumption: gold and
+   // a USD-index proxy move inversely. A LONG gold setup is corroborated
+   // by the correlation symbol showing recent downward momentum; a SHORT
+   // setup by upward momentum. Measured as simple rate-of-change over
+   // InpMacroCorrLookbackBars M15 bars — deliberately the simplest
+   // possible measure, not a rolling correlation coefficient, so the
+   // first version of this evidence type is easy to audit and reason
+   // about against real data before anything more elaborate is built on
+   // top of it.
+   //
+   // Degrades to permanently inactive, never an error, if
+   // m_corrSymbolValid is false (symbol unavailable on this broker — see
+   // Initialize()) or the buffer read fails for any other reason.
+   //------------------------------------------------------------------
+   ValidationResult CheckMacroCorrelation(ENUM_TRADE_DIRECTION dir)
+   {
+      ValidationResult r;
+      r.passed = false; r.score = 0.0; r.reason = "No macro correlation evidence";
+
+      if(!InpEnableMacroCorrelation) { r.reason = "Macro correlation disabled"; return r; }
+      if(!m_corrSymbolValid) { r.reason = StringFormat("Correlation symbol '%s' unavailable", InpMacroCorrSymbol); return r; }
+      if(dir == DIR_NONE) return r;
+
+      int needed = MathMax(3, InpMacroCorrLookbackBars) + 1;
+      double cl[];
+      ArraySetAsSeries(cl, true);
+      if(CopyClose(InpMacroCorrSymbol, PERIOD_M15, 0, needed, cl) < needed)
+      {
+         r.reason = StringFormat("'%s' buffer fail", InpMacroCorrSymbol);
+         return r;
+      }
+
+      double older  = cl[needed - 1];
+      double recent = cl[1];
+      if(older <= 0.0) { r.reason = StringFormat("Invalid '%s' price", InpMacroCorrSymbol); return r; }
+      double roc = (recent - older) / older;
+
+      bool aligned = (dir == DIR_LONG)  ? (roc <= -InpMacroCorrROCThreshold)
+                   : (dir == DIR_SHORT) ? (roc >=  InpMacroCorrROCThreshold)
+                   : false;
+      if(!aligned)
+      {
+         r.reason = StringFormat("%s ROC=%.4f%% not aligned with %s gold setup",
+                                  InpMacroCorrSymbol, roc * 100, dir == DIR_LONG ? "LONG" : "SHORT");
+         return r;
+      }
+
+      r.passed = true;
+      r.score  = 10.0 + (MathAbs(roc) >= InpMacroCorrROCThreshold * 2 ? 3.0 : 0.0);
+      r.reason = StringFormat("%s ROC=%.4f%% aligned with %s gold setup (inverse correlation)",
+                               InpMacroCorrSymbol, roc * 100, dir == DIR_LONG ? "LONG" : "SHORT");
       return r;
    }
 
