@@ -550,24 +550,37 @@ input int    InpAMDLookbackBars        = 12;    // M15 bars scanned back for a k
 // CASE_SetupEngine::CheckMacroCorrelation()). Same V4-evidence-only
 // wiring as every other v4.0.1 addition above — never touches the legacy
 // Evaluate() cascade. Genuinely new class of signal for this codebase:
-// every other detector reads only _Symbol; this reads a SECOND symbol
-// (a DXY/USD-index proxy) and checks it moved opposite to the gold setup
-// direction over a short lookback, on the standard (not universal, but
-// dominant) assumption that gold and the US dollar trade inversely.
+// every other detector reads only _Symbol; this reads SIX.
 //
-// InpMacroCorrSymbol IS NOT VERIFIED to exist on XM (or any broker) in
-// this environment — no MT5 runtime available to check Market Watch.
-// "USDX" is a common ticker for a dollar-index CFD but naming varies
-// by broker and some brokers don't offer one at all. CASE_SetupEngine::
-// Initialize() calls SymbolSelect() once and caches the result; if it
-// fails, EVID_MACRO_CORRELATION stays permanently inactive (logged once
-// at startup) and nothing else in the EA is affected — verify the exact
-// symbol name in Market Watch and update this input before relying on
-// this evidence type for anything.
-input bool   InpEnableMacroCorrelation = true;   // Allow macro-correlation evidence collection (V4 evidence only — degrades to inactive if InpMacroCorrSymbol is unavailable)
-input string InpMacroCorrSymbol        = "USDX"; // Broker symbol for a DXY/USD-index proxy — VERIFY this matches an actual symbol in Market Watch before relying on this evidence
-input int    InpMacroCorrLookbackBars  = 8;      // M15 bars for the correlation-symbol rate-of-change window (~2h)
-input double InpMacroCorrROCThreshold  = 0.0015; // minimum |rate-of-change| (fraction, e.g. 0.0015 = 0.15%) for the correlation symbol's move to count as meaningful
+// Originally a single "USDX" ticker — confirmed by the user that this
+// broker does not offer a direct DXY/dollar-index CFD, so this instead
+// synthesizes the equivalent from the six standard forex pairs that make
+// up the real ICE Dollar Index formula (every broker carries these as
+// ordinary majors/minors, unlike an index CFD). See CASE_SetupEngine::
+// CheckMacroCorrelation() header for the exact combination method and
+// the stated simplification (weighted linear ROC sum, not the real
+// geometric-product formula — a deliberate, documented approximation for
+// a directional signal, not an attempt at an exact index replica).
+//
+// Each of the six component symbols below IS NOT VERIFIED against this
+// specific broker in this environment (no MT5 runtime to check Market
+// Watch) — EURUSD/GBPUSD/USDJPY/USDCAD/USDCHF are close to universal
+// across brokers, USDSEK is the one most likely to be missing or spelled
+// differently. CASE_SetupEngine::Initialize() resolves each independently
+// via SymbolSelect() and excludes any that fail — the basket still reads
+// from the remaining components as long as InpMacroBasketMinCoverage is
+// met, it does not require all six. Check the Journal for the
+// "DXY-basket symbol(s) not found" warning to see which (if any) failed.
+input bool   InpEnableMacroCorrelation = true;   // Allow macro-correlation evidence collection (V4 evidence only — degrades gracefully per-component)
+input string InpDXYSymbolEUR           = "EURUSD"; // DXY weight 0.576 (dominant component) — XXX/USD quote, inverted in the combination
+input string InpDXYSymbolJPY           = "USDJPY"; // DXY weight 0.136 — USD/XXX quote, not inverted
+input string InpDXYSymbolGBP           = "GBPUSD"; // DXY weight 0.119 — XXX/USD quote, inverted in the combination
+input string InpDXYSymbolCAD           = "USDCAD"; // DXY weight 0.091 — USD/XXX quote, not inverted
+input string InpDXYSymbolSEK           = "USDSEK"; // DXY weight 0.042 — USD/XXX quote, not inverted. Most likely of the six to need a broker-specific name or be unavailable.
+input string InpDXYSymbolCHF           = "USDCHF"; // DXY weight 0.036 — USD/XXX quote, not inverted
+input double InpMacroBasketMinCoverage = 0.70;   // minimum fraction of the six components' combined weight that must have resolved before the basket reading is trusted (else evidence reports inactive)
+input int    InpMacroCorrLookbackBars  = 8;      // M15 bars for each component's rate-of-change window (~2h)
+input double InpMacroCorrROCThreshold  = 0.0015; // minimum |basket rate-of-change| (fraction, e.g. 0.0015 = 0.15%) to count as meaningful
 
 // v4.0.1 — Liquidity Pool evidence (EVID_LIQUIDITY_POOL,
 // CASE_SetupEngine::CheckLiquidityPool()). Last item of the original

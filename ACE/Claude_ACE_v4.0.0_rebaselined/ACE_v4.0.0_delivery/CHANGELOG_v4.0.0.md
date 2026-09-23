@@ -870,3 +870,83 @@ run or live/demo attachment to check:**
 either way) long enough to accumulate opportunity-log rows, then reading
 that log for whether each new evidence type is firing at plausible
 frequency and DNA-tagging correctly (`OB`, `KZ`, `AMD`, `DXY`, `LP`).
+
+---
+
+## Addendum 12 — macro correlation replaced with a real DXY-equivalent basket
+
+User confirmed this broker does not offer a direct DXY/USD-index CFD —
+the `InpMacroCorrSymbol="USDX"` single-symbol design from Addendum 8 was
+built against an unverified guess, and the guess was wrong. Rather than
+substitute another single symbol (EURUSD or USDJPY were discussed as
+lighter-weight options), this replaces the single symbol entirely with
+the six pairs that make up the real ICE Dollar Index formula — every
+broker carries these as ordinary majors/minors, so availability risk
+drops sharply versus a single index CFD ticker.
+
+**IMPORTANT — this changes code that was already confirmed compiling
+clean in Addendum 11.** That confirmation was for the single-symbol
+version of `CheckMacroCorrelation()`; this replaces that method's body
+and its supporting `Initialize()` logic entirely. **Addendum 11's
+compile confirmation no longer applies to this file — it needs
+recompiling before it's trusted again**, same as any other source change.
+
+**What changed:**
+- `CASE_SetupEngine`'s single `m_corrSymbolValid` bool replaced with four
+  parallel 6-element arrays (`m_basketSymbol`, `m_basketWeight`,
+  `m_basketInverted`, `m_basketValid`) — no local struct type, since MQL5
+  doesn't support declaring one inside a class/function body the way this
+  would want, and a file-scope struct felt like overkill for an
+  internal-only 6-row table nothing outside this class touches.
+- `Initialize()` now resolves all six components via `SymbolSelect()`
+  independently and reports which (if any) failed in one consolidated
+  warning, rather than one symbol pass/fail.
+- `CheckMacroCorrelation()` combines the six components' own
+  rate-of-change into one weighted reading, using the six official ICE
+  DXY exponents (EUR 0.576, JPY 0.136, GBP 0.119, CAD 0.091, SEK 0.042,
+  CHF 0.036 — already sum to 1.0) as the weights, with `EURUSD`/`GBPUSD`
+  sign-flipped before summing since they're XXX/USD quotes (inverse
+  polarity to the four USD/XXX pairs). **Stated simplification:** this is
+  a weighted LINEAR SUM of rates of change, not the real DXY's weighted
+  GEOMETRIC PRODUCT of price levels — a standard, defensible
+  approximation for a short-term directional signal, not a claim of
+  reproducing the actual index value.
+- Graceful degradation is now per-component, not all-or-nothing: any
+  symbol that fails to resolve is excluded and its weight isn't counted;
+  the remaining components still combine into a reading as long as
+  `InpMacroBasketMinCoverage` (default 0.70, i.e. 70% of the six
+  components' combined weight) is met. Below that, the evidence type
+  reports inactive rather than return a reading built from whichever
+  handful of components happened to resolve — a 20%-coverage reading
+  dominated by, say, just SEK and CHF would be misleading to trust.
+
+**Wiring (unchanged from Addendum 8):** still `EVID_MACRO_CORRELATION`,
+still weight 4.0 in `FAM_ENVIRONMENT` (same cap-saturation caveat as
+before — this upgrade makes the SIGNAL better, it does not touch the
+family-cap decision that's still deliberately deferred per Addendum 10).
+Still called only from `EvaluateAllEvidence()`, legacy `Evaluate()`
+cascade still untouched.
+
+**`Models/ASE_Config.mqh` — `InpMacroCorrSymbol` removed, replaced with:**
+`InpDXYSymbolEUR/JPY/GBP/CAD/SEK/CHF` (one input per component, each
+documenting its DXY weight and quote polarity inline) and
+`InpMacroBasketMinCoverage`. `InpEnableMacroCorrelation`,
+`InpMacroCorrLookbackBars`, `InpMacroCorrROCThreshold` all kept as-is —
+same meaning, now applied to the combined basket reading instead of one
+symbol.
+
+**Still unverified, arguably more so now:** none of EUR/JPY/GBP/CAD/CHF
+are meaningfully in doubt on a forex broker, but `USDSEK` is the one
+component most likely to be missing or named differently — flagged
+inline in its own input comment. The basket's graceful-degradation
+design means a missing SEK alone won't disable the evidence type (only
+4.2% of the weight), but check the Journal warning to know which
+scenario you're actually in.
+
+**Verification performed:** brace/paren balance confirmed on both
+touched files (`ASE_SetupEngine.mqh`, `ASE_Config.mqh`); confirmed no
+dangling references to the removed `InpMacroCorrSymbol`/
+`m_corrSymbolValid`. Not verified: an actual compile (see the note
+above — Addendum 11's compile does not cover this version of the file),
+or whether any of the six symbol names match this specific broker's
+naming exactly.

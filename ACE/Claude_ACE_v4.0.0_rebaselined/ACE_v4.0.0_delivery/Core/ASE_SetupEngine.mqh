@@ -14,6 +14,7 @@
 
 #define SETUP_FVG_LOOKBACK   20
 #define SETUP_COMP_BARS       5
+#define ASE_DXY_BASKET_SIZE   6   // v4.0.1 — EUR/JPY/GBP/CAD/SEK/CHF, the six official ICE DXY components
 
 class CASE_SetupEngine
 {
@@ -25,40 +26,56 @@ private:
    //   double m_compRangeHigh;   (was never written post-init)
    //   double m_compRangeLow;    (was never written post-init)
 
-   // v4.0.1 — resolved once at Initialize(), not re-checked per bar.
-   // Genuinely new territory for this file (and this codebase — grepped
-   // before writing this: every existing SymbolInfoDouble/CopyClose call
-   // anywhere in Core/Utilities is scoped to _Symbol; nothing reads a
-   // second symbol). Broker symbol availability for a DXY/USD-index proxy
-   // is NOT verified in this environment (no MT5 runtime) — this must
-   // fail soft, never block the EA, if InpMacroCorrSymbol doesn't exist
-   // on the connected broker.
-   bool   m_corrSymbolValid;
+   // v4.0.1 — DXY-equivalent basket, resolved once at Initialize(), not
+   // re-checked per bar. Replaces the original single-symbol design
+   // (a plain "USDX"/DXY ticker, which turned out not to exist on this
+   // account's broker — see CHANGELOG_v4.0.0.md Addendum 12 for why this
+   // exists instead). Six fixed-size parallel arrays instead of a struct
+   // array: MQL5 doesn't support local/nested struct type definitions the
+   // way this would want, and every other new type in this delivery is
+   // declared file-scope in Models/, not worth doing for an internal-only
+   // 6-element table. Genuinely new territory for this codebase either
+   // way — grepped before writing the original version of this: every
+   // other SymbolInfoDouble/CopyClose call anywhere in Core/Utilities is
+   // scoped to _Symbol; nothing else reads a second symbol, let alone six.
+   string m_basketSymbol[ASE_DXY_BASKET_SIZE];
+   double m_basketWeight[ASE_DXY_BASKET_SIZE];   // official ICE DXY exponents, sum to 1.0 — used as linear ROC weights, not the real geometric formula (see CheckMacroCorrelation() header)
+   bool   m_basketInverted[ASE_DXY_BASKET_SIZE]; // true = XXX/USD quote (EUR, GBP) — rising price means USD weakening, opposite polarity to the USD/XXX pairs
+   bool   m_basketValid[ASE_DXY_BASKET_SIZE];
 
 public:
    CASE_SetupEngine() : m_emaHandle(INVALID_HANDLE),
-                        m_atrHandle(INVALID_HANDLE),
-                        m_corrSymbolValid(false) {}
+                        m_atrHandle(INVALID_HANDLE) {}
 
    bool Initialize()
    {
       m_emaHandle = iMA(_Symbol, PERIOD_M15, InpM15EMA, 0, MODE_EMA, PRICE_CLOSE);
       m_atrHandle = iATR(_Symbol, PERIOD_M15, InpATRPeriod);
 
-      // v4.0.1 — macro correlation symbol. Deliberately NOT part of the
-      // return value below: an unresolvable correlation symbol degrades
-      // EVID_MACRO_CORRELATION to permanently inactive (see
-      // CheckMacroCorrelation()), it must never fail EA Initialize().
-      m_corrSymbolValid = false;
-      if(InpEnableMacroCorrelation && StringLen(InpMacroCorrSymbol) > 0)
+      // v4.0.1 — DXY-equivalent basket. Deliberately NOT part of the
+      // return value below: any/all components failing to resolve
+      // degrades EVID_MACRO_CORRELATION to inactive or reduced-coverage
+      // (see CheckMacroCorrelation()), it must never fail EA Initialize().
+      m_basketSymbol[0] = InpDXYSymbolEUR; m_basketWeight[0] = 0.576; m_basketInverted[0] = true;  // EUR — dominant DXY component
+      m_basketSymbol[1] = InpDXYSymbolJPY; m_basketWeight[1] = 0.136; m_basketInverted[1] = false;
+      m_basketSymbol[2] = InpDXYSymbolGBP; m_basketWeight[2] = 0.119; m_basketInverted[2] = true;
+      m_basketSymbol[3] = InpDXYSymbolCAD; m_basketWeight[3] = 0.091; m_basketInverted[3] = false;
+      m_basketSymbol[4] = InpDXYSymbolSEK; m_basketWeight[4] = 0.042; m_basketInverted[4] = false;
+      m_basketSymbol[5] = InpDXYSymbolCHF; m_basketWeight[5] = 0.036; m_basketInverted[5] = false;
+
+      string missing = "";
+      for(int i = 0; i < ASE_DXY_BASKET_SIZE; i++)
       {
-         m_corrSymbolValid = SymbolSelect(InpMacroCorrSymbol, true);
-         if(!m_corrSymbolValid)
-            Print("[SETUP] WARNING — macro correlation symbol '", InpMacroCorrSymbol,
-                  "' not found/selectable on this broker. EVID_MACRO_CORRELATION will stay ",
-                  "inactive until InpMacroCorrSymbol (ASE_Config.mqh) is set to a symbol this ",
-                  "broker actually offers — verify the exact ticker in Market Watch first.");
+         m_basketValid[i] = false;
+         if(!InpEnableMacroCorrelation || StringLen(m_basketSymbol[i]) == 0) continue;
+         m_basketValid[i] = SymbolSelect(m_basketSymbol[i], true);
+         if(!m_basketValid[i]) missing += (StringLen(missing) > 0 ? ", " : "") + m_basketSymbol[i];
       }
+      if(InpEnableMacroCorrelation && StringLen(missing) > 0)
+         Print("[SETUP] WARNING — DXY-basket symbol(s) not found/selectable on this broker: ", missing,
+               ". Those components are excluded from EVID_MACRO_CORRELATION; the basket still reads ",
+               "if InpMacroBasketMinCoverage is met by the remaining components. Verify exact tickers ",
+               "in Market Watch and update the matching InpDXYSymbol* input if this broker names them differently.");
 
       return (m_emaHandle != INVALID_HANDLE && m_atrHandle != INVALID_HANDLE);
    }
@@ -836,28 +853,43 @@ private:
    }
 
    //------------------------------------------------------------------
-   // v4.0.1 — Macro correlation. Genuinely new signal CLASS for this
-   // codebase, not just a new detector — every other Check* method in
-   // this file (and every SymbolInfoDouble/CopyClose call anywhere in
-   // Core/Utilities, confirmed by grep before writing this) reads only
-   // _Symbol. This reads a SECOND symbol.
+   // v4.0.1 — Macro correlation, DXY-equivalent basket. Genuinely new
+   // signal CLASS for this codebase, not just a new detector — every
+   // other Check* method in this file (and every SymbolInfoDouble/
+   // CopyClose call anywhere in Core/Utilities, confirmed by grep before
+   // writing this) reads only _Symbol. This reads six.
    //
    // Rationale: gold's dominant macro driver is real yields/the US
    // dollar, not its own chart structure — every other evidence type in
-   // this engine is symbol-internal and blind to that. Standard (not
-   // universal — regimes exist where it decouples) assumption: gold and
-   // a USD-index proxy move inversely. A LONG gold setup is corroborated
-   // by the correlation symbol showing recent downward momentum; a SHORT
-   // setup by upward momentum. Measured as simple rate-of-change over
-   // InpMacroCorrLookbackBars M15 bars — deliberately the simplest
-   // possible measure, not a rolling correlation coefficient, so the
-   // first version of this evidence type is easy to audit and reason
-   // about against real data before anything more elaborate is built on
-   // top of it.
+   // this engine is symbol-internal and blind to that. This build's
+   // broker does not offer a direct DXY/USDX index CFD (confirmed by the
+   // user), so this synthesizes the equivalent from the six pairs that
+   // make up the real ICE Dollar Index formula, which every broker
+   // carries as standard majors/minors: EUR, JPY, GBP, CAD, SEK, CHF.
    //
-   // Degrades to permanently inactive, never an error, if
-   // m_corrSymbolValid is false (symbol unavailable on this broker — see
-   // Initialize()) or the buffer read fails for any other reason.
+   // SIMPLIFICATION, stated rather than silently assumed: the real DXY is
+   // a geometric weighted PRODUCT of price LEVELS
+   // (50.14 × EURUSD^-0.576 × USDJPY^0.136 × GBPUSD^-0.119 × USDCAD^0.091
+   // × USDSEK^0.042 × USDCHF^0.036). This computes a weighted LINEAR SUM
+   // of each component's own rate-of-change instead, using the same six
+   // official exponents as weights (they already sum to 1.0). That's a
+   // standard, defensible approximation for a DIRECTIONAL momentum signal
+   // — it does not reproduce the exact index level, only its short-term
+   // direction, which is all this evidence type needs.
+   //
+   // Polarity: EURUSD/GBPUSD are XXX/USD quotes — a RISING price means
+   // the dollar WEAKENING, opposite polarity to the four USD/XXX pairs.
+   // m_basketInverted[] flips those two components' sign before summing,
+   // so the combined result reads as "positive = dollar strengthening"
+   // consistently across all six, matching a real DXY reading's sign.
+   //
+   // Missing components degrade gracefully, not to a hard failure: any
+   // component whose symbol didn't resolve at Initialize() (see
+   // m_basketValid[]) is excluded and its weight is NOT counted in the
+   // combination. If the coverage remaining after exclusions falls below
+   // InpMacroBasketMinCoverage (fraction of the full 1.0 nominal weight),
+   // the whole evidence type reports inactive rather than return a
+   // reading built mostly from whichever components happened to resolve.
    //------------------------------------------------------------------
    ValidationResult CheckMacroCorrelation(ENUM_TRADE_DIRECTION dir)
    {
@@ -865,37 +897,58 @@ private:
       r.passed = false; r.score = 0.0; r.reason = "No macro correlation evidence";
 
       if(!InpEnableMacroCorrelation) { r.reason = "Macro correlation disabled"; return r; }
-      if(!m_corrSymbolValid) { r.reason = StringFormat("Correlation symbol '%s' unavailable", InpMacroCorrSymbol); return r; }
       if(dir == DIR_NONE) return r;
 
       int needed = MathMax(3, InpMacroCorrLookbackBars) + 1;
-      double cl[];
-      ArraySetAsSeries(cl, true);
-      if(CopyClose(InpMacroCorrSymbol, PERIOD_M15, 0, needed, cl) < needed)
+      double weightedROC = 0.0, usedWeight = 0.0;
+      string usedSymbols = "";
+
+      for(int i = 0; i < ASE_DXY_BASKET_SIZE; i++)
       {
-         r.reason = StringFormat("'%s' buffer fail", InpMacroCorrSymbol);
+         if(!m_basketValid[i]) continue;
+
+         double cl[];
+         ArraySetAsSeries(cl, true);
+         if(CopyClose(m_basketSymbol[i], PERIOD_M15, 0, needed, cl) < needed) continue;
+
+         double older  = cl[needed - 1];
+         double recent = cl[1];
+         if(older <= 0.0) continue;
+
+         double roc = (recent - older) / older;
+         if(m_basketInverted[i]) roc = -roc;
+
+         weightedROC += roc * m_basketWeight[i];
+         usedWeight  += m_basketWeight[i];
+         usedSymbols += (StringLen(usedSymbols) > 0 ? "+" : "") + m_basketSymbol[i];
+      }
+
+      if(usedWeight < InpMacroBasketMinCoverage)
+      {
+         r.reason = StringFormat("DXY-basket coverage too low (%.0f%% of components resolved, need %.0f%%)",
+                                  usedWeight * 100, InpMacroBasketMinCoverage * 100);
          return r;
       }
 
-      double older  = cl[needed - 1];
-      double recent = cl[1];
-      if(older <= 0.0) { r.reason = StringFormat("Invalid '%s' price", InpMacroCorrSymbol); return r; }
-      double roc = (recent - older) / older;
+      // Renormalize: a partial basket's weighted sum is scaled back up to
+      // what a full 1.0-weight basket would have read, so coverage gaps
+      // don't just silently shrink the signal toward zero.
+      double basketROC = weightedROC / usedWeight;
 
-      bool aligned = (dir == DIR_LONG)  ? (roc <= -InpMacroCorrROCThreshold)
-                   : (dir == DIR_SHORT) ? (roc >=  InpMacroCorrROCThreshold)
+      bool aligned = (dir == DIR_LONG)  ? (basketROC <= -InpMacroCorrROCThreshold)
+                   : (dir == DIR_SHORT) ? (basketROC >=  InpMacroCorrROCThreshold)
                    : false;
       if(!aligned)
       {
-         r.reason = StringFormat("%s ROC=%.4f%% not aligned with %s gold setup",
-                                  InpMacroCorrSymbol, roc * 100, dir == DIR_LONG ? "LONG" : "SHORT");
+         r.reason = StringFormat("DXY-basket[%s] ROC=%.4f%% not aligned with %s gold setup",
+                                  usedSymbols, basketROC * 100, dir == DIR_LONG ? "LONG" : "SHORT");
          return r;
       }
 
       r.passed = true;
-      r.score  = 10.0 + (MathAbs(roc) >= InpMacroCorrROCThreshold * 2 ? 3.0 : 0.0);
-      r.reason = StringFormat("%s ROC=%.4f%% aligned with %s gold setup (inverse correlation)",
-                               InpMacroCorrSymbol, roc * 100, dir == DIR_LONG ? "LONG" : "SHORT");
+      r.score  = 10.0 + (MathAbs(basketROC) >= InpMacroCorrROCThreshold * 2 ? 3.0 : 0.0);
+      r.reason = StringFormat("DXY-basket[%s] ROC=%.4f%% aligned with %s gold setup (coverage=%.0f%%)",
+                               usedSymbols, basketROC * 100, dir == DIR_LONG ? "LONG" : "SHORT", usedWeight * 100);
       return r;
    }
 
