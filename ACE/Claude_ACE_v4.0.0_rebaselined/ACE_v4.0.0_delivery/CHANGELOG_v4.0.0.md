@@ -960,3 +960,35 @@ likely to need attention), whether `CheckMacroCorrelation()`'s combined
 reading behaves sensibly against real price data, or any Strategy
 Tester/live result. A clean compile confirms the code is valid MQL5, not
 that the basket logic or any symbol mapping is correct in practice.
+
+**Update — first Journal output from an actual attachment/test run,
+reviewed.** Symbol is `GOLD` on this broker, not `XAUUSD` — noted for the
+record, not a problem (the EA is `_Symbol`-agnostic throughout). No
+`DXY-basket symbol(s) not found` warning appeared anywhere in the
+`Initialize()` block of the pasted output — consistent with all six
+components resolving, though this only rules out a warning within what
+was pasted, not one that scrolled past earlier in the session.
+
+The run itself was too short to validate anything real: state trace went
+`WAIT_HTF → WAIT_SETUP → IDLE` (blocked on the LEGACY v3 setup check —
+`FVG:No FVG Disp:No M15 displacement...`) and never reached
+`WAIT_TRIGGER`. V4 confluence/classification/opportunity-logging happens
+in the M1 trigger phase, not the M15 setup phase this run got stuck in —
+"No opportunities recorded" in the Learning Summary is the expected,
+unsurprising result of that, not a sign anything built this build is
+broken. None of the five new v4.0.1 evidence types (`OB`/`KZ`/`AMD`/
+`DXY`/`LP`) have been exercised by any test run yet.
+
+**Also flagged to the user, worth recording so it isn't reintroduced as
+a "finding" later:** the heartbeat line's `Macro=Unknown` and the
+`[REGIME] Macro ceiling: Neutral` print are a PRE-EXISTING v3 concept
+(regime macro ceiling, tied to the init banner's `Fix5=MacroLazyInit`) —
+unrelated to `EVID_MACRO_CORRELATION`/the DXY basket. Two different
+things both called "macro"; do not read the heartbeat's `Macro=` field
+as a status indicator for the basket evidence type.
+
+**Real next step, unchanged from every prior addendum:** a run long
+enough to actually reach `WAIT_TRIGGER` and produce real opportunity-log
+rows with DNA tags — that's the first point any of this build's new
+evidence types get checked against real behavior rather than static
+review or a compile.
