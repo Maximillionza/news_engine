@@ -950,3 +950,13 @@ dangling references to the removed `InpMacroCorrSymbol`/
 above — Addendum 11's compile does not cover this version of the file),
 or whether any of the six symbol names match this specific broker's
 naming exactly.
+
+**Update — user recompiled in MetaEditor after this change: zero
+errors.** Closes the gap this addendum flagged above. Still not verified
+from this environment: which of the six `InpDXYSymbol*` components
+actually resolved on this broker (check the Journal for the
+"DXY-basket symbol(s) not found" warning — `USDSEK` remains the one most
+likely to need attention), whether `CheckMacroCorrelation()`'s combined
+reading behaves sensibly against real price data, or any Strategy
+Tester/live result. A clean compile confirms the code is valid MQL5, not
+that the basket logic or any symbol mapping is correct in practice.
