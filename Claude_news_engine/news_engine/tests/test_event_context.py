@@ -219,6 +219,55 @@ def test_fomc_relevance_keywords_still_match_the_current_fed_chair_warsh():
     print("PASS\n")
 
 
+# --- 2026-09-24 fix: single-stock-blurb titles are excluded even when a
+# real keyword appears in their boilerplate "due today" calendar footer.
+# Real headlines from live incidents in scoring/backtest_log.db. ---
+
+def test_single_stock_blurb_dropped_despite_real_keyword_in_boilerplate_footer():
+    print("=== event_context: a single-stock blurb is dropped for Unemployment Claims even though its 'due today' footer genuinely mentions jobless claims (2026-09-24 live incident, 76.9%+52.8% of total weight across two real predictions) ===")
+    on_topic = _article("Weekly jobless claims fall to 215,000, labor market resilient", "Unemployment claims data shows continued strength")
+    offenders = [
+        _article("First Solar stock heads into the open after a 4.42 percent drop", "US jobless claims and housing data are due today."),
+        _article("NetApp stock rises 1.8 percent ahead of the open", "US initial jobless claims are scheduled for 8:30 a.m. ET today."),
+        _article("Align Technology stock slips 3.34 percent ahead of the open", "US jobless claims data due today."),
+        _article("Dexcom stock falls 1.1 percent ahead of the open", "US jobless claims data due today."),
+        _article("Synchrony Financial stock falls 2.92 percent ahead of the open", "US jobless claims data due today."),
+    ]
+    source = _StubSource([on_topic] + offenders)
+    bundle = _build(_event("Unemployment Claims"), source)
+    titles = [a.title for a in bundle.articles]
+    assert on_topic.title in titles
+    for offender in offenders:
+        assert offender.title not in titles, f"should have been dropped: {offender.title!r}"
+    print("PASS\n")
+
+
+def test_single_stock_blurb_dropped_even_without_percent_figure_or_ahead_of_open_phrasing():
+    print("=== event_context: single-stock-blurb detection isn't limited to 'X percent'/'ahead of the open' phrasing (historical incident: 'Dick's Sporting Goods stock falls 20%...' was 100% of a real prediction's weight) ===")
+    offenders = [
+        _article("Dick's Sporting Goods stock falls 20% as retailer misses expectations, cites 'challenging' footwear market", "Fed Chairman Warsh Speaks on the economic outlook."),
+        _article("Darden Restaurants stock climbs after Baird lifts its target", "Payrolls revision data due later this week."),
+    ]
+    source = _StubSource(offenders)
+    bundle = _build(_event("Fed Chairman Warsh Speaks"), source)
+    assert bundle.articles == []
+    print("PASS\n")
+
+
+def test_single_stock_blurb_filter_does_not_drop_genuine_macro_headlines():
+    print("=== event_context: the single-stock-blurb filter doesn't false-positive on real macro coverage that happens to mention stocks/markets ===")
+    genuinely_on_topic = [
+        _article("Gold miners rally as Fed signals rate cut", "FOMC statement points to a dovish pivot"),
+        _article("Wall Street closes lower as oil prices jump, indexes notch monthly gains", "ISM Manufacturing PMI data weighed on sentiment"),
+        _article("S&P 500 falls as CPI data disappoints", "Consumer price index came in hotter than forecast"),
+    ]
+    for article in genuinely_on_topic:
+        source = _StubSource([article])
+        bundle = _build(_event("FOMC Statement" if "FOMC" in article.summary else "ISM Manufacturing PMI" if "ISM" in article.summary else "CPI m/m"), source)
+        assert len(bundle.articles) == 1, f"should NOT have been dropped: {article.title!r}"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_off_topic_article_is_dropped_for_an_event_with_configured_keywords()
     test_relevance_keyword_match_is_case_insensitive_and_checks_summary_too()
@@ -226,4 +275,13 @@ if __name__ == "__main__":
     test_relevance_filter_runs_before_dedup_but_does_not_break_it()
     test_cpi_off_topic_article_is_dropped_reproducing_the_diagnosed_dilution()
     test_cpi_keyword_list_shared_across_all_four_title_variants()
+    test_nfp_drops_the_real_chipotle_article_that_previously_contributed_weight()
+    test_ppi_drops_the_real_tsmc_article_that_previously_contributed_weight()
+    test_ism_manufacturing_drops_the_real_venezuela_oil_article_that_previously_contributed_weight()
+    test_retail_sales_drops_the_real_huntington_bank_article_that_previously_contributed_weight()
+    test_unemployment_claims_drops_the_real_intel_sk_hynix_article_that_previously_contributed_weight()
+    test_fomc_relevance_keywords_still_match_the_current_fed_chair_warsh()
+    test_single_stock_blurb_dropped_despite_real_keyword_in_boilerplate_footer()
+    test_single_stock_blurb_dropped_even_without_percent_figure_or_ahead_of_open_phrasing()
+    test_single_stock_blurb_filter_does_not_drop_genuine_macro_headlines()
     print("All event_context tests passed.")

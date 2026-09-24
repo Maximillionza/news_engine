@@ -10,11 +10,47 @@ and hand that bundle off for scoring.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from dataclasses import dataclass
 
 from config.settings import EVENT_RELEVANCE_KEYWORDS_BY_TITLE, PRE_EVENT_WINDOW_HOURS, UTC_TZ
 from data_layer.calendar_feed import EconomicEvent
 from data_layer.news_feed import NewsArticle, NewsSource, fetch_from_all_sources, deduplicate_articles
+
+# 2026-09-24 fix: a single-company stock-price blurb ("First Solar stock
+# heads into the open after a 4.42 percent drop", "NetApp stock rises 1.8
+# percent ahead of the open") routinely appends a boilerplate "US data due
+# today" calendar footer naming that day's scheduled macro release --
+# genuinely containing a real keyword (e.g. "jobless claims") from
+# EVENT_RELEVANCE_KEYWORDS_BY_TITLE, even though the article's actual
+# subject is that one company's own price move, unrelated to the named
+# event. Live-confirmed 2026-09-24: two real Unemployment Claims scores had
+# 76.9% and 52.8% of their total sentiment weight driven by exactly this
+# pattern (Dexcom, Synchrony Financial, First Solar, NetApp, Align
+# Technology); historical damage included one prediction (Fed Chairman
+# Warsh Speaks / Prelim Benchmark Payrolls Revision) where a single
+# unrelated "Dick's Sporting Goods stock falls 20%..." earnings-miss
+# headline was 100% of that prediction's weight.
+#
+# A keyword substring match can't tell "this article is ABOUT the event"
+# apart from "this article mentions the event in a footer" -- but the
+# HEADLINE shape reliably can: a genuine macro article is essentially never
+# titled "<Company> stock <verb> X percent" the way a syndicated
+# single-stock blurb always is. Checked against the title only (not
+# summary/body) -- deliberately narrower than the keyword filter itself,
+# so this can't suppress a genuinely on-topic article whose own headline
+# happens to name a company reacting to real macro news (e.g. "Gold miners
+# rally as Fed signals rate cut" doesn't match: no "<Name> stock <verb>"
+# shape).
+_SINGLE_STOCK_BLURB_TITLE_PATTERN = re.compile(
+    r"\bstock (rises?|falls?|drops?|slips?|gains?|jumps?|climbs?|declines?|"
+    r"surges?|plunges?|sinks?|ralli(?:es|ed)|tumbles?|heads into)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_single_stock_blurb(article: NewsArticle) -> bool:
+    return bool(_SINGLE_STOCK_BLURB_TITLE_PATTERN.search(article.title))
 
 
 @dataclass
@@ -72,7 +108,7 @@ def _filter_relevant(articles: list[NewsArticle], event_title: str) -> list[News
             f"article-based sentiment coverage for this event."
         )
         return []
-    return [a for a in articles if _is_relevant(a, keywords)]
+    return [a for a in articles if not _is_single_stock_blurb(a) and _is_relevant(a, keywords)]
 
 
 def build_event_news_bundle(
