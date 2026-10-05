@@ -46,6 +46,11 @@ CREATE TABLE IF NOT EXISTS poll_cursor (
     source TEXT PRIMARY KEY,
     last_seen_utc TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS provider_cooldown (
+    provider TEXT PRIMARY KEY,
+    until_utc TEXT NOT NULL
+);
 """
 
 _schema_ready_paths: set[str] = set()
@@ -161,6 +166,28 @@ def set_cursor(conn: sqlite3.Connection, source: str, last_seen_utc: dt.datetime
         "INSERT INTO poll_cursor (source, last_seen_utc) VALUES (?, ?) "
         "ON CONFLICT(source) DO UPDATE SET last_seen_utc = excluded.last_seen_utc",
         (source, last_seen_utc.isoformat()),
+    )
+    conn.commit()
+
+
+def get_provider_cooldown_until(conn: sqlite3.Connection, provider: str) -> Optional[dt.datetime]:
+    """When `provider` may be tried again, or None if it has no recorded cooldown."""
+    row = conn.execute("SELECT until_utc FROM provider_cooldown WHERE provider = ?", (provider,)).fetchone()
+    if row is None:
+        return None
+    return dt.datetime.fromisoformat(row["until_utc"])
+
+
+def set_provider_cooldown(conn: sqlite3.Connection, provider: str, until_utc: dt.datetime) -> None:
+    """
+    Persisted (not in-process) because poll_once.py is a fresh process every
+    scheduler tick -- an in-memory flag would forget a dead provider and
+    pay its full timeout again on the very next cycle.
+    """
+    conn.execute(
+        "INSERT INTO provider_cooldown (provider, until_utc) VALUES (?, ?) "
+        "ON CONFLICT(provider) DO UPDATE SET until_utc = excluded.until_utc",
+        (provider, until_utc.isoformat()),
     )
     conn.commit()
 

@@ -29,6 +29,28 @@ FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
+# --- Shock alerting (alerting/) LLM classification + notification policy ---
+# Classification tries Claude Haiku first, then a local Ollama model. Both
+# are bounded by short timeouts and a per-provider cooldown after a failure,
+# so a dead provider (e.g. exhausted Anthropic credits, a hung request)
+# never stalls the 2-minute poll cycle -- see alerting/llm_classify.py.
+CLAUDE_CLASSIFY_MODEL = "claude-haiku-4-5"
+CLAUDE_TIMEOUT_SECONDS = 8.0
+CLAUDE_COOLDOWN_MINUTES = 15       # skip Claude this long after any call failure
+OLLAMA_BASE_URL = "http://localhost:11434"
+OLLAMA_CLASSIFY_MODEL = "llama3.2:3b"
+OLLAMA_TIMEOUT_SECONDS = 25.0
+OLLAMA_KEEP_ALIVE = "30m"          # keep the model resident so the first call after a quiet spell isn't a cold load
+OLLAMA_COOLDOWN_MINUTES = 5
+# Total LLM wall-clock allowed per poll cycle. Once spent, remaining
+# ambiguous candidates skip classification and go out as UNCLASSIFIED
+# pushes immediately, so a news burst can't delay notifications past ~2 min.
+LLM_CYCLE_BUDGET_SECONDS = 90.0
+# Lowest severity pushed to Telegram. "Low" = every shock alert. A
+# classification that fails on every provider is always pushed (as
+# UNCLASSIFIED) regardless of this threshold, since its severity is unknown.
+TELEGRAM_MIN_SEVERITY = "Low"
+
 # --- FRED (St. Louis Fed) month-lookahead calendar source — READ-ONLY,
 # comparison/logging use only, NOT wired into scoring or the live
 # dashboard/accumulator pipelines (see docs/calendar-lookahead-source-research-2026-08-15.md

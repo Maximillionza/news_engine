@@ -2,6 +2,11 @@
 # Only needed for alerting/llm_classify.py's severity classification of
 # ambiguous shock candidates -- a single plain API call per candidate,
 # not a Claude Code session. Install only if running the alerting/ tool.
+# `anthropic` is the PRIMARY classifier (Claude Haiku); it is optional --
+# without it, or while its API is failing, classification falls back to a
+# local Ollama model (config.settings.OLLAMA_CLASSIFY_MODEL, default
+# llama3.2:3b -- `ollama pull llama3.2:3b`; no extra Python package, it is
+# called over HTTP with `requests`).
 anthropic>=0.40.0
 
 # alerting/reality_check.py additionally requires dukascopy-python (its

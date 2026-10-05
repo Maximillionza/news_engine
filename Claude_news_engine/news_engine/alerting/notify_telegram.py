@@ -1,4 +1,8 @@
-"""Telegram Bot API push for High-severity shock alerts only."""
+"""
+Telegram Bot API push for shock alerts. Originally High-only; 2026-10: all
+severities are pushed (poll_once.py's TELEGRAM_MIN_SEVERITY decides the
+floor), each labelled so a Medium/Low is visually distinct from a High.
+"""
 from __future__ import annotations
 
 import time
@@ -11,6 +15,12 @@ from config.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 _MAX_ATTEMPTS = 3
 _BASE_DELAY_SECONDS = 0.1  # small on purpose -- doubles each retry, kept tiny so tests stay fast
 
+_SEVERITY_PREFIX = {
+    "High": "\U0001F6A8 HIGH",
+    "Medium": "⚠️ MEDIUM",
+    "Low": "ℹ️ LOW",
+}
+
 
 def _sleep(seconds: float) -> None:
     """Isolated seam so tests can monkeypatch this to a no-op and run fast."""
@@ -20,6 +30,7 @@ def _sleep(seconds: float) -> None:
 def send_alert(
     headline: str, category: str, severity: str, rationale: Optional[str],
     affected_symbols: list[dict], sources: list[dict], is_escalation: bool = False,
+    classification_failed: bool = False,
 ) -> bool:
     """
     Returns True on a confirmed 200 from Telegram's API, False on any
@@ -35,6 +46,10 @@ def send_alert(
     existing alert's stored severity. Wording only; delivery/retry
     behavior is identical either way.
 
+    classification_failed=True labels the push UNCLASSIFIED: every LLM
+    provider failed, so `severity` is just the Medium fallback and the
+    reader should judge the headline themselves rather than trust it.
+
     Retries up to _MAX_ATTEMPTS total attempts, with a small exponential
     backoff, on a `requests.RequestException` or a 5xx response -- both
     plausibly transient. A non-5xx failure response (e.g. 401/400 -- a
@@ -47,7 +62,12 @@ def send_alert(
 
     symbols_line = ", ".join(f"{s['symbol']} ({s['channel']})" for s in affected_symbols) or "none currently tracked"
     source_line = sources[0]["url"] if sources else ""
-    prefix = "⬆️ ESCALATION" if is_escalation else "\U0001F6A8 HIGH"
+    if is_escalation:
+        prefix = f"⬆️ ESCALATION ({severity.upper()})"
+    elif classification_failed:
+        prefix = "❓ UNCLASSIFIED (needs review)"
+    else:
+        prefix = _SEVERITY_PREFIX.get(severity, f"{severity.upper()}")
     text = (
         f"{prefix} -- {category}\n"
         f"{headline}\n"

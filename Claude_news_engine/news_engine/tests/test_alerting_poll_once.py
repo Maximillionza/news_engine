@@ -5,7 +5,9 @@ import datetime as dt
 from unittest.mock import MagicMock, patch
 
 from alerting import store
+from alerting.llm_classify import ClassificationResult
 from alerting.poll_once import run_poll_cycle
+from alerting.triage import TriageResult
 from data_layer.news_feed import NewsArticle
 from webapp import store as webapp_store
 
@@ -179,3 +181,165 @@ def test_one_source_fetch_failure_does_not_block_others():
 
     alerts = store.list_recent_alerts(conn, dt.datetime(2020, 1, 1, tzinfo=UTC))
     assert len(alerts) >= 1  # at least one of the (mocked) multiple sources succeeded
+
+
+# --- LLM provider chain, push policy and cycle ordering (2026-10) ---
+
+_ALL_TIME = dt.datetime(2020, 1, 1, tzinfo=UTC)
+
+
+def _triage_result(category="energy", rule_tier_hit=False):
+    return TriageResult(
+        matched=True, category=category, rule_tier_hit=rule_tier_hit,
+        matched_keywords=[], near_miss_score=None,
+    )
+
+
+def _run_cycle_with(articles, triage_by_title, classify=None, send=None):
+    """One poll cycle over a single fake feed, triage and classification stubbed per headline."""
+    conn = store.get_connection(":memory:")
+    webapp_conn = webapp_store.get_connection(":memory:")
+    send = send or MagicMock(return_value=True)
+    with patch("alerting.poll_once.FREE_PREVIEW_FEEDS", {"feed_a": "https://example.com/feed"}), \
+         patch("alerting.poll_once.RSSNewsSource") as source_cls, \
+         patch("alerting.poll_once.triage_article", side_effect=lambda a: triage_by_title[a.title]), \
+         patch("alerting.poll_once.llm_classify.classify_candidate", classify or MagicMock()), \
+         patch("alerting.poll_once.notify_telegram.send_alert", send):
+        source_cls.return_value.fetch.return_value = articles
+        run_poll_cycle(conn=conn, webapp_conn=webapp_conn)
+    return conn, send
+
+
+def test_medium_alert_from_ollama_is_pushed_and_recorded_with_ollama_method():
+    classify = MagicMock(return_value=ClassificationResult(
+        category="energy", severity="Medium", rationale="routine", provider="ollama"))
+    conn, send = _run_cycle_with(
+        [_article("Oil prices tick higher on OPEC+ chatter")],
+        {"Oil prices tick higher on OPEC+ chatter": _triage_result()}, classify=classify)
+
+    alert = store.list_recent_alerts(conn, _ALL_TIME)[0]
+    assert alert.severity == "Medium"
+    assert alert.classification_method == "llm_ollama"
+    assert alert.delivery_status == "sent"
+    assert send.call_count == 1
+    assert send.call_args.args[2] == "Medium"
+    assert send.call_args.kwargs["classification_failed"] is False
+
+
+def test_low_alert_is_pushed_under_the_default_threshold():
+    classify = MagicMock(return_value=ClassificationResult(
+        category="energy", severity="Low", rationale="priced in", provider="claude"))
+    conn, send = _run_cycle_with(
+        [_article("Oil drifts on OPEC+ remarks")],
+        {"Oil drifts on OPEC+ remarks": _triage_result()}, classify=classify)
+
+    assert store.list_recent_alerts(conn, _ALL_TIME)[0].classification_method == "llm"
+    assert send.call_count == 1
+    assert send.call_args.args[2] == "Low"
+
+
+def test_threshold_blocks_a_medium_alert_but_never_an_unclassified_one():
+    ok = MagicMock(return_value=ClassificationResult(
+        category="energy", severity="Medium", rationale="r", provider="claude"))
+    failed = MagicMock(return_value=ClassificationResult(
+        category="energy", severity="Medium", rationale="all providers down", classification_failed=True))
+
+    with patch("alerting.poll_once.TELEGRAM_MIN_SEVERITY", "High"):
+        _, send_ok = _run_cycle_with([_article("Story A")], {"Story A": _triage_result()}, classify=ok)
+        conn, send_failed = _run_cycle_with([_article("Story B")], {"Story B": _triage_result()}, classify=failed)
+
+    send_ok.assert_not_called()
+    assert send_failed.call_count == 1
+    assert send_failed.call_args.kwargs["classification_failed"] is True
+    assert store.list_recent_alerts(conn, _ALL_TIME)[0].classification_method == "llm_failed_fallback"
+
+
+def test_hard_rule_alert_is_pushed_before_any_ambiguous_candidate_is_classified():
+    """An ambiguous headline sitting FIRST in the feed must not delay a clear-cut High behind its LLM call."""
+    order = []
+
+    def classify(article, triage, conn=None):
+        order.append(f"classify:{article.title}")
+        return ClassificationResult(category="energy", severity="Medium", rationale="r", provider="ollama")
+
+    def send(headline, *args, **kwargs):
+        order.append(f"send:{headline}")
+        return True
+
+    _run_cycle_with(
+        [_article("Ambiguous oil story"), _article("Strait of Hormuz closed")],
+        {"Ambiguous oil story": _triage_result("energy"),
+         "Strait of Hormuz closed": _triage_result("geopolitical_conflict", rule_tier_hit=True)},
+        classify=MagicMock(side_effect=classify), send=MagicMock(side_effect=send))
+
+    assert order == [
+        "send:Strait of Hormuz closed",
+        "classify:Ambiguous oil story",
+        "send:Ambiguous oil story",
+    ]
+
+
+def test_spent_llm_budget_sends_remaining_candidates_unclassified_without_calling_the_llm():
+    classify = MagicMock()
+    with patch("alerting.poll_once.LLM_CYCLE_BUDGET_SECONDS", 0):
+        conn, send = _run_cycle_with(
+            [_article("Story A"), _article("Story B")],
+            {"Story A": _triage_result("energy"), "Story B": _triage_result("central_bank")},
+            classify=classify)
+
+    classify.assert_not_called()
+    alerts = store.list_recent_alerts(conn, _ALL_TIME)
+    assert len(alerts) == 2
+    assert all(a.classification_method == "llm_failed_fallback" for a in alerts)
+    assert send.call_count == 2
+    assert all(call.kwargs["classification_failed"] is True for call in send.call_args_list)
+
+
+def test_provider_chain_receives_the_alerts_connection_for_cooldown_state():
+    classify = MagicMock(return_value=ClassificationResult(
+        category="energy", severity="Low", rationale="r", provider="claude"))
+    conn, _ = _run_cycle_with([_article("Story A")], {"Story A": _triage_result()}, classify=classify)
+    assert classify.call_args.kwargs["conn"] is conn
+
+
+def _run_dedup_match_cycle(existing_id, conn, classification, send):
+    webapp_conn = webapp_store.get_connection(":memory:")
+    with patch("alerting.poll_once.FREE_PREVIEW_FEEDS", {"feed_a": "u"}), \
+         patch("alerting.poll_once.RSSNewsSource") as source_cls, \
+         patch("alerting.poll_once.triage_article", return_value=_triage_result()), \
+         patch("alerting.poll_once.llm_classify.classify_candidate", MagicMock(return_value=classification)), \
+         patch("alerting.poll_once.dedup.find_existing_alert", return_value=existing_id), \
+         patch("alerting.poll_once.notify_telegram.send_alert", send):
+        source_cls.return_value.fetch.return_value = [_article("Oil drifts on OPEC+ remarks again")]
+        run_poll_cycle(conn=conn, webapp_conn=webapp_conn)
+
+
+def _existing_low_alert(conn):
+    return store.record_alert(
+        conn, headline="Oil drifts on OPEC+ remarks", source="cnbc_top_news", url="https://a",
+        published_utc=dt.datetime.now(UTC), detected_at_utc=dt.datetime.now(UTC),
+        category="energy", severity="Low", classification_method="llm", rationale=None, affected_symbols=[],
+    )
+
+
+def test_escalation_from_low_to_medium_is_pushed_as_an_escalation():
+    conn = store.get_connection(":memory:")
+    existing_id = _existing_low_alert(conn)
+    send = MagicMock(return_value=True)
+    _run_dedup_match_cycle(existing_id, conn, ClassificationResult(
+        category="energy", severity="Medium", rationale="r", provider="claude"), send)
+
+    assert store.get_alert(conn, existing_id).severity == "Medium"
+    assert send.call_args.args[2] == "Medium"
+    assert send.call_args.kwargs["is_escalation"] is True
+
+
+def test_failed_classification_never_escalates_an_existing_alert():
+    conn = store.get_connection(":memory:")
+    existing_id = _existing_low_alert(conn)
+    send = MagicMock()
+    _run_dedup_match_cycle(existing_id, conn, ClassificationResult(
+        category="energy", severity="Medium", rationale="providers down", classification_failed=True), send)
+
+    assert store.get_alert(conn, existing_id).severity == "Low"
+    send.assert_not_called()

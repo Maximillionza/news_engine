@@ -107,3 +107,32 @@ def test_exhausts_retries_on_persistent_request_exception_returns_false():
     assert result is False
     assert mock_post.call_count == notify_telegram._MAX_ATTEMPTS
     assert mock_sleep.call_count == notify_telegram._MAX_ATTEMPTS - 1
+
+
+# --- severity labelling and UNCLASSIFIED (2026-10: all severities are pushed) ---
+
+def _sent_text(severity="High", **kwargs):
+    from unittest.mock import MagicMock, patch
+    from alerting.notify_telegram import send_alert
+    with patch("alerting.notify_telegram.TELEGRAM_BOT_TOKEN", "t"), \
+         patch("alerting.notify_telegram.TELEGRAM_CHAT_ID", "c"), \
+         patch("alerting.notify_telegram.requests.post", return_value=MagicMock(status_code=200)) as post:
+        send_alert("Oil prices jump", "energy", severity, "why", [], [{"source": "s", "url": "https://u"}], **kwargs)
+    return post.call_args.kwargs["json"]["text"]
+
+
+def test_each_severity_gets_its_own_label():
+    assert "HIGH --" in _sent_text("High")
+    assert "MEDIUM --" in _sent_text("Medium")
+    assert "LOW --" in _sent_text("Low")
+
+
+def test_classification_failed_push_is_labelled_unclassified_not_with_its_fallback_severity():
+    text = _sent_text("Medium", classification_failed=True)
+    assert "UNCLASSIFIED" in text
+    assert "MEDIUM --" not in text
+
+
+def test_escalation_label_names_the_new_severity():
+    text = _sent_text("Medium", is_escalation=True)
+    assert "ESCALATION (MEDIUM)" in text

@@ -133,3 +133,19 @@ def test_get_alerts_needing_reality_check_excludes_already_checked():
                                 checked_at_utc=dt.datetime(2026, 9, 15, tzinfo=UTC))
     pending = store.get_alerts_needing_reality_check(conn, dt.datetime(2026, 9, 1, tzinfo=UTC))
     assert [r.id for r in pending] == [unchecked]
+
+
+def test_provider_cooldown_roundtrip_and_overwrite():
+    import datetime as dt
+    from alerting import store
+    conn = store.get_connection(":memory:")
+    assert store.get_provider_cooldown_until(conn, "claude") is None
+
+    first = dt.datetime(2026, 10, 5, 12, 15, tzinfo=dt.timezone.utc)
+    store.set_provider_cooldown(conn, "claude", first)
+    assert store.get_provider_cooldown_until(conn, "claude") == first
+    assert store.get_provider_cooldown_until(conn, "ollama") is None  # providers are independent
+
+    later = first + dt.timedelta(minutes=30)
+    store.set_provider_cooldown(conn, "claude", later)
+    assert store.get_provider_cooldown_until(conn, "claude") == later
