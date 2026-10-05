@@ -40,7 +40,8 @@ CLAUDE_COOLDOWN_MINUTES = 15       # skip Claude this long after any call failur
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_CLASSIFY_MODEL = "llama3.2:3b"
 OLLAMA_TIMEOUT_SECONDS = 45.0      # measured on this CPU-only box: warm ~4-5 s, cold load 17-40 s (slower while the disk is busy)
-OLLAMA_KEEP_ALIVE = -1             # -1 = never unload. Shock candidates can be hours apart, so any finite value means a cold load (and a timeout risk) on most calls; the 3B model costs ~3 GB of RAM
+OLLAMA_NUM_CTX = 4096              # the prompt is ~400 tokens. Ollama otherwise loads this model with a 131072-token context = an ~18 GB footprint (measured via `ollama ps`) -- unusable on a 16 GB machine, and it made cold loads far slower
+OLLAMA_KEEP_ALIVE = -1           # -1 = never unload. Shock candidates can be hours apart, so any finite value means a cold load (and a timeout risk) on most calls; the 3B model costs ~3 GB of RAM
 OLLAMA_COOLDOWN_MINUTES = 5
 # Total LLM wall-clock allowed per poll cycle. Once spent, remaining
 # ambiguous candidates skip classification and go out as UNCLASSIFIED

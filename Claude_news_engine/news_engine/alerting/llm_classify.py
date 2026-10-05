@@ -34,7 +34,7 @@ from alerting.triage import TriageResult
 from config.settings import (
     CLAUDE_CLASSIFY_MODEL, CLAUDE_COOLDOWN_MINUTES, CLAUDE_TIMEOUT_SECONDS,
     OLLAMA_BASE_URL, OLLAMA_CLASSIFY_MODEL, OLLAMA_COOLDOWN_MINUTES,
-    OLLAMA_KEEP_ALIVE, OLLAMA_TIMEOUT_SECONDS,
+    OLLAMA_KEEP_ALIVE, OLLAMA_NUM_CTX, OLLAMA_TIMEOUT_SECONDS,
 )
 from data_layer.news_feed import NewsArticle
 
@@ -119,7 +119,7 @@ def _call_ollama(prompt: str) -> str:
             "stream": False,
             "format": "json",
             "keep_alive": OLLAMA_KEEP_ALIVE,
-            "options": {"temperature": 0, "num_predict": 200},
+            "options": {"temperature": 0, "num_predict": 200, "num_ctx": OLLAMA_NUM_CTX},
         },
         timeout=OLLAMA_TIMEOUT_SECONDS,
     )

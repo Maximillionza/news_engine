@@ -166,6 +166,8 @@ def test_ollama_request_uses_json_mode_low_temperature_and_keep_alive():
     assert body["format"] == "json"
     assert body["stream"] is False
     assert body["options"]["temperature"] == 0
+    # Without an explicit context Ollama loads this model with a 131072-token window (~18 GB).
+    assert body["options"]["num_ctx"] == llm_classify.OLLAMA_NUM_CTX <= 8192
     assert body["keep_alive"] == llm_classify.OLLAMA_KEEP_ALIVE
     assert body["model"] == llm_classify.OLLAMA_CLASSIFY_MODEL
     assert body["messages"][0]["content"] == "the prompt"
