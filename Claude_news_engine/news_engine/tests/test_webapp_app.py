@@ -1230,6 +1230,50 @@ def test_history_endpoint_includes_tier1_conflict_key_when_conflict_exists():
     print("PASS\n")
 
 
+def test_history_endpoint_serves_the_real_tier1_prediction_not_just_the_conflict_flag():
+    print("=== app: /api/history's rows[].tier1_prediction carries the real Tier 1 call, and is null when none was logged ===")
+    # Regression: webapp/history.py's HistoryRow gained tier1_prediction and the History tab
+    # renders it, but this route builds each row's JSON from an explicit field list that was
+    # never extended -- the browser silently never received the field. Unit tests of
+    # build_print_call_history() could not catch that; only a test of the served JSON can.
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dashboard.db"
+        backtest_db_path = Path(tmp) / "backtest.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            store.add_tracked_symbol(conn, "US30")
+            store.upsert_event_history(
+                conn, EconomicEvent(title="PPI m/m", country="USD", impact="High", event_time_utc=event_time,
+                                    forecast="0.4%", previous="0.0%", actual="0.4%"),
+                "higher_bullish", now=event_time)
+            conn.close()
+
+            bconn = backtest_store.get_connection(backtest_db_path)
+            for instrument in ("XAUUSD", "US30"):
+                backtest_store.record_prediction(
+                    bconn, event_title="PPI m/m", instrument=instrument, event_time_utc=event_time,
+                    probability=0.56, direction="bullish", confidence=0.4, article_count=100,
+                    contradiction_flag=False, source="live", scored_at_utc=event_time)
+            # Tier 1 logged for XAUUSD only.
+            backtest_store.record_tier1_prediction(
+                bconn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
+                value="Muted, non-reaccelerating call", confidence="Certain", source="ISM Prices Paid",
+                predicted_direction="bullish", logged_at_utc=event_time)
+            bconn.close()
+
+            data = webapp_app.app.test_client().get("/api/history").get_json()
+            by_instrument = {r["instrument"]: r for r in data["rows"]}
+            assert by_instrument["XAUUSD"]["tier1_prediction"] == {
+                "value": "Muted, non-reaccelerating call", "confidence": "Certain",
+                "source": "ISM Prices Paid", "predicted_direction": "bullish",
+            }
+            assert by_instrument["US30"]["tier1_prediction"] is None
+    print("PASS\n")
+
+
 def test_history_stats_route_returns_overall_and_per_title_keys():
     print("=== GET /api/history/stats: response has overall and by_event_title keys ===")
     with tempfile.TemporaryDirectory() as tmp:

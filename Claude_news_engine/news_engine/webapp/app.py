@@ -360,6 +360,7 @@ def get_print_call_history():
                 "outcome": r.outcome, "unjudged_reason": r.unjudged_reason,
                 "source": r.source,
                 "tier1_conflict": r.tier1_conflict,
+                "tier1_prediction": r.tier1_prediction,
             }
             for r in rows
         ],
