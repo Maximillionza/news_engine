@@ -77,17 +77,14 @@ def _build_prompt(article: NewsArticle, triage: TriageResult) -> str:
         '- "Low": routine, scheduled, expected or already priced in (unchanged policy, long-term plans, '
         "denials or de-escalation, commentary, analysis).\n"
         'Most headlines are Medium or Low. Use "High" sparingly.\n\n'
-        "Examples:\n"
-        'Headline: Gunmen attack oil terminal, exports halted\n'
-        '{"category": "energy", "severity": "High", "rationale": "A concrete supply halt has just occurred."}\n'
-        'Headline: Union threatens strike at major refinery next month\n'
-        '{"category": "energy", "severity": "Medium", "rationale": "A possible disruption, but nothing has happened yet."}\n'
-        'Headline: Central bank leaves rates unchanged, as expected\n'
-        '{"category": "central_bank", "severity": "Low", "rationale": "An expected, already priced-in outcome."}\n'
-        'Headline: Minister says no plans for an export ban\n'
-        '{"category": "trade_policy", "severity": "Low", "rationale": "A denial that reduces risk."}\n\n'
+        "Severity examples (headline -> severity):\n"
+        "- Gunmen attack oil terminal, exports halted -> High\n"
+        "- Union threatens strike at major refinery next month -> Medium\n"
+        "- Central bank leaves rates unchanged, as expected -> Low\n"
+        "- Minister says no plans for an export ban -> Low\n\n"
         "Respond with ONLY a JSON object, no other text, in exactly this shape:\n"
-        '{"category": "<one of the valid categories>", "severity": "High"|"Medium"|"Low", "rationale": "<one sentence>"}'
+        '{"category": "<one of the valid categories>", "severity": "High"|"Medium"|"Low", '
+        '"rationale": "<one short sentence explaining why, specific to the headline above>"}'
     )
 
 

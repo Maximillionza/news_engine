@@ -39,8 +39,8 @@ CLAUDE_TIMEOUT_SECONDS = 8.0
 CLAUDE_COOLDOWN_MINUTES = 15       # skip Claude this long after any call failure
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_CLASSIFY_MODEL = "llama3.2:3b"
-OLLAMA_TIMEOUT_SECONDS = 25.0
-OLLAMA_KEEP_ALIVE = "30m"          # keep the model resident so the first call after a quiet spell isn't a cold load
+OLLAMA_TIMEOUT_SECONDS = 45.0      # measured on this CPU-only box: warm ~4-5 s, cold load 17-40 s (slower while the disk is busy)
+OLLAMA_KEEP_ALIVE = -1             # -1 = never unload. Shock candidates can be hours apart, so any finite value means a cold load (and a timeout risk) on most calls; the 3B model costs ~3 GB of RAM
 OLLAMA_COOLDOWN_MINUTES = 5
 # Total LLM wall-clock allowed per poll cycle. Once spent, remaining
 # ambiguous candidates skip classification and go out as UNCLASSIFIED
