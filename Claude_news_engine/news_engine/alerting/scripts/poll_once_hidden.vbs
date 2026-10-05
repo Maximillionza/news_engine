@@ -17,7 +17,11 @@
 ' because cmd's own >> redirection is what actually writes the log file;
 ' WScript.Shell.Run itself has no shell redirection of its own.
 Set objShell = CreateObject("WScript.Shell")
-projectRoot = "C:\Users\Masoodt\Documents\Claude\Projects\Claude_news_engine\news_engine"
+' 2026-09-26: repointed to the dedicated news-engine worktree so this
+' scheduled task no longer runs against whatever branch happens to be
+' checked out in the shared main repo directory (root cause of a real
+' incident where a fix landed on the wrong branch entirely).
+projectRoot = "C:\Users\Masoodt\Documents\Claude\Projects\.worktrees\news-engine-live\Claude_news_engine\news_engine"
 pythonPath = "C:\Python314\python.exe"
 logPath = projectRoot & "\alerting\poll_once.log"
 cmd = "cmd /c cd /d """ & projectRoot & """ && """ & pythonPath & """ -m alerting.poll_once >> """ & logPath & """ 2>&1"

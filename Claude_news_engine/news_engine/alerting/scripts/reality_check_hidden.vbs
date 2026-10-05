@@ -8,7 +8,9 @@
 ' was never the main disruption, but it had the identical latent bug and
 ' is fixed the same way while the pattern is being applied anyway.
 Set objShell = CreateObject("WScript.Shell")
-projectRoot = "C:\Users\Masoodt\Documents\Claude\Projects\Claude_news_engine\news_engine"
+' 2026-09-26: repointed to the dedicated news-engine worktree, same
+' reasoning as poll_once_hidden.vbs's own 2026-09-26 comment.
+projectRoot = "C:\Users\Masoodt\Documents\Claude\Projects\.worktrees\news-engine-live\Claude_news_engine\news_engine"
 pythonPath = "C:\Python314\python.exe"
 logPath = projectRoot & "\alerting\reality_check.log"
 cmd = "cmd /c cd /d """ & projectRoot & """ && """ & pythonPath & """ -m alerting.reality_check >> """ & logPath & """ 2>&1"
