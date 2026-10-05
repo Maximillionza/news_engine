@@ -1,6 +1,7 @@
 // webapp/static/js/shock-alerts/table.js
 import { escapeHtml } from "../format.js";
 import { fetchShockAlerts } from "../api.js";
+import { affectsLineHtml } from "./affects.js";
 
 let shockAlertsLoaded = false;
 
@@ -18,9 +19,7 @@ export async function loadShockAlertsIfNeeded() {
 const SEVERITY_COLOR = { High: "#c62828", Medium: "#ef6c00", Low: "#888" };
 
 function _alertHtml(row) {
-  const symbolsLine = (row.affected_symbols || [])
-    .map((s) => `${escapeHtml(s.symbol)} (${escapeHtml(s.channel)})`)
-    .join(", ") || "none currently tracked";
+  const symbolsLine = affectsLineHtml(row.affected_symbols);
   const sourcesLine = (row.sources || [])
     .map((s) => `<a href="${escapeHtml(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.source)}</a>`)
     .join(", ");

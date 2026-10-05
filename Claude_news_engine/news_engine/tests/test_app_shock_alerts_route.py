@@ -32,3 +32,23 @@ def test_shock_alerts_route_returns_recent_rows(client):
     assert data["rows"][0]["headline"] == "Strait of Hormuz closed"
     assert data["rows"][0]["severity"] == "High"
     assert data["rows"][0]["affected_symbols"] == [{"symbol": "XAUUSD", "channel": "safe_haven"}]
+
+
+def test_shock_alerts_route_serves_the_lean_fields_the_tab_renders(monkeypatch):
+    # The route returns affected_symbols whole; this pins that it keeps doing so, because the
+    # last time a new field was added a hand-listed serializer silently dropped it.
+    conn = alerting_store.get_connection(":memory:")
+    monkeypatch.setattr(alerting_store, "get_connection", lambda *a, **kw: conn)
+    affected = [
+        {"symbol": "XAUUSD", "channel": "safe_haven", "lean": "buy", "lean_why": "safe-haven demand [convention]"},
+        {"symbol": "US30", "channel": "risk_sentiment", "lean": "sell", "lean_why": "risk-off [convention]"},
+    ]
+    alerting_store.record_alert(
+        conn, headline="Strait of Hormuz closed", source="reuters_business", url="https://x",
+        published_utc=dt.datetime.now(UTC), detected_at_utc=dt.datetime.now(UTC),
+        category="energy", severity="High", classification_method="rule_tier", rationale=None,
+        affected_symbols=affected,
+    )
+    with app.test_client() as c:
+        data = c.get("/api/shock-alerts").get_json()
+    assert data["rows"][0]["affected_symbols"] == affected

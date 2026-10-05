@@ -136,3 +136,50 @@ def test_classification_failed_push_is_labelled_unclassified_not_with_its_fallba
 def test_escalation_label_names_the_new_severity():
     text = _sent_text("Medium", is_escalation=True)
     assert "ESCALATION (MEDIUM)" in text
+
+
+# --- direction: which way each affected instrument would typically move ---
+
+def _sent_text_for(affected, severity="High", **kwargs):
+    from unittest.mock import MagicMock, patch
+    from alerting.notify_telegram import send_alert
+    with patch("alerting.notify_telegram.TELEGRAM_BOT_TOKEN", "t"), \
+         patch("alerting.notify_telegram.TELEGRAM_CHAT_ID", "c"), \
+         patch("alerting.notify_telegram.requests.post", return_value=MagicMock(status_code=200)) as post:
+        send_alert("Strait of Hormuz closed", "energy", severity, "why", affected,
+                   [{"source": "s", "url": "https://u"}], **kwargs)
+    return post.call_args.kwargs["json"]["text"]
+
+
+_WITH_LEANS = [
+    {"symbol": "XAUUSD", "channel": "safe_haven", "lean": "buy",
+     "lean_why": "safe-haven bid and inflation hedge on an oil-supply shock [convention]"},
+    {"symbol": "US30", "channel": "risk_sentiment", "lean": "sell", "lean_why": "oil-supply shock weighs on risk appetite [convention]"},
+    {"symbol": "EURUSD", "channel": "usd_relationship", "lean": "mixed",
+     "lean_why": "gold's link to rate expectations has been unreliable since 2024 [Layer2]"},
+]
+
+
+def test_each_instrument_gets_its_own_buy_or_sell_off_or_no_lean_line():
+    text = _sent_text_for(_WITH_LEANS)
+    assert "XAUUSD (safe haven): \U0001F7E2 potential BUY" in text
+    assert "US30 (risk sentiment): \U0001F534 potential SELL-OFF" in text
+    assert "EURUSD (usd relationship): ⚪ no clear lean" in text
+    assert "Typical reaction, not a trade signal." in text
+
+
+def test_reason_is_shown_but_provenance_tags_are_not():
+    text = _sent_text_for(_WITH_LEANS)
+    assert "oil-supply shock weighs on risk appetite" in text
+    assert "[convention]" not in text and "[Layer2]" not in text
+
+
+def test_rows_stored_before_leans_existed_keep_the_compact_line():
+    old = [{"symbol": "XAUUSD", "channel": "safe_haven"}, {"symbol": "US30", "channel": "risk_sentiment"}]
+    text = _sent_text_for(old, is_escalation=True)
+    assert "Affects: XAUUSD (safe_haven), US30 (risk_sentiment)" in text
+    assert "trade signal" not in text
+
+
+def test_no_tracked_instruments_still_says_so():
+    assert "Affects: none currently tracked" in _sent_text_for([])

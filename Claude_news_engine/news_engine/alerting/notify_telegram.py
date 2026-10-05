@@ -5,6 +5,7 @@ floor), each labelled so a Medium/Low is visually distinct from a High.
 """
 from __future__ import annotations
 
+import re
 import time
 from typing import Optional
 
@@ -20,6 +21,35 @@ _SEVERITY_PREFIX = {
     "Medium": "⚠️ MEDIUM",
     "Low": "ℹ️ LOW",
 }
+
+
+_LEAN_LABEL = {
+    "buy": "\U0001F7E2 potential BUY",
+    "sell": "\U0001F534 potential SELL-OFF",
+    "mixed": "⚪ no clear lean",
+}
+_PROVENANCE_TAG = re.compile(r"\s*\[(?:convention|Layer2)\]")
+
+
+def _affects_block(affected_symbols: list[dict]) -> str:
+    """
+    With lean data (alerting/direction.py): one line per instrument saying
+    which way it would typically move, plus a not-a-signal disclaimer.
+    Rows stored before leans existed have no "lean" key and keep the old
+    compact one-line form, so escalation pushes for old alerts still work.
+    """
+    if not affected_symbols:
+        return "Affects: none currently tracked"
+    if not any("lean" in s for s in affected_symbols):
+        return "Affects: " + ", ".join(f"{s['symbol']} ({s['channel']})" for s in affected_symbols)
+    lines = ["Affects:"]
+    for s in affected_symbols:
+        label = _LEAN_LABEL.get(s.get("lean"), _LEAN_LABEL["mixed"])
+        why = _PROVENANCE_TAG.sub("", s.get("lean_why") or "")
+        channel = s["channel"].replace("_", " ")
+        lines.append(f"  {s['symbol']} ({channel}): {label}" + (f" -- {why}" if why else ""))
+    lines.append("Typical reaction, not a trade signal.")
+    return "\n".join(lines)
 
 
 def _sleep(seconds: float) -> None:
@@ -60,7 +90,7 @@ def send_alert(
         print("[notify_telegram] WARNING: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set -- skipping push")
         return False
 
-    symbols_line = ", ".join(f"{s['symbol']} ({s['channel']})" for s in affected_symbols) or "none currently tracked"
+    affects_block = _affects_block(affected_symbols)
     source_line = sources[0]["url"] if sources else ""
     if is_escalation:
         prefix = f"⬆️ ESCALATION ({severity.upper()})"
@@ -71,7 +101,7 @@ def send_alert(
     text = (
         f"{prefix} -- {category}\n"
         f"{headline}\n"
-        f"Affects: {symbols_line}\n"
+        f"{affects_block}\n"
         f"{rationale or ''}\n"
         f"{source_line}"
     ).strip()

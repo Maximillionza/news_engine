@@ -182,3 +182,43 @@ def test_claude_client_is_built_with_a_short_timeout_and_no_retries():
         text = llm_classify._call_claude("the prompt")
     assert text == _GOOD
     sdk.Anthropic.assert_called_once_with(timeout=llm_classify.CLAUDE_TIMEOUT_SECONDS, max_retries=0)
+
+
+# --- polarity: which way the headline pushes things (alerting/direction.py) ---
+
+def _classify_with(response: str):
+    with patch("alerting.llm_classify._call_claude", return_value=response):
+        return classify_candidate(_article(), _triage())
+
+
+def test_polarity_is_parsed_and_normalized():
+    result = _classify_with('{"category": "energy", "severity": "High", "polarity": "De-escalation", "rationale": "x"}')
+    assert result.polarity == "relief"
+    assert result.classification_failed is False
+
+
+@pytest.mark.parametrize("body", [
+    '{"category": "energy", "severity": "Low", "rationale": "x"}',
+    '{"category": "energy", "severity": "Low", "polarity": "sideways", "rationale": "x"}',
+    '{"category": "energy", "severity": "Low", "polarity": null, "rationale": "x"}',
+])
+def test_missing_or_garbled_polarity_is_unclear_and_does_not_fail_the_classification(body):
+    result = _classify_with(body)
+    assert result.polarity == "unclear"
+    assert result.classification_failed is False
+    assert (result.category, result.severity) == ("energy", "Low")
+
+
+def test_prompt_asks_for_polarity_with_the_full_vocabulary():
+    prompt = llm_classify._build_prompt(_article(), _triage())
+    assert '"polarity"' in prompt
+    for word in ("escalation", "relief", "hawkish", "dovish", "unclear"):
+        assert word in prompt
+
+
+def test_failed_classification_has_unclear_polarity():
+    with patch("alerting.llm_classify._call_claude", side_effect=RuntimeError("down")), \
+         patch("alerting.llm_classify._call_ollama", side_effect=RuntimeError("down")):
+        result = classify_candidate(_article(), _triage())
+    assert result.classification_failed is True
+    assert result.polarity == "unclear"

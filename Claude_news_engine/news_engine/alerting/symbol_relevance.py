@@ -18,6 +18,9 @@ from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 class SymbolImpact:
     symbol: str
     channel: str
+    # webapp.symbols class ("metal", "index_risk", ...), or "oil_linked_fx" for
+    # the oil-linked pairs; alerting/direction.py keys its lean table on it.
+    symbol_class: str = ""
 
 
 # category -> {symbol_class: channel} -- only combinations with a real,
@@ -73,7 +76,7 @@ def affected_symbols(category: str, tracked_symbols: list[str]) -> list[SymbolIm
     results: list[SymbolImpact] = []
     for symbol in tracked_symbols:
         if category == "energy" and symbol in _OIL_LINKED_SYMBOLS:
-            results.append(SymbolImpact(symbol=symbol, channel="oil_linkage"))
+            results.append(SymbolImpact(symbol=symbol, channel="oil_linkage", symbol_class="oil_linked_fx"))
             continue
         try:
             symbol_class = classify_symbol(symbol)
@@ -81,5 +84,5 @@ def affected_symbols(category: str, tracked_symbols: list[str]) -> list[SymbolIm
             continue
         channel = channels_by_class.get(symbol_class.symbol_class)
         if channel is not None:
-            results.append(SymbolImpact(symbol=symbol, channel=channel))
+            results.append(SymbolImpact(symbol=symbol, channel=channel, symbol_class=symbol_class.symbol_class))
     return results

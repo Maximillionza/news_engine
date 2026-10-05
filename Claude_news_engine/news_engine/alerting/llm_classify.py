@@ -29,6 +29,7 @@ except ImportError:
     _SDK_AVAILABLE = False
 
 from alerting import store
+from alerting.direction import normalize_polarity
 from alerting.taxonomy import SHOCK_CATEGORIES
 from alerting.triage import TriageResult
 from config.settings import (
@@ -59,6 +60,7 @@ class ClassificationResult:
     rationale: str
     classification_failed: bool = False
     provider: Optional[str] = None  # "claude" | "ollama" -- None when every provider failed
+    polarity: str = "unclear"       # alerting/direction.py POLARITIES; "unclear" also when the model omitted/garbled it
 
 
 def _build_prompt(article: NewsArticle, triage: TriageResult) -> str:
@@ -82,8 +84,21 @@ def _build_prompt(article: NewsArticle, triage: TriageResult) -> str:
         "- Union threatens strike at major refinery next month -> Medium\n"
         "- Central bank leaves rates unchanged, as expected -> Low\n"
         "- Minister says no plans for an export ban -> Low\n\n"
+        "Polarity guide -- which way does THIS headline push things?\n"
+        '- "escalation": the situation gets worse (attack, closure, embargo, sanctions or tariffs imposed, '
+        "default, supply cut, threat of any of these).\n"
+        '- "relief": the situation eases (ceasefire, reopening, deal, tariffs suspended, supply increase, '
+        "a denial that a feared measure will happen).\n"
+        '- "hawkish" or "dovish": ONLY for central-bank news -- tighter or looser policy.\n'
+        '- "unclear": none of these clearly applies, or it is only commentary.\n\n'
+        "Polarity examples (headline -> polarity):\n"
+        "- Gunmen attack oil terminal, exports halted -> escalation\n"
+        "- Rival factions sign ceasefire, shipping lanes reopen -> relief\n"
+        "- Central bank signals more rate hikes -> hawkish\n"
+        "- Analysts debate outlook for oil next year -> unclear\n\n"
         "Respond with ONLY a JSON object, no other text, in exactly this shape:\n"
         '{"category": "<one of the valid categories>", "severity": "High"|"Medium"|"Low", '
+        '"polarity": "escalation"|"relief"|"hawkish"|"dovish"|"unclear", '
         '"rationale": "<one short sentence explaining why, specific to the headline above>"}'
     )
 
@@ -154,6 +169,18 @@ def _parse_and_validate(text: str) -> tuple[str, str, str]:
     return category, severity, rationale
 
 
+def _extract_polarity(text: str) -> str:
+    """
+    Polarity is best-effort: a small model that omits or garbles it still gave
+    a valid category/severity, so that must not fail the whole classification.
+    The alert just reads "no clear lean" instead of guessing a direction.
+    """
+    try:
+        return normalize_polarity(json.loads(text).get("polarity"))
+    except Exception:  # noqa: BLE001 -- _parse_and_validate already accepted this text; never let polarity break it
+        return "unclear"
+
+
 def classify_candidate(
     article: NewsArticle, triage: TriageResult,
     conn=None, now: Optional[dt.datetime] = None,
@@ -198,7 +225,10 @@ def classify_candidate(
             print(f"[llm_classify] WARNING: {name} returned an unusable response for {article.title!r}: {exc}")
             problems.append(f"{name}: unusable response ({exc})")
             continue
-        return ClassificationResult(category=category, severity=severity, rationale=rationale, provider=name)
+        return ClassificationResult(
+            category=category, severity=severity, rationale=rationale, provider=name,
+            polarity=_extract_polarity(text),
+        )
 
     detail = "; ".join(problems)
     print(f"[llm_classify] WARNING: all providers failed for {article.title!r}: {detail}")

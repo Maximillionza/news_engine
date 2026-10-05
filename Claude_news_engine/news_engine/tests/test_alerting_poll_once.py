@@ -343,3 +343,63 @@ def test_failed_classification_never_escalates_an_existing_alert():
 
     assert store.get_alert(conn, existing_id).severity == "Low"
     send.assert_not_called()
+
+
+# --- direction: leans attached to stored and pushed alerts ---
+
+def _run_tracking_xau_us30(article_title, triage, classification=None):
+    conn = store.get_connection(":memory:")
+    webapp_conn = webapp_store.get_connection(":memory:")
+    for symbol in ("XAUUSD", "US30"):
+        webapp_conn.execute("INSERT INTO tracked_symbols (symbol) VALUES (?)", (symbol,))
+    webapp_conn.commit()
+    send = MagicMock(return_value=True)
+    with patch("alerting.poll_once.FREE_PREVIEW_FEEDS", {"feed_a": "u"}), \
+         patch("alerting.poll_once.RSSNewsSource") as source_cls, \
+         patch("alerting.poll_once.triage_article", return_value=triage), \
+         patch("alerting.poll_once.llm_classify.classify_candidate", MagicMock(return_value=classification)), \
+         patch("alerting.poll_once.notify_telegram.send_alert", send):
+        source_cls.return_value.fetch.return_value = [_article(article_title)]
+        run_poll_cycle(conn=conn, webapp_conn=webapp_conn)
+    stored = store.list_recent_alerts(conn, _ALL_TIME)[0].affected_symbols
+    return {s["symbol"]: s for s in stored}, send
+
+
+def test_hard_rule_alert_carries_its_patterns_polarity_into_leans():
+    triage = _triage_result("energy", rule_tier_hit=True)
+    triage.matched_keywords = ["strait of hormuz closed"]
+    stored, send = _run_tracking_xau_us30("Strait of Hormuz closed after naval clash", triage)
+
+    assert stored["XAUUSD"]["lean"] == "buy" and stored["US30"]["lean"] == "sell"
+    pushed = send.call_args.args[4]  # affected_symbols handed to Telegram carries the same leans
+    assert {s["symbol"]: s["lean"] for s in pushed} == {"XAUUSD": "buy", "US30": "sell"}
+
+
+def test_llm_relief_polarity_flips_the_lean_for_the_same_category():
+    classification = ClassificationResult(
+        category="energy", severity="Medium", rationale="reopening", provider="ollama", polarity="relief")
+    stored, _ = _run_tracking_xau_us30("Iran agrees to reopen Strait of Hormuz", _triage_result("energy"), classification)
+    assert stored["US30"]["lean"] == "buy"
+    assert stored["XAUUSD"]["lean"] == "mixed"
+
+
+def test_unclear_polarity_reads_no_clear_lean_rather_than_a_guess():
+    classification = ClassificationResult(
+        category="energy", severity="Low", rationale="commentary", provider="ollama", polarity="unclear")
+    stored, _ = _run_tracking_xau_us30("Analysts debate oil outlook", _triage_result("energy"), classification)
+    assert {s["lean"] for s in stored.values()} == {"mixed"}
+
+
+def test_failed_classification_gets_no_clear_lean():
+    failed = ClassificationResult(
+        category="energy", severity="Medium", rationale="providers down", classification_failed=True)
+    stored, send = _run_tracking_xau_us30("Some oil story", _triage_result("energy"), failed)
+    assert {s["lean"] for s in stored.values()} == {"mixed"}
+    assert send.call_args.kwargs["classification_failed"] is True
+
+
+def test_unscheduled_rate_cut_is_dovish_so_gold_and_equities_stay_no_clear_lean():
+    triage = _triage_result("central_bank", rule_tier_hit=True)
+    triage.matched_keywords = ["unscheduled rate cut"]
+    stored, _ = _run_tracking_xau_us30("Central bank announces unscheduled rate cut", triage)
+    assert {s["lean"] for s in stored.values()} == {"mixed"}

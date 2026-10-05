@@ -18,7 +18,7 @@ from __future__ import annotations
 import datetime as dt
 import time
 
-from alerting import dedup, llm_classify, notify_telegram, store
+from alerting import dedup, direction, llm_classify, notify_telegram, store
 from alerting.symbol_relevance import affected_symbols
 from alerting.triage import triage_article, TriageResult
 from alerting.taxonomy import NEAR_MISS_LOG_THRESHOLD
@@ -124,6 +124,7 @@ def _process_matched(conn, webapp_conn, article: NewsArticle, result: TriageResu
     classification_failed = False
     if result.rule_tier_hit:
         category, severity, method, rationale = result.category, "High", "rule_tier", None
+        polarity = direction.rule_polarity(result.matched_keywords)
     else:
         classification = _classify(article, result, conn, llm_deadline)
         category = classification.category
@@ -131,6 +132,7 @@ def _process_matched(conn, webapp_conn, article: NewsArticle, result: TriageResu
         classification_failed = classification.classification_failed
         method = "llm_failed_fallback" if classification_failed else _METHOD_BY_PROVIDER.get(classification.provider, "llm")
         rationale = classification.rationale
+        polarity = classification.polarity
 
     existing_id = dedup.find_existing_alert(article.title, category, conn)
     if existing_id is not None:
@@ -140,7 +142,7 @@ def _process_matched(conn, webapp_conn, article: NewsArticle, result: TriageResu
 
     tracked_symbols = list_tracked_symbols(webapp_conn)
     impacts = affected_symbols(category, tracked_symbols)
-    affected_dicts = [{"symbol": i.symbol, "channel": i.channel} for i in impacts]
+    affected_dicts = direction.describe_impacts(impacts, category, polarity)
 
     alert_id = store.record_alert(
         conn, headline=article.title, source=article.source, url=article.url,
