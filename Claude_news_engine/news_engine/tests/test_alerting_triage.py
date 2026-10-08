@@ -60,3 +60,21 @@ def test_matching_checks_title_and_summary():
     result = triage_article(_article("Markets steady", summary="Reports confirm: Strait of Hormuz closed overnight"))
     assert result.matched is True
     assert result.rule_tier_hit is True
+
+
+import pytest
+
+
+@pytest.mark.parametrize("headline", [
+    "Explosions heard in Riyadh, Saudi capital",
+    "Multiple explosions rock Riyadh as Houthis claim missile attack",
+    "Drone attack on Riyadh airport",
+    "Blast at Gulf oil terminal after drone strike",
+    "Bombing reported near Saudi Aramco facility",
+])
+def test_attack_wording_without_the_exact_strike_phrases_still_triages_as_geopolitical(headline):
+    # Regression: "explosions in Riyadh" matched no signal keyword (only "missile strike",
+    # "airstrike", ... existed) and was never classified or pushed.
+    result = triage_article(_article(headline))
+    assert result.matched is True
+    assert result.category == "geopolitical_conflict"

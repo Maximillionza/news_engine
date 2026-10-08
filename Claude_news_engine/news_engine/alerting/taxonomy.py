@@ -78,6 +78,9 @@ CATEGORY_SIGNAL_KEYWORDS: dict[str, list[str]] = {
     "geopolitical_conflict": [
         "invasion", "airstrike", "missile strike", "military strike", "state of emergency",
         "coup d'etat", "martial law", "ceasefire collapses", "troops mobilized",
+        # Attack wording that has no "strike" in it (2026-10-08: "explosions in Riyadh" was never triaged).
+        # Ambiguous on purpose -> goes to the classifier, not a hard rule.
+        "explosion", "blast", "bombing", "drone attack", "drone strike", "missile attack",
     ],
     "central_bank": [
         "emergency meeting", "surprise rate move", "central bank independence",
