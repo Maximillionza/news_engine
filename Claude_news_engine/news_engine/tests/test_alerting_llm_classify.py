@@ -4,6 +4,7 @@ import datetime as dt
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from alerting import llm_classify, store
 from alerting.llm_classify import classify_candidate
@@ -222,3 +223,60 @@ def test_failed_classification_has_unclear_polarity():
         result = classify_candidate(_article(), _triage())
     assert result.classification_failed is True
     assert result.polarity == "unclear"
+
+
+# --- Ollama self-heal: the tray app is not a service and its auto-updater shuts it down ---
+# 2026-10-11 22:40 an Ollama update stopped the server and nothing restarted it: 8 alerts went
+# out UNCLASSIFIED over three days because every call hit "connection refused".
+
+def test_connection_refused_starts_ollama_and_retries_the_call_once():
+    ok = MagicMock(); ok.json.return_value = {"message": {"content": _GOOD}}; ok.raise_for_status.return_value = None
+    post = MagicMock(side_effect=[requests.ConnectionError("refused"), ok])
+    with patch("alerting.llm_classify.requests.post", post), \
+         patch("alerting.llm_classify._start_ollama", return_value=True) as start:
+        assert llm_classify._call_ollama("p") == _GOOD
+    start.assert_called_once()
+    assert post.call_count == 2
+
+
+def test_if_ollama_cannot_be_started_the_original_error_surfaces():
+    post = MagicMock(side_effect=requests.ConnectionError("refused"))
+    with patch("alerting.llm_classify.requests.post", post), \
+         patch("alerting.llm_classify._start_ollama", return_value=False):
+        with pytest.raises(requests.ConnectionError):
+            llm_classify._call_ollama("p")
+    assert post.call_count == 1
+
+
+def test_non_connection_errors_do_not_trigger_a_restart():
+    bad = MagicMock(); bad.raise_for_status.side_effect = requests.HTTPError("500")
+    with patch("alerting.llm_classify.requests.post", return_value=bad), \
+         patch("alerting.llm_classify._start_ollama") as start:
+        with pytest.raises(requests.HTTPError):
+            llm_classify._call_ollama("p")
+    start.assert_not_called()
+
+
+def test_start_ollama_launches_detached_and_waits_until_the_server_answers():
+    answers = [requests.ConnectionError("not yet"), requests.ConnectionError("not yet"), MagicMock(status_code=200)]
+    get = MagicMock(side_effect=answers)
+    with patch("alerting.llm_classify.subprocess.Popen") as popen, \
+         patch("alerting.llm_classify.requests.get", get), \
+         patch("alerting.llm_classify.time.sleep"), \
+         patch("alerting.llm_classify.Path.exists", return_value=True):
+        assert llm_classify._start_ollama() is True
+    assert popen.call_args.args[0][-1] == "serve"
+    assert get.call_count == 3
+
+
+def test_start_ollama_gives_up_after_the_wait_and_when_the_exe_is_missing():
+    with patch("alerting.llm_classify.Path.exists", return_value=False), \
+         patch("alerting.llm_classify.subprocess.Popen") as popen:
+        assert llm_classify._start_ollama() is False
+    popen.assert_not_called()
+    with patch("alerting.llm_classify.Path.exists", return_value=True), \
+         patch("alerting.llm_classify.subprocess.Popen"), \
+         patch("alerting.llm_classify.requests.get", side_effect=requests.ConnectionError("no")), \
+         patch("alerting.llm_classify.time.sleep"), \
+         patch("alerting.llm_classify.time.monotonic", side_effect=[0, 1, 30]):
+        assert llm_classify._start_ollama() is False

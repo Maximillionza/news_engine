@@ -17,7 +17,11 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
+import subprocess
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 import requests
@@ -34,8 +38,8 @@ from alerting.taxonomy import SHOCK_CATEGORIES
 from alerting.triage import TriageResult
 from config.settings import (
     CLAUDE_CLASSIFY_MODEL, CLAUDE_COOLDOWN_MINUTES, CLAUDE_TIMEOUT_SECONDS,
-    OLLAMA_BASE_URL, OLLAMA_CLASSIFY_MODEL, OLLAMA_COOLDOWN_MINUTES,
-    OLLAMA_KEEP_ALIVE, OLLAMA_NUM_CTX, OLLAMA_TIMEOUT_SECONDS,
+    OLLAMA_BASE_URL, OLLAMA_CLASSIFY_MODEL, OLLAMA_COOLDOWN_MINUTES, OLLAMA_EXECUTABLE,
+    OLLAMA_KEEP_ALIVE, OLLAMA_NUM_CTX, OLLAMA_STARTUP_WAIT_SECONDS, OLLAMA_TIMEOUT_SECONDS,
 )
 from data_layer.news_feed import NewsArticle
 
@@ -119,13 +123,41 @@ def _call_claude(prompt: str) -> str:
     return "".join(block.text for block in response.content if block.type == "text")
 
 
-def _call_ollama(prompt: str) -> str:
+def _start_ollama() -> bool:
     """
-    Local Ollama model (default llama3.2:3b). format="json" constrains the
-    output to valid JSON, which matters most for small models;
-    temperature 0 keeps classifications repeatable; keep_alive holds the
-    model in RAM so the first call after a quiet spell isn't a cold load.
+    Starts `ollama serve` detached from this process and waits (bounded) for
+    it to answer. Ollama's Windows app is a tray program, not a service, and
+    its auto-updater shuts the server down (2026-10-11 22:40) without
+    bringing it back, so a refused connection is a recoverable state, not a
+    dead fallback. Returns True once the server responds.
     """
+    exe = Path(os.path.expandvars(OLLAMA_EXECUTABLE))
+    if not exe.exists():
+        print(f"[llm_classify] WARNING: cannot start Ollama -- {exe} not found")
+        return False
+    print("[llm_classify] Ollama is not running -- starting it")
+    flags = 0
+    breakaway = getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)
+    if os.name == "nt":  # survive this short-lived poll process; no console window
+        flags = (subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+                 | subprocess.CREATE_NO_WINDOW | breakaway)
+    quiet = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        subprocess.Popen([str(exe), "serve"], creationflags=flags, **quiet)
+    except OSError:  # breakaway not permitted by the parent job -- retry without it
+        subprocess.Popen([str(exe), "serve"], creationflags=flags & ~breakaway, **quiet)
+    deadline = time.monotonic() + OLLAMA_STARTUP_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        try:
+            requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=2)
+            return True
+        except requests.ConnectionError:
+            time.sleep(1)
+    print("[llm_classify] WARNING: Ollama did not come up in time")
+    return False
+
+
+def _post_ollama(prompt: str) -> str:
     resp = requests.post(
         f"{OLLAMA_BASE_URL}/api/chat",
         json={
@@ -140,6 +172,22 @@ def _call_ollama(prompt: str) -> str:
     )
     resp.raise_for_status()
     return resp.json()["message"]["content"]
+
+
+def _call_ollama(prompt: str) -> str:
+    """
+    Local Ollama model (default llama3.2:3b). format="json" constrains the
+    output to valid JSON, which matters most for small models;
+    temperature 0 keeps classifications repeatable; keep_alive holds the
+    model in RAM so the first call after a quiet spell isn't a cold load.
+    A refused connection means the server is down: start it and retry once.
+    """
+    try:
+        return _post_ollama(prompt)
+    except requests.ConnectionError:
+        if not _start_ollama():
+            raise
+        return _post_ollama(prompt)
 
 
 def _providers() -> list[tuple]:
