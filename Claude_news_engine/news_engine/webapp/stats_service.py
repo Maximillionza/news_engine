@@ -24,7 +24,7 @@ from config.settings import EVENT_SURPRISE_DIRECTION
 from scoring.backtest_store import get_scored_nowcast_snapshot
 from webapp.history import _implied_surprise_direction
 from webapp.stats_methods import (
-    combine, market_lean, news_lean, news_scale, news_surprise, tier1_surprise,
+    NEWS_WEIGHT, TIER1_WEIGHT, combine, market_lean, news_lean, news_scale, news_surprise, tier1_surprise,
 )
 from webapp.stats_rules import judge, miss_size, parse_number, side, tolerance
 
@@ -51,6 +51,25 @@ class MethodCall:
 
 
 @dataclass(frozen=True)
+class RowDetail:
+    """
+    The readings behind a row's calls, for the click-through panel and the News table (spec §5).
+    Every value is one the service already computed for the calls; nothing here is scored.
+    """
+    forecast_text: Optional[str]
+    nowcast_value: Optional[float] = None
+    nowcast_as_of_utc: Optional[str] = None
+    tier1_surprise: Optional[float] = None
+    news_lean: Optional[float] = None           # None for a title with no surprise map (ruling 3)
+    news_scale: Optional[float] = None
+    news_surprise: Optional[float] = None
+    combined_surprise: Optional[float] = None
+    news_article_count: Optional[int] = None    # bounded print call's count, else the bounded XAUUSD prediction's
+    hand_logged: Optional[dict] = None          # {"value", "confidence", "source"} of the hand-logged Tier 1 call
+    weights: dict = field(default_factory=lambda: {"tier1": TIER1_WEIGHT, "news": NEWS_WEIGHT})
+
+
+@dataclass(frozen=True)
 class StatsRow:
     event_title: str
     event_time_utc: dt.datetime
@@ -66,6 +85,7 @@ class StatsRow:
     combined: Optional[MethodCall]
     nowcast_as_of_utc: Optional[str]
     pre_news_period: bool
+    detail: Optional[RowDetail] = None
 
 
 def _parse_time(value: str) -> dt.datetime:
@@ -80,7 +100,7 @@ def _parse_time(value: str) -> dt.datetime:
 
 def _print_call_before(bt_conn: sqlite3.Connection, title: str, release_iso: str) -> Optional[sqlite3.Row]:
     return bt_conn.execute(
-        "SELECT predicted_vs_forecast, confidence FROM print_predictions "
+        "SELECT predicted_vs_forecast, confidence, article_count FROM print_predictions "
         "WHERE event_title = ? AND julianday(event_time_utc) = julianday(?) "
         "AND julianday(scored_at_utc) <= julianday(?) "
         "ORDER BY julianday(scored_at_utc) DESC, id DESC LIMIT 1",
@@ -90,7 +110,7 @@ def _print_call_before(bt_conn: sqlite3.Connection, title: str, release_iso: str
 
 def _accumulator_call_before(bt_conn: sqlite3.Connection, title: str, release_iso: str) -> Optional[sqlite3.Row]:
     return bt_conn.execute(
-        "SELECT direction, probability FROM predictions "
+        "SELECT direction, probability, article_count FROM predictions "
         "WHERE event_title = ? AND instrument = ? AND julianday(event_time_utc) = julianday(?) "
         "AND julianday(scored_at_utc) <= julianday(?) "
         "ORDER BY julianday(scored_at_utc) DESC, id DESC LIMIT 1",
@@ -100,7 +120,7 @@ def _accumulator_call_before(bt_conn: sqlite3.Connection, title: str, release_is
 
 def _hand_logged_tier1_before(bt_conn: sqlite3.Connection, title: str, release_iso: str) -> Optional[sqlite3.Row]:
     return bt_conn.execute(
-        "SELECT predicted_direction FROM tier1_predictions "
+        "SELECT predicted_direction, value, confidence, source FROM tier1_predictions "
         "WHERE event_title = ? AND instrument = ? AND julianday(event_time_utc) = julianday(?) "
         "AND julianday(logged_at_utc) <= julianday(?) "
         "ORDER BY julianday(logged_at_utc) DESC, id DESC LIMIT 1",
@@ -170,7 +190,7 @@ def build_rows(dash_conn: sqlite3.Connection, bt_conn: sqlite3.Connection, year:
 
 def _not_scoreable(r: sqlite3.Row, title: str, when: dt.datetime) -> StatsRow:
     return StatsRow(title, when, r["forecast"], r["actual"], None, None, None, "not_scoreable",
-                    False, None, None, None, None, when < NEWS_START_UTC)
+                    False, None, None, None, None, when < NEWS_START_UTC, RowDetail(forecast_text=r["forecast"]))
 
 
 def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt.datetime,
@@ -187,13 +207,15 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
     tier1: Optional[MethodCall] = None
     tier1_tracked = False
     nowcast_as_of = None
+    nowcast_value: Optional[float] = None
+    hand_logged: Optional[dict] = None
     s1 = None
     snapshot = get_scored_nowcast_snapshot(bt_conn, title, when) if title in NOWCAST_EVENTS else None
     if snapshot is not None:
-        nowcast = snapshot["nowcast_value"]
-        s1 = tier1_surprise(nowcast, forecast)
+        nowcast_value = snapshot["nowcast_value"]
+        s1 = tier1_surprise(nowcast_value, forecast)
         nowcast_as_of = snapshot["as_of_utc"]
-        tier1 = _call(nowcast, s1, forecast, tol, actual, title, kind=snapshot["kind"])
+        tier1 = _call(nowcast_value, s1, forecast, tol, actual, title, kind=snapshot["kind"])
         tier1_tracked = True
     else:
         logged = _hand_logged_tier1_before(bt_conn, title, release_iso)
@@ -206,6 +228,7 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
                 implied = _implied_surprise_direction(title, NEWS_INSTRUMENT, direction)
                 logged_side = {"higher": 1, "lower": -1}.get(implied)
             tier1 = _call(None, None, forecast, tol, actual, title, note="hand-logged", explicit_side=logged_side)
+            hand_logged = {"value": logged["value"], "confidence": logged["confidence"], "source": logged["source"]}
             tier1_tracked = True
         else:
             tier1_tracked = title in NOWCAST_EVENTS      # tracked but no snapshot yet: row shows no call
@@ -220,11 +243,12 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
         None if acc_row is None else acc_row["direction"],
         None if acc_row is None else acc_row["probability"],
     )
-    sn = news_surprise(lean, news_scale(prior))
+    scale = news_scale(prior)
     if title not in EVENT_SURPRISE_DIRECTION:
         # Ruling 3: an unmapped title never gets a news call. news_lean's print-call branch does not check
-        # the map, so it is enforced here; sn is cleared too, so Combined treats it as news missing.
-        sn = None
+        # the map, so it is enforced here; the lean is cleared too, so Combined treats it as news missing.
+        lean = None
+    sn = news_surprise(lean, scale)
     news = None if sn is None else _call(forecast + sn, sn, forecast, tol, actual, title, note="scaled")
 
     # Combined: 70/30 blend; Tier 1 only (flagged news_missing) when there is no news; n/a without Tier 1.
@@ -236,8 +260,18 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
                          note="news_missing" if blended.news_missing else None,
                          kind=None if tier1 is None else tier1.kind)
 
+    if print_row is not None:
+        article_count = print_row["article_count"]
+    else:
+        article_count = None if acc_row is None else acc_row["article_count"]
+    detail = RowDetail(
+        forecast_text=r["forecast"], nowcast_value=nowcast_value, nowcast_as_of_utc=nowcast_as_of,
+        tier1_surprise=s1, news_lean=lean, news_scale=scale, news_surprise=sn,
+        combined_surprise=None if blended is None else blended.surprise,
+        news_article_count=article_count, hand_logged=hand_logged,
+    )
     return StatsRow(title, when, r["forecast"], r["actual"], forecast, actual, tol, status,
-                    tier1_tracked, tier1, news, combined, nowcast_as_of, pre_news)
+                    tier1_tracked, tier1, news, combined, nowcast_as_of, pre_news, detail)
 
 
 # --- payloads ---------------------------------------------------------------------------------

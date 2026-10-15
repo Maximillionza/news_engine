@@ -14,8 +14,10 @@ WHEN = dt.datetime(2026, 10, 14, 12, 30, tzinfo=UTC)
 AS_OF = WHEN - dt.timedelta(hours=40)
 
 ROW_KEYS = {"event_title", "event_time_utc", "forecast", "actual", "forecast_text", "actual_text", "status",
-            "tier1_tracked", "nowcast_as_of_utc", "pre_news_period", "tier1", "news", "combined"}
+            "tier1_tracked", "nowcast_as_of_utc", "pre_news_period", "tier1", "news", "combined", "detail"}
 CALL_KEYS = {"predicted", "surprise", "verdict", "miss", "leans", "note", "kind"}
+DETAIL_KEYS = {"forecast_text", "nowcast_value", "nowcast_as_of_utc", "tier1_surprise", "news_lean", "news_scale",
+               "news_surprise", "combined_surprise", "weights", "hand_logged", "news_article_count"}
 
 
 def _insert_event(dash, when, forecast, actual):
@@ -92,6 +94,38 @@ def test_events_route_serves_real_news_and_combined_calls(full_client):
     assert tier1["note"] is None and tier1["kind"] == "live"
     assert news["note"] == "scaled" and news["kind"] is None
     assert combined["note"] is None and combined["kind"] == "live"  # real blend; carries the Tier 1 snapshot kind
+    detail = row["detail"]
+    assert set(detail) == DETAIL_KEYS
+    assert detail["forecast_text"] == "0.3%"
+    assert detail["nowcast_value"] == pytest.approx(0.4)
+    assert detail["nowcast_as_of_utc"] == AS_OF.isoformat()
+    assert detail["tier1_surprise"] == pytest.approx(0.1)
+    assert detail["news_lean"] == pytest.approx(0.5)
+    assert detail["news_scale"] == pytest.approx(0.2)
+    assert detail["news_surprise"] == pytest.approx(0.1)
+    assert detail["combined_surprise"] == pytest.approx(0.1)
+    assert detail["weights"] == {"tier1": 0.7, "news": 0.3}
+    assert detail["hand_logged"] is None
+    assert detail["news_article_count"] == 7
+
+
+def test_events_route_serves_the_hand_logged_detail(monkeypatch):
+    dash, bt = ws.get_connection(":memory:"), bs.get_connection(":memory:")
+    dash.execute(
+        "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, surprise_direction, "
+        "recorded_at_utc, updated_at_utc, source, impact, country) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        ("PPI m/m", WHEN.isoformat(), "0.2%", "0.1%", "0.5%", None, WHEN.isoformat(), WHEN.isoformat(), "t", "High", "USD"))
+    dash.commit()
+    bs.record_tier1_prediction(bt, "PPI m/m", "XAUUSD", WHEN, "0.4% hot", "Likely", "BLS", "bearish",
+                               logged_at_utc=WHEN - dt.timedelta(days=2))
+    monkeypatch.setattr(app_module, "_stats_connections", lambda: (dash, bt))
+    detail = app_module.app.test_client().get("/api/stats/events").get_json()["rows"][0]["detail"]
+    assert detail == {
+        "forecast_text": "0.2%", "nowcast_value": None, "nowcast_as_of_utc": None, "tier1_surprise": None,
+        "news_lean": None, "news_scale": None, "news_surprise": None, "combined_surprise": None,
+        "weights": {"tier1": 0.7, "news": 0.3}, "news_article_count": None,
+        "hand_logged": {"value": "0.4% hot", "confidence": "Likely", "source": "BLS"},
+    }
 
 
 def test_filters_and_empty_result(client):

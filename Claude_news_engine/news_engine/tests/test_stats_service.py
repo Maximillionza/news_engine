@@ -446,3 +446,64 @@ def test_scoreboard_separates_live_reconstructed_and_with_news_populations(conns
     # Existing keys unchanged; the percentage threshold is still on the total.
     assert {k: board["tier1"][k] for k in ("scored", "right", "accuracy", "accuracy_shown")} == {
         "scored": 2, "right": 2, "accuracy": None, "accuracy_shown": False}
+
+
+# --- B2/B3: click-through readings and news article count --------------------------------------------
+
+def test_row_detail_carries_the_readings_behind_each_call(conns):
+    dash, bt = conns
+    rows = _mixed_population(dash, bt)
+    d = rows[-1].detail
+    assert d.forecast_text == "0.3%" and d.nowcast_value == pytest.approx(0.5)
+    assert d.nowcast_as_of_utc == rows[-1].nowcast_as_of_utc is not None
+    assert d.tier1_surprise == pytest.approx(0.2)
+    assert d.news_lean == pytest.approx(0.5) and d.news_scale == pytest.approx(0.1)
+    assert d.news_surprise == pytest.approx(0.05)
+    assert d.combined_surprise == pytest.approx(0.7 * 0.2 + 0.3 * 0.05)
+    assert d.weights == {"tier1": 0.7, "news": 0.3}
+    assert d.hand_logged is None
+    assert d.news_article_count == 7                                     # the bounded print call's count
+    sep = rows[-2].detail                                                # reconstructed Tier 1, no news
+    assert sep.nowcast_value == pytest.approx(0.4) and sep.news_lean is None and sep.news_surprise is None
+    assert sep.combined_surprise == pytest.approx(0.1) and sep.news_article_count is None
+
+
+def test_row_detail_article_count_falls_back_to_the_bounded_accumulator_row(conns):
+    dash, bt = conns
+    _cpi_history(dash)
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    bs.record_prediction(bt, "CPI m/m", "XAUUSD", _t(10), 0.8, "bearish", 0.5, 11, False,
+                         scored_at_utc=_t(10) - dt.timedelta(hours=6))
+    bs.record_prediction(bt, "CPI m/m", "XAUUSD", _t(10), 0.9, "bearish", 0.5, 99, False,
+                         scored_at_utc=_t(10) + dt.timedelta(hours=1))        # after the release: ignored
+    _print_call(bt, "CPI m/m", _t(10), "higher", 1.0, scored_at=_t(10) + dt.timedelta(minutes=5))   # ignored
+    d = svc.build_rows(dash, bt, event_title="CPI m/m")[-1].detail
+    assert d.news_article_count == 11 and d.news_lean == pytest.approx(0.6)
+
+
+def test_row_detail_for_a_hand_logged_call_carries_the_researched_value_and_no_nowcast(conns):
+    dash, bt = conns
+    _event(dash, "PPI m/m", _t(10), "0.2%", "0.5%")
+    bs.record_tier1_prediction(bt, "PPI m/m", "XAUUSD", _t(10), "0.4% hot", "Likely", "BLS PPI release notes",
+                               "bearish", logged_at_utc=_t(10) - dt.timedelta(days=3))
+    d = svc.build_rows(dash, bt)[-1].detail
+    assert d.hand_logged == {"value": "0.4% hot", "confidence": "Likely", "source": "BLS PPI release notes"}
+    assert d.nowcast_value is None and d.tier1_surprise is None and d.combined_surprise is None
+
+
+def test_row_detail_has_no_news_lean_for_a_title_without_a_surprise_map(conns):
+    dash, bt = conns
+    title = "Federal Funds Rate"
+    for m in (1, 3, 6, 9):
+        _event(dash, title, _t(m), "4.25%", "4.00%")
+    _print_call(bt, title, _t(9), "higher", 0.75, scored_at=_t(9) - dt.timedelta(days=1))
+    d = svc.build_rows(dash, bt, event_title=title)[-1].detail
+    assert d.news_lean is None and d.news_surprise is None
+    assert d.news_article_count == 7                                     # articles existed; they just give no call
+
+
+def test_not_scoreable_row_still_has_a_detail_with_only_the_forecast_text(conns):
+    dash, bt = conns
+    _event(dash, "Weird Event", _t(10), "N/A", "1.2|0.9")
+    d = svc.build_rows(dash, bt)[-1].detail
+    assert d.forecast_text == "N/A" and d.nowcast_value is None and d.news_lean is None and d.hand_logged is None

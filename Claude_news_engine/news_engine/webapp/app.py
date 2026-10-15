@@ -439,6 +439,22 @@ def _method_dict(call):
             "leans": call.leans, "note": call.note, "kind": call.kind}
 
 
+def _detail_dict(d):
+    """Readings for the click-through panel and the News table; every key is listed explicitly."""
+    if d is None:
+        return None
+    return {
+        "forecast_text": d.forecast_text, "nowcast_value": d.nowcast_value, "nowcast_as_of_utc": d.nowcast_as_of_utc,
+        "tier1_surprise": d.tier1_surprise, "news_lean": d.news_lean, "news_scale": d.news_scale,
+        "news_surprise": d.news_surprise, "combined_surprise": d.combined_surprise,
+        "weights": {"tier1": d.weights["tier1"], "news": d.weights["news"]},
+        "hand_logged": None if d.hand_logged is None else {
+            "value": d.hand_logged["value"], "confidence": d.hand_logged["confidence"],
+            "source": d.hand_logged["source"]},
+        "news_article_count": d.news_article_count,
+    }
+
+
 def _stats_row_dict(r):
     return {
         "event_title": r.event_title, "event_time_utc": r.event_time_utc.isoformat(),
@@ -446,6 +462,7 @@ def _stats_row_dict(r):
         "status": r.status, "tier1_tracked": r.tier1_tracked, "nowcast_as_of_utc": r.nowcast_as_of_utc,
         "pre_news_period": r.pre_news_period,
         "tier1": _method_dict(r.tier1), "news": _method_dict(r.news), "combined": _method_dict(r.combined),
+        "detail": _detail_dict(r.detail),
     }
 
 
