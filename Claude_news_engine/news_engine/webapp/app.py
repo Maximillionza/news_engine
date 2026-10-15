@@ -10,6 +10,7 @@ import sys
 import os
 import logging
 import datetime as dt
+from contextlib import contextmanager
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -401,11 +402,36 @@ STATS_DISCLAIMERS = {
 }
 
 
-def _stats_connections():
-    """(dashboard DB, backtest DB) connections; a seam so tests can inject in-memory DBs."""
-    return get_connection(), get_backtest_connection()
+def _open_stats_connections():
+    """Open (dashboard DB, backtest DB); the first is closed if opening the second fails."""
+    dash = get_connection()
+    try:
+        return dash, get_backtest_connection()
+    except Exception:
+        dash.close()
+        raise
 
 
+# Test seam: tests replace this with a factory returning shared in-memory connections.
+_stats_connections = _open_stats_connections
+
+
+@contextmanager
+def _stats_conns():
+    """Yield the connection pair and close it afterwards, but only for connections this module opened."""
+    owned = _stats_connections is _open_stats_connections
+    dash, bt = _stats_connections()
+    try:
+        yield dash, bt
+    finally:
+        if owned:
+            try:
+                dash.close()
+            finally:
+                bt.close()
+
+
+# StatsRow.tol and MethodCall.side are internal scoring inputs and are deliberately not served.
 def _method_dict(call):
     if call is None:
         return None
@@ -424,15 +450,19 @@ def _stats_row_dict(r):
 
 
 def _int_arg(name):
-    value = request.args.get(name)
-    return int(value) if value and value.isdigit() else None
+    """Positive int query arg, or None (absent, non-numeric, or <= 0 means no filter)."""
+    try:
+        value = int(request.args.get(name, ""))
+    except ValueError:      # also covers "" and digit-like text such as a superscript two
+        return None
+    return value if value > 0 else None
 
 
 @app.route("/api/stats/events", methods=["GET"])
 def get_stats_events():
-    dash, bt = _stats_connections()
-    rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), month=_int_arg("month"),
-                                    event_title=request.args.get("event"))
+    with _stats_conns() as (dash, bt):
+        rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), month=_int_arg("month"),
+                                        event_title=request.args.get("event"))
     return jsonify({"rows": [_stats_row_dict(r) for r in rows],
                     "news_start_utc": stats_service.NEWS_START_UTC.isoformat(), "disclaimers": STATS_DISCLAIMERS})
 
@@ -442,16 +472,16 @@ def get_stats_chart():
     event, method = request.args.get("event"), request.args.get("method", "combined")
     if not event or method not in stats_service.METHODS:
         return jsonify({"error": "event and a valid method (tier1|news|combined) are required"}), 400
-    dash, bt = _stats_connections()
-    rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), event_title=event)
+    with _stats_conns() as (dash, bt):
+        rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), event_title=event)
     return jsonify(stats_service.build_chart(rows, method))
 
 
 @app.route("/api/stats/scoreboard", methods=["GET"])
 def get_stats_scoreboard():
-    dash, bt = _stats_connections()
-    rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), month=_int_arg("month"),
-                                    event_title=request.args.get("event"))
+    with _stats_conns() as (dash, bt):
+        rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), month=_int_arg("month"),
+                                        event_title=request.args.get("event"))
     return jsonify({**stats_service.build_scoreboard(rows), "footnote": STATS_FOOTNOTE})
 
 
