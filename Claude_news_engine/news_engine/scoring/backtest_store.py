@@ -105,6 +105,19 @@ CREATE TABLE IF NOT EXISTS tier1_comparisons (
     compared_at_utc TEXT NOT NULL,
     UNIQUE(event_title, instrument, event_time_utc)
 );
+CREATE TABLE IF NOT EXISTS tier1_nowcast_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_title TEXT NOT NULL,
+    event_time_utc TEXT NOT NULL,
+    nowcast_value REAL NOT NULL,
+    as_of_utc TEXT NOT NULL,
+    source TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('live', 'reconstructed')),
+    rule_version TEXT,
+    inputs_json TEXT,
+    recorded_at_utc TEXT NOT NULL,
+    UNIQUE(event_title, event_time_utc, as_of_utc, kind)
+);
 CREATE TABLE IF NOT EXISTS exogenous_shocks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     series TEXT NOT NULL,
@@ -1116,6 +1129,53 @@ def get_tier1_comparison_for_occurrence(
         actual_direction=d["actual_direction"], actual_move_note=d["actual_move_note"],
         compared_at_utc=d["compared_at_utc"],
     )
+
+
+_SNAPSHOT_KINDS = ("live", "reconstructed")
+
+
+def record_nowcast_snapshot(
+    conn: sqlite3.Connection, event_title: str, event_time_utc: dt.datetime, nowcast_value: float,
+    as_of_utc: dt.datetime, source: str, kind: str, rule_version: Optional[str] = None,
+    inputs: Optional[dict] = None,
+) -> int:
+    """
+    Append-only (spec 2026-10-15 ruling R1): a snapshot is never updated. A duplicate
+    (title, release, as_of, kind) is ignored, so re-running a backfill is idempotent and a rule
+    change must write a new rule_version/as_of rather than rewrite history.
+    """
+    if kind not in _SNAPSHOT_KINDS:
+        raise ValueError(f"kind must be one of {_SNAPSHOT_KINDS}, got {kind!r}")
+    conn.execute(
+        "INSERT OR IGNORE INTO tier1_nowcast_snapshots (event_title, event_time_utc, nowcast_value, "
+        "as_of_utc, source, kind, rule_version, inputs_json, recorded_at_utc) VALUES (?,?,?,?,?,?,?,?,?)",
+        (event_title, event_time_utc.isoformat(), float(nowcast_value), as_of_utc.isoformat(), source, kind,
+         rule_version, None if inputs is None else json.dumps(inputs, sort_keys=True),
+         dt.datetime.now(dt.timezone.utc).isoformat()),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT id FROM tier1_nowcast_snapshots WHERE event_title=? AND event_time_utc=? AND as_of_utc=? AND kind=?",
+        (event_title, event_time_utc.isoformat(), as_of_utc.isoformat(), kind),
+    ).fetchone()
+    return row["id"]
+
+
+def get_scored_nowcast_snapshot(
+    conn: sqlite3.Connection, event_title: str, event_time_utc: dt.datetime,
+    kinds: tuple[str, ...] = _SNAPSHOT_KINDS,
+) -> Optional[sqlite3.Row]:
+    """
+    The snapshot that gets scored: the LATEST as_of_utc that is <= the release time (no lookahead),
+    live preferred over reconstructed. None if there is no such snapshot.
+    """
+    placeholders = ",".join("?" for _ in kinds)
+    return conn.execute(
+        f"SELECT * FROM tier1_nowcast_snapshots WHERE event_title = ? AND event_time_utc = ? "
+        f"AND as_of_utc <= ? AND kind IN ({placeholders}) "
+        "ORDER BY CASE kind WHEN 'live' THEN 0 ELSE 1 END, as_of_utc DESC, id DESC LIMIT 1",
+        (event_title, event_time_utc.isoformat(), event_time_utc.isoformat(), *kinds),
+    ).fetchone()
 
 
 def record_exogenous_shock(

@@ -160,9 +160,12 @@ in order of preference:
 3. if neither is defensible, backdated Tier 1 starts when live capture began and the UI says so.
 The January start is **not promised** until Phase 0 reports.
 
-Storage: new table `tier1_reconstructed(event_title, instrument, event_time_utc, nowcast_value,
-forecast, predicted_value, rule_version, inputs_json, computed_at_utc)` in `backtest_log.db`,
-append-only; changing the rule creates a new `rule_version`, never edits rows.
+Storage (ruling R1, one table for both live and reconstructed): `tier1_nowcast_snapshots(id,
+event_title, event_time_utc, nowcast_value, as_of_utc, source, kind, rule_version, inputs_json,
+recorded_at_utc)` in `backtest_log.db`, where `kind` is `live` or `reconstructed`, unique on
+`(event_title, event_time_utc, as_of_utc, kind)`. Append-only (`INSERT OR IGNORE`); changing the rule
+creates a new `rule_version`/`as_of_utc`, never edits rows. Scoring takes the latest `as_of_utc` at or
+before the release, `live` preferred over `reconstructed`.
 
 Live capture going forward: the (enabled) Monday auto-research task must also record the nowcast
 number and `nowcast_as_of_utc` as structured fields, not only free text, and a release-eve refresh
