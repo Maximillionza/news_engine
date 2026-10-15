@@ -48,6 +48,7 @@ NOWCAST_URL = "https://www.clevelandfed.org/-/media/files/webcharts/inflationnow
 USER_AGENT = "news-fundamental-engine/0.1 (scheduled Cleveland Fed inflation nowcast capture; CC BY 4.0 attribution kept)"
 FETCH_TIMEOUT_SECONDS = 60
 WINDOW = dt.timedelta(hours=48)       # a release is "upcoming" when it is strictly after now and within this long
+MAX_DAYS_PAST_CHART = 45             # a release further than this after the chart's last date label is not that chart's
 MAX_VALUE_AGE_DAYS = 5                # the Fed updates every business day; a long weekend is at most 4 days
 
 
@@ -86,6 +87,11 @@ def _reading(title: str, release: dt.datetime, value: Optional[float] = None,
     return {"event_title": title, "release_utc": release, "value": value, "value_date": value_date, "reason": reason}
 
 
+def _is_blank(text) -> bool:
+    """A slot with no value: the file may hold "", null (None, or the string "None" after str()) or spaces."""
+    return text is None or str(text).strip().lower() in ("", "none")
+
+
 def _latest_for_release(charts: list[dict], title: str, release: dt.datetime) -> dict:
     if title not in SERIES_MAP:
         return _reading(title, release, reason="not a CPI-family title")
@@ -94,21 +100,41 @@ def _latest_for_release(charts: list[dict], title: str, release: dt.datetime) ->
     if chart is None:
         return _reading(title, release, reason=f"no Cleveland Fed chart for reference month {ref[0]}-{ref[1]}")
     nowcast_name, actual_name = SERIES_MAP[title]
+    release_day = release.date()
     try:
-        if any(value != "" for value in _series(chart, actual_name)):
-            return _reading(title, release, reason="the Fed chart already shows an actual for this release")
         dates = _slot_dates(chart)
         values = _series(chart, nowcast_name)
-        if len(values) != len(dates):
+        actuals = _series(chart, actual_name)
+        if len(values) != len(dates) or len(actuals) != len(dates):
             raise ValueError("series length does not match its date labels")
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         return _reading(title, release, reason=f"could not read the Fed chart: {exc}")
+
+    # Released month: the converter finds the release day from the Actual series; do the same. Our release
+    # is upcoming, so a chart that already has an actual is not the chart for it (matching day or not).
+    released = [i for i, text in enumerate(actuals) if not _is_blank(text)]
+    if released:
+        return _reading(title, release, reason=(
+            f"the Fed chart already shows an actual for this release (marked {dates[released[0]]}, ours {release_day})"))
+
+    # Month arithmetic picked the chart; confirm it really belongs to this release (a delayed release must
+    # not be matched to the next month's unreleased chart).
+    if not dates or dates[0] > release_day:
+        return _reading(title, release, reason=(
+            f"the Fed chart for {ref[0]}-{ref[1]} starts after the release day ({release_day})"))
+    if release_day > dates[-1] + dt.timedelta(days=MAX_DAYS_PAST_CHART):
+        return _reading(title, release, reason=(
+            f"the release ({release_day}) is more than {MAX_DAYS_PAST_CHART} days after the last date in the "
+            f"Fed chart for {ref[0]}-{ref[1]} ({dates[-1]}): not this chart's release"))
+    if all(_is_blank(text) for text in values):
+        return _reading(title, release, reason=f"no non-blank {nowcast_name} value in the Fed chart for {ref[0]}-{ref[1]}")
+
     # Last non-blank slot dated strictly before the release day (the release-day slot is never used).
     for date, text in zip(reversed(dates), reversed(values)):
-        if date >= release.date() or text == "":
+        if date >= release_day or _is_blank(text):
             continue
         try:
-            value = float(text)
+            value = float(str(text).strip())
         except ValueError:
             value = math.nan
         if not math.isfinite(value):

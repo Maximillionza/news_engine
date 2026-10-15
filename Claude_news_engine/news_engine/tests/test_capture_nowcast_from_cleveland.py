@@ -24,8 +24,8 @@ CPI = ["0.40", "0.41", "0.42", "0.43", "0.44", "0.45", "0.46", "0.47", "", ""]  
 CORE = ["0.20", "0.21", "0.22", "0.23", "", "0.24", "0.25", "0.26", "", ""]           # 11/05 blank; last: 11/10 = 0.26
 OCT = _chart("2026-10", LABELS, CPI, CORE)                                             # not released: no actual
 # September 2026 CPI (released 2026-10-14) already has its actual in the file.
-SEP = _chart("2026-9", ["10/12", "10/13", "10/14"], ["0.5", "0.53", ""], ["0.2", "0.21", ""],
-             actual_idx=2, release_marker="CPI Sep")
+SEP = _chart("2026-9", ["09/30", "10/12", "10/13", "10/14"], ["0.5", "0.52", "0.53", ""], ["0.2", "0.2", "0.21", ""],
+             actual_idx=3, release_marker="CPI Sep")
 DATA = [SEP, OCT]
 
 
@@ -356,3 +356,65 @@ def test_cli_exits_2_when_a_due_release_had_to_be_skipped(tmp_path, capsys):
     out = capsys.readouterr().out
     assert code == 2 and "SKIPPED CPI m/m" in out and "parse" in out
     assert _bt_rows(bt_path) == 0
+
+
+# --- review round: chart-selection hardening ------------------------------------------------------
+
+def test_a_delayed_release_far_beyond_the_chart_is_skipped_not_matched_to_the_wrong_month():
+    # The October chart ends 10/05; a release on 2026-11-25 is 51 days later, so this is not its release.
+    short = _chart("2026-10", ["10/01", "10/02", "10/05"], ["0.4", "0.41", "0.42"], ["0.2", "0.21", "0.22"])
+    late = dt.datetime(2026, 11, 25, 13, 30, tzinfo=UTC)
+    got = cap.latest_nowcasts([short], [("CPI m/m", late)])[0]
+    assert got["value"] is None and "45 days" in got["reason"]
+
+
+def test_a_release_exactly_45_days_after_the_last_label_is_still_accepted():
+    short = _chart("2026-10", ["10/01", "10/02", "10/05"], ["0.4", "0.41", "0.42"], ["0.2", "0.21", "0.22"])
+    edge = dt.datetime(2026, 11, 19, 13, 30, tzinfo=UTC)                       # 10/05 + 45 days
+    got = cap.latest_nowcasts([short], [("CPI m/m", edge)])[0]
+    assert got["reason"] is None and got["value"] == pytest.approx(0.42)
+
+
+def test_a_chart_that_starts_after_the_release_is_skipped(monkeypatch):
+    monkeypatch.setattr(cap, "_slot_dates", lambda chart: [dt.date(2026, 11, 20), dt.date(2026, 11, 23)])
+    chart = _chart("2026-10", ["10/30", "11/02"], ["0.4", "0.41"], ["0.2", "0.21"])
+    got = cap.latest_nowcasts([chart], _release_rows())[0]
+    assert got["value"] is None and "starts after" in got["reason"]
+
+
+def test_a_chart_with_no_nowcast_values_at_all_is_skipped_with_its_own_reason():
+    empty = _chart("2026-10", LABELS, [""] * 10, CORE)
+    got = _by_title(cap.latest_nowcasts([empty], _release_rows()))
+    assert got["CPI m/m"]["value"] is None and "no non-blank" in got["CPI m/m"]["reason"]
+    assert got["Core CPI m/m"]["value"] == pytest.approx(0.26)                 # the other series is unaffected
+
+
+@pytest.mark.parametrize("blank", [None, "", "None", " "])
+def test_none_empty_and_the_string_none_are_all_blank_not_unparseable(blank):
+    chart = _chart("2026-10", LABELS, CPI[:8] + [blank, blank], CORE[:8] + [blank, blank])
+    got = _by_title(cap.latest_nowcasts([chart], _release_rows()))
+    assert got["CPI m/m"]["reason"] is None and got["CPI m/m"]["value"] == pytest.approx(0.47)
+    assert got["CPI m/m"]["value_date"] == dt.date(2026, 11, 10)
+
+
+@pytest.mark.parametrize("blank", [None, "None"])
+def test_an_all_none_series_is_all_blank(blank):
+    chart = _chart("2026-10", LABELS, [blank] * 10, CORE)
+    got = _by_title(cap.latest_nowcasts([chart], _release_rows()))["CPI m/m"]
+    assert got["value"] is None and "no non-blank" in got["reason"]
+
+
+def test_none_in_the_actual_series_does_not_count_as_released():
+    chart = _chart("2026-10", LABELS, CPI, CORE)
+    for series in chart["dataset"]:
+        if series["seriesname"].startswith("Actual"):
+            for point in series["data"]:
+                point["value"] = None
+    got = cap.latest_nowcasts([chart], _release_rows())[0]
+    assert got["reason"] is None and got["value"] is not None
+
+
+def test_a_released_chart_reports_the_release_date_the_fed_marked():
+    release = dt.datetime(2026, 10, 14, 12, 30, tzinfo=UTC)
+    got = cap.latest_nowcasts([SEP], [("CPI m/m", release)])[0]
+    assert got["value"] is None and "already" in got["reason"] and "2026-10-14" in got["reason"]
