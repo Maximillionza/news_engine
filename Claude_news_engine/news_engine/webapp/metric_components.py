@@ -5,6 +5,7 @@ Sources cited verbatim from the Cleveland Fed page checked 2026-10-15
 """
 from __future__ import annotations
 
+import copy
 from typing import Optional
 
 _CLEVELAND = "Cleveland Fed Inflation Nowcasting"
@@ -32,9 +33,9 @@ _REGISTRY: dict[str, dict] = {
         "title": "News sentiment lean",
         "summary": "How hot or cool the article flow leans for this release, from -1 (cooler) to +1 (hotter).",
         "components": [
-            {"name": "Print call", "detail": "Hotter / cooler / in line versus forecast, with its confidence. Used first when it takes a side.", "source": "scoring/print_direction.py"},
-            {"name": "XAUUSD accumulator prediction", "detail": "Used when the print call is in line or absent; mapped to a hotter/cooler side, strength |2p - 1|.", "source": "scoring/probability_engine.py"},
-            {"name": "Article sentiment, trust weighting, time decay, contradiction flag", "detail": "What the accumulator itself is built from.", "source": "scoring/sentiment.py, scoring/probability_engine.py"},
+            {"name": "Print call", "detail": "Hotter / cooler / in line versus forecast, with its confidence. Used first when it takes a side.", "source": "Print-direction scorer"},
+            {"name": "XAUUSD accumulator prediction", "detail": "Used when the print call is in line or absent; mapped to a hotter/cooler side, strength |2p - 1|.", "source": "Accumulator prediction engine"},
+            {"name": "Article sentiment, trust weighting, time decay, contradiction flag", "detail": "What the accumulator itself is built from.", "source": "Article sentiment accumulator"},
         ],
         "note": "News-only predicted values scale the lean by the event's typical surprise size (an assumption).",
     },
@@ -43,7 +44,7 @@ _REGISTRY: dict[str, dict] = {
         "summary": "A fixed 70% / 30% blend of the Tier 1 surprise and the news surprise. There is no conflicting state.",
         "components": [
             {"name": "Tier 1 (nowcast vs forecast)", "detail": "70% of the blend.", "source": _CLEVELAND},
-            {"name": "News sentiment lean", "detail": "30% of the blend. If no articles exist, the row is Tier 1 only.", "source": "Stats tab spec D3"},
+            {"name": "News sentiment lean", "detail": "30% of the blend. If no articles exist, the row is Tier 1 only.", "source": "Stats tab design (fixed 70/30 weights)"},
         ],
         "note": "Weights are fixed in advance and reviewed on 2027-01-15; they are not tuned on results.",
     },
@@ -54,4 +55,5 @@ METRICS: tuple[str, ...] = tuple(_REGISTRY)
 
 def get_components(metric: str) -> Optional[dict]:
     entry = _REGISTRY.get(metric)
-    return None if entry is None else {"metric": metric, **entry}
+    # Deep copy: the registry is module-level state, so callers must not be able to mutate it.
+    return None if entry is None else copy.deepcopy({"metric": metric, **entry})
