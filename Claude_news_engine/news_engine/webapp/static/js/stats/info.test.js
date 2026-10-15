@@ -77,3 +77,53 @@ test("readings escape every served string", () => {
   const html = readingsHtml(evil, "tier1") + readingsHtml(evil, "combined");
   for (const tag of ["<script>", "<b>", "<i>", "<u>", "<s>"]) assert.ok(!html.includes(tag), tag);
 });
+
+// ---- Brent crude beside the nowcast (information only) -------------------------------------------
+const BRENT = { snapshot_price: 90, snapshot_price_date: "2026-10-12", release_price: 92.5, release_price_date: "2026-10-13",
+  change_pct: 2.78, source: "FRED DCOILBRENTEU (EIA daily Brent)" };
+
+test("CPI readings show Brent at the nowcast snapshot vs before the release, information only at 0% weight", () => {
+  for (const view of ["tier1", "combined"]) {
+    const html = readingsHtml({ ...ROW, detail: { ...DETAIL, brent: BRENT } }, view);
+    assert.ok(html.includes("Brent crude (information only, 0% weight): $90.00 on 2026-10-12 at the nowcast snapshot"), view);
+    assert.ok(html.includes("→ $92.50 on 2026-10-13 before release (+2.78%)"), view);
+    assert.ok(html.includes("source FRED/EIA"), view);
+    assert.ok(!html.includes("Brent not available"), view);
+  }
+});
+
+test("a falling Brent shows a minus sign and a flat one shows no sign", () => {
+  const down = readingsHtml({ ...ROW, detail: { ...DETAIL, brent: { ...BRENT, release_price: 85, change_pct: -5.56 } } }, "tier1");
+  assert.ok(down.includes("$85.00 on 2026-10-13 before release (-5.56%)"));
+  const flat = readingsHtml({ ...ROW, detail: { ...DETAIL, brent: { ...BRENT, release_price: 90, change_pct: 0 } } }, "tier1");
+  assert.ok(flat.includes("(0.00%)"));
+});
+
+test("a null Brent says it is not available and invents no price", () => {
+  for (const brent of [null, undefined]) {
+    const html = readingsHtml({ ...ROW, detail: { ...DETAIL, brent } }, "tier1");
+    assert.ok(html.includes("Brent crude (information only, 0% weight): Brent not available"));
+    assert.ok(!html.includes("$"));
+  }
+});
+
+test("when only one side has a price the other is said to be missing and no change is shown", () => {
+  const html = readingsHtml({ ...ROW, detail: { ...DETAIL, brent: { ...BRENT, snapshot_price: null, snapshot_price_date: null, change_pct: null } } }, "tier1");
+  assert.ok(html.includes("no price at the nowcast snapshot") && html.includes("$92.50 on 2026-10-13 before release"));
+  assert.ok(!html.includes("%)"));
+});
+
+test("Brent is not mentioned where there is no nowcast (no snapshot, or a hand-logged call)", () => {
+  const none = readingsHtml({ ...ROW, tier1: null, detail: { ...DETAIL, nowcast_value: null, nowcast_as_of_utc: null, brent: null } }, "tier1");
+  assert.ok(!none.includes("Brent"));
+  const hand = readingsHtml({ ...ROW, event_title: "PPI m/m", tier1: { predicted: null, verdict: "right", leans: { XAUUSD: "sell" }, note: "hand-logged", kind: null },
+    detail: { ...DETAIL, nowcast_value: null, hand_logged: { value: "0.4% hot", confidence: "Likely", source: "BLS" }, brent: null } }, "tier1");
+  assert.ok(!hand.includes("Brent"));
+});
+
+test("Brent text is escaped and adds no weight or call", () => {
+  const evil = readingsHtml({ ...ROW, detail: { ...DETAIL, brent: { ...BRENT, snapshot_price_date: "<b>x</b>", release_price_date: "<i>y</i>" } } }, "combined");
+  assert.ok(!evil.includes("<b>") && !evil.includes("<i>"));
+  const plainHtml = readingsHtml({ ...ROW, detail: { ...DETAIL, brent: BRENT } }, "combined");
+  assert.ok(plainHtml.includes("Weights: 70% Tier 1 / 30% news"));                  // unchanged: Brent carries no weight
+});

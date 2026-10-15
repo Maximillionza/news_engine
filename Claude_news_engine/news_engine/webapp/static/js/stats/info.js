@@ -23,6 +23,20 @@ function plain(x) { return String(Number(Number(x).toFixed(3))); }
 function signed(x) { const v = Number(Number(x).toFixed(3)); return `${v > 0 ? "+" : ""}${v}`; }
 function pct(w) { return `${Math.round(Number(w) * 100)}%`; }
 
+// Brent crude beside the nowcast: information only at 0% weight (Brent is already an input to the nowcast),
+// so it never touches a call or a weight. Dates are plain calendar dates (no time zone to convert).
+function brentLine(b) {
+  const head = "Brent crude (information only, 0% weight): ";
+  if (!b || (b.snapshot_price == null && b.release_price == null)) return `${head}Brent not available`;
+  const dollars = (x) => `$${Number(x).toFixed(2)}`;
+  const snap = b.snapshot_price == null ? "no price at the nowcast snapshot"
+    : `${dollars(b.snapshot_price)} on ${b.snapshot_price_date} at the nowcast snapshot`;
+  const rel = b.release_price == null ? "no price before the release"
+    : `${dollars(b.release_price)} on ${b.release_price_date} before release`;
+  const change = b.change_pct == null ? "" : ` (${signedLean(b.change_pct)}%)`;
+  return `${head}${snap} → ${rel}${change} — source FRED/EIA`;
+}
+
 function tier1Lines(row, d, unit, view) {
   const hand = d.hand_logged;
   if (hand) {
@@ -46,6 +60,7 @@ function tier1Lines(row, d, unit, view) {
     out.push(row.tier1.kind === "reconstructed" ? "Snapshot: reconstructed after the fact from the stated rule"
       : "Snapshot: captured live before the release");
   }
+  out.push(brentLine(d.brent));
   if (view === "tier1") {
     if (row.forecast != null) out.push(`Expected outcome: ${expectedWord(row.forecast, d.nowcast_value, d.forecast_text)}`);
     out.push("Weights: Tier 1: 100% nowcast");
