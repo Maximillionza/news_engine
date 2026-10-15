@@ -125,11 +125,15 @@ def _call(predicted: Optional[float], surprise: Optional[float], forecast: float
 def build_rows(dash_conn: sqlite3.Connection, bt_conn: sqlite3.Connection, year: Optional[int] = None,
                month: Optional[int] = None, event_title: Optional[str] = None) -> list[StatsRow]:
     """
-    Every event_history occurrence, ascending by time. Filters are applied AFTER computing so each
+    Every USD event_history occurrence, ascending by time. Filters are applied AFTER computing so each
     title's scale history (prior |actual - forecast|) is complete regardless of the filter.
+
+    USD only (spec D2): country NULL rows are non-USD or unattributed prints that reuse US titles (e.g.
+    an 01:30Z "CPI m/m"); left in, they would add bogus rows and pollute the US scale history.
     """
     raw = dash_conn.execute(
-        "SELECT * FROM event_history ORDER BY event_time_utc, event_title"   # UNIQUE(title, time): no duplicates
+        "SELECT * FROM event_history WHERE country = 'USD' "
+        "ORDER BY event_time_utc, event_title"   # UNIQUE(title, time): no duplicates
     ).fetchall()
 
     history: dict[str, list[float]] = {}
@@ -260,23 +264,29 @@ def build_scoreboard(rows: list[StatsRow]) -> dict:
     Per method: calls with a verdict, how many were right, accuracy (hidden under MIN_SCORED_FOR_PERCENT)
     and mean miss. A news_missing Combined call counts for Combined (it is the Tier 1 call); News counts
     only rows where a news call exists, since a row without one has news = None.
+
+    Mean miss is only reported when every scored call belongs to ONE event title: titles carry their own
+    units (% vs K), so averaging across them is meaningless. Counts and accuracy are still reported.
     """
     methods = {}
     for name in METHODS:
         scored = right = 0
         misses: list[float] = []
+        titles: set[str] = set()
         for row in rows:
             call = getattr(row, name)
             if call is None or call.verdict is None:
                 continue
             scored += 1
             right += call.verdict == "right"
+            titles.add(row.event_title)
             if call.miss is not None:
                 misses.append(call.miss)
         shown = scored >= MIN_SCORED_FOR_PERCENT
+        one_title = len(titles) == 1
         methods[name] = {
             "scored": scored, "right": right,
             "accuracy": (right / scored) if shown else None, "accuracy_shown": shown,
-            "mean_miss": (sum(misses) / len(misses)) if misses else None,
+            "mean_miss": (sum(misses) / len(misses)) if misses and one_title else None,
         }
     return {"methods": methods, "min_for_percent": MIN_SCORED_FOR_PERCENT}

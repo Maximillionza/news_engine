@@ -18,7 +18,7 @@ in the style of Shock Alerts), what happened, and whether the call was right.
 | # | Decision |
 |---|---|
 | D1 | Tier 1 score is a mechanical, weighted calculation where a defensible rule exists; events without one are greyed "Not tracked by Tier 1". |
-| D2 | Every economic release in the dashboard history gets a row (all 287 titles / 646 occurrences since 2026-01-09). Tier 1 is active only where a rule exists. |
+| D2 | Every USD economic release in the dashboard history (country = 'USD'; non-USD and unattributed rows are excluded) gets a row. Tier 1 is active only where a rule exists. |
 | D3 | Combined = Tier 1 inputs **70%** + News sentiment **30%**. The weight is fixed in advance, never tuned on results, and **revisited on 2027-01-15** with more data. |
 | D4 | Combined never has a "Conflicting" state. News is one more weighted input; Combined always lands on one call. |
 | D5 | Right/wrong is decided by **direction against the Forecast**, not by closeness of the number. The size of the miss is shown separately. |
@@ -36,7 +36,7 @@ Tier 1 for 2026 where feasible (§8).
 
 Out (v1): trading signals or order logic; changing `predicted_direction` or any live scoring path;
 weighting oil/gasoline *shocks* in Tier 1 (§6.3 records the idea); re-tuning the 30% weight;
-non-USD events beyond what the dashboard history already holds; editing the Shock Alerts tab.
+non-USD and unattributed (country not 'USD') events, see D2; editing the Shock Alerts tab.
 
 ## 4. Definitions (exact)
 
@@ -173,7 +173,7 @@ must be added (§6.1 Freshness).
 
 ## 9. Architecture
 
-- `webapp/stats_service.py` — read-only; joins `event_history`, `predictions`, `print_predictions`,
+- `webapp/stats_service.py` — read-only; joins `event_history` (country = 'USD' rows only), `predictions`, `print_predictions`,
   `tier1_predictions`, `tier1_nowcast_snapshots`, `outcomes`. Pure functions for `side()`, Right/Wrong,
   scale, Combined. Fail-open per row like the History tab.
 - `webapp/metric_components.py` — static registry of components per composite metric (nowcast,

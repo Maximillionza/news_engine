@@ -21,11 +21,11 @@ def conns():
     return ws.get_connection(":memory:"), bs.get_connection(":memory:")
 
 
-def _event(dash, title, when, forecast, actual, previous="0.1%"):
+def _event(dash, title, when, forecast, actual, previous="0.1%", country="USD"):
     dash.execute(
         "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, surprise_direction, "
         "recorded_at_utc, updated_at_utc, source, impact, country) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        (title, when.isoformat(), forecast, previous, actual, None, when.isoformat(), when.isoformat(), "t", "High", "USD"),
+        (title, when.isoformat(), forecast, previous, actual, None, when.isoformat(), when.isoformat(), "t", "High", country),
     )
     dash.commit()
 
@@ -242,6 +242,54 @@ def test_title_without_a_surprise_map_has_no_news_call(conns):
     row = svc.build_rows(dash, bt, event_title=title)[-1]
     assert row.status == "scored"
     assert row.news is None and row.combined is None
+
+
+# --- coordinator ruling: USD events only -----------------------------------------------------
+
+def test_non_usd_and_unattributed_rows_are_excluded_from_rows_and_chart(conns):
+    dash, bt = conns
+    _event(dash, "CPI m/m", _t(8, 26), "0.9%", "1.1%", country=None)     # e.g. an AUD print reusing the title
+    _event(dash, "CPI m/m", _t(9, 3), "0.0%", "0.2%", country="CHF")
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    rows = svc.build_rows(dash, bt, event_title="CPI m/m")
+    assert [r.event_time_utc for r in rows] == [_t(10)]
+    chart = svc.build_chart(rows, "tier1")
+    assert [p["event_time_utc"] for p in chart["points"]] == [_t(10).isoformat()]
+
+
+def test_non_usd_rows_do_not_feed_the_news_scale_history(conns):
+    dash, bt = conns
+    _cpi_history(dash)                                                    # three USD rows, |surprise| 0.1 each
+    for day in (15, 16, 17, 18):                                          # four NULL-country rows, |surprise| 1.0
+        _event(dash, "CPI m/m", _t(4, day), "0.3%", "1.3%", country=None)
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    _print_call(bt, "CPI m/m", _t(10), "higher", 0.5, scored_at=_t(10) - dt.timedelta(days=1))
+    row = svc.build_rows(dash, bt, event_title="CPI m/m")[-1]
+    assert row.news.predicted == pytest.approx(0.3 + 0.5 * 0.1)          # median of USD-only history; 1.0 if leaked
+
+
+def test_non_usd_rows_do_not_count_toward_the_minimum_scale_history(conns):
+    dash, bt = conns
+    _event(dash, "CPI m/m", _t(1), "0.3%", "0.4%")
+    _event(dash, "CPI m/m", _t(2), "0.3%", "0.4%")
+    _event(dash, "CPI m/m", _t(3), "0.3%", "0.4%", country=None)          # would be the third prior print
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    _print_call(bt, "CPI m/m", _t(10), "higher", 0.5, scored_at=_t(10) - dt.timedelta(days=1))
+    assert svc.build_rows(dash, bt, event_title="CPI m/m")[-1].news is None
+
+
+# --- coordinator ruling: mean miss only within one event title ----------------------------------
+
+def test_scoreboard_mean_miss_is_none_when_calls_span_more_than_one_title(conns):
+    dash, bt = conns
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    _snap(bt, "CPI m/m", _t(10), 0.5)
+    _event(dash, "Core CPI m/m", _t(10), "0.2%", "0.3%")
+    _snap(bt, "Core CPI m/m", _t(10), 0.4)
+    mixed = svc.build_scoreboard(svc.build_rows(dash, bt))["methods"]["tier1"]
+    assert mixed["scored"] == 2 and mixed["right"] == 2 and mixed["mean_miss"] is None
+    single = svc.build_scoreboard(svc.build_rows(dash, bt, event_title="CPI m/m"))["methods"]["tier1"]
+    assert single["scored"] == 1 and single["mean_miss"] == pytest.approx(0.1)
 
 
 # --- fail-open --------------------------------------------------------------------------------
