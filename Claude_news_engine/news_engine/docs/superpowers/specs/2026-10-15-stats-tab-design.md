@@ -107,6 +107,16 @@ rescales it to 70% and adds news at 30%.
 
 The information icon beside "Cleveland Fed nowcast" lists those ten inputs with their sources.
 
+**Freshness (owner note, 2026-10-15).** The nowcast refreshes daily, but the value *we store* is a
+snapshot, and the Monday research task can be days older than a mid-week release, so oil may have
+moved since. To keep Tier 1 "close to the event":
+- every stored nowcast carries `nowcast_as_of_utc`, shown on the row ("nowcast as of Mon 08:06");
+- a second capture runs on the release eve or morning (last nowcast before the release), and the
+  **last snapshot before release is the one scored**; earlier snapshots are kept for the record;
+- the click-through shows "Brent / gasoline move since the nowcast snapshot" as information at 0%
+  weight — this is the owner's "closer to the event" oil and gas view, without double-counting.
+Backfilled rows use the last nowcast-equivalent available before the release, with the same timestamp.
+
 ### 6.2 Other events
 Where the workbook's POC sheet defines a researched indicator set but no numeric rule exists
 (PPI, NFP, FOMC, GDP, Core PCE, ISM, Retail Sales), Tier 1 stays the researched, hand-logged call as
@@ -115,9 +125,9 @@ weights are invented**. Where a numeric rule can later be defended, it replaces 
 becomes weighted. Every other event is greyed.
 
 ### 6.3 Oil/gas shock idea (recorded, not built)
-Owner's intent was oil/gas *shocks beyond what the nowcast already contains*. That would be a moves
--since-the-nowcast-last-updated adjustment. v1 only displays "Brent / gasoline move since nowcast
-update" as information at 0% weight. Weighting it needs its own spec and evidence.
+Owner's intent was oil/gas movement *after the stored nowcast snapshot*. v1 displays it as information
+at 0% weight (see Freshness above). Weighting it, or treating a large move as a shock override, needs
+its own spec and evidence.
 
 ## 7. News input
 
@@ -154,8 +164,9 @@ Storage: new table `tier1_reconstructed(event_title, instrument, event_time_utc,
 forecast, predicted_value, rule_version, inputs_json, computed_at_utc)` in `backtest_log.db`,
 append-only; changing the rule creates a new `rule_version`, never edits rows.
 
-Live capture going forward: the (now enabled) Monday auto-research task must also record the nowcast
-number as a structured field, not only free text.
+Live capture going forward: the (enabled) Monday auto-research task must also record the nowcast
+number and `nowcast_as_of_utc` as structured fields, not only free text, and a release-eve refresh
+must be added (§6.1 Freshness).
 
 ## 9. Architecture
 
