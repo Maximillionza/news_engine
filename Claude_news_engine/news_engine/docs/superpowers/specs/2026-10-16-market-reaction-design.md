@@ -1,6 +1,6 @@
 # Market reaction sub-tab (Stats) — design
 
-Date: 2026-10-16. Status: draft for owner review. Author: Claude, with Masood.
+Date: 2026-10-16. Status: owner answers to O1-O3 applied 2026-10-16; awaiting written-spec approval. Author: Claude, with Masood.
 Builds on the Stats tab (`docs/superpowers/specs/2026-10-15-stats-tab-design.md`). The layout mockup was approved in-session ("happy with the mockup for now"); numbers in it were sample data.
 
 ## 1. Purpose
@@ -22,6 +22,9 @@ For each release, record how XAUUSD and US30 moved in the 5 minutes after it. Ov
 | R7 | Each event keeps **its own call**; the cluster verdict is shown beside it and never erases an individual score. |
 | R8 | **Impact filter**: multi-select chips (High, Medium, Low, Unrated), **High selected by default**. |
 | R9 | Impact filter applies to **all four** Stats sub-tabs (owner's assumed-agreed default; stated as an assumption). |
+| R11 | **Percentage floor 20**, same as the rest of Stats: no percentage is shown for an event type with fewer than 20 releases (counts are always shown). Event types under 8 releases also carry a "few releases" tag. (Owner: "Match 20".) |
+| R12 | **No overlap handling.** Releases are normally about 30 minutes apart, so a 5-minute window does not contain another release minute; no overlap flag or exclusion is built. Phase 0 counts any window that does contain another release minute and reports it; if any exist they are listed, not silently handled. (Owner: "this does not happen".) |
+| R13 | **One baseline per UTC hour**; no split by US daylight-saving period. (Owner: "don't split".) |
 | R10 | Releases with no impact tag **inherit the tag from the same event title** (CPI is High wherever it is tagged) and appear under **Unrated (inferred)**, switched on by default together with High (assumed-agreed default). |
 
 ## 3. Scope
@@ -55,7 +58,7 @@ A conflict day proves nothing alone; credit only means something when tallied pe
 
 ### 4.2 Leaderboard metrics (per event title, per instrument, over the filtered rows)
 
-`releases` (with a lean), `solo`, `shared`, `in conflict`; `reaction rate` = releases with a reaction / releases; `direction hit rate` = (hits + shared hits + matched) / releases with a reaction; `avg 5-min move` (mean of `move_pct` signed in the implied direction); `engine call right` = Right / scored engine calls for that event (the Stats rule), `n/a` where no calls exist. Every rate is shown with its count (`k of n`). Titles with fewer than 8 releases carry a "few releases" tag. Percentages are hidden under 8 releases (a stricter-than-Stats floor would be 20; the owner's mockup used 8 as the tag threshold — **open question O1**). A Wilson 95% interval is shown on hover for hit and reaction rates.
+`releases` (with a lean), `solo`, `shared`, `in conflict`; `reaction rate` = releases with a reaction / releases; `direction hit rate` = (hits + shared hits + matched) / releases with a reaction; `avg 5-min move` (mean of `move_pct` signed in the implied direction); `engine call right` = Right / scored engine calls for that event (the Stats rule), `n/a` where no calls exist. Every rate is shown with its count (`k of n`). Titles with fewer than 8 releases carry a "few releases" tag. Percentages are hidden under 20 releases (R11); counts are always shown. A Wilson 95% interval is shown on hover for hit and reaction rates.
 
 ## 5. Impact handling
 
@@ -91,12 +94,12 @@ Unit: reaction threshold edges (equal to typical = no reaction), direction/sign 
 ## 10. Risks and open questions
 
 1. **Small samples and multiple comparisons.** About 40 event types ranked on a few months of data will throw up false "drivers". Mitigation: counts everywhere, "few releases" tag, Wilson intervals; no ranking claim below the floor.
-2. **Confounding by neighbouring releases.** A different release at `t+2 min` can land inside another event's 5-minute window. v1 flags a window containing another USD release minute (`overlap = true`) and still counts it, with a tag; excluding them is an open choice (**O2**).
-3. **Time-of-day effects.** The baseline is per UTC hour, which absorbs most intraday volatility patterns but not US daylight-saving shifts (12:30Z vs 13:30Z for the same local time); the baseline is therefore per hour, not per release time. (**O3**: split by DST period?)
+2. **Confounding by neighbouring releases.** Owner states releases are normally about 30 minutes apart, so a neighbouring release inside a 5-minute window should not occur (R12). Phase 0 verifies this on the real calendar and lists any exception.
+3. **Time-of-day effects.** The baseline is per UTC hour (R13). It absorbs most intraday volatility patterns but not the US daylight-saving shift (12:30Z vs 13:30Z for the same local time); the owner chose not to split it.
 4. **Engine calls are sparse.** News/Combined calls exist from Aug 2026; Tier 1 numeric calls only for CPI-family. The engine-call column will be `n/a` for most titles for a long time.
 5. **Dukascopy coverage/latency.** Phase 0 must list missing minutes; a missing minute is "no data", never filled.
-6. **O1 percentage floor** (8 vs 20) and **O2/O3** above need an owner ruling before the plan is written; defaults used until then: floor 8 with the "few releases" tag, overlap flagged and counted, single hourly baseline.
+6. Former open questions O1-O3 are settled by R11-R13.
 
 ## 11. Phasing
 
-0. Feasibility: bar coverage for every release minute, baseline sanity (compare with the Shock-alert audit method), count solo/agree/conflict clusters. 1. Pure rules + tests. 2. Tables + compute script + backfill on temp copies. 3. Service + routes + impact filter across Stats. 4. UI. 5. Live backfill, scheduler hook (with approval), docs/inventory row. Final whole-branch review before merge.
+0. Feasibility: bar coverage for every release minute, baseline sanity (compare with the Shock-alert audit method), count solo/agree/conflict clusters, and count any 5-minute window that contains another USD release minute (expected zero). 1. Pure rules + tests. 2. Tables + compute script + backfill on temp copies. 3. Service + routes + impact filter across Stats. 4. UI. 5. Live backfill, scheduler hook (with approval), docs/inventory row. Final whole-branch review before merge.
