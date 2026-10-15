@@ -278,7 +278,11 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
         s1 = tier1_surprise(nowcast_value, forecast)
         nowcast_as_of = snapshot["as_of_utc"]
         if brent_series is not None:
-            brent = _brent_detail(brent_series(), _parse_time(nowcast_as_of), when)
+            try:
+                brent = _brent_detail(brent_series(), _parse_time(nowcast_as_of), when)
+            except Exception:  # noqa: BLE001 -- a malformed series degrades only the Brent line
+                logger.warning("stats: Brent detail failed for %s %s", title, when, exc_info=True)
+                brent = None
         tier1 = _call(nowcast_value, s1, forecast, tol, actual, title, kind=snapshot["kind"])
         tier1_tracked = True
     else:

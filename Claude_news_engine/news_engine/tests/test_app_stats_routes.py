@@ -243,3 +243,15 @@ def test_first_connection_is_closed_if_opening_the_second_fails(monkeypatch):
         app_module._open_stats_connections()
     with pytest.raises(sqlite3.ProgrammingError):
         opened[0].execute("SELECT 1")
+
+
+# --- review round: only the events route may touch the Brent source --------------------------------
+
+def test_chart_and_scoreboard_routes_never_call_the_brent_source(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr(brent_feed, "get_brent_series", lambda *a, **kw: calls.append(1) or list(BRENT_SERIES))
+    assert client.get("/api/stats/chart?event=CPI%20m/m&method=tier1").status_code == 200
+    assert client.get("/api/stats/scoreboard?event=CPI%20m/m").status_code == 200
+    assert calls == []
+    assert client.get("/api/stats/events?event=CPI%20m/m").status_code == 200
+    assert calls == [1]                                   # the events route (which shows Brent) still does

@@ -632,3 +632,10 @@ def test_default_brent_lookup_uses_the_feed_module(conns, monkeypatch):
     _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
     _snap(bt, "CPI m/m", _t(10), 0.4)
     assert svc.build_rows(dash, bt)[-1].detail.brent["release_price"] == 92.0
+
+
+@pytest.mark.parametrize("garbage", [[None], [("not a date", "not a price")], [(D(10, 12), None, "extra")], "oops"])
+def test_a_malformed_brent_series_degrades_only_the_brent_line(garbage):
+    row = _cpi_row_with_brent(garbage)
+    assert row.status == "scored" and row.tier1.verdict == "right" and row.detail.brent is None
+    assert row.detail.nowcast_value == pytest.approx(0.4)

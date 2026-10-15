@@ -494,7 +494,9 @@ def get_stats_chart():
     if not event or method not in stats_service.METHODS:
         return jsonify({"error": "event and a valid method (tier1|news|combined) are required"}), 400
     with _stats_conns() as (dash, bt):
-        rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), event_title=event)
+        # These routes never show Brent, so they must not trigger (or wait on) a FRED fetch.
+        rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), event_title=event,
+                                        brent_series_fn=lambda: None)
     return jsonify(stats_service.build_chart(rows, method))
 
 
@@ -502,7 +504,7 @@ def get_stats_chart():
 def get_stats_scoreboard():
     with _stats_conns() as (dash, bt):
         rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), month=_int_arg("month"),
-                                        event_title=request.args.get("event"))
+                                        event_title=request.args.get("event"), brent_series_fn=lambda: None)
     return jsonify({**stats_service.build_scoreboard(rows), "footnote": STATS_FOOTNOTE})
 
 
