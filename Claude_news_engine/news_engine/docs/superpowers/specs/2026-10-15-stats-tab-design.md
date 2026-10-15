@@ -1,6 +1,6 @@
 # Stats tab (Combined / Tier 1 / News Sentiment) — design
 
-Date: 2026-10-15. Status: draft for owner review. Author: Claude, with Masood.
+Date: 2026-10-15. Status: Implemented on branch stats-tab (pending owner approval to merge); see the Phase 0 report for the nowcast-history correction. Author: Claude, with Masood.
 Mockups reviewed with the owner in-session (v1–v3); numbers in them were sample data.
 
 ## 1. Purpose
@@ -151,7 +151,7 @@ by a fixed rule applied to pre-release data. So only rule-based calls are backda
 `reconstructed`, scored separately from live calls, and stored **frozen**.
 
 Feasibility gate (Phase 0, before anything else is built): the Cleveland Fed page offers an
-interactive chart of past nowcasts but **no downloadable archive** (checked 2026-10-15). Options,
+interactive chart of past nowcasts. Phase 0 outcome (2026-10-15): the page loads public JSON files (e.g. `clevelandfed.org/-/media/files/webcharts/inflationnowcasting/nowcast_month.json`, CC BY 4.0) holding the nowcast by as-of date, so option 1 below was achievable (an earlier check wrongly found no archive). Options,
 in order of preference:
 1. find an exportable history (chart data endpoint) of nowcasts by date;
 2. rebuild a point-in-time nowcast-equivalent from the same public inputs (Brent, EIA gasoline,
