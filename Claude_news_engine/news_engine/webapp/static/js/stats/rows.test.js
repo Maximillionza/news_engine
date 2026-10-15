@@ -228,3 +228,40 @@ test("tier1BodyHtml omits a caption for an empty group", () => {
   const html = tier1BodyHtml([{ ...base }]);
   assert.ok(html.includes("Tracked by Tier 1") && !html.includes("Not tracked by Tier 1</th>"));
 });
+
+// ---- final review: separate populations ----------------------------------------
+const SB2 = { methods: {
+  tier1: { scored: 6, right: 4, accuracy: null, accuracy_shown: false, mean_miss: null,
+    by_kind: { live: { scored: 2, right: 1 }, reconstructed: { scored: 4, right: 3 } } },
+  news: { scored: 25, right: 15, accuracy: 0.6, accuracy_shown: true, mean_miss: null,
+    by_kind: { live: { scored: 25, right: 15 }, reconstructed: { scored: 0, right: 0 } } },
+  combined: { scored: 6, right: 5, accuracy: null, accuracy_shown: false, mean_miss: null,
+    by_kind: { live: { scored: 2, right: 2 }, reconstructed: { scored: 4, right: 3 } }, with_news: { scored: 1, right: 1 } } },
+  min_for_percent: 20, footnote: "F" };
+
+test("scoreboard shows live / reconstructed counts per method and 'with news' for Combined only, no percentages", () => {
+  const html = scoreboardHtml(SB2, "%");
+  assert.ok(html.includes("live 1 of 2 · reconstructed 3 of 4"));          // Tier 1
+  assert.ok(html.includes("live 15 of 25 · reconstructed 0 of 0"));        // News
+  assert.ok(html.includes("live 2 of 2 · reconstructed 3 of 4"));          // Combined
+  assert.equal((html.match(/with news/g) || []).length, 1);
+  assert.ok(html.includes("with news 1 of 1"));
+  assert.ok(html.includes("15 of 25 (60%)") && !/live 15 of 25 \(/.test(html));
+});
+
+test("scoreboard without the breakdown keys still renders the totals", () => {
+  assert.ok(scoreboardHtml(SB, "%").includes("5 of 8") && !scoreboardHtml(SB, "%").includes("live "));
+});
+
+test("combined row carries the reconstructed chip when its Tier 1 call is reconstructed", () => {
+  const recon = { ...base, combined: { predicted: 0.4, verdict: "right", note: "news_missing", leans: {}, kind: "reconstructed" } };
+  assert.ok(combinedRowHtml(recon).includes("reconstructed"));
+  const live = { ...recon, tier1: { ...base.tier1, kind: "live" }, combined: { ...recon.combined, kind: "live" } };
+  assert.ok(!combinedRowHtml(live).includes("reconstructed"));
+});
+
+test("reconstructed disclaimer also shows under the Combined table when a reconstructed row is visible", () => {
+  assert.equal((disclaimerHtml([base, base], "combined", DISC).match(/RECON/g) || []).length, 1);
+  assert.ok(!disclaimerHtml([{ ...base, tier1: { ...base.tier1, kind: "live" } }], "combined", DISC).includes("RECON"));
+  assert.ok(!disclaimerHtml([base], "news", DISC).includes("RECON"));
+});

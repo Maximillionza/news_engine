@@ -133,6 +133,7 @@ function render() {
   const table = newestFirst(filtered);
   if (sub === "combined") {
     $("stats-combined-body").innerHTML = table.length ? table.map(combinedRowHtml).join("") : emptyRowHtml(7);
+    $("stats-combined-recon-note").textContent = reconstructedDisclaimer(filtered, sub, disclaimers) ? disclaimers.reconstructed : "";
     renderChartAndScoreboard(token);
   } else if (sub === "tier1") {
     $("stats-tier1-body").innerHTML = tier1BodyHtml(filtered);

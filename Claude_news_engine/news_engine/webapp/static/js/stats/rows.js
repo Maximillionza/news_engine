@@ -40,6 +40,12 @@ export function componentFor(row) {
   return null;
 }
 
+const RECON_CHIP = ' <span class="chip chip-none">reconstructed</span>';
+
+// The row's Tier 1 input came from the backfill (Combined inherits it), so it is tagged in both tables.
+function isReconstructed(row) { return Boolean(row.tier1 && row.tier1.kind === "reconstructed"); }
+function reconTag(row) { return isReconstructed(row) ? RECON_CHIP : ""; }
+
 export function tier1RowHtml(row) {
   const title = escapeHtml(row.event_title);
   if (row.status === "not_scoreable") {
@@ -50,7 +56,7 @@ export function tier1RowHtml(row) {
   }
   // Tracked, but Tier 1 may have recorded no call for this occurrence (e.g. no nowcast was captured).
   const call = row.tier1 || { predicted: null, verdict: null, leans: {}, note: null, kind: null };
-  const tag = call.kind === "reconstructed" ? ' <span class="chip chip-none">reconstructed</span>' : "";
+  const tag = reconTag(row);
   const predicted = call.predicted == null ? (call.note === "hand-logged" ? "hand-logged call" : "no call") : num(call.predicted);
   const actual = row.status === "pending" ? "pending" : escapeHtml(row.actual_text ?? "");
   const result = row.status === "pending" ? "pending" : verdictChip(call.verdict);
@@ -68,7 +74,7 @@ export function combinedRowHtml(row) {
   const c = row.combined;
   const cell = (call) => (call == null ? "—" : `${num(call.predicted)} ${verdictChip(call.verdict)}`);
   const flag = c && c.note === "news_missing" ? ' <span class="meta-text-sm">Tier 1 only</span>' : "";
-  return `<tr><td>${title}</td><td>${dateCell(row)}</td><td>${escapeHtml(row.forecast_text ?? "")}</td>`
+  return `<tr><td>${title}${reconTag(row)}</td><td>${dateCell(row)}</td><td>${escapeHtml(row.forecast_text ?? "")}</td>`
     + `<td>${cell(row.tier1)}</td><td>${cell(row.news)}</td><td>${row.tier1_tracked ? cell(c) + flag : "n/a"}</td>`
     + `<td>${row.status === "pending" ? "pending" : escapeHtml(row.actual_text ?? "")}</td></tr>`;
 }
@@ -134,13 +140,23 @@ export function briefCardHtml(row, method, disclaimers) {
 
 // ---- scoreboard --------------------------------------------------------------
 
+// Counts only (no percentages): the spec keeps live and reconstructed calls, and blends with and
+// without news, as separate populations even though the headline total adds them up.
+function populationLines(m) {
+  const kOfN = (c) => `${Number((c && c.right) || 0)} of ${Number((c && c.scored) || 0)}`;
+  const lines = [];
+  if (m.by_kind) lines.push(`live ${kOfN(m.by_kind.live)} · reconstructed ${kOfN(m.by_kind.reconstructed)}`);
+  if (m.with_news) lines.push(`with news ${kOfN(m.with_news)}`);
+  return lines.map((t) => `<div class="meta-text-sm">${t}</div>`).join("");
+}
+
 export function scoreboardHtml(sb, unit) {
   const u = escapeHtml(unit || "");
   const rows = ["tier1", "news", "combined"].map((key) => {
     const m = (sb.methods || {})[key] || { scored: 0, right: 0 };
     const pct = m.accuracy_shown ? ` (${Math.round(m.accuracy * 100)}%)` : "";
     const miss = m.mean_miss == null ? "" : `<div class="meta-text-sm">mean miss ${Number(m.mean_miss).toFixed(2)}${u}</div>`;
-    return `<tr><td>${METHOD_LABEL[key]}</td><td>${m.right} of ${m.scored}${pct}${miss}</td></tr>`;
+    return `<tr><td>${METHOD_LABEL[key]}</td><td>${m.right} of ${m.scored}${pct}${populationLines(m)}${miss}</td></tr>`;
   }).join("");
   return `<table class="stats-table"><tr><th>Method</th><th>Right calls</th></tr>${rows}</table>`
     + `<div class="meta-text-sm">${escapeHtml(sb.footnote || "")}</div>`;
@@ -191,7 +207,7 @@ export function preNewsDisclaimer(rows, subtab, disclaimers) {
 }
 
 export function reconstructedDisclaimer(rows, subtab, disclaimers) {
-  const applies = subtab === "tier1" && rows.some((r) => r.tier1 && r.tier1.kind === "reconstructed");
+  const applies = (subtab === "tier1" || subtab === "combined") && rows.some(isReconstructed);
   return applies ? escapeHtml(disclaimers.reconstructed) : "";
 }
 

@@ -228,11 +228,13 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
     news = None if sn is None else _call(forecast + sn, sn, forecast, tol, actual, title, note="scaled")
 
     # Combined: 70/30 blend; Tier 1 only (flagged news_missing) when there is no news; n/a without Tier 1.
+    # It carries the Tier 1 snapshot's kind, so the scoreboard keeps live and reconstructed apart.
     combined = None
     blended = combine(s1, sn)
     if blended is not None:
         combined = _call(forecast + blended.surprise, blended.surprise, forecast, tol, actual, title,
-                         note="news_missing" if blended.news_missing else None)
+                         note="news_missing" if blended.news_missing else None,
+                         kind=None if tier1 is None else tier1.kind)
 
     return StatsRow(title, when, r["forecast"], r["actual"], forecast, actual, tol, status,
                     tier1_tracked, tier1, news, combined, nowcast_as_of, pre_news)
@@ -283,20 +285,33 @@ def build_scoreboard(rows: list[StatsRow]) -> dict:
     and mean miss. A news_missing Combined call counts for Combined (it is the Tier 1 call); News counts
     only rows where a news call exists, since a row without one has news = None.
 
+    The spec keeps populations apart, so each method also carries `by_kind` (live vs reconstructed, from
+    MethodCall.kind; None counts as live) and Combined carries `with_news` (rows that really blended news,
+    i.e. note != 'news_missing'). The percentage threshold still applies to the total.
+
     Mean miss is only reported when every scored call belongs to ONE event title: titles carry their own
     units (% vs K), so averaging across them is meaningless. Counts and accuracy are still reported.
     """
     methods = {}
     for name in METHODS:
         scored = right = 0
+        by_kind = {"live": {"scored": 0, "right": 0}, "reconstructed": {"scored": 0, "right": 0}}
+        with_news = {"scored": 0, "right": 0}
         misses: list[float] = []
         titles: set[str] = set()
         for row in rows:
             call = getattr(row, name)
             if call is None or call.verdict is None:
                 continue
+            is_right = call.verdict == "right"
             scored += 1
-            right += call.verdict == "right"
+            right += is_right
+            bucket = by_kind["reconstructed" if call.kind == "reconstructed" else "live"]
+            bucket["scored"] += 1
+            bucket["right"] += is_right
+            if call.note != "news_missing":
+                with_news["scored"] += 1
+                with_news["right"] += is_right
             titles.add(row.event_title)
             if call.miss is not None:
                 misses.append(call.miss)
@@ -306,5 +321,8 @@ def build_scoreboard(rows: list[StatsRow]) -> dict:
             "scored": scored, "right": right,
             "accuracy": (right / scored) if shown else None, "accuracy_shown": shown,
             "mean_miss": (sum(misses) / len(misses)) if misses and one_title else None,
+            "by_kind": by_kind,
         }
+        if name == "combined":
+            methods[name]["with_news"] = with_news
     return {"methods": methods, "min_for_percent": MIN_SCORED_FOR_PERCENT}

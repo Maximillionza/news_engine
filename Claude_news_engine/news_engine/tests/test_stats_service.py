@@ -414,3 +414,35 @@ def test_hand_logged_neutral_tier1_is_no_call_and_not_scored(conns):
     assert row.tier1.side is None and row.tier1.verdict is None and row.tier1.leans == {}
     board = svc.build_scoreboard([row])["methods"]["tier1"]
     assert board["scored"] == 0 and board["right"] == 0
+
+
+def _mixed_population(dash, bt):
+    """Sep: reconstructed Tier 1, no news. Oct: live Tier 1 + a print call (news present)."""
+    _cpi_history(dash)
+    _event(dash, "CPI m/m", _t(9), "0.3%", "0.4%")
+    bs.record_nowcast_snapshot(bt, "CPI m/m", _t(9), 0.4, _t(9) - dt.timedelta(days=1), "cleveland",
+                               "reconstructed", rule_version="v1")
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    _snap(bt, "CPI m/m", _t(10), 0.5)
+    _print_call(bt, "CPI m/m", _t(10), "higher", 0.5, scored_at=_t(10) - dt.timedelta(days=1))
+    return svc.build_rows(dash, bt, event_title="CPI m/m")
+
+
+def test_combined_call_carries_the_tier1_snapshot_kind(conns):
+    rows = _mixed_population(*conns)
+    assert [(r.tier1.kind, r.combined.kind) for r in rows[-2:]] == [("reconstructed", "reconstructed"), ("live", "live")]
+
+
+def test_scoreboard_separates_live_reconstructed_and_with_news_populations(conns):
+    board = svc.build_scoreboard(_mixed_population(*conns))["methods"]
+    # Tier 1: Sep 0.4 vs 0.3 hotter, right; Oct 0.5 hotter, right.
+    assert board["tier1"]["by_kind"] == {"live": {"scored": 1, "right": 1}, "reconstructed": {"scored": 1, "right": 1}}
+    # News: Oct only (0.3 + 0.5 x 0.1 = 0.35 is in line; actual hotter -> wrong). Kind None counts as live.
+    assert board["news"]["by_kind"] == {"live": {"scored": 1, "right": 0}, "reconstructed": {"scored": 0, "right": 0}}
+    # Combined: Sep is Tier 1 only (news_missing), Oct is a real blend 0.7 x 0.2 + 0.3 x 0.05 -> hotter, right.
+    assert board["combined"]["by_kind"] == {"live": {"scored": 1, "right": 1}, "reconstructed": {"scored": 1, "right": 1}}
+    assert board["combined"]["with_news"] == {"scored": 1, "right": 1}
+    assert "with_news" not in board["tier1"] and "with_news" not in board["news"]
+    # Existing keys unchanged; the percentage threshold is still on the total.
+    assert {k: board["tier1"][k] for k in ("scored", "right", "accuracy", "accuracy_shown")} == {
+        "scored": 2, "right": 2, "accuracy": None, "accuracy_shown": False}

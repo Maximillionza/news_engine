@@ -91,7 +91,7 @@ def test_events_route_serves_real_news_and_combined_calls(full_client):
         assert call["miss"] == pytest.approx(0.0)
     assert tier1["note"] is None and tier1["kind"] == "live"
     assert news["note"] == "scaled" and news["kind"] is None
-    assert combined["note"] is None and combined["kind"] is None   # real blend, not news_missing
+    assert combined["note"] is None and combined["kind"] == "live"  # real blend; carries the Tier 1 snapshot kind
 
 
 def test_filters_and_empty_result(client):
@@ -121,6 +121,22 @@ def test_scoreboard_route_has_the_fixed_weight_footnote(client):
     data = client.get("/api/stats/scoreboard?event=CPI%20m/m").get_json()
     assert set(data["methods"]) == {"tier1", "news", "combined"}
     assert data["footnote"] == "Weights fixed at 70/30 until the 2027-01-15 review."
+
+
+def test_scoreboard_route_serves_live_reconstructed_and_with_news_counts(full_client):
+    data = full_client.get("/api/stats/scoreboard?event=CPI%20m/m&month=10").get_json()
+    zero = {"scored": 0, "right": 0}
+    one_right = {"scored": 1, "right": 1}
+    for name in ("tier1", "news"):
+        assert data["methods"][name] == {
+            "scored": 1, "right": 1, "accuracy": None, "accuracy_shown": False,
+            "mean_miss": pytest.approx(0.0), "by_kind": {"live": one_right, "reconstructed": zero},
+        }
+    assert data["methods"]["combined"] == {
+        "scored": 1, "right": 1, "accuracy": None, "accuracy_shown": False, "mean_miss": pytest.approx(0.0),
+        "by_kind": {"live": one_right, "reconstructed": zero}, "with_news": one_right,
+    }
+    assert data["min_for_percent"] == 20
 
 
 def test_components_route(client):
