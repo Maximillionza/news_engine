@@ -143,3 +143,40 @@ def test_cli_env_var_allows_the_default_database(tmp_path, monkeypatch):
     memory = bs.get_connection(":memory:")
     monkeypatch.setattr(bf.backtest_store, "get_connection", lambda *a, **k: memory)
     assert bf.main([str(csv_path), "v1", "2026-01-01", "2026-08-01", "--dash-db", str(dash_db)]) == 0
+
+
+def _bare_dash_db(path):
+    """A dashboard.db holding ONLY event_history (old columns), so any schema setup or migration shows up."""
+    import sqlite3
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE event_history (event_title TEXT, event_time_utc TEXT, forecast TEXT, actual TEXT)")
+    conn.execute("INSERT INTO event_history VALUES ('CPI m/m', ?, '0.3%', '0.4%')", (RELEASE.isoformat(),))
+    conn.commit()
+    conn.close()
+
+
+def test_cli_opens_the_dashboard_db_read_only_and_never_migrates_it(tmp_path, monkeypatch):
+    import sqlite3
+    csv_path, _ = _cli_files(tmp_path)
+    dash_db = tmp_path / "bare_dash.db"
+    _bare_dash_db(dash_db)
+    before = dash_db.read_bytes()
+    monkeypatch.delenv("STATS_BACKFILL_LIVE", raising=False)
+    seen = {}
+    real_run = bf.run_backfill
+
+    def spy(dash_conn, *args, **kwargs):
+        try:                                                 # the connection the CLI hands over cannot write
+            dash_conn.execute("CREATE TABLE scribble (x)")
+        except sqlite3.OperationalError as exc:
+            seen["write_error"] = str(exc)
+        return real_run(dash_conn, *args, **kwargs)
+
+    monkeypatch.setattr(bf, "run_backfill", spy)
+    code = bf.main([str(csv_path), "v1", "2026-01-01", "2026-08-01", "--dash-db", str(dash_db),
+                    "--bt-db", str(tmp_path / "bt.db")])
+    assert code == 0
+    assert "readonly" in seen.get("write_error", "")
+    assert dash_db.read_bytes() == before                    # no schema setup, no migration, no write at all
+    tables = sqlite3.connect(dash_db).execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    assert tables == [("event_history",)]

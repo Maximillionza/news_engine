@@ -18,6 +18,7 @@ import argparse
 import csv
 import datetime as dt
 import os
+import sqlite3
 import sys
 from pathlib import Path
 from typing import Optional, Protocol
@@ -92,6 +93,17 @@ def run_backfill(dash_conn, bt_conn, provider: NowcastProvider, rule_version: st
     return result
 
 
+def open_dash_readonly(dash_db: Optional[Path]) -> sqlite3.Connection:
+    """
+    dashboard.db opened READ-ONLY (sqlite URI mode=ro), like cleveland_nowcast_to_csv.py: the backfill only
+    reads event_history, so it must never run the dashboard schema setup or migrations, or write at all.
+    """
+    path = Path(dash_db) if dash_db is not None else dash_store.DB_PATH
+    conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def _parse_day(text: str) -> dt.datetime:
     return dt.datetime.fromisoformat(text).replace(tzinfo=UTC)
 
@@ -102,16 +114,20 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("rule_version", help="label stored on every row, e.g. v1")
     parser.add_argument("since", help="first release day (UTC), YYYY-MM-DD, inclusive")
     parser.add_argument("until", help="last release day (UTC), YYYY-MM-DD, exclusive")
-    parser.add_argument("--dash-db", type=Path, default=None, help="dashboard.db to read event_history from")
+    parser.add_argument("--dash-db", type=Path, default=None, help="dashboard.db to read event_history from (opened read-only)")
     parser.add_argument("--bt-db", type=Path, default=None, help="backtest_log.db to write snapshots to")
     args = parser.parse_args(argv)
     if args.bt_db is None and os.environ.get(LIVE_ENV_VAR) != "1":
         print(f"REFUSING to run: pass --bt-db PATH explicitly, or set {LIVE_ENV_VAR}=1 to deliberately write to the "
               "app's default (live) backtest_log.db.", file=sys.stderr)
         return 2
-    result = run_backfill(
-        dash_store.get_connection(args.dash_db), backtest_store.get_connection(args.bt_db),
-        FileNowcastProvider(args.csv_path), args.rule_version, _parse_day(args.since), _parse_day(args.until))
+    dash_conn = open_dash_readonly(args.dash_db)
+    try:
+        result = run_backfill(
+            dash_conn, backtest_store.get_connection(args.bt_db),
+            FileNowcastProvider(args.csv_path), args.rule_version, _parse_day(args.since), _parse_day(args.until))
+    finally:
+        dash_conn.close()
     print(result)
     print(f"written={result['written']} (occurrences handled)  newly_inserted={result['newly_inserted']} (new rows only)")
     return 0
