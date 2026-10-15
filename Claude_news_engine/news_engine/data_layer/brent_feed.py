@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import threading
 import time
 from typing import Callable, Optional
 
@@ -39,6 +40,9 @@ Series = list[tuple[dt.date, float]]
 
 # state: the last good series and when it was fetched, plus when a fetch last failed (monotonic seconds)
 _cache: dict = {"series": None, "fetched_at": None, "failed_at": None}
+# Held across the whole cache check + fetch, so callers that arrive together (the Stats page loads several
+# endpoints at once) share ONE request: the first fetches, the rest wait and then read the cache.
+_lock = threading.Lock()
 
 
 def clear_cache() -> None:
@@ -97,7 +101,10 @@ def _fetch(api_key: str, http_get: Callable) -> Optional[Series]:
         resp.raise_for_status()
         series = parse_observations(resp.json().get("observations", []))
     except Exception as exc:  # noqa: BLE001 -- a failed fetch must not crash the caller
-        print(f"[brent_feed] WARNING: fetch failed for {BRENT_SERIES_ID}: {exc}")
+        # Only the exception type and HTTP status: str(exc) from requests can embed the full URL, api_key included.
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        detail = type(exc).__name__ + (f" (HTTP {status})" if status else "")
+        print(f"[brent_feed] WARNING: fetch failed for {BRENT_SERIES_ID}: {detail}")
         return None
     return series or None
 
@@ -113,15 +120,16 @@ def get_brent_series(api_key: Optional[str] = None, http_get: Callable = request
     key = FRED_API_KEY if api_key is None else api_key
     if not key:
         return None
-    now = clock()
-    cached = _cache["series"]
-    if cached is not None and now - _cache["fetched_at"] < CACHE_TTL_SECONDS:
-        return list(cached)
-    if _cache["failed_at"] is not None and now - _cache["failed_at"] < FAILURE_RETRY_SECONDS:
-        return None if cached is None else list(cached)
-    fetched = _fetch(key, http_get)
-    if fetched is None:
-        _cache["failed_at"] = now
-        return None if cached is None else list(cached)
-    _cache.update(series=fetched, fetched_at=now, failed_at=None)
-    return list(fetched)
+    with _lock:
+        now = clock()
+        cached = _cache["series"]
+        if cached is not None and now - _cache["fetched_at"] < CACHE_TTL_SECONDS:
+            return list(cached)
+        if _cache["failed_at"] is not None and now - _cache["failed_at"] < FAILURE_RETRY_SECONDS:
+            return None if cached is None else list(cached)
+        fetched = _fetch(key, http_get)
+        if fetched is None:
+            _cache["failed_at"] = now
+            return None if cached is None else list(cached)
+        _cache.update(series=fetched, fetched_at=now, failed_at=None)
+        return list(fetched)

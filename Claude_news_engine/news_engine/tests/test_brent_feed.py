@@ -188,3 +188,57 @@ def test_cached_result_is_not_mutable_by_callers():
     series = bf.get_brent_series(api_key="k", http_get=get, clock=clock)
     series.clear()
     assert bf.get_brent_series(api_key="k", http_get=get, clock=clock) == [(dt.date(2026, 10, 9), 89.0)]
+
+
+# --- review round: one fetch for concurrent callers; no secrets in log output ----------------------
+
+def test_concurrent_callers_share_one_fetch():
+    import threading
+    import time
+
+    calls = []
+
+    def slow_get(*args, **kwargs):
+        calls.append(1)
+        time.sleep(0.2)                                  # long enough for the other threads to arrive
+        return _resp([_obs("2026-10-09", "89.0")])
+
+    results, start = [], threading.Barrier(4)
+
+    def worker():
+        start.wait()
+        results.append(bf.get_brent_series(api_key="k", http_get=slow_get, clock=lambda: 1000.0))
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert len(calls) == 1
+    assert results == [[(dt.date(2026, 10, 9), 89.0)]] * 4
+
+
+SECRET = "SECRETKEY123"
+
+
+def test_a_failure_message_never_contains_the_api_key_or_url(capsys):
+    url = f"https://api.stlouisfed.org/fred/series/observations?series_id=DCOILBRENTEU&api_key={SECRET}"
+    get = MagicMock(side_effect=ConnectionError(f"HTTPSConnectionPool: max retries exceeded with url: {url}"))
+    assert bf.get_brent_series(api_key=SECRET, http_get=get, clock=Clock()) is None
+    out = capsys.readouterr()
+    assert SECRET not in out.out + out.err and "stlouisfed" not in out.out + out.err
+    assert "ConnectionError" in out.out + out.err
+
+
+def test_an_http_error_logs_the_status_but_not_the_url(capsys):
+    class FakeHTTPError(Exception):
+        def __init__(self):
+            super().__init__(f"500 Server Error for url: https://x/?api_key={SECRET}")
+            self.response = MagicMock(status_code=500)
+
+    resp = MagicMock()
+    resp.raise_for_status.side_effect = FakeHTTPError()
+    assert bf.get_brent_series(api_key=SECRET, http_get=MagicMock(return_value=resp), clock=Clock()) is None
+    out = capsys.readouterr()
+    assert SECRET not in out.out + out.err
+    assert "FakeHTTPError" in out.out + out.err and "500" in out.out + out.err
