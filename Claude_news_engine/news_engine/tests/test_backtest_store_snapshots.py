@@ -48,3 +48,39 @@ def test_snapshots_are_append_only_a_duplicate_is_ignored_not_overwritten(conn):
     _rec(conn, 0.99, as_of)
     assert conn.execute("SELECT COUNT(*) FROM tier1_nowcast_snapshots").fetchone()[0] == 1
     assert bs.get_scored_nowcast_snapshot(conn, "CPI m/m", RELEASE)["nowcast_value"] == pytest.approx(0.40)
+
+
+NAIVE = dt.datetime(2026, 10, 14, 6, 0)
+EST = dt.timezone(dt.timedelta(hours=-5))
+
+
+def test_naive_datetimes_are_rejected_on_record_and_on_get(conn):
+    with pytest.raises(ValueError):
+        _rec(conn, 0.4, NAIVE)                                             # naive as_of
+    with pytest.raises(ValueError):
+        bs.record_nowcast_snapshot(conn, "CPI m/m", NAIVE, 0.4, dt.datetime(2026, 10, 14, 6, 0, tzinfo=UTC),
+                                   "cleveland", "live")                    # naive event time
+    with pytest.raises(ValueError):
+        bs.get_scored_nowcast_snapshot(conn, "CPI m/m", dt.datetime(2026, 10, 14, 12, 30))
+
+
+def test_non_utc_offset_is_compared_as_an_instant_not_as_a_string(conn):
+    # 08:00-05:00 is 13:00Z, AFTER the 12:30Z release: must not leak in as lookahead.
+    _rec(conn, 0.99, dt.datetime(2026, 10, 14, 8, 0, tzinfo=EST))
+    assert bs.get_scored_nowcast_snapshot(conn, "CPI m/m", RELEASE) is None
+    # 06:00-05:00 is 11:00Z, before release: scored, and stored normalised to UTC.
+    _rec(conn, 0.40, dt.datetime(2026, 10, 14, 6, 0, tzinfo=EST))
+    row = bs.get_scored_nowcast_snapshot(conn, "CPI m/m", RELEASE)
+    assert row["nowcast_value"] == pytest.approx(0.40)
+    assert row["as_of_utc"] == dt.datetime(2026, 10, 14, 11, 0, tzinfo=UTC).isoformat()
+
+
+def test_release_time_in_another_offset_matches_the_same_release(conn):
+    _rec(conn, 0.40, dt.datetime(2026, 10, 14, 6, 0, tzinfo=UTC))
+    release_est = dt.datetime(2026, 10, 14, 7, 30, tzinfo=EST)             # == 12:30Z
+    assert bs.get_scored_nowcast_snapshot(conn, "CPI m/m", release_est)["nowcast_value"] == pytest.approx(0.40)
+
+
+def test_snapshot_exactly_at_release_time_is_scored(conn):
+    _rec(conn, 0.40, RELEASE)
+    assert bs.get_scored_nowcast_snapshot(conn, "CPI m/m", RELEASE)["nowcast_value"] == pytest.approx(0.40)

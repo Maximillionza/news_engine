@@ -1134,6 +1134,17 @@ def get_tier1_comparison_for_occurrence(
 _SNAPSHOT_KINDS = ("live", "reconstructed")
 
 
+def _utc_iso(value: dt.datetime, name: str) -> str:
+    """
+    Normalise a tz-aware datetime to a UTC ISO string. The lookahead guard compares these strings
+    lexicographically, which is only correct if every value is UTC with the same format, so naive
+    datetimes are rejected and other offsets are converted (08:00-05:00 is 13:00Z, not 08:00Z).
+    """
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{name} must be timezone-aware, got naive {value!r}")
+    return value.astimezone(dt.timezone.utc).isoformat()
+
+
 def record_nowcast_snapshot(
     conn: sqlite3.Connection, event_title: str, event_time_utc: dt.datetime, nowcast_value: float,
     as_of_utc: dt.datetime, source: str, kind: str, rule_version: Optional[str] = None,
@@ -1146,17 +1157,19 @@ def record_nowcast_snapshot(
     """
     if kind not in _SNAPSHOT_KINDS:
         raise ValueError(f"kind must be one of {_SNAPSHOT_KINDS}, got {kind!r}")
+    event_iso = _utc_iso(event_time_utc, "event_time_utc")
+    as_of_iso = _utc_iso(as_of_utc, "as_of_utc")
     conn.execute(
         "INSERT OR IGNORE INTO tier1_nowcast_snapshots (event_title, event_time_utc, nowcast_value, "
         "as_of_utc, source, kind, rule_version, inputs_json, recorded_at_utc) VALUES (?,?,?,?,?,?,?,?,?)",
-        (event_title, event_time_utc.isoformat(), float(nowcast_value), as_of_utc.isoformat(), source, kind,
+        (event_title, event_iso, float(nowcast_value), as_of_iso, source, kind,
          rule_version, None if inputs is None else json.dumps(inputs, sort_keys=True),
          dt.datetime.now(dt.timezone.utc).isoformat()),
     )
     conn.commit()
     row = conn.execute(
         "SELECT id FROM tier1_nowcast_snapshots WHERE event_title=? AND event_time_utc=? AND as_of_utc=? AND kind=?",
-        (event_title, event_time_utc.isoformat(), as_of_utc.isoformat(), kind),
+        (event_title, event_iso, as_of_iso, kind),
     ).fetchone()
     return row["id"]
 
@@ -1169,12 +1182,13 @@ def get_scored_nowcast_snapshot(
     The snapshot that gets scored: the LATEST as_of_utc that is <= the release time (no lookahead),
     live preferred over reconstructed. None if there is no such snapshot.
     """
+    release_iso = _utc_iso(event_time_utc, "event_time_utc")
     placeholders = ",".join("?" for _ in kinds)
     return conn.execute(
         f"SELECT * FROM tier1_nowcast_snapshots WHERE event_title = ? AND event_time_utc = ? "
         f"AND as_of_utc <= ? AND kind IN ({placeholders}) "
         "ORDER BY CASE kind WHEN 'live' THEN 0 ELSE 1 END, as_of_utc DESC, id DESC LIMIT 1",
-        (event_title, event_time_utc.isoformat(), event_time_utc.isoformat(), *kinds),
+        (event_title, release_iso, release_iso, *kinds),
     ).fetchone()
 
 

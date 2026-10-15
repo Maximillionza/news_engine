@@ -174,7 +174,7 @@ must be added (§6.1 Freshness).
 ## 9. Architecture
 
 - `webapp/stats_service.py` — read-only; joins `event_history`, `predictions`, `print_predictions`,
-  `tier1_predictions`, `tier1_reconstructed`, `outcomes`. Pure functions for `side()`, Right/Wrong,
+  `tier1_predictions`, `tier1_nowcast_snapshots`, `outcomes`. Pure functions for `side()`, Right/Wrong,
   scale, Combined. Fail-open per row like the History tab.
 - `webapp/metric_components.py` — static registry of components per composite metric (nowcast,
   news lean, Combined, each POC indicator set), served to the info icons; source citation per entry.
