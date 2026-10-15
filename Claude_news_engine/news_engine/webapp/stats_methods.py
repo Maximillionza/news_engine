@@ -55,17 +55,24 @@ def news_lean(
     Lean in [-1, +1]; + means 'hotter/higher than forecast'. Rule R3, fixed before results are viewed:
     1) a print call that takes a side wins (strength = its confidence);
     2) otherwise the XAUUSD accumulator prediction, mapped to a surprise side, strength |2p-1|.
+    A strength of exactly 0 (print confidence 0, or accumulator p == 0.5) is no lean: None, never 0.0/-0.0.
     """
     if print_side in ("higher", "lower") and print_confidence is not None:
         strength = max(0.0, min(1.0, float(print_confidence)))
-        return strength if print_side == "higher" else -strength
+        return _signed(strength, print_side == "higher")
     if acc_direction in ("bullish", "bearish") and acc_probability is not None:
         implied = _implied_surprise_direction(event_title, "XAUUSD", acc_direction)
         if implied is None:
             return None
         strength = abs(2 * float(acc_probability) - 1)
-        return strength if implied == "higher" else -strength
+        return _signed(strength, implied == "higher")
     return None
+
+
+def _signed(strength: float, hotter: bool) -> Optional[float]:
+    if strength == 0:
+        return None
+    return strength if hotter else -strength
 
 
 def market_lean(event_title: str, surprise_side: int, symbol: str) -> str:

@@ -199,13 +199,12 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
         logged = _hand_logged_tier1_before(bt_conn, title, release_iso)
         if logged is not None:
             direction = logged["predicted_direction"]
-            if direction == "neutral":
-                logged_side: Optional[int] = 0
-            elif direction in ("bullish", "bearish"):
+            # 'neutral' is NO call (backtest_store tier1_comparisons convention), never an 'in line' call;
+            # so is any direction without a surprise map. side None -> verdict None -> not scored.
+            logged_side: Optional[int] = None
+            if direction in ("bullish", "bearish"):
                 implied = _implied_surprise_direction(title, NEWS_INSTRUMENT, direction)
-                logged_side = {"higher": 1, "lower": -1}.get(implied)   # None: no surprise map, no call
-            else:
-                logged_side = None
+                logged_side = {"higher": 1, "lower": -1}.get(implied)
             tier1 = _call(None, None, forecast, tol, actual, title, note="hand-logged", explicit_side=logged_side)
             tier1_tracked = True
         else:

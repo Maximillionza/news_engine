@@ -60,3 +60,12 @@ def test_market_lean_follows_usd_direction_and_symbol_relationship():
     assert market_lean("CPI m/m", 0, "XAUUSD") == "mixed"
     assert market_lean("FOMC Statement", 1, "XAUUSD") == "mixed"      # no surprise-direction entry
     assert market_lean("CPI m/m", 1, "NOT_A_SYMBOL_123") == "mixed"   # unrecognized symbol never raises
+
+
+def test_news_lean_of_exactly_zero_is_no_call_not_zero():
+    # Accumulator p == 0.5 gives strength |2p - 1| = 0: no lean, so no call (not 0.0 / -0.0).
+    assert news_lean("CPI m/m", None, None, "bearish", 0.5) is None
+    assert news_lean("CPI m/m", None, None, "bullish", 0.5) is None
+    # A print call that takes a side with confidence 0 carries no lean either.
+    assert news_lean("CPI m/m", "higher", 0.0, None, None) is None
+    assert news_lean("CPI m/m", "lower", 0.0, None, None) is None

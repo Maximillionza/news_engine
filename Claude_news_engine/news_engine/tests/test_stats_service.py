@@ -399,3 +399,18 @@ def test_chart_label_is_the_date_when_any_month_repeats(conns):
     points = svc.build_chart(svc.build_rows(dash, bt, event_title="Unemployment Claims"), "news")["points"]
     assert [p["label"] for p in points] == ["2026-09-04", "2026-10-02", "2026-10-09"]
     assert [p["month"] for p in points] == ["2026-09", "2026-10", "2026-10"]
+
+
+# --- final review fix wave ------------------------------------------------------------------------
+
+def test_hand_logged_neutral_tier1_is_no_call_and_not_scored(conns):
+    # 'neutral' means no call (backtest_store tier1_comparisons convention), never an 'in line' call.
+    dash, bt = conns
+    _event(dash, "PPI m/m", _t(10), "0.2%", "0.2%")          # actual in line: an in-line call would be 'right'
+    bs.record_tier1_prediction(bt, "PPI m/m", "XAUUSD", _t(10), "flat", "Likely", "BLS", "neutral",
+                               logged_at_utc=_t(10) - dt.timedelta(days=1))
+    row = svc.build_rows(dash, bt)[-1]
+    assert row.tier1_tracked is True and row.tier1.note == "hand-logged"
+    assert row.tier1.side is None and row.tier1.verdict is None and row.tier1.leans == {}
+    board = svc.build_scoreboard([row])["methods"]["tier1"]
+    assert board["scored"] == 0 and board["right"] == 0
