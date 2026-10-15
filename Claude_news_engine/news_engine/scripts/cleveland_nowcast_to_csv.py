@@ -21,11 +21,15 @@ Rules (spec section 8: no hindsight):
 
 Data is CC BY 4.0 (Cleveland Fed); keep the attribution in the source column.
 
-Usage:
-    python scripts/cleveland_nowcast_to_csv.py nowcast_month.json nowcasts.csv --dash-db dashboard.db \
-        [--since 2026-01-01] [--until 2027-01-01] [--download]
---download first fetches the JSON (one HTTP GET) to the given path, which must be OUTSIDE the repo.
+Getting the input (this module never touches the network): fetch the file by hand, once per refresh, into
+a directory OUTSIDE the repo, e.g.
+    https://www.clevelandfed.org/-/media/files/webcharts/inflationnowcasting/nowcast_month.json
 Do not commit the JSON or the CSV.
+
+Usage:
+    python scripts/cleveland_nowcast_to_csv.py nowcast_month.json nowcasts.csv --dash-db dashboard.db         [--since 2026-01-01] [--until 2027-01-01]
+The summary lists every USD CPI-family occurrence in the window that got NO rows (UNMATCHED) and the exit
+code is non-zero, with a loud warning, if no rows at all were written.
 """
 from __future__ import annotations
 
@@ -34,15 +38,13 @@ import csv
 import datetime as dt
 import json
 import sqlite3
-import urllib.request
+import sys
 from pathlib import Path
 from typing import Iterable, Optional
 
 UTC = dt.timezone.utc
-APP_ROOT = Path(__file__).resolve().parents[1]
 
 SOURCE = "Cleveland Fed Inflation Nowcasting (CC BY 4.0)"
-NOWCAST_URL = "https://www.clevelandfed.org/-/media/files/webcharts/inflationnowcasting/nowcast_month.json"
 CSV_COLUMNS = ["event_title", "release_utc", "as_of_utc", "value", "source"]
 
 # event_history title -> (nowcast series, actual series that marks the release day)
@@ -56,18 +58,6 @@ def load_charts(json_path: Path) -> list[dict]:
     """Read a LOCAL copy of nowcast_month.json. Never touches the network."""
     with open(json_path, encoding="utf-8") as handle:
         return json.load(handle)
-
-
-def download(dest: Path, url: str = NOWCAST_URL) -> Path:
-    """One HTTP GET of the published file; only used by the CLI --download flag. Refuses paths inside the repo."""
-    dest = Path(dest).resolve()
-    if dest == APP_ROOT or APP_ROOT in dest.parents:
-        raise ValueError(f"refusing to save the nowcast JSON inside the repo ({dest}); use a temp directory")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(url, headers={"User-Agent": "news_engine-stats-backfill/1.0"})
-    with urllib.request.urlopen(request, timeout=120) as response:      # noqa: S310 -- fixed https URL
-        dest.write_bytes(response.read())
-    return dest
 
 
 def load_known_occurrences(dash_db: Path) -> list[tuple[str, dt.datetime]]:
@@ -119,9 +109,20 @@ def _series(chart: dict, name: str) -> list[str]:
 
 def convert(charts: Iterable[dict], known_occurrences: Iterable[tuple[str, dt.datetime]],
             since: dt.datetime, until: dt.datetime, source: str = SOURCE) -> list[dict]:
+    """Rows only; see convert_with_report for the full result including unmatched occurrences."""
+    return convert_with_report(charts, known_occurrences, since, until, source)["rows"]
+
+
+def convert_with_report(charts: Iterable[dict], known_occurrences: Iterable[tuple[str, dt.datetime]],
+                        since: dt.datetime, until: dt.datetime, source: str = SOURCE) -> dict:
     """
     Rows for every (title, release) that is both published by the Fed and present in known_occurrences,
     with since <= release_utc < until. Pure: no file, DB or network access.
+
+    Returns {"rows": [...], "releases": n_releases_with_rows,
+             "unmatched": [(title, release_utc_iso), ...]} where unmatched lists every known CPI-family
+    occurrence inside the window that produced NO rows (no Fed chart, not released in the file, or only
+    blank / release-day values), so a silent drop is always visible.
     """
     known: dict[tuple[str, dt.date], dt.datetime] = {}
     for title, when in known_occurrences:
@@ -156,7 +157,12 @@ def convert(charts: Iterable[dict], known_occurrences: Iterable[tuple[str, dt.da
                 rows.append({"event_title": title, "release_utc": release_utc.isoformat(),
                              "as_of_utc": as_of.isoformat(), "value": value, "source": source})
     rows.sort(key=lambda r: (r["release_utc"], r["event_title"], r["as_of_utc"]))
-    return rows
+    covered = {(r["event_title"], r["release_utc"]) for r in rows}
+    unmatched = sorted(
+        ((title, when.isoformat()) for (title, _), when in known.items()
+         if title in SERIES_MAP and since <= when < until and (title, when.isoformat()) not in covered),
+        key=lambda item: (item[1], item[0]))
+    return {"rows": rows, "releases": len(covered), "unmatched": unmatched}
 
 
 def write_csv(rows: Iterable[dict], csv_path: Path) -> int:
@@ -181,15 +187,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--dash-db", type=Path, required=True, help="dashboard.db to read event_history from (opened read-only)")
     parser.add_argument("--since", default="2026-01-01", help="first release day, UTC, inclusive")
     parser.add_argument("--until", default="2027-01-01", help="last release day, UTC, exclusive")
-    parser.add_argument("--download", action="store_true", help="fetch the JSON to json_path first (one HTTP GET)")
     args = parser.parse_args(argv)
-    if args.download:
-        download(args.json_path)
     known = load_known_occurrences(args.dash_db)
-    rows = convert(load_charts(args.json_path), known, _parse_day(args.since), _parse_day(args.until))
-    count = write_csv(rows, args.csv_path)
-    releases = {(r["event_title"], r["release_utc"]) for r in rows}
-    print(f"wrote {count} rows for {len(releases)} releases to {args.csv_path}")
+    report = convert_with_report(load_charts(args.json_path), known, _parse_day(args.since), _parse_day(args.until))
+    count = write_csv(report["rows"], args.csv_path)
+    print(f"wrote {count} rows for {report['releases']} releases to {args.csv_path}")
+    if report["unmatched"]:
+        print(f"UNMATCHED: {len(report['unmatched'])} event_history occurrence(s) in the window got no nowcast rows:")
+        for title, release in report["unmatched"]:
+            print(f"  {title} {release}")
+    if count == 0:
+        print("WARNING: wrote 0 rows - nothing matched. Check the JSON, the --dash-db path and the window.", file=sys.stderr)
+        return 1
     return 0
 
 

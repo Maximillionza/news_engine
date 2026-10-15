@@ -171,7 +171,7 @@ def test_csv_round_trips_through_file_provider_and_backfill(tmp_path):
     for title, when in KNOWN:
         _seed_event(dash, title, when)
     result = run_backfill(dash, bt, provider, "v1", *WIDE)
-    assert result == {"written": 3, "skipped_no_data": 0, "skipped_lookahead": 0}
+    assert result == {"written": 3, "newly_inserted": 3, "skipped_no_data": 0, "skipped_lookahead": 0}
 
 
 def test_load_known_occurrences_reads_usd_rows_only(tmp_path):
@@ -206,6 +206,65 @@ def test_a_series_that_does_not_line_up_with_the_date_labels_is_rejected():
         c2c.convert([bad], KNOWN, *WIDE)
 
 
-def test_download_refuses_a_destination_inside_the_repo():
-    with pytest.raises(ValueError):
-        c2c.download(c2c.APP_ROOT / "nowcast_month.json")
+def test_a_known_release_with_no_fed_chart_is_reported_as_unmatched():
+    ghost = ("CPI m/m", dt.datetime(2026, 5, 12, 12, 30, tzinfo=UTC))          # no May chart in the fixture
+    report = c2c.convert_with_report([MARCH, DECEMBER], KNOWN + [ghost], *WIDE)
+    assert report["unmatched"] == [("CPI m/m", "2026-05-12T12:30:00+00:00")]
+    assert report["releases"] == 3 and len(report["rows"]) == 15      # 6 + 5 + 4
+
+
+def test_known_occurrences_outside_the_window_or_other_titles_are_not_reported():
+    extra = [("CPI m/m", dt.datetime(2025, 6, 11, 12, 30, tzinfo=UTC)),       # before the window
+             ("Nonfarm Payrolls", dt.datetime(2026, 5, 8, 12, 30, tzinfo=UTC))]
+    report = c2c.convert_with_report([MARCH, DECEMBER], KNOWN + extra, *WIDE)
+    assert report["unmatched"] == []
+
+
+def test_a_release_whose_only_values_are_blank_is_reported_as_unmatched():
+    blank = _chart("2026-4", ["04/01", "04/10"], cpi=["", ""], core=["", ""], actual_idx=1)
+    known = [("CPI m/m", dt.datetime(2026, 4, 10, 12, 30, tzinfo=UTC))]
+    report = c2c.convert_with_report([blank], known, *WIDE)
+    assert report["rows"] == [] and report["unmatched"] == [("CPI m/m", "2026-04-10T12:30:00+00:00")]
+
+
+def test_a_missing_series_raises_a_clear_value_error():
+    broken = _chart("2026-2", ["02/27", "03/11"], cpi=["0.1", ""], core=["0.1", ""], actual_idx=1)
+    broken["dataset"] = [s for s in broken["dataset"] if s["seriesname"] != "Core CPI Inflation"]
+    with pytest.raises(ValueError, match="Core CPI Inflation.*missing.*2026-2"):
+        c2c.convert([broken], KNOWN, *WIDE)
+
+
+def _cli_inputs(tmp_path, known=KNOWN, charts=(MARCH, DECEMBER)):
+    db = tmp_path / "dash.db"
+    conn = ws.get_connection(db)
+    for title, when in known:
+        _seed_event(conn, title, when)
+    conn.close()
+    src = tmp_path / "nowcast_month.json"
+    src.write_text(json.dumps(list(charts)), encoding="utf-8")
+    return db, src, tmp_path / "out.csv"
+
+
+def test_cli_prints_unmatched_releases_and_exits_zero_when_rows_were_written(tmp_path, capsys):
+    ghost = ("CPI m/m", dt.datetime(2026, 5, 12, 12, 30, tzinfo=UTC))
+    db, src, out = _cli_inputs(tmp_path, known=KNOWN + [ghost])
+    code = c2c.main([str(src), str(out), "--dash-db", str(db), "--since", "2026-01-01", "--until", "2026-12-31"])
+    printed = capsys.readouterr().out
+    assert code == 0
+    assert "wrote 15 rows for 3 releases" in printed
+    assert "UNMATCHED" in printed and "CPI m/m 2026-05-12T12:30:00+00:00" in printed
+    assert out.exists()
+
+
+def test_cli_warns_loudly_and_exits_non_zero_when_zero_rows_were_written(tmp_path, capsys):
+    db, src, out = _cli_inputs(tmp_path, charts=())             # no charts at all
+    code = c2c.main([str(src), str(out), "--dash-db", str(db), "--since", "2026-01-01", "--until", "2026-12-31"])
+    captured = capsys.readouterr()
+    assert code != 0
+    assert "WARNING" in (captured.out + captured.err) and "0 rows" in (captured.out + captured.err)
+
+
+def test_the_converter_has_no_network_feature():
+    assert not hasattr(c2c, "download") and not hasattr(c2c, "urllib")
+    with pytest.raises(SystemExit):
+        c2c.main(["a.json", "b.csv", "--dash-db", "x.db", "--download"])
