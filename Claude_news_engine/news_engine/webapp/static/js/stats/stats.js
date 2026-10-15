@@ -7,8 +7,8 @@ import { fetchStatsEvents, fetchStatsChart, fetchStatsScoreboard, fetchStatsComp
 import { buildChartSvg } from "./chart.js";
 import { componentsHtml } from "./info.js";
 import {
-  tier1RowHtml, combinedRowHtml, sentimentRowHtml, pickNextRow, briefCardHtml, scoreboardHtml,
-  filterRows, orderTier1, yearsPresent, preNewsDisclaimer, reconstructedDisclaimer,
+  tier1BodyHtml, emptyRowHtml, combinedRowHtml, sentimentRowHtml, pickNextRow, briefCardHtml, scoreboardHtml,
+  filterRows, yearsPresent, preNewsDisclaimer, reconstructedDisclaimer,
 } from "./rows.js";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -19,6 +19,8 @@ let statsLoaded = false;
 let allRows = [];
 let disclaimers = {};
 const state = { sub: "combined", method: "combined", year: "", month: "", event: DEFAULT_EVENT };
+let handlersAttached = false;   // a retry after a failed first load must not double-bind listeners
+let infoToken = 0;               // drops a breakdown response superseded by a newer click
 let renderToken = 0;   // drops responses from a superseded selection (chart/scoreboard are async)
 
 const $ = (id) => document.getElementById(id);
@@ -54,6 +56,8 @@ function populateFilters() {
 }
 
 function attachHandlers() {
+  if (handlersAttached) return;
+  handlersAttached = true;
   $("stats-year").addEventListener("change", (e) => { state.year = e.target.value; render(); });
   $("stats-month").addEventListener("change", (e) => { state.month = e.target.value; render(); });
   $("stats-event").addEventListener("change", (e) => { state.event = e.target.value; render(); });
@@ -76,12 +80,15 @@ function setSub(name) {
 
 async function showInfo(metric) {
   const box = $("stats-info");
+  const token = ++infoToken;
   try {
     const data = await fetchStatsComponents(metric);
+    if (token !== infoToken) return;
     box.innerHTML = '<button type="button" class="info-close" aria-label="Close">×</button>' + componentsHtml(data);
     box.style.display = "";
     box.scrollIntoView({ behavior: "smooth", block: "nearest" });
   } catch (err) {
+    if (token !== infoToken) return;
     console.error("showInfo: fetch failed", err);
     box.textContent = "Could not load that breakdown.";
     box.style.display = "";
@@ -89,6 +96,7 @@ async function showInfo(metric) {
 }
 
 function hideInfo() {
+  infoToken++;   // a still-pending breakdown must not reopen the panel
   const box = $("stats-info");
   box.innerHTML = "";
   box.style.display = "none";
@@ -124,13 +132,13 @@ function render() {
 
   const table = newestFirst(filtered);
   if (sub === "combined") {
-    $("stats-combined-body").innerHTML = table.map(combinedRowHtml).join("");
+    $("stats-combined-body").innerHTML = table.length ? table.map(combinedRowHtml).join("") : emptyRowHtml(7);
     renderChartAndScoreboard(token);
   } else if (sub === "tier1") {
-    $("stats-tier1-body").innerHTML = orderTier1(filtered).map(tier1RowHtml).join("");
+    $("stats-tier1-body").innerHTML = tier1BodyHtml(filtered);
     $("stats-recon-note").textContent = reconstructedDisclaimer(filtered, sub, disclaimers) ? disclaimers.reconstructed : "";
   } else {
-    $("stats-news-body").innerHTML = table.map(sentimentRowHtml).join("");
+    $("stats-news-body").innerHTML = table.length ? table.map(sentimentRowHtml).join("") : emptyRowHtml(5);
   }
 }
 
@@ -144,7 +152,8 @@ async function renderChartAndScoreboard(token) {
       fetchStatsScoreboard({ ...(state.event ? { event: state.event } : {}), ...year, ...(state.month ? { month: state.month } : {}) }),
     ]);
     if (token !== renderToken) return;
-    chartBox.innerHTML = buildChartSvg(chart);
+    // Real container width keeps axis text legible at 375px (see buildChartSvg).
+    chartBox.innerHTML = buildChartSvg(chart, { width: Math.max(300, Math.min(900, chartBox.clientWidth - 12)) });
     boardBox.innerHTML = scoreboardHtml(board, chart.unit);
   } catch (err) {
     if (token !== renderToken) return;

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   tier1RowHtml, combinedRowHtml, sentimentRowHtml, verdictChip, leanText,
   pickNextRow, briefCardHtml, scoreboardHtml, filterRows, yearsPresent, disclaimerHtml, componentFor, orderTier1,
+  toSast, emptyRowHtml, tier1BodyHtml,
 } from "./rows.js";
 
 const base = { event_title: "CPI m/m", event_time_utc: "2026-10-14T12:30:00+00:00", forecast: 0.3, forecast_text: "0.3%",
@@ -180,4 +181,50 @@ test("orderTier1 puts tracked events first, newest first within each group", () 
     { ...base, event_title: "new tracked", event_time_utc: "2026-09-01T00:00:00+00:00" },
   ];
   assert.deepEqual(orderTier1(rows).map((r) => r.event_title), ["new tracked", "old tracked", "new untracked"]);
+});
+
+// ---- SAST display ------------------------------------------------------------
+test("toSast adds two hours and rolls the date over after 22:00 UTC", () => {
+  assert.deepEqual(toSast("2026-10-14T12:30:00+00:00"), { date: "2026-10-14", time: "14:30" });
+  assert.deepEqual(toSast("2026-10-14T23:00:00+00:00"), { date: "2026-10-15", time: "01:00" });
+});
+
+test("table dates and the nowcast 'as of' text are shown in SAST", () => {
+  const late = { ...base, event_time_utc: "2026-10-14T23:00:00+00:00", nowcast_as_of_utc: "2026-10-12T23:30:00+00:00" };
+  const html = tier1RowHtml(late);
+  assert.ok(html.includes("2026-10-15") && !html.includes("2026-10-14"));
+  assert.ok(html.includes("nowcast as of 2026-10-13 01:30 SAST") && !html.includes("UTC"));
+  assert.ok(combinedRowHtml(late).includes("2026-10-15"));
+  assert.ok(sentimentRowHtml({ ...late, news: null }).includes("2026-10-15"));
+});
+
+test("brief card time still uses the same SAST conversion", () => {
+  assert.ok(briefCardHtml(pend("CPI m/m", "2026-10-16T23:00:00+00:00"), "tier1", DISC).includes("2026-10-17 01:00 SAST"));
+});
+
+// ---- empty state and Tier 1 grouping ------------------------------------------
+test("emptyRowHtml spans the table and says nothing matches", () => {
+  const html = emptyRowHtml(7);
+  assert.ok(html.includes('colspan="7"') && html.includes("No releases match this selection."));
+});
+
+test("tier1BodyHtml shows the empty message when there are no rows", () => {
+  assert.ok(tier1BodyHtml([]).includes("No releases match this selection."));
+});
+
+test("tier1BodyHtml groups tracked first under captions, chronological newest first inside each", () => {
+  const rows = [
+    { ...base, event_title: "old tracked", event_time_utc: "2026-01-01T12:00:00+00:00" },
+    { ...base, event_title: "new untracked", tier1_tracked: false, tier1: null, event_time_utc: "2026-10-01T12:00:00+00:00" },
+    { ...base, event_title: "new tracked", event_time_utc: "2026-09-01T12:00:00+00:00" },
+  ];
+  const html = tier1BodyHtml(rows);
+  const at = (t) => html.indexOf(t);
+  assert.ok(at("Tracked by Tier 1") < at("new tracked") && at("new tracked") < at("old tracked"));
+  assert.ok(at("old tracked") < at('Not tracked by Tier 1</th>') && at('Not tracked by Tier 1</th>') < at("new untracked"));
+});
+
+test("tier1BodyHtml omits a caption for an empty group", () => {
+  const html = tier1BodyHtml([{ ...base }]);
+  assert.ok(html.includes("Tracked by Tier 1") && !html.includes("Not tracked by Tier 1</th>"));
 });

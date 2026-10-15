@@ -7,7 +7,8 @@ import { escapeHtml } from "../format.js";
 
 const GREEN = "#2e7d32";
 const RED = "#c62828";
-const W = 640, H = 210, L = 44, R = 28, T = 12, B = 26;
+const DEFAULT_W = 640, H = 210, L = 44, R = 28, T = 12, B = 26;
+const LABEL_PX = 56;   // room one x-axis label needs, so neighbours do not overlap
 
 // Build an SVG path for one series. A null value ends the current stroke so the line breaks (a gap).
 function seriesPath(pts, key, x, y) {
@@ -21,7 +22,10 @@ function seriesPath(pts, key, x, y) {
   return d;
 }
 
-export function buildChartSvg(chart) {
+// opts.width: the viewBox width in CSS pixels. Passing the container's real width keeps the 11px axis
+// text 11px on a phone instead of shrinking with a fixed 640-wide viewBox.
+export function buildChartSvg(chart, opts = {}) {
+  const W = opts.width || DEFAULT_W;
   const pts = (chart && chart.points) || [];
   if (pts.length === 0) {
     return '<div class="meta-text-sm">No scored releases for this selection.</div>';
@@ -42,7 +46,7 @@ export function buildChartSvg(chart) {
       + `<text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="#666">${v.toFixed(2)}${unit}</text>`;
   }
   // X-axis text is the server's per-point label (month, or full date when a month repeats).
-  const labelEvery = Math.max(1, Math.ceil(pts.length / 10));
+  const labelEvery = Math.max(1, Math.ceil(pts.length / Math.max(1, Math.floor((W - L - R) / LABEL_PX))));
   pts.forEach((p, i) => {
     if (i % labelEvery !== 0 && i !== pts.length - 1) return;
     svg += `<text x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="#666">${escapeHtml(p.label)}</text>`;

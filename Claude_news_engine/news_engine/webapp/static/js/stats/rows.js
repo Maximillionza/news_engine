@@ -24,7 +24,14 @@ export function leanText(leans) {
   return Object.entries(leans || {}).map(([sym, l]) => `${escapeHtml(sym)} ${LEAN[l] || LEAN.mixed}`).join(" · ");
 }
 
-function dateCell(row) { return escapeHtml(row.event_time_utc.slice(0, 10)); }
+// UTC ISO time -> SAST date and time. South Africa is a fixed UTC+2 (no DST), so a plain +2h is exact
+// and the date rolls over for releases after 22:00 UTC.
+export function toSast(isoUtc) {
+  const iso = new Date(new Date(isoUtc).getTime() + SAST_OFFSET_MS).toISOString();
+  return { date: iso.slice(0, 10), time: iso.slice(11, 16) };
+}
+
+function dateCell(row) { return escapeHtml(toSast(row.event_time_utc).date); }
 
 // Which breakdown a Tier 1 row opens when clicked, or null (untracked rows have nothing to open).
 export function componentFor(row) {
@@ -48,7 +55,7 @@ export function tier1RowHtml(row) {
   const actual = row.status === "pending" ? "pending" : escapeHtml(row.actual_text ?? "");
   const result = row.status === "pending" ? "pending" : verdictChip(call.verdict);
   const asOf = row.nowcast_as_of_utc
-    ? `<div class="meta-text-sm">nowcast as of ${escapeHtml(row.nowcast_as_of_utc.slice(0, 16).replace("T", " "))} UTC</div>` : "";
+    ? `<div class="meta-text-sm">nowcast as of ${escapeHtml(sastText(row.nowcast_as_of_utc))}</div>` : "";
   const metric = componentFor(row);
   const clickable = metric ? ` class="row-click" data-component="${escapeHtml(metric)}" title="Click for the inputs behind this call"` : "";
   return `<tr${clickable}><td>${title}${tag}${asOf}</td>`
@@ -93,8 +100,9 @@ export function pickNextRow(rows, now, method) {
 }
 
 // "2026-10-16 14:30 SAST" from a UTC ISO time (South Africa is UTC+2, no DST).
-function sastLabel(iso) {
-  return new Date(new Date(iso).getTime() + SAST_OFFSET_MS).toISOString().slice(0, 16).replace("T", " ") + " SAST";
+function sastText(iso) {
+  const t = toSast(iso);
+  return `${t.date} ${t.time} SAST`;
 }
 
 // Same rule as the server: within one step of the forecast's own published precision is "in line".
@@ -117,7 +125,7 @@ export function briefCardHtml(row, method, disclaimers) {
   const unit = String(row.forecast_text ?? "").replace(/^-?[\d.,]+/, "").trim();
   const lean = leanText(call.leans);
   return `<div class="brief-card"><b>Next release: ${escapeHtml(row.event_title)}</b>`
-    + `<div class="meta-text-sm">${escapeHtml(sastLabel(row.event_time_utc))}</div>`
+    + `<div class="meta-text-sm">${escapeHtml(sastText(row.event_time_utc))}</div>`
     + `<div>Expected: ${expectedWord(row.forecast, call.predicted, row.forecast_text)} `
     + `(call ${escapeHtml(num(call.predicted) + unit)} vs forecast ${escapeHtml(row.forecast_text ?? "")})</div>`
     + (lean ? `<div>${lean}</div>` : "")
@@ -144,6 +152,22 @@ export function yearsPresent(rows) {
   return [...new Set(rows.map((r) => Number(r.event_time_utc.slice(0, 4))))].sort((a, b) => a - b);
 }
 
+export function emptyRowHtml(columns) {
+  return `<tr class="row-off"><td colspan="${columns}">No releases match this selection.</td></tr>`;
+}
+
+// Tier 1 table body: tracked events under a "Tracked by Tier 1" caption, the rest under
+// "Not tracked by Tier 1"; chronological (newest first) inside each group.
+export function tier1BodyHtml(rows) {
+  if (rows.length === 0) return emptyRowHtml(5);
+  const ordered = orderTier1(rows);
+  const tracked = ordered.filter((r) => r.tier1_tracked);
+  const rest = ordered.filter((r) => !r.tier1_tracked);
+  const caption = (text) => `<tr class="group-row"><th colspan="5">${text}</th></tr>`;
+  return (tracked.length ? caption("Tracked by Tier 1") + tracked.map(tier1RowHtml).join("") : "")
+    + (rest.length ? caption("Not tracked by Tier 1") + rest.map(tier1RowHtml).join("") : "");
+}
+
 // Tier 1 table order: tracked events first (those are the ones with calls), then the greyed rest;
 // newest first within each group.
 export function orderTier1(rows) {
@@ -151,6 +175,8 @@ export function orderTier1(rows) {
     || b.event_time_utc.localeCompare(a.event_time_utc));
 }
 
+// Year/Month filters deliberately stay UTC-based: US releases are 12:30-19:00 UTC, so their SAST
+// date equals their UTC date and the filter never disagrees with the date shown in the table.
 export function filterRows(rows, { year, month, event } = {}) {
   return rows.filter((r) => {
     const y = Number(r.event_time_utc.slice(0, 4));

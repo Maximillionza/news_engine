@@ -43,3 +43,14 @@ test("axis text is escaped", () => {
 test("a single point still renders without NaN", () => {
   assert.ok(!buildChartSvg({ unit: "%", points: [pts[1]] }).includes("NaN"));
 });
+
+test("the viewBox follows the requested width so labels stay at their real size on a phone", () => {
+  assert.ok(buildChartSvg({ unit: "%", points: pts }, { width: 340 }).includes('viewBox="0 0 340 '));
+  assert.ok(buildChartSvg({ unit: "%", points: pts }).includes('viewBox="0 0 640 '));
+});
+
+test("narrow charts thin out x-axis labels so they do not overlap", () => {
+  const many = Array.from({ length: 12 }, (_, i) => ({ ...pts[1], label: `2026-${String(i + 1).padStart(2, "0")}` }));
+  const count = (svg) => (svg.match(/text-anchor="middle"/g) || []).length;
+  assert.ok(count(buildChartSvg({ unit: "%", points: many }, { width: 320 })) < count(buildChartSvg({ unit: "%", points: many }, { width: 900 })));
+});
