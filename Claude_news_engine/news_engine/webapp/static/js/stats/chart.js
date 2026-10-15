@@ -7,7 +7,7 @@ import { escapeHtml } from "../format.js";
 
 const GREEN = "#2e7d32";
 const RED = "#c62828";
-const W = 640, H = 210, L = 44, R = 10, T = 12, B = 26;
+const W = 640, H = 210, L = 44, R = 28, T = 12, B = 26;
 
 // Build an SVG path for one series. A null value ends the current stroke so the line breaks (a gap).
 function seriesPath(pts, key, x, y) {

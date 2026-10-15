@@ -61,3 +61,19 @@ export async function postAddSymbol(ticker) {
 export function deleteSymbol(ticker) {
   return fetch(`/api/symbols/${ticker}`, { method: "DELETE" });
 }
+
+export function fetchStatsEvents(params = {}) {
+  return fetchJson(`/api/stats/events?${new URLSearchParams(params)}`);
+}
+
+export function fetchStatsChart(params) {
+  return fetchJson(`/api/stats/chart?${new URLSearchParams(params)}`);
+}
+
+export function fetchStatsScoreboard(params = {}) {
+  return fetchJson(`/api/stats/scoreboard?${new URLSearchParams(params)}`);
+}
+
+export function fetchStatsComponents(metric) {
+  return fetchJson(`/api/stats/components/${encodeURIComponent(metric)}`);
+}

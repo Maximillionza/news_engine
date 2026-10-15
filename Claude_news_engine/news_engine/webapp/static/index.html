@@ -14,6 +14,7 @@
     <button id="tab-calendar" class="tab-btn" role="tab" aria-selected="false" aria-controls="view-calendar">Calendar</button>
     <button id="tab-history" class="tab-btn" role="tab" aria-selected="false" aria-controls="view-history">History</button>
     <button id="tab-shock-alerts" class="tab-btn" role="tab" aria-selected="false" aria-controls="view-shock-alerts">Shock Alerts</button>
+    <button id="tab-stats" class="tab-btn" role="tab" aria-selected="false" aria-controls="view-stats">Stats</button>
   </nav>
 </header>
 
@@ -86,6 +87,68 @@
     <summary>Low-severity (collapsed)</summary>
     <div id="shock-alerts-low-list"></div>
   </details>
+</section>
+
+<section id="view-stats" style="display:none" role="tabpanel" aria-labelledby="tab-stats">
+  <div id="stats-error" class="stale-notice" style="display:none"></div>
+  <div class="stats-subtabs" role="tablist" aria-label="Stats sections">
+    <button id="stats-sub-combined" class="tab-btn active" role="tab" aria-selected="true" aria-controls="stats-pane-combined" data-sub="combined">Combined</button>
+    <button id="stats-sub-tier1" class="tab-btn" role="tab" aria-selected="false" aria-controls="stats-pane-tier1" data-sub="tier1">Tier 1</button>
+    <button id="stats-sub-news" class="tab-btn" role="tab" aria-selected="false" aria-controls="stats-pane-news" data-sub="news">News sentiment</button>
+  </div>
+  <div id="stats-brief"></div>
+  <div id="stats-disclaimer" class="stale-notice" style="display:none"></div>
+  <div class="stats-filters">
+    <label id="stats-event-wrap">Event <select id="stats-event"></select></label>
+    <label>Year <select id="stats-year"></select></label>
+    <label>Month <select id="stats-month"></select></label>
+  </div>
+
+  <div id="stats-pane-combined" role="tabpanel" aria-labelledby="stats-sub-combined">
+    <div class="stats-panel">
+      Weighted score: 70% Tier 1 + 30% News
+      <button type="button" class="info-btn" data-metric="combined" aria-label="What is in the Combined score">&#9432;</button>
+    </div>
+    <div class="stats-methods" role="group" aria-label="Chart method">
+      <button type="button" class="method-btn" data-method="tier1">Tier 1 only</button>
+      <button type="button" class="method-btn" data-method="news">News only</button>
+      <button type="button" class="method-btn active" data-method="combined">Combined</button>
+    </div>
+    <div id="stats-chart" class="stats-chart"></div>
+    <div class="meta-text-sm">Forecast dotted grey, Actual solid, Predicted dashed (green = right, red = wrong). News-only values scale the lean by the event's typical surprise size (an assumption).</div>
+    <div id="stats-scoreboard"></div>
+    <div class="stats-scroll">
+      <table class="stats-table">
+        <thead><tr><th>Event</th><th>Date</th><th>Forecast</th><th>Tier 1</th><th>News</th><th>Combined</th><th>Actual</th></tr></thead>
+        <tbody id="stats-combined-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="stats-pane-tier1" style="display:none" role="tabpanel" aria-labelledby="stats-sub-tier1">
+    <div class="stats-scroll">
+      <table class="stats-table">
+        <thead><tr><th>Event</th><th>Date</th><th>Tier 1 call</th><th>Actual</th><th>Result</th></tr></thead>
+        <tbody id="stats-tier1-body"></tbody>
+      </table>
+    </div>
+    <div id="stats-recon-note" class="meta-text-sm"></div>
+  </div>
+
+  <div id="stats-pane-news" style="display:none" role="tabpanel" aria-labelledby="stats-sub-news">
+    <div class="stats-panel">
+      News lean
+      <button type="button" class="info-btn" data-metric="news_lean" aria-label="What is in the news lean">&#9432;</button>
+    </div>
+    <div class="stats-scroll">
+      <table class="stats-table">
+        <thead><tr><th>Event</th><th>Date</th><th>News call</th><th>Actual</th><th>Result</th></tr></thead>
+        <tbody id="stats-news-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="stats-info" style="display:none"></div>
 </section>
 
 <script type="module" src="/static/app.js"></script>

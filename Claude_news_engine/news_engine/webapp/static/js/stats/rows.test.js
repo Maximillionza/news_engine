@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   tier1RowHtml, combinedRowHtml, sentimentRowHtml, verdictChip, leanText,
-  pickNextRow, briefCardHtml, scoreboardHtml, filterRows, yearsPresent, disclaimerHtml, componentFor,
+  pickNextRow, briefCardHtml, scoreboardHtml, filterRows, yearsPresent, disclaimerHtml, componentFor, orderTier1,
 } from "./rows.js";
 
 const base = { event_title: "CPI m/m", event_time_utc: "2026-10-14T12:30:00+00:00", forecast: 0.3, forecast_text: "0.3%",
@@ -55,6 +55,13 @@ test("componentFor: CPI family and any row with a kind open the nowcast breakdow
   assert.equal(componentFor({ ...base, event_title: "PPI m/m", tier1: { ...base.tier1, kind: null } }), null);
   assert.equal(componentFor({ ...base, event_title: "PPI m/m", tier1: { ...base.tier1, kind: "live" } }), "cleveland_nowcast");
   assert.equal(componentFor({ ...base, tier1_tracked: false, tier1: null }), null);
+  assert.equal(componentFor({ ...base, tier1: null }), "cleveland_nowcast");   // tracked CPI with no stored call
+});
+
+test("a tracked row with no recorded call says so, is not greyed as untracked, and still opens the breakdown", () => {
+  const html = tier1RowHtml({ ...base, tier1: null });
+  assert.ok(html.includes("no call") && html.includes("No call") && !html.includes("Not tracked"));
+  assert.ok(html.includes('data-component="cleveland_nowcast"'));
 });
 
 test("a clickable tier-1 row carries its metric; an untracked row is not clickable", () => {
@@ -164,4 +171,13 @@ test("pre-news disclaimer shows on News/Combined only, when the range includes a
 test("reconstructed disclaimer shows once under the Tier 1 table when a reconstructed row is present", () => {
   assert.equal((disclaimerHtml([base, base], "tier1", DISC).match(/RECON/g) || []).length, 1);
   assert.ok(!disclaimerHtml([{ ...base, tier1: { ...base.tier1, kind: "live" } }], "tier1", DISC).includes("RECON"));
+});
+
+test("orderTier1 puts tracked events first, newest first within each group", () => {
+  const rows = [
+    { ...base, event_title: "old tracked", event_time_utc: "2026-01-01T00:00:00+00:00" },
+    { ...base, event_title: "new untracked", tier1_tracked: false, event_time_utc: "2026-10-01T00:00:00+00:00" },
+    { ...base, event_title: "new tracked", event_time_utc: "2026-09-01T00:00:00+00:00" },
+  ];
+  assert.deepEqual(orderTier1(rows).map((r) => r.event_title), ["new tracked", "old tracked", "new untracked"]);
 });

@@ -26,11 +26,10 @@ export function leanText(leans) {
 
 function dateCell(row) { return escapeHtml(row.event_time_utc.slice(0, 10)); }
 
-// Which breakdown a Tier 1 row opens when clicked, or null (untracked rows and hand-logged calls
-// with no stored nowcast have nothing to open).
+// Which breakdown a Tier 1 row opens when clicked, or null (untracked rows have nothing to open).
 export function componentFor(row) {
-  if (!row.tier1_tracked || !row.tier1) return null;
-  if (CPI_FAMILY.has(row.event_title) || row.tier1.kind) return "cleveland_nowcast";
+  if (!row.tier1_tracked) return null;
+  if (CPI_FAMILY.has(row.event_title) || (row.tier1 && row.tier1.kind)) return "cleveland_nowcast";
   return null;
 }
 
@@ -39,10 +38,11 @@ export function tier1RowHtml(row) {
   if (row.status === "not_scoreable") {
     return `<tr class="row-off"><td>${title}</td><td>${dateCell(row)}</td><td colspan="3">No forecast — not scoreable</td></tr>`;
   }
-  if (!row.tier1_tracked || !row.tier1) {
+  if (!row.tier1_tracked) {
     return `<tr class="row-off"><td>${title}</td><td>${dateCell(row)}</td><td colspan="3">Not tracked by Tier 1</td></tr>`;
   }
-  const call = row.tier1;
+  // Tracked, but Tier 1 may have recorded no call for this occurrence (e.g. no nowcast was captured).
+  const call = row.tier1 || { predicted: null, verdict: null, leans: {}, note: null, kind: null };
   const tag = call.kind === "reconstructed" ? ' <span class="chip chip-none">reconstructed</span>' : "";
   const predicted = call.predicted == null ? (call.note === "hand-logged" ? "hand-logged call" : "no call") : num(call.predicted);
   const actual = row.status === "pending" ? "pending" : escapeHtml(row.actual_text ?? "");
@@ -142,6 +142,13 @@ export function scoreboardHtml(sb, unit) {
 
 export function yearsPresent(rows) {
   return [...new Set(rows.map((r) => Number(r.event_time_utc.slice(0, 4))))].sort((a, b) => a - b);
+}
+
+// Tier 1 table order: tracked events first (those are the ones with calls), then the greyed rest;
+// newest first within each group.
+export function orderTier1(rows) {
+  return [...rows].sort((a, b) => (Number(b.tier1_tracked) - Number(a.tier1_tracked))
+    || b.event_time_utc.localeCompare(a.event_time_utc));
 }
 
 export function filterRows(rows, { year, month, event } = {}) {
