@@ -35,6 +35,8 @@ from scoring.backtest_store import (
     get_prediction_history as get_article_prediction_history,
 )
 from webapp.predictions_service import build_predictions_payload, _print_prediction_dict
+from webapp import stats_service
+from webapp.metric_components import get_components
 from alerting import store as alerting_store
 
 app = Flask(__name__, static_folder="static")
@@ -386,6 +388,77 @@ def get_shock_alerts():
             for r in rows
         ],
     })
+
+
+# ---------------------------------------------------------------------------
+# Stats tab API. Explicit serializers: every field the tab renders is listed.
+# ---------------------------------------------------------------------------
+STATS_FOOTNOTE = "Weights fixed at 70/30 until the 2027-01-15 review."
+STATS_DISCLAIMERS = {
+    "pre_news": "No news articles exist before 12 Aug 2026. Combined for these months is Tier 1 only.",
+    "reconstructed": "Reconstructed after the fact from the stated rule; not a live call.",
+    "typical_reaction": "Typical reaction, not a trade signal.",
+}
+
+
+def _stats_connections():
+    """(dashboard DB, backtest DB) connections; a seam so tests can inject in-memory DBs."""
+    return get_connection(), get_backtest_connection()
+
+
+def _method_dict(call):
+    if call is None:
+        return None
+    return {"predicted": call.predicted, "surprise": call.surprise, "verdict": call.verdict, "miss": call.miss,
+            "leans": call.leans, "note": call.note, "kind": call.kind}
+
+
+def _stats_row_dict(r):
+    return {
+        "event_title": r.event_title, "event_time_utc": r.event_time_utc.isoformat(),
+        "forecast": r.forecast, "actual": r.actual, "forecast_text": r.forecast_text, "actual_text": r.actual_text,
+        "status": r.status, "tier1_tracked": r.tier1_tracked, "nowcast_as_of_utc": r.nowcast_as_of_utc,
+        "pre_news_period": r.pre_news_period,
+        "tier1": _method_dict(r.tier1), "news": _method_dict(r.news), "combined": _method_dict(r.combined),
+    }
+
+
+def _int_arg(name):
+    value = request.args.get(name)
+    return int(value) if value and value.isdigit() else None
+
+
+@app.route("/api/stats/events", methods=["GET"])
+def get_stats_events():
+    dash, bt = _stats_connections()
+    rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), month=_int_arg("month"),
+                                    event_title=request.args.get("event"))
+    return jsonify({"rows": [_stats_row_dict(r) for r in rows],
+                    "news_start_utc": stats_service.NEWS_START_UTC.isoformat(), "disclaimers": STATS_DISCLAIMERS})
+
+
+@app.route("/api/stats/chart", methods=["GET"])
+def get_stats_chart():
+    event, method = request.args.get("event"), request.args.get("method", "combined")
+    if not event or method not in stats_service.METHODS:
+        return jsonify({"error": "event and a valid method (tier1|news|combined) are required"}), 400
+    dash, bt = _stats_connections()
+    rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), event_title=event)
+    return jsonify(stats_service.build_chart(rows, method))
+
+
+@app.route("/api/stats/scoreboard", methods=["GET"])
+def get_stats_scoreboard():
+    dash, bt = _stats_connections()
+    rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), month=_int_arg("month"),
+                                    event_title=request.args.get("event"))
+    return jsonify({**stats_service.build_scoreboard(rows), "footnote": STATS_FOOTNOTE})
+
+
+@app.route("/api/stats/components/<metric>", methods=["GET"])
+def get_stats_components(metric):
+    data = get_components(metric)
+    return (jsonify(data), 200) if data else (jsonify({"error": "unknown metric"}), 404)
 
 
 @app.route("/api/history/stats", methods=["GET"])
