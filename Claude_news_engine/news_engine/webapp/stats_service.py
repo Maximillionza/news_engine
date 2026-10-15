@@ -18,9 +18,10 @@ import datetime as dt
 import logging
 import sqlite3
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 from config.settings import EVENT_SURPRISE_DIRECTION
+from data_layer import brent_feed
 from scoring.backtest_store import get_scored_nowcast_snapshot
 from webapp.history import _implied_surprise_direction
 from webapp.stats_methods import (
@@ -67,6 +68,9 @@ class RowDetail:
     news_article_count: Optional[int] = None    # bounded print call's count, else the bounded XAUUSD prediction's
     hand_logged: Optional[dict] = None          # {"value", "confidence", "source"} of the hand-logged Tier 1 call
     weights: dict = field(default_factory=lambda: {"tier1": TIER1_WEIGHT, "news": NEWS_WEIGHT})
+    # Brent crude beside the nowcast snapshot: information only, 0% weight, never part of any call.
+    # None, or {"snapshot_price", "snapshot_price_date", "release_price", "release_price_date", "change_pct", "source"}.
+    brent: Optional[dict] = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +132,58 @@ def _hand_logged_tier1_before(bt_conn: sqlite3.Connection, title: str, release_i
     ).fetchone()
 
 
+# --- Brent crude beside the nowcast (information only) -------------------------------------------
+
+class _LazySeries:
+    """
+    Calls the Brent lookup at most once per build_rows, and only if a row has a nowcast snapshot to
+    compare against. Any failure becomes "no series": Brent is information and must never break a row.
+    """
+
+    def __init__(self, fn: Optional[Callable[[], Optional[list]]]):
+        self._fn = fn
+        self._done = False
+        self._series: Optional[list] = None
+
+    def __call__(self) -> Optional[list]:
+        if not self._done:
+            self._done = True
+            try:
+                fn = self._fn or brent_feed.get_brent_series     # looked up now, so a test can swap the module attr
+                self._series = fn()
+            except Exception:  # noqa: BLE001 -- fail open
+                logger.warning("stats: Brent lookup failed", exc_info=True)
+                self._series = None
+        return self._series
+
+
+def _brent_detail(series: Optional[list], snapshot_as_of: dt.datetime, release: dt.datetime) -> Optional[dict]:
+    """
+    Brent at the nowcast snapshot vs just before the release. The release price is the latest observation
+    on or before the day BEFORE the release day, so neither the release day nor anything later is ever
+    read; the snapshot price is capped at that same day (a snapshot taken on the release day itself must
+    not see that day's price either). None when the series is missing or neither side has a price.
+    """
+    if not series:
+        return None
+    last_allowed = release.date() - dt.timedelta(days=1)
+    snap = brent_feed.brent_on_or_before(series, min(snapshot_as_of.date(), last_allowed))
+    rel = brent_feed.brent_on_or_before(series, last_allowed)
+    if snap is None and rel is None:
+        return None
+    change = None
+    if snap is not None and rel is not None and snap[1] != 0:
+        change = round((rel[1] / snap[1] - 1.0) * 100.0, 2)
+    return {
+        "snapshot_price": None if snap is None else snap[1],
+        "snapshot_price_date": None if snap is None else snap[0].isoformat(),
+        "release_price": None if rel is None else rel[1],
+        "release_price_date": None if rel is None else rel[0].isoformat(),
+        "change_pct": change,
+        "source": brent_feed.SOURCE_LABEL,
+    }
+
+
 # --- row building -----------------------------------------------------------------------------
 
 def _call(predicted: Optional[float], surprise: Optional[float], forecast: float, tol: float,
@@ -148,10 +204,14 @@ def _call(predicted: Optional[float], surprise: Optional[float], forecast: float
 
 
 def build_rows(dash_conn: sqlite3.Connection, bt_conn: sqlite3.Connection, year: Optional[int] = None,
-               month: Optional[int] = None, event_title: Optional[str] = None) -> list[StatsRow]:
+               month: Optional[int] = None, event_title: Optional[str] = None,
+               brent_series_fn: Optional[Callable[[], Optional[list]]] = None) -> list[StatsRow]:
     """
     Every USD event_history occurrence, ascending by time. Filters are applied AFTER computing so each
     title's scale history (prior |actual - forecast|) is complete regardless of the filter.
+
+    brent_series_fn: returns the daily Brent series [(date, price)] or None; defaults to
+    data_layer.brent_feed.get_brent_series (cached, fail-open). Tests inject a stub so nothing hits the network.
 
     USD only (spec D2): country NULL rows are non-USD or unattributed prints that reuse US titles (e.g.
     an 01:30Z "CPI m/m"); left in, they would add bogus rows and pollute the US scale history.
@@ -161,6 +221,7 @@ def build_rows(dash_conn: sqlite3.Connection, bt_conn: sqlite3.Connection, year:
         "ORDER BY event_time_utc, event_title"   # UNIQUE(title, time): no duplicates
     ).fetchall()
 
+    brent_series = _LazySeries(brent_series_fn)
     history: dict[str, list[float]] = {}
     out: list[StatsRow] = []
     for r in raw:
@@ -171,7 +232,7 @@ def build_rows(dash_conn: sqlite3.Connection, bt_conn: sqlite3.Connection, year:
             logger.warning("stats: skipping %s with unreadable time %r", title, r["event_time_utc"])
             continue
         try:
-            row = _build_one(bt_conn, r, title, when, list(history.get(title, [])))
+            row = _build_one(bt_conn, r, title, when, list(history.get(title, [])), brent_series)
         except Exception:  # noqa: BLE001 -- one bad row must not break the tab
             logger.warning("stats row failed for %s %s", title, when, exc_info=True)
             row = _not_scoreable(r, title, when)
@@ -194,7 +255,7 @@ def _not_scoreable(r: sqlite3.Row, title: str, when: dt.datetime) -> StatsRow:
 
 
 def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt.datetime,
-               prior: list[float]) -> StatsRow:
+               prior: list[float], brent_series: Optional[Callable[[], Optional[list]]] = None) -> StatsRow:
     forecast, actual = parse_number(r["forecast"]), parse_number(r["actual"])
     tol = tolerance(r["forecast"])
     if forecast is None or tol is None:
@@ -208,6 +269,7 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
     tier1_tracked = False
     nowcast_as_of = None
     nowcast_value: Optional[float] = None
+    brent: Optional[dict] = None
     hand_logged: Optional[dict] = None
     s1 = None
     snapshot = get_scored_nowcast_snapshot(bt_conn, title, when) if title in NOWCAST_EVENTS else None
@@ -215,6 +277,8 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
         nowcast_value = snapshot["nowcast_value"]
         s1 = tier1_surprise(nowcast_value, forecast)
         nowcast_as_of = snapshot["as_of_utc"]
+        if brent_series is not None:
+            brent = _brent_detail(brent_series(), _parse_time(nowcast_as_of), when)
         tier1 = _call(nowcast_value, s1, forecast, tol, actual, title, kind=snapshot["kind"])
         tier1_tracked = True
     else:
@@ -268,7 +332,7 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
         forecast_text=r["forecast"], nowcast_value=nowcast_value, nowcast_as_of_utc=nowcast_as_of,
         tier1_surprise=s1, news_lean=lean, news_scale=scale, news_surprise=sn,
         combined_surprise=None if blended is None else blended.surprise,
-        news_article_count=article_count, hand_logged=hand_logged,
+        news_article_count=article_count, hand_logged=hand_logged, brent=brent,
     )
     return StatsRow(title, when, r["forecast"], r["actual"], forecast, actual, tol, status,
                     tier1_tracked, tier1, news, combined, nowcast_as_of, pre_news, detail)

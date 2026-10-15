@@ -452,6 +452,10 @@ def _detail_dict(d):
             "value": d.hand_logged["value"], "confidence": d.hand_logged["confidence"],
             "source": d.hand_logged["source"]},
         "news_article_count": d.news_article_count,
+        "brent": None if d.brent is None else {
+            "snapshot_price": d.brent["snapshot_price"], "snapshot_price_date": d.brent["snapshot_price_date"],
+            "release_price": d.brent["release_price"], "release_price_date": d.brent["release_price_date"],
+            "change_pct": d.brent["change_pct"], "source": d.brent["source"]},
     }
 
 

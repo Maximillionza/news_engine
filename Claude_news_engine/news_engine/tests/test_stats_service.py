@@ -6,6 +6,7 @@ import pytest
 
 from config.settings import EVENT_SURPRISE_DIRECTION
 from scoring import backtest_store as bs
+from data_layer import brent_feed
 from webapp import stats_service as svc
 from webapp import store as ws
 
@@ -14,6 +15,12 @@ UTC = dt.timezone.utc
 
 def _t(month, day=14):
     return dt.datetime(2026, month, day, 12, 30, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def no_live_brent(monkeypatch):
+    """Tests must never reach FRED: the default Brent lookup returns nothing unless a test injects a series."""
+    monkeypatch.setattr(brent_feed, "get_brent_series", lambda *a, **kw: None)
 
 
 @pytest.fixture
@@ -300,10 +307,10 @@ def test_one_failing_row_degrades_to_not_scoreable_and_the_rest_still_render(con
     _event(dash, "PPI m/m", _t(10), "0.2%", "0.5%")
     real = svc._build_one
 
-    def boom(bt_conn, r, title, when, prior):
+    def boom(bt_conn, r, title, when, prior, brent_series=None):
         if title == "CPI m/m":
             raise RuntimeError("bad row")
-        return real(bt_conn, r, title, when, prior)
+        return real(bt_conn, r, title, when, prior, brent_series)
 
     monkeypatch.setattr(svc, "_build_one", boom)
     rows = svc.build_rows(dash, bt)
@@ -507,3 +514,121 @@ def test_not_scoreable_row_still_has_a_detail_with_only_the_forecast_text(conns)
     _event(dash, "Weird Event", _t(10), "N/A", "1.2|0.9")
     d = svc.build_rows(dash, bt)[-1].detail
     assert d.forecast_text == "N/A" and d.nowcast_value is None and d.news_lean is None and d.hand_logged is None
+
+
+# --- Brent crude beside the nowcast (information only, 0% weight) -------------------------------------------
+
+def D(month, day):
+    return dt.date(2026, month, day)
+
+
+# Release _t(10) = Wed 2026-10-14 12:30Z; the default snapshot is 48h earlier = Mon 2026-10-12 12:30Z.
+BRENT = [(D(10, 8), 88.0), (D(10, 9), 89.0), (D(10, 12), 90.0), (D(10, 13), 92.0),
+         (D(10, 14), 99.0), (D(10, 15), 120.0)]       # the 10-14 and 10-15 prices must never be used
+
+
+def _cpi_row_with_brent(series, hours_before=48, **kwargs):
+    dash, bt = ws.get_connection(":memory:"), bs.get_connection(":memory:")      # fresh DBs: callers may call twice
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    _snap(bt, "CPI m/m", _t(10), 0.4, hours_before=hours_before)
+    return svc.build_rows(dash, bt, brent_series_fn=lambda: series, **kwargs)[-1]
+
+
+def test_brent_compares_the_snapshot_day_with_the_day_before_the_release():
+    row = _cpi_row_with_brent(BRENT)
+    assert row.detail.brent == {
+        "snapshot_price": 90.0, "snapshot_price_date": "2026-10-12",
+        "release_price": 92.0, "release_price_date": "2026-10-13",
+        "change_pct": pytest.approx(2.22), "source": "FRED DCOILBRENTEU (EIA daily Brent)",
+    }
+    assert row.detail.brent["change_pct"] == 2.22                     # rounded to 2 decimals (92/90 - 1 = 2.2222%)
+
+
+def test_brent_never_uses_the_release_day_or_later():
+    row = _cpi_row_with_brent(BRENT)
+    assert row.detail.brent["release_price_date"] == "2026-10-13" and row.detail.brent["release_price"] == 92.0
+    only_release_day = _cpi_row_with_brent([(D(10, 12), 90.0), (D(10, 14), 99.0)])    # nothing on 10-13
+    assert only_release_day.detail.brent["release_price"] == 90.0 and only_release_day.detail.brent["release_price_date"] == "2026-10-12"
+
+
+def test_a_snapshot_taken_on_the_release_day_does_not_see_the_release_day_price():
+    row = _cpi_row_with_brent(BRENT, hours_before=6)          # as-of 2026-10-14 06:30Z, release day itself
+    b = row.detail.brent
+    assert b["snapshot_price_date"] == "2026-10-13" and b["snapshot_price"] == 92.0
+    assert b["release_price_date"] == "2026-10-13" and b["change_pct"] == 0.0
+
+
+def test_brent_snapshot_price_is_the_latest_on_or_before_a_weekend_as_of_date():
+    series = [(D(10, 9), 89.0), (D(10, 12), 90.0)]
+    row = _cpi_row_with_brent(series, hours_before=96)         # as-of Sat 2026-10-10: Friday's price
+    assert row.detail.brent["snapshot_price_date"] == "2026-10-09" and row.detail.brent["snapshot_price"] == 89.0
+
+
+def test_brent_is_null_without_a_nowcast_snapshot(conns):
+    dash, bt = conns
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    called = []
+    row = svc.build_rows(dash, bt, brent_series_fn=lambda: called.append(1) or BRENT)[-1]
+    assert row.detail.brent is None and called == []                  # no snapshot: not even looked up
+
+
+def test_brent_is_null_when_the_series_is_unavailable():
+    assert _cpi_row_with_brent(None).detail.brent is None
+    assert _cpi_row_with_brent([]).detail.brent is None
+
+
+def test_brent_lookup_failure_never_breaks_the_row(conns):
+    dash, bt = conns
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    _snap(bt, "CPI m/m", _t(10), 0.4)
+
+    def boom():
+        raise RuntimeError("FRED exploded")
+    row = svc.build_rows(dash, bt, brent_series_fn=boom)[-1]
+    assert row.status == "scored" and row.tier1.verdict == "right" and row.detail.brent is None
+    assert row.detail.nowcast_value == pytest.approx(0.4)
+
+
+def test_brent_with_only_one_side_found_has_no_change():
+    after_only = _cpi_row_with_brent([(D(10, 13), 92.0)])      # nothing on or before the 10-12 snapshot
+    b = after_only.detail.brent
+    assert b["snapshot_price"] is None and b["snapshot_price_date"] is None
+    assert b["release_price"] == 92.0 and b["change_pct"] is None
+    nothing_early = _cpi_row_with_brent([(D(10, 14), 99.0)])  # only the release day: unusable
+    assert nothing_early.detail.brent is None
+
+
+def test_brent_does_not_change_any_call_or_score():
+    with_brent = _cpi_row_with_brent(BRENT)
+    without = _cpi_row_with_brent(None)
+    assert with_brent.tier1 == without.tier1 and with_brent.combined == without.combined
+    assert with_brent.detail.weights == without.detail.weights == {"tier1": 0.7, "news": 0.3}
+    assert with_brent.detail.combined_surprise == without.detail.combined_surprise
+
+
+def test_brent_is_only_for_the_cpi_family_and_the_series_is_fetched_once_per_build(conns):
+    dash, bt = conns
+    for month in (8, 9, 10):
+        _event(dash, "CPI m/m", _t(month), "0.3%", "0.4%")
+        _event(dash, "Core CPI m/m", _t(month), "0.3%", "0.3%")
+        _snap(bt, "CPI m/m", _t(month), 0.4)
+        _snap(bt, "Core CPI m/m", _t(month), 0.3)
+    _event(dash, "PPI m/m", _t(10), "0.2%", "0.5%")
+    bs.record_tier1_prediction(bt, "PPI m/m", "XAUUSD", _t(10), "0.4% hot", "Likely", "BLS", "bearish",
+                               logged_at_utc=_t(10) - dt.timedelta(days=3))
+    calls = []
+    rows = svc.build_rows(dash, bt, brent_series_fn=lambda: calls.append(1) or BRENT)
+    assert len(calls) == 1
+    by_title = {}
+    for r in rows:
+        by_title.setdefault(r.event_title, []).append(r)
+    assert all(r.detail.brent is not None or r.event_time_utc.month != 10 for r in by_title["CPI m/m"])
+    assert by_title["PPI m/m"][0].detail.brent is None
+
+
+def test_default_brent_lookup_uses_the_feed_module(conns, monkeypatch):
+    monkeypatch.setattr(brent_feed, "get_brent_series", lambda *a, **kw: BRENT)
+    dash, bt = conns
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    _snap(bt, "CPI m/m", _t(10), 0.4)
+    assert svc.build_rows(dash, bt)[-1].detail.brent["release_price"] == 92.0

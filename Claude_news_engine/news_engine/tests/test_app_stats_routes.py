@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 import webapp.app as app_module
+from data_layer import brent_feed
 from scoring import backtest_store as bs
 from webapp import store as ws
 
@@ -17,7 +18,17 @@ ROW_KEYS = {"event_title", "event_time_utc", "forecast", "actual", "forecast_tex
             "tier1_tracked", "nowcast_as_of_utc", "pre_news_period", "tier1", "news", "combined", "detail"}
 CALL_KEYS = {"predicted", "surprise", "verdict", "miss", "leans", "note", "kind"}
 DETAIL_KEYS = {"forecast_text", "nowcast_value", "nowcast_as_of_utc", "tier1_surprise", "news_lean", "news_scale",
-               "news_surprise", "combined_surprise", "weights", "hand_logged", "news_article_count"}
+               "news_surprise", "combined_surprise", "weights", "hand_logged", "news_article_count", "brent"}
+BRENT_KEYS = {"snapshot_price", "snapshot_price_date", "release_price", "release_price_date", "change_pct", "source"}
+# AS_OF is 2026-10-12 22:30Z; WHEN is 2026-10-14. The 10-14 and 10-15 prices must not appear in the served line.
+BRENT_SERIES = [(dt.date(2026, 10, 9), 89.0), (dt.date(2026, 10, 12), 90.0), (dt.date(2026, 10, 13), 92.0),
+                (dt.date(2026, 10, 14), 99.0), (dt.date(2026, 10, 15), 120.0)]
+
+
+@pytest.fixture(autouse=True)
+def brent_series(monkeypatch):
+    """No test reaches FRED: the feed serves a fixed series (tests may re-patch it to None)."""
+    monkeypatch.setattr(brent_feed, "get_brent_series", lambda *a, **kw: list(BRENT_SERIES))
 
 
 def _insert_event(dash, when, forecast, actual):
@@ -107,6 +118,17 @@ def test_events_route_serves_real_news_and_combined_calls(full_client):
     assert detail["weights"] == {"tier1": 0.7, "news": 0.3}
     assert detail["hand_logged"] is None
     assert detail["news_article_count"] == 7
+    assert set(detail["brent"]) == BRENT_KEYS
+    assert detail["brent"] == {
+        "snapshot_price": 90.0, "snapshot_price_date": "2026-10-12", "release_price": 92.0,
+        "release_price_date": "2026-10-13", "change_pct": 2.22, "source": "FRED DCOILBRENTEU (EIA daily Brent)"}
+
+
+def test_events_route_serves_brent_null_when_the_series_is_unavailable(client, monkeypatch):
+    monkeypatch.setattr(brent_feed, "get_brent_series", lambda *a, **kw: None)
+    row = client.get("/api/stats/events?event=CPI%20m/m").get_json()["rows"][0]
+    assert set(row["detail"]) == DETAIL_KEYS and row["detail"]["brent"] is None
+    assert row["detail"]["nowcast_value"] == pytest.approx(0.4)       # the rest of the row is untouched
 
 
 def test_events_route_serves_the_hand_logged_detail(monkeypatch):
@@ -123,7 +145,7 @@ def test_events_route_serves_the_hand_logged_detail(monkeypatch):
     assert detail == {
         "forecast_text": "0.2%", "nowcast_value": None, "nowcast_as_of_utc": None, "tier1_surprise": None,
         "news_lean": None, "news_scale": None, "news_surprise": None, "combined_surprise": None,
-        "weights": {"tier1": 0.7, "news": 0.3}, "news_article_count": None,
+        "weights": {"tier1": 0.7, "news": 0.3}, "news_article_count": None, "brent": None,
         "hand_logged": {"value": "0.4% hot", "confidence": "Likely", "source": "BLS"},
     }
 
