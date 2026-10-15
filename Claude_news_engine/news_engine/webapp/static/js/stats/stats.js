@@ -5,10 +5,10 @@
 import { escapeHtml } from "../format.js";
 import { fetchStatsEvents, fetchStatsChart, fetchStatsScoreboard, fetchStatsComponents } from "../api.js";
 import { buildChartSvg } from "./chart.js";
-import { componentsHtml } from "./info.js";
+import { componentsHtml, readingsHtml } from "./info.js";
 import {
   tier1BodyHtml, emptyRowHtml, combinedRowHtml, sentimentRowHtml, pickNextRow, briefCardHtml, scoreboardHtml,
-  filterRows, yearsPresent, preNewsDisclaimer, reconstructedDisclaimer,
+  filterRows, yearsPresent, preNewsDisclaimer, reconstructedDisclaimer, rowKey,
 } from "./rows.js";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -67,8 +67,14 @@ function attachHandlers() {
     const method = e.target.closest("[data-method]");
     if (method) { state.method = method.dataset.method; render(); return; }
     if (e.target.closest(".info-close")) { hideInfo(); return; }
-    const trigger = e.target.closest("[data-metric], tr[data-component]");
-    if (trigger) showInfo(trigger.dataset.metric || trigger.dataset.component);
+    const rowEl = e.target.closest("tr[data-row]");
+    if (rowEl) {
+      const row = allRows.find((r) => rowKey(r) === rowEl.dataset.row);
+      if (row) showInfo(rowEl.dataset.component || null, row, rowEl.dataset.view);
+      return;
+    }
+    const trigger = e.target.closest("[data-metric]");
+    if (trigger) showInfo(trigger.dataset.metric);
   });
 }
 
@@ -78,21 +84,30 @@ function setSub(name) {
   render();
 }
 
-async function showInfo(metric) {
+// metric: the component list to fetch (or null); row/view: a clicked release, whose readings sit
+// beside the component list (spec §5 click-through). An info icon passes a metric only.
+async function showInfo(metric, row = null, view = "tier1") {
   const box = $("stats-info");
   const token = ++infoToken;
+  const close = '<button type="button" class="info-close" aria-label="Close">×</button>';
+  const readings = row ? readingsHtml(row, view) : "";
+  let components = "";
   try {
-    const data = await fetchStatsComponents(metric);
-    if (token !== infoToken) return;
-    box.innerHTML = '<button type="button" class="info-close" aria-label="Close">×</button>' + componentsHtml(data);
-    box.style.display = "";
-    box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (metric) components = componentsHtml(await fetchStatsComponents(metric));
   } catch (err) {
     if (token !== infoToken) return;
     console.error("showInfo: fetch failed", err);
-    box.textContent = "Could not load that breakdown.";
-    box.style.display = "";
+    if (!row) {
+      box.textContent = "Could not load that breakdown.";
+      box.style.display = "";
+      return;
+    }
+    components = '<div class="info-panel">Could not load the inputs list.</div>';
   }
+  if (token !== infoToken) return;
+  box.innerHTML = close + `<div class="info-pair">${readings}${components}</div>`;
+  box.style.display = "";
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function hideInfo() {
@@ -139,7 +154,7 @@ function render() {
     $("stats-tier1-body").innerHTML = tier1BodyHtml(filtered);
     $("stats-recon-note").textContent = reconstructedDisclaimer(filtered, sub, disclaimers) ? disclaimers.reconstructed : "";
   } else {
-    $("stats-news-body").innerHTML = table.length ? table.map(sentimentRowHtml).join("") : emptyRowHtml(5);
+    $("stats-news-body").innerHTML = table.length ? table.map(sentimentRowHtml).join("") : emptyRowHtml(6);
   }
 }
 

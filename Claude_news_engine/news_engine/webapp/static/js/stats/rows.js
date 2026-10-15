@@ -33,11 +33,38 @@ export function toSast(isoUtc) {
 
 function dateCell(row) { return escapeHtml(toSast(row.event_time_utc).date); }
 
+// A tracked row is scored from a nowcast snapshot (CPI family, or any row whose call has a snapshot kind);
+// every other tracked row is a hand-logged, direction-only call.
+function isNowcastRow(row) {
+  return CPI_FAMILY.has(row.event_title) || Boolean(row.tier1 && row.tier1.kind);
+}
+
 // Which breakdown a Tier 1 row opens when clicked, or null (untracked rows have nothing to open).
 export function componentFor(row) {
   if (!row.tier1_tracked) return null;
-  if (CPI_FAMILY.has(row.event_title) || (row.tier1 && row.tier1.kind)) return "cleveland_nowcast";
-  return null;
+  return isNowcastRow(row) ? "cleveland_nowcast" : null;
+}
+
+// Scoring criteria shown on hover over a tracked Tier 1 row's info icon (spec §5), in plain language.
+export const CRITERIA = {
+  nowcast: "Scored when a Cleveland Fed nowcast was recorded before the release and a forecast and actual exist. "
+    + "Call = nowcast above or below the forecast by at least one rounding step. Click the row for the inputs.",
+  handLogged: "Scored when a hand-researched Tier 1 call was logged before the release. Direction only - no number.",
+};
+
+export function tier1Criteria(row) {
+  if (!row.tier1_tracked) return "";
+  return isNowcastRow(row) ? CRITERIA.nowcast : CRITERIA.handLogged;
+}
+
+// Identifies a row for the click-through panel (title + release instant is unique in event_history).
+// Epoch milliseconds, so no raw UTC date string leaks into the SAST-only markup.
+export function rowKey(row) { return `${row.event_title}|${Date.parse(row.event_time_utc)}`; }
+
+// Attributes that make a tracked row open its readings; `component` adds the inputs list beside them.
+function clickAttrs(row, view, component) {
+  const comp = component ? ` data-component="${escapeHtml(component)}"` : "";
+  return ` class="row-click" data-row="${escapeHtml(rowKey(row))}" data-view="${view}"${comp}`;
 }
 
 const RECON_CHIP = ' <span class="chip chip-none">reconstructed</span>';
@@ -62,9 +89,9 @@ export function tier1RowHtml(row) {
   const result = row.status === "pending" ? "pending" : verdictChip(call.verdict);
   const asOf = row.nowcast_as_of_utc
     ? `<div class="meta-text-sm">nowcast as of ${escapeHtml(sastText(row.nowcast_as_of_utc))}</div>` : "";
-  const metric = componentFor(row);
-  const clickable = metric ? ` class="row-click" data-component="${escapeHtml(metric)}" title="Click for the inputs behind this call"` : "";
-  return `<tr${clickable}><td>${title}${tag}${asOf}</td>`
+  const criteria = escapeHtml(tier1Criteria(row));
+  const icon = ` <span class="info-btn row-info" role="img" title="${criteria}" aria-label="${criteria}">&#9432;</span>`;
+  return `<tr${clickAttrs(row, "tier1", componentFor(row))}><td>${title}${icon}${tag}${asOf}</td>`
     + `<td>${dateCell(row)}</td><td>${escapeHtml(predicted)} <div class="meta-text-sm">${leanText(call.leans)}</div></td>`
     + `<td>${actual}</td><td>${result}</td></tr>`;
 }
@@ -74,9 +101,25 @@ export function combinedRowHtml(row) {
   const c = row.combined;
   const cell = (call) => (call == null ? "—" : `${num(call.predicted)} ${verdictChip(call.verdict)}`);
   const flag = c && c.note === "news_missing" ? ' <span class="meta-text-sm">Tier 1 only</span>' : "";
-  return `<tr><td>${title}${reconTag(row)}</td><td>${dateCell(row)}</td><td>${escapeHtml(row.forecast_text ?? "")}</td>`
+  const attrs = row.tier1_tracked ? clickAttrs(row, "combined", "combined") : "";
+  return `<tr${attrs}><td>${title}${reconTag(row)}</td><td>${dateCell(row)}</td><td>${escapeHtml(row.forecast_text ?? "")}</td>`
     + `<td>${cell(row.tier1)}</td><td>${cell(row.news)}</td><td>${row.tier1_tracked ? cell(c) + flag : "n/a"}</td>`
     + `<td>${row.status === "pending" ? "pending" : escapeHtml(row.actual_text ?? "")}</td></tr>`;
+}
+
+// Signed to 2 decimals: 0.5 -> "+0.50", -0.254 -> "-0.25".
+export function signedLean(x) { return `${x > 0 ? "+" : ""}${Number(x).toFixed(2)}`; }
+
+// "7 articles · lean +0.50" from the row's detail; "—" when neither is known.
+function articlesLeanCell(row) {
+  const d = row.detail || {};
+  const parts = [];
+  if (d.news_article_count != null) {
+    const count = Number(d.news_article_count);
+    parts.push(`${count} article${count === 1 ? "" : "s"}`);
+  }
+  if (d.news_lean != null) parts.push(`lean ${signedLean(d.news_lean)}`);
+  return parts.length ? escapeHtml(parts.join(" · ")) : "—";
 }
 
 export function sentimentRowHtml(row) {
@@ -84,9 +127,10 @@ export function sentimentRowHtml(row) {
   const title = escapeHtml(row.event_title);
   if (!n) {
     const why = row.pre_news_period ? "No articles before 12 Aug 2026" : "No news call";
-    return `<tr class="row-off"><td>${title}</td><td>${dateCell(row)}</td><td colspan="3">${why}</td></tr>`;
+    return `<tr class="row-off"><td>${title}</td><td>${dateCell(row)}</td><td>${articlesLeanCell(row)}</td>`
+      + `<td colspan="3">${why}</td></tr>`;
   }
-  return `<tr><td>${title}</td><td>${dateCell(row)}</td>`
+  return `<tr><td>${title}</td><td>${dateCell(row)}</td><td>${articlesLeanCell(row)}</td>`
     + `<td>${num(n.predicted)} <div class="meta-text-sm">${leanText(n.leans)}</div></td>`
     + `<td>${row.status === "pending" ? "pending" : escapeHtml(row.actual_text ?? "")}</td><td>${verdictChip(n.verdict)}</td></tr>`;
 }
@@ -106,7 +150,7 @@ export function pickNextRow(rows, now, method) {
 }
 
 // "2026-10-16 14:30 SAST" from a UTC ISO time (South Africa is UTC+2, no DST).
-function sastText(iso) {
+export function sastText(iso) {
   const t = toSast(iso);
   return `${t.date} ${t.time} SAST`;
 }
@@ -117,7 +161,7 @@ function stepOf(text) {
   return m ? Math.pow(10, -(m[1] ? m[1].length : 0)) : null;
 }
 
-function expectedWord(forecast, predicted, forecastText) {
+export function expectedWord(forecast, predicted, forecastText) {
   const diff = predicted - forecast;
   const step = stepOf(forecastText);
   if (step !== null && Math.abs(diff) < step - 1e-9) return "in line with consensus";

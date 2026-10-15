@@ -322,3 +322,9 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .info-panel { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin: 12px 0; }
 #stats-info { position: relative; }
 .info-close { position: absolute; top: 6px; right: 10px; background: none; border: none; font-size: 18px; cursor: pointer; z-index: 1; }
+/* Click-through: the release's readings beside the component list; they stack on narrow screens. */
+.info-pair { display: flex; flex-wrap: wrap; gap: 12px; }
+.info-pair > .info-panel { flex: 1 1 280px; min-width: 0; }
+.readings ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+.readings li { margin: 2px 0; overflow-wrap: anywhere; }
+.row-info { font-size: 14px; cursor: help; }

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   tier1RowHtml, combinedRowHtml, sentimentRowHtml, verdictChip, leanText,
   pickNextRow, briefCardHtml, scoreboardHtml, filterRows, yearsPresent, disclaimerHtml, componentFor, orderTier1,
-  toSast, emptyRowHtml, tier1BodyHtml,
+  toSast, emptyRowHtml, tier1BodyHtml, tier1Criteria, rowKey, CRITERIA,
 } from "./rows.js";
 
 const base = { event_title: "CPI m/m", event_time_utc: "2026-10-14T12:30:00+00:00", forecast: 0.3, forecast_text: "0.3%",
@@ -264,4 +264,63 @@ test("reconstructed disclaimer also shows under the Combined table when a recons
   assert.equal((disclaimerHtml([base, base], "combined", DISC).match(/RECON/g) || []).length, 1);
   assert.ok(!disclaimerHtml([{ ...base, tier1: { ...base.tier1, kind: "live" } }], "combined", DISC).includes("RECON"));
   assert.ok(!disclaimerHtml([base], "news", DISC).includes("RECON"));
+});
+
+// ---- B1: hover criteria on tracked Tier 1 rows --------------------------------------
+const NOWCAST_TEXT = "Scored when a Cleveland Fed nowcast was recorded before the release and a forecast and actual exist. "
+  + "Call = nowcast above or below the forecast by at least one rounding step. Click the row for the inputs.";
+const HAND_TEXT = "Scored when a hand-researched Tier 1 call was logged before the release. Direction only - no number.";
+const handRow = { ...base, event_title: "PPI m/m", nowcast_as_of_utc: null,
+  tier1: { predicted: null, verdict: "right", miss: null, leans: { XAUUSD: "sell" }, note: "hand-logged", kind: null } };
+
+test("tier1Criteria states the scoring rule in plain language per kind of tracked row", () => {
+  assert.equal(CRITERIA.nowcast, NOWCAST_TEXT);
+  assert.equal(CRITERIA.handLogged, HAND_TEXT);
+  assert.equal(tier1Criteria(base), NOWCAST_TEXT);
+  assert.equal(tier1Criteria({ ...base, tier1: null }), NOWCAST_TEXT);          // tracked CPI, no snapshot yet
+  assert.equal(tier1Criteria(handRow), HAND_TEXT);
+  assert.equal(tier1Criteria({ ...base, tier1_tracked: false, tier1: null }), "");
+});
+
+test("a tracked row carries an info icon whose tooltip is the criteria text", () => {
+  const html = tier1RowHtml(base);
+  assert.ok(html.includes(`title="${NOWCAST_TEXT}"`));
+  assert.ok(html.includes('class="info-btn row-info"'));
+  assert.ok(tier1RowHtml(handRow).includes(`title="${HAND_TEXT}"`));
+  assert.ok(!tier1RowHtml({ ...base, tier1_tracked: false, tier1: null }).includes("row-info"));
+});
+
+test("every tracked row is clickable by its row key; hand-logged rows open readings only (no component list)", () => {
+  const key = `CPI m/m|${Date.parse("2026-10-14T12:30:00Z")}`;
+  assert.equal(rowKey(base), key);
+  assert.ok(tier1RowHtml(base).includes(`data-row="${key}" data-view="tier1"`));
+  const hand = tier1RowHtml(handRow);
+  assert.ok(hand.includes("row-click") && hand.includes('data-row="PPI m/m|') && !hand.includes("data-component"));
+});
+
+test("row key and tooltip are escaped", () => {
+  const html = tier1RowHtml({ ...base, event_title: 'A"B<x>' });
+  assert.ok(!html.includes('A"B') && !html.includes("<x>"));
+});
+
+test("a tracked combined row opens the Combined readings; an untracked one is not clickable", () => {
+  assert.ok(combinedRowHtml(base).includes('data-view="combined"') && combinedRowHtml(base).includes('data-component="combined"'));
+  assert.ok(!combinedRowHtml({ ...base, tier1_tracked: false, tier1: null }).includes("data-row"));
+});
+
+// ---- B3: article count and lean on the News table ------------------------------------
+const newsCall = { predicted: 0.35, verdict: "wrong", leans: { XAUUSD: "buy" }, note: "scaled", kind: null };
+
+test("news row shows the article count and the signed lean to 2 decimals", () => {
+  const html = sentimentRowHtml({ ...base, news: newsCall, detail: { news_article_count: 7, news_lean: 0.5 } });
+  assert.ok(html.includes("7 articles") && html.includes("lean +0.50"));
+  const neg = sentimentRowHtml({ ...base, news: newsCall, detail: { news_article_count: 1, news_lean: -0.254 } });
+  assert.ok(neg.includes("1 article") && !neg.includes("1 articles") && neg.includes("lean -0.25"));
+});
+
+test("a no-call news row still shows any article count and lean it has, and dashes when it has none", () => {
+  const html = sentimentRowHtml({ ...base, detail: { news_article_count: 4, news_lean: 0.2 } });
+  assert.ok(html.includes("No news call") && html.includes("4 articles") && html.includes("lean +0.20"));
+  const bare = sentimentRowHtml({ ...base, pre_news_period: true, detail: null });
+  assert.ok(bare.includes("No articles before 12 Aug 2026") && bare.includes("—"));
 });
