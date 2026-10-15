@@ -80,7 +80,10 @@ CATEGORY_SIGNAL_KEYWORDS: dict[str, list[str]] = {
         "coup d'etat", "martial law", "ceasefire collapses", "troops mobilized",
         # Attack wording that has no "strike" in it (2026-10-08: "explosions in Riyadh" was never triaged).
         # Ambiguous on purpose -> goes to the classifier, not a hard rule.
-        "explosion", "blast", "bombing", "drone attack", "drone strike", "missile attack",
+        "explosion", "bombing",
+        # Bare "blast" matched the verb ("Omar blasts raid", "plan to blast a canyon"); only the noun forms:
+        "blast at", "blast near", "blast rocks", "blasts rock", "blast hits", "blast kills", "blast wounds", "blast injures",
+        "drone attack", "drone strike", "missile attack",
     ],
     "central_bank": [
         "emergency meeting", "surprise rate move", "central bank independence",

@@ -34,8 +34,8 @@ def test_no_match_returns_matched_false():
     # any CATEGORY_SIGNAL_KEYWORDS phrase word (see
     # test_partial_keyword_overlap_gets_positive_near_miss_score for why
     # that matters -- ordinary words like "award" or "wins" can
-    # coincidentally contain a keyword's substring, e.g. "war" in "award").
-    result = triage_article(_article("Cat show draws big crowd today"))
+    # coincidentally contain a keyword's substring, e.g. "war" in "award", or "at" in "cat" once the phrase "blast at" existed).
+    result = triage_article(_article("Puppy show draws big crowd today"))
     assert result.matched is False
     assert result.category is None
     assert result.rule_tier_hit is False
@@ -78,3 +78,24 @@ def test_attack_wording_without_the_exact_strike_phrases_still_triages_as_geopol
     result = triage_article(_article(headline))
     assert result.matched is True
     assert result.category == "geopolitical_conflict"
+
+
+@pytest.mark.parametrize("headline", [
+    "US sued over plan to blast Utah canyon inscribed by 19th century 'Buffalo Soldiers'",
+    "Rep. Ilhan Omar blasts federal criminal raid on home: 'I will not be silenced'",
+    "Analyst blasts central bank for ignoring the bond market",
+])
+def test_blast_as_a_verb_does_not_triage_as_geopolitical(headline):
+    # Regression from the 2026-10-08 keyword addition: bare "blast" matched the verb ("blasts",
+    # "to blast") and pushed two unrelated stories as geopolitical Medium alerts.
+    assert triage_article(_article(headline)).matched is False
+
+
+@pytest.mark.parametrize("headline", [
+    "Loud blast at Riyadh airport as travellers evacuated and airlines cancel flights",
+    "Multiple people wounded in blast at Riyadh airport, say eyewitnesses",
+    "Blast rocks Saudi oil facility, fire reported",
+    "Blast near Aramco site kills two",
+])
+def test_blast_as_an_explosion_still_triages(headline):
+    assert triage_article(_article(headline)).category == "geopolitical_conflict"
