@@ -72,3 +72,40 @@ def test_default_window_catches_a_story_recovered_six_hours_later():
         "energy", conn, now_utc=now,
     )
     assert match == existing_id
+
+
+# --- story-level dedup for ongoing sagas (impact audit 2026-10-15: 11 diesel-ban alerts, 5 for one hurricane) ---
+
+def _hours_ago(h: float) -> dt.datetime:
+    return dt.datetime.now(UTC) - dt.timedelta(hours=h)
+
+
+def test_trade_policy_saga_headlines_sharing_a_topic_phrase_merge_across_days():
+    conn = store.get_connection(":memory:")
+    first = _seed_alert(conn, "Trump administration is examining whether a diesel export ban is feasible", "trade_policy", _hours_ago(40))
+    assert find_existing_alert("Trump 'thinking about' diesel export ban, but says it could hurt gasoline", "trade_policy", conn) == first
+
+
+def test_trade_policy_headlines_on_different_topics_do_not_merge():
+    conn = store.get_connection(":memory:")
+    _seed_alert(conn, "Trump administration is examining whether a diesel export ban is feasible", "trade_policy", _hours_ago(2))
+    assert find_existing_alert("Retaliatory tariffs announced on Chinese steel imports", "trade_policy", conn) is None
+
+
+def test_topic_merge_has_a_72_hour_limit():
+    conn = store.get_connection(":memory:")
+    _seed_alert(conn, "Trump administration is examining whether a diesel export ban is feasible", "trade_policy", _hours_ago(80))
+    assert find_existing_alert("Oil industry warns a diesel export ban will raise fuel prices", "trade_policy", conn) is None
+
+
+def test_same_named_storm_merges_but_a_different_storm_does_not():
+    conn = store.get_connection(":memory:")
+    polo = _seed_alert(conn, "Category 4 Hurricane Polo threatens Mexico's coast, landfall expected Monday", "natural_disaster_supply_chain", _hours_ago(30))
+    assert find_existing_alert("Hurricane Polo hits northwest Mexico's Sonora state", "natural_disaster_supply_chain", conn) == polo
+    assert find_existing_alert("Hurricane Simon rapidly strengthens off Mexico's Pacific coast", "natural_disaster_supply_chain", conn) is None
+
+
+def test_energy_and_geopolitical_get_no_topic_merge_so_a_new_attack_is_never_buried():
+    conn = store.get_connection(":memory:")
+    _seed_alert(conn, "Iran says Strait of Hormuz will not reopen until conditions are met", "energy", _hours_ago(2))
+    assert find_existing_alert("More tankers struck in the Middle East as Iran reiterates conditions for reopening the Strait of Hormuz", "energy", conn) is None

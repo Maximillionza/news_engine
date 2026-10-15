@@ -43,6 +43,8 @@ OLLAMA_TIMEOUT_SECONDS = 45.0      # measured on this CPU-only box: warm ~4-5 s,
 OLLAMA_NUM_CTX = 4096              # the prompt is ~400 tokens. Ollama otherwise loads this model with a 131072-token context = an ~18 GB footprint (measured via `ollama ps`) -- unusable on a 16 GB machine, and it made cold loads far slower
 OLLAMA_KEEP_ALIVE = -1           # -1 = never unload. Shock candidates can be hours apart, so any finite value means a cold load (and a timeout risk) on most calls; the 3B model costs ~3 GB of RAM
 OLLAMA_COOLDOWN_MINUTES = 5
+EARTHQUAKE_MIN_MAGNITUDE = 6.5  # earthquake headlines stating a magnitude below this are not alerted (alert audit 2026-10-15: six M5-6 alerts, no measurable move in XAUUSD/US30); a headline with no stated magnitude is never filtered
+TOPIC_DEDUP_WINDOW_HOURS = 72.0  # trade_policy / named-storm repeats merge into the earlier alert for this long; other categories keep the 24 h similarity-only window
 OLLAMA_EXECUTABLE = r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"  # started with `serve` when a call is refused (the tray app is not a service; its auto-updater stops it, 2026-10-11)
 OLLAMA_STARTUP_WAIT_SECONDS = 20.0  # how long one classification waits for a freshly started server to answer
 # Total LLM wall-clock allowed per poll cycle. Once spent, remaining

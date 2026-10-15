@@ -99,3 +99,29 @@ def test_blast_as_a_verb_does_not_triage_as_geopolitical(headline):
 ])
 def test_blast_as_an_explosion_still_triages(headline):
     assert triage_article(_article(headline)).category == "geopolitical_conflict"
+
+
+# --- earthquake magnitude floor (impact audit 2026-10-15: 6 earthquake alerts, mostly M5-6, no measurable market effect) ---
+
+@pytest.mark.parametrize("headline", [
+    "Magnitude 5.7 earthquake strikes Mindanao, Philippines, GFZ says - Reuters",
+    "Magnitude 5.3 earthquake hits Indonesia's Minahasa, EMSC says - Reuters",
+    "Earthquake of magnitude 6.1 shakes northern Chile",
+    "M4.9 earthquake rattles Tokyo",
+])
+def test_small_earthquakes_below_the_floor_are_not_alerts(headline):
+    assert triage_article(_article(headline)).matched is False
+
+
+@pytest.mark.parametrize("headline", [
+    "Panama suffers over 200 aftershocks after Friday's 7.7-magnitude earthquake - Reuters",
+    "Magnitude 6.8 earthquake strikes off Taiwan, chip plants evacuated",
+    "Strong earthquake strikes Japan, tsunami warning issued",  # no magnitude stated: never filtered on a guess
+])
+def test_big_or_unquantified_earthquakes_still_alert(headline):
+    assert triage_article(_article(headline)).category == "natural_disaster_supply_chain"
+
+
+def test_a_small_quake_near_a_real_supply_chain_phrase_is_not_suppressed():
+    result = triage_article(_article("Magnitude 5.2 earthquake forces port closed at Kaohsiung"))
+    assert result.matched is True

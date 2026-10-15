@@ -1,11 +1,13 @@
 """Pure, no-I/O rule-based first pass over each fetched article."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Optional
 
 from data_layer.news_feed import NewsArticle
 from alerting.taxonomy import CATEGORY_SIGNAL_KEYWORDS, HARD_RULE_PATTERNS, NEAR_MISS_LOG_THRESHOLD
+from config.settings import EARTHQUAKE_MIN_MAGNITUDE
 
 
 @dataclass
@@ -47,6 +49,32 @@ def _partial_match_score(text: str) -> tuple[Optional[str], float]:
     return best_category, best_score
 
 
+_MAGNITUDE_PATTERNS = (
+    re.compile(r"magnitude[\s-]*(\d+(?:\.\d+)?)"),
+    re.compile(r"(\d+(?:\.\d+)?)[\s-]*magnitude"),
+    re.compile(r"\bm\s?(\d+(?:\.\d+)?)\b"),
+)
+
+
+def _stated_magnitude(text: str) -> Optional[float]:
+    for pattern in _MAGNITUDE_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            return float(match.group(1))
+    return None
+
+
+def _is_minor_earthquake_only(text: str, category: Optional[str], hits: list[str]) -> bool:
+    """
+    True when the ONLY reason an article matched is the word "earthquake" and it states a
+    magnitude under EARTHQUAKE_MIN_MAGNITUDE. No stated magnitude -> never filtered.
+    """
+    if category != "natural_disaster_supply_chain" or hits != ["earthquake"]:
+        return False
+    magnitude = _stated_magnitude(text)
+    return magnitude is not None and magnitude < EARTHQUAKE_MIN_MAGNITUDE
+
+
 def triage_article(article: NewsArticle) -> TriageResult:
     """
     HARD_RULE_PATTERNS checked first (unambiguous -> rule_tier_hit=True,
@@ -73,7 +101,7 @@ def triage_article(article: NewsArticle) -> TriageResult:
         if len(hits) > len(best_hits):
             best_category, best_hits = category, hits
 
-    if best_hits:
+    if best_hits and not _is_minor_earthquake_only(text, best_category, best_hits):
         return TriageResult(matched=True, category=best_category, rule_tier_hit=False, matched_keywords=best_hits, near_miss_score=None)
 
     # No match at all -- record a real partial-match score (word-level
