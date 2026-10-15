@@ -1,6 +1,6 @@
 # Stats tab (Combined / Tier 1 / News Sentiment) — design
 
-Date: 2026-10-15. Status: Implemented on branch stats-tab (pending owner approval to merge); see the Phase 0 report for the nowcast-history correction. Author: Claude, with Masood.
+Date: 2026-10-15. Status: Implemented on branch stats-tab (pending owner approval to merge); see the Phase 0 report for the nowcast-history correction. Not built: the Tier 1 Source filter (§5; reconstructed rows are tagged instead), the "Brent / gasoline move since the nowcast snapshot" line (§6.1), scheduled capture wiring (release-eve snapshot and the Monday task's structured nowcast field, §8), and the workbook indicator lists for PPI / NFP / FOMC / GDP / ISM / Retail Sales (§6.2; the workbook is not tracked in git). Author: Claude, with Masood.
 Mockups reviewed with the owner in-session (v1–v3); numbers in them were sample data.
 
 ## 1. Purpose
