@@ -8,8 +8,9 @@ get_scored_nowcast_snapshot (as_of_utc <= release); print calls and accumulator 
 scored_at_utc <= release; hand-logged Tier 1 calls use logged_at_utc <= release. The backtest_store
 "latest for occurrence" helpers are deliberately NOT used here, because they return the newest row even
 if it was written after the number came out (Phase 0 found 9 such accumulator rows in the live DB).
-Every stored stamp is a UTC "+00:00" ISO string (checked against the live DB 2026-10-15), so the release
-time is normalised to the same format and compared as a string, like get_scored_nowcast_snapshot does.
+Occurrence keys and time bounds are compared as instants via SQLite julianday(), not as strings, so an
+equivalent stored form ('Z', a space separator, another offset) neither drops a row nor slips past the
+bound. julianday() resolves to the millisecond, so a stamp under 1 ms after the release counts as at it.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Optional
 
+from config.settings import EVENT_SURPRISE_DIRECTION
 from scoring.backtest_store import get_scored_nowcast_snapshot
 from webapp.history import _implied_surprise_direction
 from webapp.stats_methods import (
@@ -79,8 +81,9 @@ def _parse_time(value: str) -> dt.datetime:
 def _print_call_before(bt_conn: sqlite3.Connection, title: str, release_iso: str) -> Optional[sqlite3.Row]:
     return bt_conn.execute(
         "SELECT predicted_vs_forecast, confidence FROM print_predictions "
-        "WHERE event_title = ? AND event_time_utc = ? AND scored_at_utc <= ? "
-        "ORDER BY scored_at_utc DESC, id DESC LIMIT 1",
+        "WHERE event_title = ? AND julianday(event_time_utc) = julianday(?) "
+        "AND julianday(scored_at_utc) <= julianday(?) "
+        "ORDER BY julianday(scored_at_utc) DESC, id DESC LIMIT 1",
         (title, release_iso, release_iso),
     ).fetchone()
 
@@ -88,8 +91,9 @@ def _print_call_before(bt_conn: sqlite3.Connection, title: str, release_iso: str
 def _accumulator_call_before(bt_conn: sqlite3.Connection, title: str, release_iso: str) -> Optional[sqlite3.Row]:
     return bt_conn.execute(
         "SELECT direction, probability FROM predictions "
-        "WHERE event_title = ? AND instrument = ? AND event_time_utc = ? AND scored_at_utc <= ? "
-        "ORDER BY scored_at_utc DESC, id DESC LIMIT 1",
+        "WHERE event_title = ? AND instrument = ? AND julianday(event_time_utc) = julianday(?) "
+        "AND julianday(scored_at_utc) <= julianday(?) "
+        "ORDER BY julianday(scored_at_utc) DESC, id DESC LIMIT 1",
         (title, NEWS_INSTRUMENT, release_iso, release_iso),
     ).fetchone()
 
@@ -97,8 +101,9 @@ def _accumulator_call_before(bt_conn: sqlite3.Connection, title: str, release_is
 def _hand_logged_tier1_before(bt_conn: sqlite3.Connection, title: str, release_iso: str) -> Optional[sqlite3.Row]:
     return bt_conn.execute(
         "SELECT predicted_direction FROM tier1_predictions "
-        "WHERE event_title = ? AND instrument = ? AND event_time_utc = ? AND logged_at_utc <= ? "
-        "ORDER BY logged_at_utc DESC, id DESC LIMIT 1",
+        "WHERE event_title = ? AND instrument = ? AND julianday(event_time_utc) = julianday(?) "
+        "AND julianday(logged_at_utc) <= julianday(?) "
+        "ORDER BY julianday(logged_at_utc) DESC, id DESC LIMIT 1",
         (title, NEWS_INSTRUMENT, release_iso, release_iso),
     ).fetchone()
 
@@ -217,6 +222,10 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
         None if acc_row is None else acc_row["probability"],
     )
     sn = news_surprise(lean, news_scale(prior))
+    if title not in EVENT_SURPRISE_DIRECTION:
+        # Ruling 3: an unmapped title never gets a news call. news_lean's print-call branch does not check
+        # the map, so it is enforced here; sn is cleared too, so Combined treats it as news missing.
+        sn = None
     news = None if sn is None else _call(forecast + sn, sn, forecast, tol, actual, title, note="scaled")
 
     # Combined: 70/30 blend; Tier 1 only (flagged news_missing) when there is no news; n/a without Tier 1.
@@ -233,16 +242,22 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
 # --- payloads ---------------------------------------------------------------------------------
 
 def _unit(rows: list[StatsRow]) -> str:
-    """First non-digit trailing character of a forecast: '0.3%' -> '%', '89K' -> 'K'."""
+    """First non-digit trailing character of a numeric forecast: '0.3%' -> '%', '89K' -> 'K' ('N/A' skipped)."""
     for row in rows:
-        text = (row.forecast_text or "").strip()
-        if text and not text[-1].isdigit():
+        if parse_number(row.forecast_text) is None:
+            continue
+        text = row.forecast_text.strip()
+        if not text[-1].isdigit():
             return text[-1]
     return ""
 
 
 def build_chart(rows: list[StatsRow], method: str) -> dict:
-    """One point per scoreable occurrence; a month with no call has predicted/verdict None (a gap, not 0)."""
+    """
+    One point per scoreable occurrence; a month with no call has predicted/verdict None (a gap, not 0).
+    `label` is the x-axis text: 'YYYY-MM' when every month has at most one point, otherwise 'YYYY-MM-DD'
+    on every point (weekly titles such as Unemployment Claims would otherwise repeat a month label).
+    """
     if method not in METHODS:
         raise ValueError(f"method must be one of {METHODS}")
     points = []
@@ -256,6 +271,10 @@ def build_chart(rows: list[StatsRow], method: str) -> dict:
             "predicted": None if call is None else call.predicted,
             "verdict": None if call is None else call.verdict,
         })
+    months = [p["month"] for p in points]
+    label_format = "%Y-%m" if len(months) == len(set(months)) else "%Y-%m-%d"
+    for point in points:
+        point["label"] = dt.datetime.fromisoformat(point["event_time_utc"]).strftime(label_format)
     return {"method": method, "unit": _unit(rows), "points": points}
 
 

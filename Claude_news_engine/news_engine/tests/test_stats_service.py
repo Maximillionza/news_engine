@@ -313,3 +313,89 @@ def test_one_failing_row_degrades_to_not_scoreable_and_the_rest_still_render(con
 def test_chart_rejects_an_unknown_method():
     with pytest.raises(ValueError):
         svc.build_chart([], "magic")
+
+
+# --- review fix round 1 -----------------------------------------------------------------------
+
+def test_print_call_on_a_title_without_a_surprise_map_gives_no_news_call(conns):
+    dash, bt = conns
+    title = "Federal Funds Rate"
+    assert title not in EVENT_SURPRISE_DIRECTION
+    for m in (1, 3, 6):                                                  # enough history for a scale
+        _event(dash, title, _t(m), "4.25%", "4.00%")
+    _event(dash, title, _t(9), "4.25%", "4.00%")
+    _print_call(bt, title, _t(9), "higher", 0.75, scored_at=_t(9) - dt.timedelta(days=1))
+    row = svc.build_rows(dash, bt, event_title=title)[-1]
+    assert row.status == "scored"
+    assert row.news is None
+    assert row.combined is None                                          # same as without the print call: no Tier 1
+
+
+def _raw_insert(bt, table, values):
+    columns = ", ".join(values)
+    marks = ", ".join("?" for _ in values)
+    bt.execute(f"INSERT INTO {table} ({columns}) VALUES ({marks})", tuple(values.values()))
+    bt.commit()
+
+
+def test_lookups_match_equivalent_time_formats_not_just_identical_strings(conns):
+    dash, bt = conns
+    _cpi_history(dash)
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    # Same instants as the release / a day before it, written as 'Z' and with a space separator.
+    _raw_insert(bt, "print_predictions", {
+        "event_title": "CPI m/m", "event_time_utc": "2026-10-14T12:30:00Z", "predicted_vs_forecast": "higher",
+        "confidence": 0.5, "article_count": 7, "scored_at_utc": "2026-10-13 12:30:00+00:00",
+    })
+    row = svc.build_rows(dash, bt, event_title="CPI m/m")[-1]
+    assert row.news.predicted == pytest.approx(0.3 + 0.5 * 0.1)
+
+
+def test_time_bounds_compare_instants_not_strings_across_offsets(conns):
+    dash, bt = conns
+    _event(dash, "PPI m/m", _t(10), "0.2%", "0.5%")
+    # 14:00+02:00 is 12:00Z, BEFORE the 12:30Z release (a string compare would call it later).
+    _raw_insert(bt, "tier1_predictions", {
+        "event_title": "PPI m/m", "instrument": "XAUUSD", "event_time_utc": "2026-10-14 12:30:00+00:00",
+        "value": "hot", "confidence": "Likely", "source": "BLS", "predicted_direction": "bearish",
+        "logged_at_utc": "2026-10-14T14:00:00+02:00",
+    })
+    # 08:00-05:00 is 13:00Z, AFTER the release (a string compare would call it earlier) -- must be ignored.
+    _raw_insert(bt, "tier1_predictions", {
+        "event_title": "PPI m/m", "instrument": "XAUUSD", "event_time_utc": "2026-10-14T12:30:00Z",
+        "value": "cool", "confidence": "Likely", "source": "BLS", "predicted_direction": "bullish",
+        "logged_at_utc": "2026-10-14T08:00:00-05:00",
+    })
+    _raw_insert(bt, "predictions", {
+        "event_title": "PPI m/m", "instrument": "XAUUSD", "event_time_utc": "2026-10-14T12:30:00Z",
+        "scored_at_utc": "2026-10-14T08:00:00-05:00", "probability": 0.9, "direction": "bearish",
+        "confidence": 0.5, "article_count": 7, "contradiction_flag": 0,
+    })
+    row = svc.build_rows(dash, bt)[-1]
+    assert row.tier1.verdict == "right"        # the 12:00Z bearish call, not the 13:00Z bullish one
+    assert row.news is None                    # the only accumulator row is after the release (and no scale)
+
+
+def test_unit_ignores_rows_whose_forecast_is_not_a_number(conns):
+    dash, bt = conns
+    _event(dash, "CPI m/m", _t(9), "N/A", "0.4%")
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    assert svc.build_chart(svc.build_rows(dash, bt, event_title="CPI m/m"), "tier1")["unit"] == "%"
+
+
+def test_chart_label_is_the_month_for_monthly_series(conns):
+    dash, bt = conns
+    _event(dash, "CPI m/m", _t(9), "0.3%", "0.4%")
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    points = svc.build_chart(svc.build_rows(dash, bt, event_title="CPI m/m"), "tier1")["points"]
+    assert [p["label"] for p in points] == ["2026-09", "2026-10"]
+    assert [p["month"] for p in points] == ["2026-09", "2026-10"]
+
+
+def test_chart_label_is_the_date_when_any_month_repeats(conns):
+    dash, bt = conns
+    for month, day in [(9, 4), (10, 2), (10, 9)]:
+        _event(dash, "Unemployment Claims", _t(month, day), "220K", "230K")
+    points = svc.build_chart(svc.build_rows(dash, bt, event_title="Unemployment Claims"), "news")["points"]
+    assert [p["label"] for p in points] == ["2026-09-04", "2026-10-02", "2026-10-09"]
+    assert [p["month"] for p in points] == ["2026-09", "2026-10", "2026-10"]
