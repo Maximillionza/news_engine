@@ -95,14 +95,18 @@
     <button id="stats-sub-combined" class="tab-btn active" role="tab" aria-selected="true" aria-controls="stats-pane-combined" data-sub="combined">Combined</button>
     <button id="stats-sub-tier1" class="tab-btn" role="tab" aria-selected="false" aria-controls="stats-pane-tier1" data-sub="tier1">Tier 1</button>
     <button id="stats-sub-news" class="tab-btn" role="tab" aria-selected="false" aria-controls="stats-pane-news" data-sub="news">News sentiment</button>
+    <button id="stats-sub-reaction" class="tab-btn" role="tab" aria-selected="false" aria-controls="stats-pane-reaction" data-sub="reaction">Market reaction</button>
   </div>
   <div id="stats-brief"></div>
   <div id="stats-disclaimer" class="stale-notice" style="display:none"></div>
   <div class="stats-filters">
     <label id="stats-event-wrap">Event <select id="stats-event"></select></label>
+    <label id="stats-instrument-wrap" style="display:none">Instrument <select id="stats-instrument"></select></label>
+    <span id="stats-window-note" style="display:none">Window: 5 min after release</span>
     <label>Year <select id="stats-year"></select></label>
     <label>Month <select id="stats-month"></select></label>
   </div>
+  <div id="stats-impact-chips"></div>
 
   <div id="stats-pane-combined" role="tabpanel" aria-labelledby="stats-sub-combined">
     <div class="stats-panel">
@@ -147,6 +151,18 @@
         <tbody id="stats-news-body"></tbody>
       </table>
     </div>
+  </div>
+
+  <div id="stats-pane-reaction" style="display:none" role="tabpanel" aria-labelledby="stats-sub-reaction">
+    <div id="stats-reaction-error" class="stale-notice" style="display:none"></div>
+    <div class="stats-scroll">
+      <table class="stats-table">
+        <thead id="stats-reaction-head"></thead>
+        <tbody id="stats-reaction-body"></tbody>
+      </table>
+    </div>
+    <div id="stats-reaction-disclaimers"></div>
+    <div id="stats-reaction-detail" style="display:none"></div>
   </div>
 
   <div id="stats-info" style="display:none"></div>

@@ -77,3 +77,13 @@ export function fetchStatsScoreboard(params = {}) {
 export function fetchStatsComponents(metric) {
   return fetchJson(`/api/stats/components/${encodeURIComponent(metric)}`);
 }
+
+// Market reaction sub-tab. params: instrument, impacts (comma list), year, month (leaderboard); plus event (releases).
+// The Stats helpers above take the same `impacts` param through their params object.
+export function fetchReactionLeaderboard(params = {}) {
+  return fetchJson(`/api/stats/reaction/leaderboard?${new URLSearchParams(params)}`);
+}
+
+export function fetchReactionReleases(params) {
+  return fetchJson(`/api/stats/reaction/releases?${new URLSearchParams(params)}`);
+}

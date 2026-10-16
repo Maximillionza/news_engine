@@ -316,8 +316,21 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .chip-wrong { background: #ffebee; color: #c62828; }
 .chip-none { background: #eee; color: #666; }
 .row-off { color: #999; }
+/* Shared impact chips (all four Stats sub-tabs): toggle buttons, a pressed one is filled. */
+.impact-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.impact-chip { background: none; border: 1px solid var(--border); padding: 4px 10px; border-radius: 14px; font-size: 12px; cursor: pointer; }
+.impact-chip.impact-chip-on { background: #222; color: #fff; border-color: #222; }
+/* Market reaction: drill-down panel and the cluster list inside a drill-down row. */
+.reaction-detail { position: relative; }
+.reaction-close { position: absolute; top: 6px; right: 10px; background: none; border: none; font-size: 18px; cursor: pointer; z-index: 1; }
+.cluster-list { margin: 0; padding-left: 16px; }
+.cluster-list li { margin: 2px 0; }
+#stats-window-note { font-size: 13px; align-self: center; }
+/* Narrow screens: the tables scroll inside .stats-scroll instead of squeezing the columns. */
+#stats-pane-reaction .stats-table { min-width: 640px; }
 .row-click { cursor: pointer; }
 .row-click:hover { background: #f0f4ff; }
+.row-click:focus-visible { outline: 2px solid #1565c0; outline-offset: -2px; }
 .brief-card { background: #fff; border-left: 4px solid #1565c0; border-radius: 4px; padding: 10px 12px; margin: 8px 0; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
 .info-panel { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin: 12px 0; }
 #stats-info { position: relative; }
