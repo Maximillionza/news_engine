@@ -221,7 +221,8 @@ def _has_table(conn: Optional[sqlite3.Connection], name: str) -> bool:
 def _existing_reaction_keys(conn: Optional[sqlite3.Connection], symbol: str) -> set[str]:
     if not _has_table(conn, "release_reactions"):
         return set()
-    return set(backtest_store.get_release_reactions(conn, symbol, REACTION_BASELINE_QUANTILE))
+    return set(backtest_store.get_release_reactions(conn, symbol, REACTION_BASELINE_QUANTILE,
+                                                    REACTION_MIN_MULTIPLE))
 
 
 def _stored_baselines(conn: Optional[sqlite3.Connection], symbol: str) -> dict[int, float]:

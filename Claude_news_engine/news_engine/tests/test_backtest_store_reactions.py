@@ -23,7 +23,7 @@ def _ok(conn, p0=2000.0, p5=2005.0, when=RELEASE, **kw):
 
 def test_record_then_get_returns_row_with_derived_move_and_pct(conn):
     row_id = _ok(conn, typical_abs_move=3.0, reaction="buy")
-    rows = bs.get_release_reactions(conn, "XAUUSD", 0.5)
+    rows = bs.get_release_reactions(conn, "XAUUSD", 0.5, 1.0)
     assert list(rows) == [KEY]
     row = rows[KEY]
     assert row["id"] == row_id
@@ -40,7 +40,7 @@ def test_record_then_get_returns_row_with_derived_move_and_pct(conn):
 
 def test_negative_move_is_derived(conn):
     _ok(conn, p0=2000.0, p5=1990.0, reaction="sell")
-    row = bs.get_release_reactions(conn, "XAUUSD", 0.5)[KEY]
+    row = bs.get_release_reactions(conn, "XAUUSD", 0.5, 1.0)[KEY]
     assert row["move"] == pytest.approx(-10.0)
     assert row["move_pct"] == pytest.approx(-0.5)
 
@@ -50,19 +50,19 @@ def test_duplicate_is_ignored_not_overwritten_and_returns_existing_id(conn):
     second = _ok(conn, p5=2100.0)
     assert second == first
     assert conn.execute("SELECT COUNT(*) FROM release_reactions").fetchone()[0] == 1
-    assert bs.get_release_reactions(conn, "XAUUSD", 0.5)[KEY]["p5"] == pytest.approx(2005.0)
+    assert bs.get_release_reactions(conn, "XAUUSD", 0.5, 1.0)[KEY]["p5"] == pytest.approx(2005.0)
 
 
 def test_same_time_different_instrument_is_a_separate_row(conn):
     a = _ok(conn)
     b = bs.record_release_reaction(conn, RELEASE, "EURUSD", "ok", p0=1.1, p5=1.101, baseline_quantile=0.5, reaction_multiple=1.0)
     assert a != b
-    assert list(bs.get_release_reactions(conn, "EURUSD", 0.5)) == [KEY]
+    assert list(bs.get_release_reactions(conn, "EURUSD", 0.5, 1.0)) == [KEY]
 
 
 def test_offset_form_time_is_normalised_and_found_under_utc_key(conn):
     _ok(conn, when=dt.datetime(2026, 10, 14, 7, 30, tzinfo=EST))      # == 12:30Z
-    rows = bs.get_release_reactions(conn, "XAUUSD", 0.5)
+    rows = bs.get_release_reactions(conn, "XAUUSD", 0.5, 1.0)
     assert list(rows) == [KEY]
     # same instant in another offset is a duplicate, not a new row
     _ok(conn, when=RELEASE)
@@ -94,7 +94,7 @@ def test_ok_row_requires_both_prices_and_nonzero_p0(conn):
 
 def test_no_data_row_stores_null_prices_and_derived_fields(conn):
     row_id = bs.record_release_reaction(conn, RELEASE, "XAUUSD", "no_data", typical_abs_move=2.5, baseline_quantile=0.5, reaction_multiple=1.0)
-    row = bs.get_release_reactions(conn, "XAUUSD", 0.5)[KEY]
+    row = bs.get_release_reactions(conn, "XAUUSD", 0.5, 1.0)[KEY]
     assert row["id"] == row_id
     assert row["status"] == "no_data"
     for col in ("p0", "p5", "move", "move_pct", "reaction"):
@@ -127,15 +127,15 @@ def test_negative_typical_abs_move_is_rejected(conn):
 
 def test_reaction_none_text_is_stored_and_python_none_is_null(conn):
     _ok(conn, reaction="none")
-    assert bs.get_release_reactions(conn, "XAUUSD", 0.5)[KEY]["reaction"] == "none"
+    assert bs.get_release_reactions(conn, "XAUUSD", 0.5, 1.0)[KEY]["reaction"] == "none"
     later = dt.datetime(2026, 10, 15, 12, 30, tzinfo=UTC)
     _ok(conn, when=later)
-    assert bs.get_release_reactions(conn, "XAUUSD", 0.5)[later.isoformat()]["reaction"] is None
+    assert bs.get_release_reactions(conn, "XAUUSD", 0.5, 1.0)[later.isoformat()]["reaction"] is None
 
 
 def test_get_reactions_empty_for_unknown_instrument(conn):
     _ok(conn)
-    assert bs.get_release_reactions(conn, "EURUSD", 0.5) == {}
+    assert bs.get_release_reactions(conn, "EURUSD", 0.5, 1.0) == {}
 
 
 # ---- baselines ----
@@ -219,12 +219,12 @@ def test_period_start_after_end_is_rejected_but_equal_is_allowed(conn):
 
 # ---- versioning by baseline quantile (owner ruling 2026-10-16: 75th percentile) ----
 
-def test_reaction_row_stores_its_quantile_and_multiple_with_defaults(conn):
+def test_reaction_row_stores_its_quantile_and_multiple(conn):
     _ok(conn)
     _ok(conn, when=dt.datetime(2026, 10, 15, 12, 30, tzinfo=UTC), baseline_quantile=0.75, reaction_multiple=1.5)
-    old = bs.get_release_reactions(conn, "XAUUSD", 0.5)[KEY]
+    old = bs.get_release_reactions(conn, "XAUUSD", 0.5, 1.0)[KEY]
     assert (old["baseline_quantile"], old["reaction_multiple"]) == (0.5, 1.0)
-    new = bs.get_release_reactions(conn, "XAUUSD", 0.75)["2026-10-15T12:30:00+00:00"]
+    new = bs.get_release_reactions(conn, "XAUUSD", 0.75, 1.5)["2026-10-15T12:30:00+00:00"]
     assert (new["baseline_quantile"], new["reaction_multiple"]) == (0.75, 1.5)
 
 
@@ -233,14 +233,14 @@ def test_a_row_under_quantile_0_5_does_not_block_a_row_under_0_75(conn):
     second = _ok(conn, p5=2009.0, baseline_quantile=0.75)
     assert first != second
     assert conn.execute("SELECT COUNT(*) FROM release_reactions").fetchone()[0] == 2
-    assert bs.get_release_reactions(conn, "XAUUSD", 0.5)[KEY]["p5"] == pytest.approx(2005.0)
-    assert bs.get_release_reactions(conn, "XAUUSD", 0.75)[KEY]["p5"] == pytest.approx(2009.0)
+    assert bs.get_release_reactions(conn, "XAUUSD", 0.5, 1.0)[KEY]["p5"] == pytest.approx(2005.0)
+    assert bs.get_release_reactions(conn, "XAUUSD", 0.75, 1.0)[KEY]["p5"] == pytest.approx(2009.0)
     assert _ok(conn, p5=2100.0, baseline_quantile=0.75) == second          # still idempotent per quantile
 
 
 def test_reaction_getter_never_mixes_quantiles(conn):
     _ok(conn)
-    assert bs.get_release_reactions(conn, "XAUUSD", 0.75) == {}
+    assert bs.get_release_reactions(conn, "XAUUSD", 0.75, 1.0) == {}
 
 
 @pytest.mark.parametrize("kw", [
@@ -279,6 +279,8 @@ def test_getters_require_the_quantile_argument(conn):
     with pytest.raises(TypeError):
         bs.get_release_reactions(conn, "XAUUSD")
     with pytest.raises(TypeError):
+        bs.get_release_reactions(conn, "XAUUSD", 0.75)          # the multiple is required too
+    with pytest.raises(TypeError):
         bs.get_latest_reaction_baselines(conn, "XAUUSD")
 
 
@@ -305,3 +307,35 @@ def test_baseline_column_is_named_baseline_abs_move(conn):
     assert "baseline_abs_move" in columns and "median_abs_move" not in columns
     bs.record_reaction_baseline(conn, "XAUUSD", 12, 4.5, 50, P_START, P_END_1, quantile=0.75)
     assert conn.execute("SELECT baseline_abs_move FROM reaction_baselines").fetchone()[0] == 4.5
+
+
+# ---- versioning by reaction multiple (final fix wave A) ----
+
+def test_a_row_at_multiple_1_never_blocks_or_mixes_with_one_at_1_5(conn):
+    at_1 = _ok(conn, p5=2005.0, baseline_quantile=0.75, reaction_multiple=1.0, reaction="buy")
+    at_15 = _ok(conn, p5=2005.0, baseline_quantile=0.75, reaction_multiple=1.5, reaction="none")
+    assert at_1 != at_15
+    assert conn.execute("SELECT COUNT(*) FROM release_reactions").fetchone()[0] == 2
+    assert bs.get_release_reactions(conn, "XAUUSD", 0.75, 1.0)[KEY]["reaction"] == "buy"
+    assert bs.get_release_reactions(conn, "XAUUSD", 0.75, 1.5)[KEY]["reaction"] == "none"
+    assert bs.get_release_reactions(conn, "XAUUSD", 0.75, 2.0) == {}
+    # still idempotent per (quantile, multiple), and the returned id is that version's row
+    assert _ok(conn, p5=2100.0, baseline_quantile=0.75, reaction_multiple=1.5) == at_15
+    assert _ok(conn, p5=2100.0, baseline_quantile=0.75, reaction_multiple=1.0) == at_1
+
+
+def test_version_columns_have_no_default_so_a_raw_insert_without_them_fails(conn):
+    import sqlite3
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO release_reactions (event_time_utc, instrument, status, reaction_multiple, "
+                     "bar_source, computed_at_utc) VALUES (?,?,?,?,?,?)", (KEY, "XAUUSD", "no_data", 1.0, "t", KEY))
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO release_reactions (event_time_utc, instrument, status, baseline_quantile, "
+                     "bar_source, computed_at_utc) VALUES (?,?,?,?,?,?)", (KEY, "XAUUSD", "no_data", 0.75, "t", KEY))
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO reaction_baselines (instrument, utc_hour, baseline_abs_move, n_windows, "
+                     "period_start_utc, period_end_utc, computed_at_utc) VALUES (?,?,?,?,?,?,?)",
+                     ("XAUUSD", 12, 1.0, 5, KEY, KEY, KEY))
+    columns = {r[1]: r[4] for r in conn.execute("PRAGMA table_info(release_reactions)")}
+    assert columns["baseline_quantile"] is None and columns["reaction_multiple"] is None      # no DEFAULT
+    assert {r[1]: r[4] for r in conn.execute("PRAGMA table_info(reaction_baselines)")}["quantile"] is None

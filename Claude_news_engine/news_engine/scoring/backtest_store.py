@@ -122,7 +122,9 @@ CREATE TABLE IF NOT EXISTS tier1_nowcast_snapshots (
 -- Market reaction (Stats sub-tab): append-only 5-minute price reaction per release + instrument.
 -- reaction is 'buy'/'sell'/'none' text (NULL when no call / no_data); a no_data row keeps NULL prices.
 -- Versioned by baseline_quantile (owner ruling 2026-10-16: 0.75): typical_abs_move is that quantile of
--- ordinary |5-min moves| and reaction means |move| > typical_abs_move * reaction_multiple.
+-- ordinary |5-min moves| and reaction means |move| > typical_abs_move * reaction_multiple. The version columns
+-- have NO default: every writer must name the version, and (quantile, multiple) is part of the key, so rows
+-- judged under another quantile or multiple never block or mix with each other.
 CREATE TABLE IF NOT EXISTS release_reactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_time_utc TEXT NOT NULL,
@@ -134,11 +136,11 @@ CREATE TABLE IF NOT EXISTS release_reactions (
     move_pct REAL,                      -- percent, (p5 - p0) / p0 * 100
     typical_abs_move REAL,
     reaction TEXT CHECK (reaction IS NULL OR reaction IN ('buy', 'sell', 'none')),
-    baseline_quantile REAL NOT NULL DEFAULT 0.5,
-    reaction_multiple REAL NOT NULL DEFAULT 1.0,
+    baseline_quantile REAL NOT NULL,
+    reaction_multiple REAL NOT NULL,
     bar_source TEXT NOT NULL,
     computed_at_utc TEXT NOT NULL,
-    UNIQUE(event_time_utc, instrument, baseline_quantile)
+    UNIQUE(event_time_utc, instrument, baseline_quantile, reaction_multiple)
 );
 -- Typical absolute 5-minute move per UTC hour; a new period_end_utc appends a new row (history kept).
 -- baseline_abs_move is the `quantile` of ordinary |5-min moves| for that instrument and UTC hour.
@@ -151,7 +153,7 @@ CREATE TABLE IF NOT EXISTS reaction_baselines (
     period_start_utc TEXT NOT NULL,
     period_end_utc TEXT NOT NULL,
     computed_at_utc TEXT NOT NULL,
-    quantile REAL NOT NULL DEFAULT 0.5,
+    quantile REAL NOT NULL,
     UNIQUE(instrument, utc_hour, quantile, period_end_utc)
 );
 CREATE TABLE IF NOT EXISTS exogenous_shocks (
@@ -1247,9 +1249,9 @@ def record_release_reaction(
     *, baseline_quantile: float, reaction_multiple: float,
 ) -> int:
     """
-    Append-only: the first row for (event_time_utc, instrument, baseline_quantile) wins and a duplicate is
-    ignored, never updated, so a re-run is idempotent. Returns the row id (the existing row's id on a
-    duplicate). Rows judged against another baseline quantile are separate rows and never block each other.
+    Append-only: the first row for (event_time_utc, instrument, baseline_quantile, reaction_multiple) wins and
+    a duplicate is ignored, never updated, so a re-run is idempotent. Returns the row id (the existing row's id
+    on a duplicate). Rows judged against another quantile or multiple are separate rows and never block each other.
     reaction_multiple (finite, > 0) is the multiple of typical_abs_move a move had to exceed. Both are
     required keyword arguments (no defaults) so a caller can never silently write an old version.
 
@@ -1295,20 +1297,24 @@ def record_release_reaction(
     )
     conn.commit()
     row = conn.execute(
-        "SELECT id FROM release_reactions WHERE event_time_utc=? AND instrument=? AND baseline_quantile=?",
-        (event_iso, instrument, baseline_quantile),
+        "SELECT id FROM release_reactions WHERE event_time_utc=? AND instrument=? AND baseline_quantile=? "
+        "AND reaction_multiple=?",
+        (event_iso, instrument, baseline_quantile, float(reaction_multiple)),
     ).fetchone()
     return row["id"]
 
 
-def get_release_reactions(conn: sqlite3.Connection, instrument: str, quantile: float) -> dict[str, sqlite3.Row]:
+def get_release_reactions(
+    conn: sqlite3.Connection, instrument: str, quantile: float, multiple: float,
+) -> dict[str, sqlite3.Row]:
     """
-    Stored reactions for an instrument judged against the given baseline quantile, keyed by the
-    UTC-normalised ISO event time. `quantile` is required so a caller can never mix baseline versions.
+    Stored reactions for an instrument judged against the given baseline quantile AND reaction multiple, keyed
+    by the UTC-normalised ISO event time. Both are required so a caller can never mix versions.
     """
     rows = conn.execute(
-        "SELECT * FROM release_reactions WHERE instrument = ? AND baseline_quantile = ? ORDER BY event_time_utc",
-        (instrument, float(quantile)),
+        "SELECT * FROM release_reactions WHERE instrument = ? AND baseline_quantile = ? AND reaction_multiple = ? "
+        "ORDER BY event_time_utc",
+        (instrument, float(quantile), float(multiple)),
     ).fetchall()
     return {r["event_time_utc"]: r for r in rows}
 

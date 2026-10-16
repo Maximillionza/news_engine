@@ -16,6 +16,7 @@ from scripts import compute_release_reactions as crr
 from webapp import reaction_rules
 from webapp import store as ws
 from webapp.reaction_rules import REACTION_BASELINE_QUANTILE as Q
+from webapp.reaction_rules import REACTION_MIN_MULTIPLE as M
 
 UTC = dt.timezone.utc
 MON, TUE, SAT = 2, 3, 7          # 2026-03-02 is a Monday, 2026-03-07 a Saturday
@@ -183,7 +184,7 @@ def test_backfill_writes_one_row_per_release_and_symbol_with_no_data_for_a_missi
     result = crr.run(dash, bt, _fetch_both(), "backfill", NOW, ["XAUUSD", "US30"], SINCE)
     assert (result["written"], result["no_data"], result["skipped_recent"]) == (4, 2, 0)
     assert result["fetch_failed"] == {}
-    rows = bs.get_release_reactions(bt, "XAUUSD", Q)
+    rows = bs.get_release_reactions(bt, "XAUUSD", Q, M)
     ok, gap = rows[REL_1230.isoformat()], rows[REL_1330.isoformat()]
     assert (ok["status"], ok["reaction"], ok["p0"], ok["move"]) == ("ok", "buy", 103.0, pytest.approx(5.0))
     assert ok["typical_abs_move"] == pytest.approx(0.5)
@@ -218,7 +219,7 @@ def test_a_release_younger_than_10_minutes_is_skipped():
     now = REL_1330 + dt.timedelta(minutes=8)
     result = crr.run(dash, bt, _fetch_both(), "backfill", now, ["XAUUSD"], SINCE)
     assert (result["written"], result["skipped_recent"]) == (1, 1)
-    assert set(bs.get_release_reactions(bt, "XAUUSD", Q)) == {REL_1230.isoformat()}
+    assert set(bs.get_release_reactions(bt, "XAUUSD", Q, M)) == {REL_1230.isoformat()}
 
 
 def test_a_release_whose_end_bar_is_not_published_yet_is_left_for_a_later_run():
@@ -226,7 +227,7 @@ def test_a_release_whose_end_bar_is_not_published_yet_is_left_for_a_later_run():
     opens = {k: v for k, v in _scenario_bars().items() if k <= _t(TUE, 13, 33)}   # feed stops before 13:35
     result = crr.run(dash, bt, FakeFetch({"XAUUSD": opens}), "backfill", NOW, ["XAUUSD"], SINCE)
     assert (result["written"], result["skipped_pending"], result["no_data"]) == (1, 1, 0)
-    assert REL_1330.isoformat() not in bs.get_release_reactions(bt, "XAUUSD", Q)
+    assert REL_1330.isoformat() not in bs.get_release_reactions(bt, "XAUUSD", Q, M)
 
 
 def test_a_fetch_exception_writes_nothing_for_that_symbol_and_the_other_still_runs():
@@ -234,9 +235,9 @@ def test_a_fetch_exception_writes_nothing_for_that_symbol_and_the_other_still_ru
     fetch = FakeFetch({"XAUUSD": _scenario_bars()}, fail=("US30",))
     result = crr.run(dash, bt, fetch, "backfill", NOW, ["US30", "XAUUSD"], SINCE)
     assert "US30" in result["fetch_failed"] and "dukascopy down" in result["fetch_failed"]["US30"]
-    assert bs.get_release_reactions(bt, "US30", Q) == {}
+    assert bs.get_release_reactions(bt, "US30", Q, M) == {}
     assert bt.execute("SELECT COUNT(*) FROM reaction_baselines WHERE instrument='US30'").fetchone()[0] == 0
-    assert len(bs.get_release_reactions(bt, "XAUUSD", Q)) == 2
+    assert len(bs.get_release_reactions(bt, "XAUUSD", Q, M)) == 2
 
 
 def test_an_empty_bar_series_counts_as_a_failed_fetch_not_as_no_data():
@@ -268,7 +269,7 @@ def test_numpy_hour_keys_are_stored_as_plain_ints(monkeypatch):
     result = crr.run(dash, bt, _fetch_both(), "backfill", NOW, ["XAUUSD"], SINCE)
     assert result["baselines"] == 2
     assert bs.get_latest_reaction_baselines(bt, "XAUUSD", Q) == {12: 0.5, 13: 0.5}
-    assert bs.get_release_reactions(bt, "XAUUSD", Q)[REL_1230.isoformat()]["reaction"] == "buy"
+    assert bs.get_release_reactions(bt, "XAUUSD", Q, M)[REL_1230.isoformat()]["reaction"] == "buy"
 
 
 # ---- run(): incremental --------------------------------------------------------------------------
@@ -282,7 +283,7 @@ def test_incremental_skips_minutes_with_rows_and_uses_the_stored_baselines():
     opens[_t(TUE, 13, 35)] = opens[_t(TUE, 13, 30)] + 0.3                    # 13:30 now has its end bar
     result = crr.run(dash, bt, FakeFetch({"XAUUSD": opens}), "incremental", NOW, ["XAUUSD"], SINCE)
     assert (result["written"], result["already_present"], result["baselines"]) == (1, 1, 0)
-    rows = bs.get_release_reactions(bt, "XAUUSD", Q)
+    rows = bs.get_release_reactions(bt, "XAUUSD", Q, M)
     assert rows[REL_1230.isoformat()]["status"] == "no_data"                  # untouched
     new = rows[REL_1330.isoformat()]
     assert new["typical_abs_move"] == pytest.approx(0.25) and new["reaction"] == "buy"   # 0.3 > stored 0.25
@@ -427,9 +428,9 @@ def test_rows_under_the_old_median_quantile_are_untouched_by_a_075_run():
     bs.record_reaction_baseline(bt, "XAUUSD", 12, 99.0, 5, _t(MON, 0, 0), _t(MON, 23, 0), quantile=0.5)
     result = crr.run(dash, bt, _fetch_both(), "incremental", NOW, ["XAUUSD"], SINCE)
     assert result["written"] == 2 and result["already_present"] == 0      # the 0.5 row does not count
-    old = bs.get_release_reactions(bt, "XAUUSD", 0.5)
+    old = bs.get_release_reactions(bt, "XAUUSD", 0.5, M)
     assert list(old) == [REL_1230.isoformat()] and old[REL_1230.isoformat()]["p5"] == 2.0
-    new = bs.get_release_reactions(bt, "XAUUSD", Q)[REL_1230.isoformat()]
+    new = bs.get_release_reactions(bt, "XAUUSD", Q, M)[REL_1230.isoformat()]
     assert new["typical_abs_move"] == pytest.approx(0.5)                   # the stored 0.5-quantile 99.0 is ignored
     assert bs.get_latest_reaction_baselines(bt, "XAUUSD", 0.5) == {12: 99.0}
 
@@ -447,7 +448,7 @@ def test_raw_duplicate_minutes_are_excluded_from_the_baseline_but_judged_once():
     bt = bs.get_connection(":memory:")
     result = crr.run(dash, bt, _fetch_both(), "backfill", NOW, ["XAUUSD"], SINCE)
     assert result["written"] == 2
-    assert set(bs.get_release_reactions(bt, "XAUUSD", Q)) == {_t(TUE, 12, 14).isoformat(), REL_1330.isoformat()}
+    assert set(bs.get_release_reactions(bt, "XAUUSD", Q, M)) == {_t(TUE, 12, 14).isoformat(), REL_1330.isoformat()}
     # Hour 12: Mon 12 + Tue 12 grid windows, minus the Tue 12:15 start (a raw release minute); 12:14 and 12:16
     # are off the 5-minute grid. Without the raw exclusion this would be 24.
     assert bt.execute("SELECT n_windows FROM reaction_baselines WHERE utc_hour = 12").fetchone()[0] == 23
@@ -479,8 +480,8 @@ def test_a_record_error_for_one_symbol_is_reported_and_the_other_symbol_still_ru
     monkeypatch.setattr(bs, "record_reaction_baseline", flaky)
     result = crr.run(dash, bt, _fetch_both(), "backfill", NOW, ["US30", "XAUUSD"], SINCE)
     assert "disk I/O error" in result["errors"]["US30"]
-    assert bs.get_release_reactions(bt, "US30", Q) == {}
-    assert len(bs.get_release_reactions(bt, "XAUUSD", Q)) == 2
+    assert bs.get_release_reactions(bt, "US30", Q, M) == {}
+    assert len(bs.get_release_reactions(bt, "XAUUSD", Q, M)) == 2
 
 
 def test_a_compute_error_for_one_symbol_is_reported_and_the_other_symbol_still_runs(monkeypatch):
@@ -496,7 +497,7 @@ def test_a_compute_error_for_one_symbol_is_reported_and_the_other_symbol_still_r
     monkeypatch.setattr(crr, "compute_baselines", flaky)
     result = crr.run(dash, bt, _fetch_both(), "backfill", NOW, ["US30", "XAUUSD"], SINCE)
     assert "bad bars" in result["errors"]["US30"] and "XAUUSD" not in result["errors"]
-    assert len(bs.get_release_reactions(bt, "XAUUSD", Q)) == 2
+    assert len(bs.get_release_reactions(bt, "XAUUSD", Q, M)) == 2
 
 
 def test_cli_exits_non_zero_on_a_symbol_error(tmp_path, monkeypatch):

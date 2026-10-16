@@ -25,8 +25,8 @@ from typing import Optional
 from scoring.backtest_store import get_release_reactions
 from webapp import stats_service
 from webapp.reaction_rules import (
-    FEW_RELEASES_TAG, REACTION_BASELINE_QUANTILE, cluster_credit, collapse_same_title_duplicates, impact_info,
-    rate_display, title_tag_counts,
+    FEW_RELEASES_TAG, REACTION_BASELINE_QUANTILE, REACTION_MIN_MULTIPLE, cluster_credit,
+    collapse_same_title_duplicates, impact_info, rate_display, title_tag_counts,
 )
 from webapp.stats_methods import market_lean
 from webapp.stats_rules import parse_number, side, tolerance
@@ -127,9 +127,9 @@ def implied_lean(title: str, forecast_text: Optional[str], actual_text: Optional
 
 
 def _reactions_by_minute(bt_conn: sqlite3.Connection, instrument: str) -> dict[dt.datetime, sqlite3.Row]:
-    """Stored rows for the instrument at the current baseline quantile, keyed by aware UTC minute."""
+    """Stored rows for the instrument at the current baseline quantile and multiple, keyed by aware UTC minute."""
     try:
-        stored = get_release_reactions(bt_conn, instrument, REACTION_BASELINE_QUANTILE)
+        stored = get_release_reactions(bt_conn, instrument, REACTION_BASELINE_QUANTILE, REACTION_MIN_MULTIPLE)
     except sqlite3.Error:
         logger.warning("reaction: could not read release_reactions for %s", instrument, exc_info=True)
         return {}
