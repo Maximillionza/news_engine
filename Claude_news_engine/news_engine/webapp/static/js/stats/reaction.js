@@ -23,6 +23,14 @@ const REACTION_LABELS = { buy: "Buy", sell: "Sell", none: "No reaction" };
 const METHOD_LABELS = { tier1: "Tier 1", news: "News", combined: "Combined" };
 const DEFAULT_QUANTILE = 0.75;   // the baseline the service uses; only a fallback if a response omits it
 const LEADERBOARD_COLUMNS = 6;
+// Shown instead of "No releases match this selection." when the service has no stored reaction at all for the
+// instrument (the compute script has not run for it), so an empty table is never read as "nothing moved".
+export const NOT_COMPUTED_MESSAGE = "Reactions have not been computed yet for this instrument.";
+// The service hides percentages under 20: the moved-the-market rate counts releases, the implied-direction rate moves.
+export const PERCENT_FLOOR_NOTE = "Percentages appear once an event has 20 releases (moved-the-market rate) or 20 moves "
+  + "(implied-direction rate); counts are always shown.";
+const AVG_MOVE_TITLE = "Mean 5-minute move over the releases that moved the market, signed so positive = the way "
+  + "the surprise implied";
 
 // Signed to 2 decimals with an optional suffix: 0.2 -> "+0.20%", -0.254 -> "-0.25%", null -> "-".
 function signed(value, suffix = "") {
@@ -56,10 +64,14 @@ export function leaderboardHeadHtml(quantile) {
   const chance = Math.round((1 - (Number.isFinite(q) && q > 0 && q < 1 ? q : DEFAULT_QUANTILE)) * 100);
   return "<tr><th>Event</th><th>Impact</th><th>Releases</th>"
     + `<th>Moved the market<div class="meta-text-sm">Chance level for an ordinary window is ${chance}%</div></th>`
-    + "<th>Avg 5-min move</th><th>Engine call right (all releases of this event)</th></tr>";
+    + `<th title="${escapeHtml(AVG_MOVE_TITLE)}">Avg 5-min move (releases that moved)</th>`
+    + "<th>Engine call right (all releases of this event)</th></tr>";
 }
 
-export function reactionEmptyHtml() { return emptyRowHtml(LEADERBOARD_COLUMNS); }
+// reactionsAvailable === false (the response's `reactions_available`) means nothing was computed for the instrument.
+export function reactionEmptyHtml(reactionsAvailable = true) {
+  return reactionsAvailable === false ? emptyRowHtml(LEADERBOARD_COLUMNS, NOT_COMPUTED_MESSAGE) : emptyRowHtml(LEADERBOARD_COLUMNS);
+}
 
 // solo / shared / in_conflict count RELEASES THAT MOVED THE MARKET (credits that need a reaction), not all
 // releases, so the line says "of the {moved} that moved" and is never read as a share of the Releases column.
@@ -82,8 +94,8 @@ export function leaderboardRowHtml(row) {
     + `<td>${moved}${hitLineHtml(row)}</td><td>${avg}</td><td>${engine}</td></tr>`;
 }
 
-export function leaderboardRowsHtml(rows) {
-  return rows && rows.length ? rows.map(leaderboardRowHtml).join("") : reactionEmptyHtml();
+export function leaderboardRowsHtml(rows, reactionsAvailable = true) {
+  return rows && rows.length ? rows.map(leaderboardRowHtml).join("") : reactionEmptyHtml(reactionsAvailable);
 }
 
 // The two disclaimers from the response, verbatim and escaped; "" when the response has none.
@@ -91,6 +103,11 @@ export function reactionDisclaimersHtml(disclaimers) {
   if (!disclaimers) return "";
   return [disclaimers.association, disclaimers.cluster].filter(Boolean)
     .map((text) => `<div class="meta-text-sm">${escapeHtml(text)}</div>`).join("");
+}
+
+// Everything under the leaderboard: the percentage-floor note, then the two disclaimers.
+export function reactionNotesHtml(disclaimers) {
+  return `<div class="meta-text-sm">${escapeHtml(PERCENT_FLOOR_NOTE)}</div>` + reactionDisclaimersHtml(disclaimers);
 }
 
 // The Instrument select's options, chosen BY VALUE (the list is alphabetical, so the index means nothing).

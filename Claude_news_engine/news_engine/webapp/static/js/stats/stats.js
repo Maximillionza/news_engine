@@ -13,7 +13,7 @@ import { componentsHtml, readingsHtml } from "./info.js";
 import { DEFAULT_IMPACTS, impactsParam, toggleImpact, chipsHtml } from "./impact-filter.js";
 import { createLatestGuard } from "./latest.js";
 import {
-  leaderboardRowsHtml, leaderboardHeadHtml, releasesHtml, releasesErrorHtml, reactionDisclaimersHtml,
+  leaderboardRowsHtml, leaderboardHeadHtml, releasesHtml, releasesErrorHtml, reactionNotesHtml,
   instrumentOptionsHtml,
 } from "./reaction.js";
 import {
@@ -317,8 +317,8 @@ async function renderReaction(token, noImpacts) {
     state.instrument = board.instrument;   // the response decides; the select is chosen by value, never by index
     $("stats-instrument").innerHTML = instrumentOptionsHtml(board.instruments, board.instrument);
     head.innerHTML = leaderboardHeadHtml(board.quantile);
-    body.innerHTML = leaderboardRowsHtml(board.rows);
-    notes.innerHTML = reactionDisclaimersHtml(board.disclaimers);
+    body.innerHTML = leaderboardRowsHtml(board.rows, board.reactions_available);
+    notes.innerHTML = reactionNotesHtml(board.disclaimers);
     if (state.reactionEvent && (board.rows || []).some((r) => r.event_title === state.reactionEvent)) {
       showReactionDetail();    // keep an open drill-down in step with the new filters
     } else {

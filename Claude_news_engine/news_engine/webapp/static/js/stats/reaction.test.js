@@ -3,7 +3,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CREDIT_LABELS, leaderboardRowsHtml, leaderboardHeadHtml, releasesHtml, clusterNoteHtml, reactionDisclaimersHtml,
-  reactionEmptyHtml, instrumentOptionsHtml, releasesErrorHtml,
+  reactionEmptyHtml, instrumentOptionsHtml, releasesErrorHtml, reactionNotesHtml, NOT_COMPUTED_MESSAGE,
+  PERCENT_FLOOR_NOTE,
 } from "./reaction.js";
 
 const rate = (k, n, percent = null, interval = [0.4385, 1.0]) => ({ k, n, percent, interval, few: n < 8 });
@@ -84,7 +85,7 @@ test("no rows gives the empty-state row", () => {
 
 test("the header carries the chance-level note (25% for the 75th percentile baseline)", () => {
   const head = leaderboardHeadHtml(0.75);
-  for (const col of ["Event", "Impact", "Releases", "Moved the market", "Avg 5-min move", "Engine call right (all releases of this event)"]) {
+  for (const col of ["Event", "Impact", "Releases", "Moved the market", "Avg 5-min move (releases that moved)", "Engine call right (all releases of this event)"]) {
     assert.ok(head.includes(col), col);
   }
   assert.ok(head.includes("Chance level for an ordinary window is 25%"));
@@ -211,4 +212,33 @@ test("the drill-down error keeps the close button inside the panel", () => {
   const html = releasesErrorHtml();
   assert.ok(html.includes("reaction-close") && html.includes("Could not load the releases for this event."));
   assert.ok(html.includes("reaction-detail"));
+});
+
+// ---- final fix wave: not-computed empty state, column wording, percentage-floor note ----------------
+
+test("an empty leaderboard says reactions are not computed when the service says none are available", () => {
+  assert.equal(NOT_COMPUTED_MESSAGE, "Reactions have not been computed yet for this instrument.");
+  const notComputed = leaderboardRowsHtml([], false);
+  assert.ok(notComputed.includes(NOT_COMPUTED_MESSAGE));
+  assert.ok(!notComputed.includes("No releases match this selection."));
+  for (const available of [true, undefined]) {
+    const html = leaderboardRowsHtml([], available);
+    assert.ok(html.includes("No releases match this selection.") && !html.includes(NOT_COMPUTED_MESSAGE));
+  }
+  assert.ok(leaderboardRowsHtml([ROW], false).includes("CPI m/m"));      // rows always win
+});
+
+test("the avg move column is labelled for releases that moved and keeps the signed-direction hover", () => {
+  const head = leaderboardHeadHtml(0.75);
+  assert.ok(head.includes("Avg 5-min move (releases that moved)"));
+  assert.ok(/<th title="[^"]*releases that moved[^"]*positive = the way the surprise implied[^"]*">Avg 5-min move/i.test(head));
+  assert.ok(leaderboardRowsHtml([ROW]).includes('title="Positive = moved the way the surprise implied"'));
+});
+
+test("the percentage-floor note is rendered under the leaderboard with the disclaimers", () => {
+  assert.equal(PERCENT_FLOOR_NOTE, "Percentages appear once an event has 20 releases (moved-the-market rate) or 20 moves "
+    + "(implied-direction rate); counts are always shown.");
+  const html = reactionNotesHtml({ association: "A", cluster: "C" });
+  assert.ok(html.includes(PERCENT_FLOOR_NOTE) && html.includes(">A<") && html.includes(">C<"));
+  assert.ok(reactionNotesHtml(null).includes(PERCENT_FLOOR_NOTE));
 });
