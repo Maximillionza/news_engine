@@ -26,7 +26,8 @@ from webapp.reaction_rules import REACTION_BASELINE_QUANTILE as Q, rate_display
 UTC = dt.timezone.utc
 P0 = 2000.0                    # move_pct = move / 20
 
-LEADERBOARD_KEYS = {"instrument", "instruments", "window", "quantile", "rows", "disclaimers"}
+LEADERBOARD_KEYS = {"instrument", "instruments", "window", "quantile", "rows", "disclaimers",
+                    "reactions_available"}
 ROW_KEYS = {"event_title", "impact_effective", "impact_inferred", "releases", "solo", "shared", "in_conflict",
             "reaction", "hit", "avg_move_pct", "engine", "few"}
 RATE_KEYS = {"k", "n", "percent", "interval", "few"}
@@ -325,3 +326,19 @@ def test_default_connections_are_closed_after_each_request(monkeypatch):
         for conn in opened:
             with pytest.raises(sqlite3.ProgrammingError):           # closed
                 conn.execute("SELECT 1")
+
+
+# ---- reactions_available (final fix wave B) ---------------------------------------------------------------
+
+def test_leaderboard_says_whether_reactions_were_computed_for_the_instrument(monkeypatch):
+    dash, bt = ws.get_connection(":memory:"), bs.get_connection(":memory:")
+    _seed(dash, bt)
+    ws.add_tracked_symbol(dash, "EURUSD")                       # tracked, never computed
+    monkeypatch.setattr(app_module, "_stats_connections", lambda: (dash, bt))
+    client = app_module.app.test_client()
+    gold = _board(client, "?instrument=XAUUSD")
+    assert set(gold) == LEADERBOARD_KEYS and gold["reactions_available"] is True
+    assert _board(client, "?instrument=XAUUSD&impacts=Medium")["reactions_available"] is True
+    eur = _board(client, "?instrument=EURUSD")
+    assert set(eur) == LEADERBOARD_KEYS
+    assert eur["reactions_available"] is False and eur["rows"] == []

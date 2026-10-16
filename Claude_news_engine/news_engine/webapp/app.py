@@ -585,6 +585,7 @@ def get_reaction_leaderboard():
         "quantile": board["quantile"], "rows": [_leaderboard_row_dict(r) for r in board["rows"]],
         "disclaimers": {"association": board["disclaimers"]["association"],
                         "cluster": board["disclaimers"]["cluster"]},
+        "reactions_available": bool(board["reactions_available"]),
     })
 
 

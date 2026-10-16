@@ -88,7 +88,7 @@ def test_leaderboard_payload_shape_and_exact_disclaimers(conns):
     _hot_cpi(dash, _t(3))
     _react(bt, _t(3), "sell", -4.0)
     board = _board(dash, bt)
-    assert set(board) == {"instrument", "quantile", "rows", "disclaimers"}
+    assert set(board) == {"instrument", "quantile", "rows", "disclaimers", "reactions_available"}
     assert board["instrument"] == GOLD and board["quantile"] == Q == 0.75
     assert board["disclaimers"] == {
         "association": "Reaction is measured over 5 minutes against the 75th-percentile ordinary move for that "
@@ -474,3 +474,27 @@ def test_service_writes_nothing(conns):
     _board(dash, bt)
     _releases(dash, bt, "CPI m/m")
     assert (dash.total_changes, bt.total_changes) == before
+
+
+# ---- reactions_available (final fix wave B) -----------------------------------------------------------
+
+def test_reactions_available_is_true_when_any_row_exists_even_if_no_row_matches_the_filter(conns):
+    dash, bt = conns
+    _hot_cpi(dash, _t(3))
+    _no_data(bt, _t(3))                                    # a no_data row still means "computed"
+    board = _board(dash, bt, impacts=frozenset())
+    assert board["rows"] == [] and board["reactions_available"] is True
+
+
+def test_reactions_available_is_false_without_rows_for_the_instrument_or_version(conns):
+    dash, bt = conns
+    _hot_cpi(dash, _t(3))
+    assert _board(dash, bt)["reactions_available"] is False
+    _react(bt, _t(3), "sell", -4.0, instrument="US30")
+    bs.record_release_reaction(bt, _t(3), GOLD, "ok", p0=P0, p5=P0 - 4.0, typical_abs_move=1.0, reaction="sell",
+                               baseline_quantile=0.5, reaction_multiple=1.0)        # another quantile
+    bs.record_release_reaction(bt, _t(3), GOLD, "ok", p0=P0, p5=P0 - 4.0, typical_abs_move=1.0, reaction="sell",
+                               baseline_quantile=Q, reaction_multiple=1.5)          # another multiple
+    board = _board(dash, bt)
+    assert board["reactions_available"] is False and board["rows"] == []
+    assert _board(dash, bt, instrument="US30")["reactions_available"] is True

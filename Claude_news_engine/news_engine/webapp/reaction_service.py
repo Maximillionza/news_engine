@@ -142,6 +142,24 @@ def _reactions_by_minute(bt_conn: sqlite3.Connection, instrument: str) -> dict[d
     return out
 
 
+def reactions_available(bt_conn: sqlite3.Connection, instrument: str) -> bool:
+    """
+    True when ANY release_reactions row (ok or no_data) exists for the instrument at the current quantile
+    and multiple, i.e. the compute script has run for it. Lets the page tell "not computed yet" apart from
+    "nothing matches this selection". A read error counts as not available.
+    """
+    try:
+        found = bt_conn.execute(
+            "SELECT 1 FROM release_reactions WHERE instrument = ? AND baseline_quantile = ? "
+            "AND reaction_multiple = ? LIMIT 1",
+            (instrument, float(REACTION_BASELINE_QUANTILE), float(REACTION_MIN_MULTIPLE)),
+        ).fetchone()
+    except sqlite3.Error:
+        logger.warning("reaction: could not check release_reactions for %s", instrument, exc_info=True)
+        return False
+    return found is not None
+
+
 def _stored_reaction(row: Optional[sqlite3.Row]) -> Optional[str]:
     """The stored call for a status 'ok' row; None (no data) for a no_data row or a missing one."""
     if row is None or row["status"] != "ok":
@@ -276,7 +294,7 @@ def build_leaderboard(dash_conn: sqlite3.Connection, bt_conn: sqlite3.Connection
         })
     rows.sort(key=lambda r: (-r["reaction"]["k"], -r["releases"], r["event_title"]))
     return {"instrument": instrument, "quantile": REACTION_BASELINE_QUANTILE, "rows": rows,
-            "disclaimers": dict(DISCLAIMERS)}
+            "disclaimers": dict(DISCLAIMERS), "reactions_available": reactions_available(bt_conn, instrument)}
 
 
 def _title_tags_of(items: list[_Judged]) -> dict[str, int]:
