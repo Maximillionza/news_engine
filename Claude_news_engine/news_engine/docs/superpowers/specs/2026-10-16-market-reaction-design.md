@@ -1,6 +1,6 @@
 # Market reaction sub-tab (Stats) — design
 
-Date: 2026-10-16. Status: owner answers to O1-O3 applied 2026-10-16; awaiting written-spec approval. Author: Claude, with Masood.
+Date: 2026-10-16. Status: implemented on branch `market-reaction` (not merged, not deployed), pending the owner's approval to merge and to run the live backfill; owner answers to O1-O3 applied 2026-10-16, 75th-percentile ruling applied 2026-10-16. Author: Claude, with Masood.
 Builds on the Stats tab (`docs/superpowers/specs/2026-10-15-stats-tab-design.md`). The layout mockup was approved in-session ("happy with the mockup for now"); numbers in it were sample data.
 
 ## 1. Purpose
