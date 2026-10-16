@@ -324,3 +324,9 @@ test("a no-call news row still shows any article count and lean it has, and dash
   const bare = sentimentRowHtml({ ...base, pre_news_period: true, detail: null });
   assert.ok(bare.includes("No articles before 12 Aug 2026") && bare.includes("—"));
 });
+
+test("the empty brief card names the impact levels when the chips are filtering", () => {
+  assert.ok(briefCardHtml(null, "combined", DISC, true).includes("No upcoming call yet for the selected impact levels."));
+  assert.ok(briefCardHtml(null, "combined", DISC, false).includes("No upcoming call yet.<"));
+  assert.ok(briefCardHtml(null, "combined", DISC).includes("No upcoming call yet.<"));
+});

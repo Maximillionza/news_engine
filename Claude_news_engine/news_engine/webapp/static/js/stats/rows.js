@@ -172,8 +172,12 @@ export function expectedWord(forecast, predicted, forecastText) {
   return diff > 0 ? "hotter than consensus" : "cooler than consensus";
 }
 
-export function briefCardHtml(row, method, disclaimers) {
-  if (!row) return '<div class="brief-card"><b>Next release</b><div class="meta-text-sm">No upcoming call yet.</div></div>';
+// `impactFiltered`: the impact chips are hiding some levels, so an empty card may just mean "none at these levels".
+export function briefCardHtml(row, method, disclaimers, impactFiltered = false) {
+  if (!row) {
+    const none = impactFiltered ? "No upcoming call yet for the selected impact levels." : "No upcoming call yet.";
+    return `<div class="brief-card"><b>Next release</b><div class="meta-text-sm">${none}</div></div>`;
+  }
   const call = row[method];
   const unit = String(row.forecast_text ?? "").replace(/^-?[\d.,]+/, "").trim();
   const lean = leanText(call.leans);

@@ -56,7 +56,7 @@ export function leaderboardHeadHtml(quantile) {
   const chance = Math.round((1 - (Number.isFinite(q) && q > 0 && q < 1 ? q : DEFAULT_QUANTILE)) * 100);
   return "<tr><th>Event</th><th>Impact</th><th>Releases</th>"
     + `<th>Moved the market<div class="meta-text-sm">Chance level for an ordinary window is ${chance}%</div></th>`
-    + "<th>Avg 5-min move</th><th>Engine call right</th></tr>";
+    + "<th>Avg 5-min move</th><th>Engine call right (all releases of this event)</th></tr>";
 }
 
 export function reactionEmptyHtml() { return emptyRowHtml(LEADERBOARD_COLUMNS); }
@@ -77,7 +77,7 @@ export function leaderboardRowHtml(row) {
   const avg = row.avg_move_pct === null || row.avg_move_pct === undefined ? "-"
     : `<span title="Positive = moved the way the surprise implied">${signed(row.avg_move_pct, "%")}</span>`;
   const engine = row.engine ? `${escapeHtml(row.engine.k)} of ${escapeHtml(row.engine.n)}` : "n/a";
-  return `<tr class="row-click" tabindex="0" data-reaction-event="${escapeHtml(row.event_title)}">`
+  return `<tr class="row-click" tabindex="0" role="button" data-reaction-event="${escapeHtml(row.event_title)}">`
     + `<td>${escapeHtml(row.event_title)}${few}</td><td>${impact}</td><td>${escapeHtml(row.releases)}</td>`
     + `<td>${moved}${hitLineHtml(row)}</td><td>${avg}</td><td>${engine}</td></tr>`;
 }
@@ -141,10 +141,17 @@ function releaseRowHtml(release, data) {
     + `<td>${clusterNoteHtml(release, data.event_title) || "-"}</td><td>${engineCell(release.engine_call)}</td></tr>`;
 }
 
+const CLOSE_BUTTON = '<button type="button" class="reaction-close" aria-label="Close">&times;</button>';
+
+// The drill-down panel when its fetch failed: the close button stays, the message sits in the panel body.
+export function releasesErrorHtml() {
+  return `<div class="info-panel reaction-detail">${CLOSE_BUTTON}`
+    + '<div class="meta-text-sm">Could not load the releases for this event. Click the event again to retry.</div></div>';
+}
+
 // One event's releases, in the order given (the service sends newest first).
 export function releasesHtml(data) {
-  const close = '<button type="button" class="reaction-close" aria-label="Close">&times;</button>';
-  const head = `${close}<strong>${escapeHtml(data.event_title)}</strong> `
+  const head = `${CLOSE_BUTTON}<strong>${escapeHtml(data.event_title)}</strong> `
     + `<span class="meta-text-sm">${escapeHtml(data.instrument)}, ${plural((data.releases || []).length, "release")}, newest first, times in SAST</span>`;
   const releases = data.releases || [];
   if (!releases.length) return `<div class="info-panel reaction-detail">${head}<div class="meta-text-sm">No releases match this selection.</div></div>`;

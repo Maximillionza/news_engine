@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CREDIT_LABELS, leaderboardRowsHtml, leaderboardHeadHtml, releasesHtml, clusterNoteHtml, reactionDisclaimersHtml,
-  reactionEmptyHtml, instrumentOptionsHtml,
+  reactionEmptyHtml, instrumentOptionsHtml, releasesErrorHtml,
 } from "./reaction.js";
 
 const rate = (k, n, percent = null, interval = [0.4385, 1.0]) => ({ k, n, percent, interval, few: n < 8 });
@@ -67,7 +67,7 @@ test("engine call right is 'k of n' or 'n/a'", () => {
 
 test("rows are clickable and keyboard accessible", () => {
   const html = leaderboardRowsHtml([ROW]);
-  assert.ok(html.includes('class="row-click"') && html.includes('tabindex="0"'));
+  assert.ok(html.includes('class="row-click"') && html.includes('tabindex="0"') && html.includes('role="button"'));
   assert.ok(html.includes('data-reaction-event="CPI m/m"'));
 });
 
@@ -84,7 +84,7 @@ test("no rows gives the empty-state row", () => {
 
 test("the header carries the chance-level note (25% for the 75th percentile baseline)", () => {
   const head = leaderboardHeadHtml(0.75);
-  for (const col of ["Event", "Impact", "Releases", "Moved the market", "Avg 5-min move", "Engine call right"]) {
+  for (const col of ["Event", "Impact", "Releases", "Moved the market", "Avg 5-min move", "Engine call right (all releases of this event)"]) {
     assert.ok(head.includes(col), col);
   }
   assert.ok(head.includes("Chance level for an ordinary window is 25%"));
@@ -205,4 +205,10 @@ test("releases are listed in the order given (the service sends newest first)", 
   const b = { ...REL, event_time_utc: "2026-03-03T12:30:00+00:00", cluster: [] };
   const html = releasesHtml({ ...DATA, releases: [a, b] });
   assert.ok(html.indexOf("2026-04-07") < html.indexOf("2026-03-03"));
+});
+
+test("the drill-down error keeps the close button inside the panel", () => {
+  const html = releasesErrorHtml();
+  assert.ok(html.includes("reaction-close") && html.includes("Could not load the releases for this event."));
+  assert.ok(html.includes("reaction-detail"));
 });

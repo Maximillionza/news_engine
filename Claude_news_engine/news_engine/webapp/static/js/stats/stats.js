@@ -11,8 +11,10 @@ import {
 import { buildChartSvg } from "./chart.js";
 import { componentsHtml, readingsHtml } from "./info.js";
 import { DEFAULT_IMPACTS, impactsParam, toggleImpact, chipsHtml } from "./impact-filter.js";
+import { createLatestGuard } from "./latest.js";
 import {
-  leaderboardRowsHtml, leaderboardHeadHtml, releasesHtml, reactionDisclaimersHtml, instrumentOptionsHtml,
+  leaderboardRowsHtml, leaderboardHeadHtml, releasesHtml, releasesErrorHtml, reactionDisclaimersHtml,
+  instrumentOptionsHtml,
 } from "./reaction.js";
 import {
   tier1BodyHtml, emptyRowHtml, combinedRowHtml, sentimentRowHtml, pickNextRow, briefCardHtml, scoreboardHtml,
@@ -37,7 +39,8 @@ const state = {
 let handlersAttached = false;   // a retry after a failed first load must not double-bind listeners
 let infoToken = 0;               // drops a breakdown response superseded by a newer click
 let renderToken = 0;   // drops responses from a superseded selection (chart/scoreboard/leaderboard are async)
-let rowsToken = 0;     // drops a rows response superseded by a newer impact selection
+const rowsGuard = createLatestGuard();   // drops a rows response (or failure) superseded by a newer impact selection
+let rowsFor = null;    // the impacts param allRows was loaded for; a sub-tab switch reloads when it differs
 let detailToken = 0;   // drops a drill-down response superseded by a newer click or filter
 
 const $ = (id) => document.getElementById(id);
@@ -64,13 +67,16 @@ export async function loadStatsIfNeeded() {
 // `impacts` would mean "no filter" to the server); the rows are simply empty. Returns false when a newer
 // selection superseded this fetch, which then renders itself.
 async function loadRows() {
-  const token = ++rowsToken;
   const impacts = impactsParam(state.impacts);
-  if (!impacts) { allRows = []; return true; }
-  const data = await fetchStatsEvents({ impacts });
-  if (token !== rowsToken) return false;
-  allRows = data.rows || [];
-  disclaimers = data.disclaimers || {};
+  const result = await rowsGuard.run(() => (impacts ? fetchStatsEvents({ impacts }) : Promise.resolve(null)));
+  if (!result.current) return false;
+  if (result.value) {
+    allRows = result.value.rows || [];
+    disclaimers = result.value.disclaimers || {};
+  } else {
+    allRows = [];
+  }
+  rowsFor = impacts;
   return true;
 }
 
@@ -81,20 +87,38 @@ function renderChips(focusName = null) {
   if (chip) chip.focus();   // re-rendering drops focus; keep keyboard users where they were
 }
 
-async function changeImpacts(name) {
-  state.impacts = toggleImpact(state.impacts, name);
-  renderChips(name);
+function showRowsError(err) {
+  console.error("loadRows: fetch failed", err);
+  const box = $("stats-error");
+  box.textContent = "Could not load the Stats data for that selection. Change the impact levels again to retry.";
+  box.style.display = "";
+}
+
+// Reload the rows for the current impact selection, then redraw. The guard throws only for the newest fetch,
+// so an older failure cannot show an error over newer data.
+async function reloadAndRender() {
   try {
     if (!(await loadRows())) return;
   } catch (err) {
-    console.error("changeImpacts: fetch failed", err);
-    const box = $("stats-error");
-    box.textContent = "Could not load the Stats data for that selection. Change the impact levels again to retry.";
-    box.style.display = "";
+    showRowsError(err);
     return;
   }
   populateFilters();
   render();
+}
+
+async function changeImpacts(name) {
+  state.impacts = toggleImpact(state.impacts, name);
+  renderChips(name);
+  if (state.sub !== "reaction") { await reloadAndRender(); return; }
+  // Market reaction fetches its own leaderboard: draw it now, and refresh the shared rows (Year list, other
+  // sub-tabs) in parallel. A failed events call must not block the leaderboard.
+  render();
+  try {
+    if (await loadRows()) populateFilters();
+  } catch (err) {
+    showRowsError(err);
+  }
 }
 
 function populateFilters() {
@@ -150,6 +174,8 @@ function attachHandlers() {
 function setSub(name) {
   if (!SUBTABS.includes(name)) return;
   state.sub = name;
+  // The rows may be stale if the chips changed on the Market reaction sub-tab (or that reload failed).
+  if (name !== "reaction" && rowsFor !== impactsParam(state.impacts)) { render(); reloadAndRender(); return; }
   render();
 }
 
@@ -211,7 +237,7 @@ function render() {
   const filtered = filterRows(allRows, { year: state.year, month: state.month, event: sub === "combined" ? state.event : "" });
 
   // Brief card: the next release is independent of the Year/Month filters (it follows the impact chips).
-  $("stats-brief").innerHTML = sub === "reaction" ? "" : briefCardHtml(pickNextRow(allRows, new Date(), sub), sub, disclaimers);
+  $("stats-brief").innerHTML = sub === "reaction" ? "" : briefCardHtml(pickNextRow(allRows, new Date(), sub), sub, disclaimers, state.impacts.length < 4);
 
   const pre = preNewsDisclaimer(filtered, sub, disclaimers);
   const box = $("stats-disclaimer");
@@ -326,7 +352,7 @@ async function showReactionDetail() {
   } catch (err) {
     if (token !== detailToken) return;
     console.error("showReactionDetail: fetch failed", err);
-    box.textContent = "Could not load the releases for this event. Click the event again to retry.";
+    box.innerHTML = releasesErrorHtml();
     box.style.display = "";
   }
 }
