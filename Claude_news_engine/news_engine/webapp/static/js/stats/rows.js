@@ -20,8 +20,11 @@ export function verdictChip(verdict) {
   return '<span class="chip chip-none">No call</span>';
 }
 
+// One lean word ("🟢 potential BUY"); anything unknown reads as no clear lean.
+export function leanLabel(lean) { return LEAN[lean] || LEAN.mixed; }
+
 export function leanText(leans) {
-  return Object.entries(leans || {}).map(([sym, l]) => `${escapeHtml(sym)} ${LEAN[l] || LEAN.mixed}`).join(" · ");
+  return Object.entries(leans || {}).map(([sym, l]) => `${escapeHtml(sym)} ${leanLabel(l)}`).join(" · ");
 }
 
 // UTC ISO time -> SAST date and time. South Africa is a fixed UTC+2 (no DST), so a plain +2h is exact
@@ -212,8 +215,8 @@ export function yearsPresent(rows) {
   return [...new Set(rows.map((r) => Number(r.event_time_utc.slice(0, 4))))].sort((a, b) => a - b);
 }
 
-export function emptyRowHtml(columns) {
-  return `<tr class="row-off"><td colspan="${columns}">No releases match this selection.</td></tr>`;
+export function emptyRowHtml(columns, message = "No releases match this selection.") {
+  return `<tr class="row-off"><td colspan="${columns}">${escapeHtml(message)}</td></tr>`;
 }
 
 // Tier 1 table body: tracked events under a "Tracked by Tier 1" caption, the rest under
