@@ -14,7 +14,7 @@ For each release, record how XAUUSD and US30 moved in the 5 minutes after it. Ov
 | # | Decision |
 |---|---|
 | R1 | **5-minute window only.** 30 minutes is too late to read a reaction; it is not shown. |
-| R2 | "Moved the market" = the instrument moved by more than a typical 5-minute move at that time of day. Anything smaller is **no reaction**. |
+| R2 | "Moved the market" = the instrument moved by more than a typical 5-minute move at that time of day. Anything smaller is **no reaction**. Amended 2026-10-16 (owner): "typical" is the **75th percentile** of ordinary 5-minute moves for that instrument and UTC hour, not the median (the median made ~50% of ordinary windows count as a reaction; the 75th makes chance ~25%). |
 | R3 | Score two things: (a) **surprise-implied direction** (actual vs forecast -> USD direction -> instrument direction), which works for every release since January; (b) **engine calls** (Tier 1 / News / Combined) wherever they exist. |
 | R4 | Same-minute releases form a **cluster**. Agreeing events share credit; conflicting events are "matched the move" or "overruled"; a release that is alone gets solo credit. |
 | R5 | Every tracked symbol, **gold (XAUUSD) by default**. |
@@ -37,7 +37,7 @@ Out (v1): trading signals or order logic; the 30-minute window; non-USD events; 
 
 For release minute `t` (UTC), instrument `S`:
 - `p0` = open of the 1-minute bar starting at `t`; `p5` = open of the 1-minute bar starting at `t + 5 min`. `move = p5 − p0` (price units); `move_pct = move / p0`. A missing bar at either end -> **no data** (never interpolated).
-- `typical(S, hour)` = **median of |5-minute move|** over every 5-minute window starting on a 5-minute boundary within that UTC hour, on all other weekdays in the data period, **excluding any window whose start minute is a USD release minute**. Computed from the same 1-minute bars. (Descriptive statistic over the whole period, not a prediction; stated as such.)
+- `typical(S, hour)` = **75th percentile (`REACTION_BASELINE_QUANTILE` = 0.75, linear interpolation) of |5-minute move|** over every 5-minute window starting on a 5-minute boundary within that UTC hour, on all weekdays in the baseline period, **excluding any window whose start minute is a USD release minute** (every raw USD `event_history` minute, including same-title duplicates that are collapsed for judging). The release's own day is not excluded: one baseline row per hour cannot do that, and it is about 0.5% of windows. Computed from the same 1-minute bars; the quantile is stored on every baseline and reaction row. (Descriptive statistic over the whole period, not a prediction; stated as such.)
 - **Reaction**: `|move| > typical × REACTION_MIN_MULTIPLE` (constant, default 1.0). Otherwise **no reaction**.
 - **Market direction**: `buy` if `move > 0`, `sell` if `move < 0` (only when there is a reaction).
 - **Implied lean** for event `E` on `S`: `side(actual vs forecast)` per the Stats rules (one-rounding-step tolerance), mapped through `EVENT_SURPRISE_DIRECTION` and `classify_symbol(S).usd_relationship` exactly as `stats_methods.market_lean` does -> `buy` / `sell` / `mixed`. `mixed` (in line, no surprise map, or no numbers) = **no signal**; such an event is listed but never scored.
@@ -68,8 +68,9 @@ A conflict day proves nothing alone; credit only means something when tallied pe
 
 - **Price source:** Dukascopy 1-minute bars (`dukascopy_python`, already used by `data_layer/dukascopy_feed.py` and the Shock-alert audit). Checked 2026-10-16: 1-minute bars for XAUUSD and US30 exist back to 2026-01-13 (61 bars for a one-hour window on both). A **Phase 0** check must confirm coverage for every release minute (205 distinct USD release minutes since 2026-01-09, 47 with two or more events) and list gaps.
 - **Never fetched at request time.** A compute script writes results into a new append-only table in `backtest_log.db`:
-  - `release_reactions(id, event_time_utc, instrument, p0, p5, move, move_pct, typical_abs_move, reaction INTEGER, bar_source, computed_at_utc, UNIQUE(event_time_utc, instrument))`
-  - `reaction_baselines(instrument, utc_hour, median_abs_5m_move, n_windows, period_start_utc, period_end_utc, computed_at_utc, UNIQUE(instrument, utc_hour, period_end_utc))`
+  - `release_reactions(id, event_time_utc, instrument, status, p0, p5, move, move_pct, typical_abs_move, reaction TEXT, baseline_quantile, reaction_multiple, bar_source, computed_at_utc, UNIQUE(event_time_utc, instrument, baseline_quantile))`
+  - `reaction_baselines(id, instrument, utc_hour, median_abs_move (holds the quantile value), n_windows, period_start_utc, period_end_utc, computed_at_utc, quantile, UNIQUE(instrument, utc_hour, quantile, period_end_utc))`
+  Rows are versioned by quantile: a 0.75 row never collides with a 0.5 row, and readers always ask for one quantile.
   Rows are never updated; a recomputed baseline is a new row (new `period_end_utc`), and each reaction stores the `typical_abs_move` it was judged against so history is reproducible.
 - **Compute script** `scripts/compute_release_reactions.py`: `--backfill` (all USD release minutes since 2026-01-01 for every tracked symbol, resumable) and `--incremental` (releases older than 10 minutes with no row). Read-only on `dashboard.db`; writes only the two new tables; `--dry-run`; refuses to run against the live backtest DB unless `--bt-db` is given or `STATS_BACKFILL_LIVE=1` (same guard as the Tier 1 backfill). Wired into the scheduler by a small hook in the existing outcome-confirm run (owner approval needed before touching any scheduled task).
 - `outcomes` (30-minute auto-confirm) is **not changed**; Market reaction is independent of it. (Known weakness it does not fix: `outcomes` credits one 30-minute move to every co-released event.)
@@ -89,7 +90,7 @@ Sub-tab **Market reaction** beside News sentiment. Controls: Impact chips (share
 
 ## 9. Testing
 
-Unit: reaction threshold edges (equal to typical = no reaction), direction/sign for gold and US30, missing bars = no data, baseline excludes release minutes and the release's own day, credit rules (solo / agree / conflict / no reaction / no signal), Wilson interval, effective-impact inference (tag, inferred, unrated), cluster formation ignores the impact filter. Compute script: idempotent, resumable, refuses live DB without the flag, never writes outside the two tables, handles a Dukascopy failure without writing a row. Route tests assert exact field sets. JS tests for chips (default High + Unrated), leaderboard rows, drill-down labels, empty states. Live browser check at desktop and 375px before declaring done.
+Unit: reaction threshold edges (equal to typical = no reaction), direction/sign for gold and US30, missing bars = no data, baseline is the 75th percentile and excludes windows starting on any raw USD release minute (not the release's own day, see §4), credit rules (solo / agree / conflict / no reaction / no signal), Wilson interval, effective-impact inference (tag, inferred, unrated), cluster formation ignores the impact filter. Compute script: idempotent, resumable, refuses live DB without the flag, never writes outside the two tables, handles a Dukascopy failure without writing a row. Route tests assert exact field sets. JS tests for chips (default High + Unrated), leaderboard rows, drill-down labels, empty states. Live browser check at desktop and 375px before declaring done.
 
 ## 10. Risks and open questions
 
