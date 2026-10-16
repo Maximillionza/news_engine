@@ -14,6 +14,7 @@ import pytest
 from scoring import backtest_store as bs
 from scripts import compute_release_reactions as crr
 from webapp import store as ws
+from webapp.reaction_rules import REACTION_BASELINE_QUANTILE as Q
 
 UTC = dt.timezone.utc
 MON, TUE, SAT = 2, 3, 7          # 2026-03-02 is a Monday, 2026-03-07 a Saturday
@@ -182,7 +183,7 @@ def test_backfill_writes_one_row_per_release_and_symbol_with_no_data_for_a_missi
     result = crr.run(dash, bt, _fetch_both(), "backfill", NOW, ["XAUUSD", "US30"], SINCE)
     assert (result["written"], result["no_data"], result["skipped_recent"]) == (4, 2, 0)
     assert result["fetch_failed"] == {}
-    rows = bs.get_release_reactions(bt, "XAUUSD")
+    rows = bs.get_release_reactions(bt, "XAUUSD", Q)
     ok, gap = rows[REL_1230.isoformat()], rows[REL_1330.isoformat()]
     assert (ok["status"], ok["reaction"], ok["p0"], ok["move"]) == ("ok", "buy", 103.0, pytest.approx(5.0))
     assert ok["typical_abs_move"] == pytest.approx(0.5)
@@ -217,7 +218,7 @@ def test_a_release_younger_than_10_minutes_is_skipped():
     now = REL_1330 + dt.timedelta(minutes=8)
     result = crr.run(dash, bt, _fetch_both(), "backfill", now, ["XAUUSD"], SINCE)
     assert (result["written"], result["skipped_recent"]) == (1, 1)
-    assert set(bs.get_release_reactions(bt, "XAUUSD")) == {REL_1230.isoformat()}
+    assert set(bs.get_release_reactions(bt, "XAUUSD", Q)) == {REL_1230.isoformat()}
 
 
 def test_a_release_whose_end_bar_is_not_published_yet_is_left_for_a_later_run():
@@ -225,7 +226,7 @@ def test_a_release_whose_end_bar_is_not_published_yet_is_left_for_a_later_run():
     opens = {k: v for k, v in _scenario_bars().items() if k <= _t(TUE, 13, 33)}   # feed stops before 13:35
     result = crr.run(dash, bt, FakeFetch({"XAUUSD": opens}), "backfill", NOW, ["XAUUSD"], SINCE)
     assert (result["written"], result["skipped_pending"], result["no_data"]) == (1, 1, 0)
-    assert REL_1330.isoformat() not in bs.get_release_reactions(bt, "XAUUSD")
+    assert REL_1330.isoformat() not in bs.get_release_reactions(bt, "XAUUSD", Q)
 
 
 def test_a_fetch_exception_writes_nothing_for_that_symbol_and_the_other_still_runs():
@@ -233,9 +234,9 @@ def test_a_fetch_exception_writes_nothing_for_that_symbol_and_the_other_still_ru
     fetch = FakeFetch({"XAUUSD": _scenario_bars()}, fail=("US30",))
     result = crr.run(dash, bt, fetch, "backfill", NOW, ["US30", "XAUUSD"], SINCE)
     assert "US30" in result["fetch_failed"] and "dukascopy down" in result["fetch_failed"]["US30"]
-    assert bs.get_release_reactions(bt, "US30") == {}
+    assert bs.get_release_reactions(bt, "US30", Q) == {}
     assert bt.execute("SELECT COUNT(*) FROM reaction_baselines WHERE instrument='US30'").fetchone()[0] == 0
-    assert len(bs.get_release_reactions(bt, "XAUUSD")) == 2
+    assert len(bs.get_release_reactions(bt, "XAUUSD", Q)) == 2
 
 
 def test_an_empty_bar_series_counts_as_a_failed_fetch_not_as_no_data():
@@ -262,25 +263,25 @@ def test_unresolvable_symbols_are_reported_and_skipped():
 def test_numpy_hour_keys_are_stored_as_plain_ints(monkeypatch):
     dash, bt = _dash_with_events(), bs.get_connection(":memory:")
     monkeypatch.setattr(crr, "compute_baselines",
-                        lambda bars, minutes, period=None: {np.int64(12): (np.float64(0.5), np.int64(23)),
+                        lambda *args, **kwargs: {np.int64(12): (np.float64(0.5), np.int64(23)),
                                                             np.int64(13): (np.float64(0.5), np.int64(18))})
     result = crr.run(dash, bt, _fetch_both(), "backfill", NOW, ["XAUUSD"], SINCE)
     assert result["baselines"] == 2
-    assert bs.get_latest_reaction_baselines(bt, "XAUUSD") == {12: 0.5, 13: 0.5}
-    assert bs.get_release_reactions(bt, "XAUUSD")[REL_1230.isoformat()]["reaction"] == "buy"
+    assert bs.get_latest_reaction_baselines(bt, "XAUUSD", Q) == {12: 0.5, 13: 0.5}
+    assert bs.get_release_reactions(bt, "XAUUSD", Q)[REL_1230.isoformat()]["reaction"] == "buy"
 
 
 # ---- run(): incremental --------------------------------------------------------------------------
 
 def test_incremental_skips_minutes_with_rows_and_uses_the_stored_baselines():
     dash, bt = _dash_with_events(), bs.get_connection(":memory:")
-    bs.record_release_reaction(bt, REL_1230, "XAUUSD", "no_data")               # already present
-    bs.record_reaction_baseline(bt, "XAUUSD", 13, 0.25, 50, _t(MON, 0, 0), _t(MON, 23, 0))
+    bs.record_release_reaction(bt, REL_1230, "XAUUSD", "no_data", baseline_quantile=Q)   # already present
+    bs.record_reaction_baseline(bt, "XAUUSD", 13, 0.25, 50, _t(MON, 0, 0), _t(MON, 23, 0), quantile=Q)
     opens = _scenario_bars()
     opens[_t(TUE, 13, 35)] = opens[_t(TUE, 13, 30)] + 0.3                    # 13:30 now has its end bar
     result = crr.run(dash, bt, FakeFetch({"XAUUSD": opens}), "incremental", NOW, ["XAUUSD"], SINCE)
     assert (result["written"], result["already_present"], result["baselines"]) == (1, 1, 0)
-    rows = bs.get_release_reactions(bt, "XAUUSD")
+    rows = bs.get_release_reactions(bt, "XAUUSD", Q)
     assert rows[REL_1230.isoformat()]["status"] == "no_data"                  # untouched
     new = rows[REL_1330.isoformat()]
     assert new["typical_abs_move"] == pytest.approx(0.25) and new["reaction"] == "buy"   # 0.3 > stored 0.25
@@ -369,3 +370,64 @@ def test_open_dash_readonly_cannot_write(tmp_path):
     conn = crr.open_dash_readonly(dash_path)
     with pytest.raises(sqlite3.OperationalError):
         conn.execute("INSERT INTO tracked_symbols (symbol) VALUES ('US30')")
+
+
+# ---- 75th-percentile baseline (owner ruling 2026-10-16) ------------------------------------------
+
+@pytest.mark.parametrize("values, q, expected", [
+    ([1.0, 2.0, 3.0, 4.0, 5.0], 0.75, 4.0),          # h = 4 * 0.75 = 3 -> x[3]
+    ([1.0, 2.0, 3.0, 4.0], 0.75, 3.25),              # h = 2.25 -> 3 + 0.25 * (4 - 3)
+    ([4.0, 1.0, 3.0, 2.0], 0.5, 2.5),                # unsorted input, median
+    ([7.0], 0.75, 7.0),
+])
+def test_quantile_is_linear_interpolation_like_numpy(values, q, expected):
+    assert crr.quantile(values, q) == pytest.approx(expected)
+    assert crr.quantile(values, q) == pytest.approx(float(np.quantile(values, q)))
+
+
+def test_quantile_of_nothing_is_none():
+    assert crr.quantile([], 0.75) is None
+
+
+def _ladder_monday() -> dict:
+    """Grid bars 12:00..13:00 on Monday whose 12 consecutive 5-minute moves are +1, -2, +3, ... (|move| 1..12)."""
+    opens, price = {}, 100.0
+    for k in range(13):
+        opens[_t(MON, 12, 0) + dt.timedelta(minutes=5 * k)] = price
+        price += (k + 1) * (1 if k % 2 == 0 else -1)
+    return opens
+
+
+def test_baseline_is_the_hand_computed_75th_percentile_not_the_median():
+    baselines = crr.compute_baselines(_series(_ladder_monday()), set())
+    # |moves| 1..12: h = 11 * 0.75 = 8.25 -> 9 + 0.25 * (10 - 9) = 9.25 (the median would be 6.5).
+    assert baselines == {12: (pytest.approx(9.25), 12)}
+
+
+@pytest.mark.parametrize("move, expected", [(9.25, "none"), (9.26, "buy"), (-9.26, "sell"), (6.6, "none")])
+def test_reaction_flips_at_the_quantile_threshold(move, expected):
+    typical = crr.compute_baselines(_series(_ladder_monday()), set())[12][0]
+    bars = _series({_t(TUE, 12, 30): 100.0, _t(TUE, 12, 35): 100.0 + move})
+    assert crr.reaction_for(bars, _t(TUE, 12, 30), typical)["reaction"] == expected
+
+
+def test_rows_store_the_quantile_and_multiple():
+    dash, bt = _dash_with_events(), bs.get_connection(":memory:")
+    crr.run(dash, bt, _fetch_both(), "backfill", NOW, ["XAUUSD"], SINCE)
+    assert {tuple(r) for r in bt.execute("SELECT DISTINCT baseline_quantile, reaction_multiple FROM release_reactions")} \
+        == {(0.75, 1.0)}
+    assert {r[0] for r in bt.execute("SELECT DISTINCT quantile FROM reaction_baselines")} == {0.75}
+
+
+def test_rows_under_the_old_median_quantile_are_untouched_by_a_075_run():
+    dash, bt = _dash_with_events(), bs.get_connection(":memory:")
+    bs.record_release_reaction(bt, REL_1230, "XAUUSD", "ok", p0=1.0, p5=2.0, typical_abs_move=0.9,
+                               reaction="buy", baseline_quantile=0.5)
+    bs.record_reaction_baseline(bt, "XAUUSD", 12, 99.0, 5, _t(MON, 0, 0), _t(MON, 23, 0), quantile=0.5)
+    result = crr.run(dash, bt, _fetch_both(), "incremental", NOW, ["XAUUSD"], SINCE)
+    assert result["written"] == 2 and result["already_present"] == 0      # the 0.5 row does not count
+    old = bs.get_release_reactions(bt, "XAUUSD", 0.5)
+    assert list(old) == [REL_1230.isoformat()] and old[REL_1230.isoformat()]["p5"] == 2.0
+    new = bs.get_release_reactions(bt, "XAUUSD", Q)[REL_1230.isoformat()]
+    assert new["typical_abs_move"] == pytest.approx(0.5)                   # the stored 0.5-quantile 99.0 is ignored
+    assert bs.get_latest_reaction_baselines(bt, "XAUUSD", 0.5) == {12: 99.0}

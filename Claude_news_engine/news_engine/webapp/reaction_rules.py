@@ -4,14 +4,17 @@ Pure rules for the Stats "Market reaction" sub-tab
 (docs/superpowers/specs/2026-10-16-market-reaction-design.md §4, §4.1, §4.2, §5).
 
 No I/O and no webapp imports. Reaction is an association measured over 5 minutes against a
-typical move for that hour; it is never proof that a release caused the move.
+typical move for that hour (the 75th percentile of ordinary 5-minute moves); it is never proof that a release caused the move.
 """
 from __future__ import annotations
 
 import math
 from typing import Optional
 
-REACTION_MIN_MULTIPLE = 1.0   # |move| must exceed typical * this to count as a reaction
+# "Typical" move = this quantile of ordinary |5-minute moves| for the instrument and UTC hour (owner ruling
+# 2026-10-16: the 75th percentile, so an ordinary window crosses it ~25% of the time; the median gave ~50%).
+REACTION_BASELINE_QUANTILE = 0.75
+REACTION_MIN_MULTIPLE = 1.0   # |move| must exceed typical (the quantile value) * this to count as a reaction
 MIN_PERCENT_RELEASES = 20     # below this many releases the percentage is hidden (counts stay)
 FEW_RELEASES_TAG = 8          # below this many releases a title carries a "few releases" tag
 
@@ -26,7 +29,10 @@ def classify_reaction(
     typical: Optional[float],
     multiple: float = REACTION_MIN_MULTIPLE,
 ) -> Optional[str]:
-    """'buy' / 'sell' when |move| exceeds typical * multiple, 'none' otherwise, None when unjudgeable."""
+    """
+    'buy' / 'sell' when |move| exceeds typical * multiple, 'none' otherwise, None when unjudgeable.
+    `typical` is the REACTION_BASELINE_QUANTILE (75th-percentile) ordinary |5-minute move| for that hour.
+    """
     if move is None or typical is None or typical <= 0:
         return None
     if abs(move) <= typical * multiple + _EPS:

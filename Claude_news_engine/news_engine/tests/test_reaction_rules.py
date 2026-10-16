@@ -4,6 +4,7 @@ import pytest
 from webapp.reaction_rules import (
     FEW_RELEASES_TAG,
     MIN_PERCENT_RELEASES,
+    REACTION_BASELINE_QUANTILE,
     REACTION_MIN_MULTIPLE,
     classify_reaction,
     cluster_credit,
@@ -16,6 +17,7 @@ from webapp.reaction_rules import (
 
 def test_constants_match_the_spec():
     assert REACTION_MIN_MULTIPLE == 1.0
+    assert REACTION_BASELINE_QUANTILE == 0.75     # owner ruling 2026-10-16: 75th percentile, not the median
     assert MIN_PERCENT_RELEASES == 20
     assert FEW_RELEASES_TAG == 8
 
