@@ -1,13 +1,17 @@
 # tests/test_reaction_rules.py
+import datetime as dt
+
 import pytest
 
 from webapp.reaction_rules import (
+    DUPLICATE_WITHIN,
     FEW_RELEASES_TAG,
     MIN_PERCENT_RELEASES,
     REACTION_BASELINE_QUANTILE,
     REACTION_MIN_MULTIPLE,
     classify_reaction,
     cluster_credit,
+    collapse_same_title_duplicates,
     impact_info,
     rate_display,
     single_outcome,
@@ -204,3 +208,37 @@ def test_missing_tag_and_no_title_tags_is_unrated():
     expected = {"bucket": "Unrated", "effective": "Unrated", "inferred": True}
     assert impact_info(None, {}) == expected
     assert impact_info(None, {"High": 0, "Medium": 0}) == expected
+
+
+# ---- collapse_same_title_duplicates (moved from scripts/compute_release_reactions.py) ----
+
+def _m(hour: int, minute: int) -> dt.datetime:
+    return dt.datetime(2026, 3, 3, hour, minute, tzinfo=dt.timezone.utc)
+
+
+def test_duplicate_window_is_3_minutes():
+    assert DUPLICATE_WITHIN == dt.timedelta(minutes=3)
+
+
+def test_collapse_is_anchored_on_the_earliest_row_of_a_run():
+    events = [("A", _m(12, 0)), ("A", _m(12, 2)), ("A", _m(12, 4)), ("A", _m(12, 3))]
+    # 12:02 and 12:03 are within 3 minutes of 12:00; 12:04 is 4 minutes after the kept 12:00 row.
+    assert collapse_same_title_duplicates(events) == [("A", _m(12, 0)), ("A", _m(12, 4))]
+
+
+def test_an_adp_style_chain_is_one_release_at_the_earliest_minute():
+    events = [("ADP Weekly Employment Change", _m(12, minute)) for minute in (16, 14, 15)]
+    assert collapse_same_title_duplicates(events) == [("ADP Weekly Employment Change", _m(12, 14))]
+
+
+def test_collapse_keeps_other_titles_and_a_9_minute_pair():
+    events = [("A", _m(12, 14)), ("B", _m(12, 15)), ("C", _m(14, 1)), ("C", _m(14, 10)),
+              ("D", _m(17, 58)), ("D", _m(18, 0))]
+    assert collapse_same_title_duplicates(events) == [
+        ("A", _m(12, 14)), ("B", _m(12, 15)), ("C", _m(14, 1)), ("C", _m(14, 10)), ("D", _m(17, 58))]
+
+
+def test_collapse_honours_a_custom_window_and_empty_input():
+    events = [("A", _m(12, 0)), ("A", _m(12, 2))]
+    assert collapse_same_title_duplicates(events, within=dt.timedelta(minutes=1)) == events
+    assert collapse_same_title_duplicates([]) == []

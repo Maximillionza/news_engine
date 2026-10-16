@@ -8,7 +8,9 @@ typical move for that hour (the 75th percentile of ordinary 5-minute moves); it 
 """
 from __future__ import annotations
 
+import datetime as dt
 import math
+from collections import defaultdict
 from typing import Optional
 
 # "Typical" move = this quantile of ordinary |5-minute moves| for the instrument and UTC hour (owner ruling
@@ -17,6 +19,9 @@ REACTION_BASELINE_QUANTILE = 0.75
 REACTION_MIN_MULTIPLE = 1.0   # |move| must exceed typical (the quantile value) * this to count as a reaction
 MIN_PERCENT_RELEASES = 20     # below this many releases the percentage is hidden (counts stay)
 FEW_RELEASES_TAG = 8          # below this many releases a title carries a "few releases" tag
+# Same-title rows this close to the earliest row of their run are one event listed twice (Phase 0 ruling 2:
+# ADP Weekly 12:14/12:15/12:16, Federal Budget Balance 17:58/18:00; a 9-minute RCM/TIPP pair stays two events).
+DUPLICATE_WITHIN = dt.timedelta(minutes=3)
 
 # Absolute tolerance (1e-9): move and typical must be in the same absolute price units; it exists so
 # float noise at the threshold (0.1 * 3 != 0.3 exactly) cannot flip "equal to typical" into a reaction.
@@ -126,3 +131,24 @@ def impact_info(own_tag: Optional[str], title_tags: dict[str, int]) -> dict:
         if count > best:
             best, effective = count, tag
     return {"bucket": "Unrated", "effective": effective, "inferred": True}
+
+
+def collapse_same_title_duplicates(
+    events: list[tuple[str, dt.datetime]], within: dt.timedelta = DUPLICATE_WITHIN,
+) -> list[tuple[str, dt.datetime]]:
+    """
+    Same-title rows within `within` of the earliest row of their run collapse into that row (ruling 2),
+    so a 12:14/12:15/12:16 chain is one release at 12:14. Anchored on the kept row, not chained pairwise,
+    so a collapse never spans more than `within`. Returns the kept rows sorted by (time, title).
+    """
+    by_title: dict[str, list[dt.datetime]] = defaultdict(list)
+    for title, when in events:
+        by_title[title].append(when)
+    kept = []
+    for title, times in by_title.items():
+        anchor: Optional[dt.datetime] = None
+        for when in sorted(times):
+            if anchor is None or when - anchor > within:
+                kept.append((title, when))
+                anchor = when
+    return sorted(kept, key=lambda event: (event[1], event[0]))

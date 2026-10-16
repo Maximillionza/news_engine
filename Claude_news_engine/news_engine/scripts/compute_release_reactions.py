@@ -48,7 +48,6 @@ import math
 import os
 import sqlite3
 import sys
-from collections import defaultdict
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Callable, Optional, Union
@@ -61,12 +60,14 @@ from scoring import backtest_store  # noqa: E402
 from scripts import market_reaction_phase0 as phase0  # noqa: E402
 from scripts.backfill_tier1_reconstructed import LIVE_ENV_VAR, open_dash_readonly  # noqa: E402
 from webapp import store as dash_store  # noqa: E402
-from webapp.reaction_rules import REACTION_BASELINE_QUANTILE, REACTION_MIN_MULTIPLE, classify_reaction  # noqa: E402
+from webapp.reaction_rules import (  # noqa: E402
+    REACTION_BASELINE_QUANTILE, REACTION_MIN_MULTIPLE, classify_reaction,
+    collapse_same_title_duplicates,
+)
 
 UTC = dt.timezone.utc
 WINDOW = dt.timedelta(minutes=phase0.WINDOW_MIN)      # the 5-minute reaction window (spec R1)
 MIN_AGE = dt.timedelta(minutes=10)                     # a release must be at least this old to be judged
-DUPLICATE_WITHIN = dt.timedelta(minutes=3)             # same-title rows this close are one event (ruling 2)
 DEFAULT_SINCE = dt.datetime(2026, 1, 1, tzinfo=UTC)
 BAR_SOURCE = "dukascopy_1m"
 MODES = ("backfill", "incremental")
@@ -187,26 +188,6 @@ def reaction_for(bars: Bars, release: dt.datetime, typical: Optional[float],
     if reaction is None:                       # no baseline for the hour (or a zero one): cannot judge
         return no_data
     return {"status": "ok", "p0": p0, "p5": p5, "reaction": reaction, "typical": typical}
-
-
-def collapse_same_title_duplicates(
-    events: list[tuple[str, dt.datetime]], within: dt.timedelta = DUPLICATE_WITHIN,
-) -> list[tuple[str, dt.datetime]]:
-    """
-    Same-title rows within `within` of the earliest row of their run collapse into that row (ruling 2).
-    Anchored on the kept row, not chained, so a collapse never spans more than `within`.
-    """
-    by_title: dict[str, list[dt.datetime]] = defaultdict(list)
-    for title, when in events:
-        by_title[title].append(when)
-    kept = []
-    for title, times in by_title.items():
-        anchor: Optional[dt.datetime] = None
-        for when in sorted(times):
-            if anchor is None or when - anchor > within:
-                kept.append((title, when))
-                anchor = when
-    return sorted(kept, key=lambda event: (event[1], event[0]))
 
 
 def release_minute_sets(dash_conn: sqlite3.Connection) -> tuple[set[dt.datetime], set[dt.datetime]]:

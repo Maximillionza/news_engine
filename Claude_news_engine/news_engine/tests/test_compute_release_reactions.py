@@ -13,6 +13,7 @@ import pytest
 
 from scoring import backtest_store as bs
 from scripts import compute_release_reactions as crr
+from webapp import reaction_rules
 from webapp import store as ws
 from webapp.reaction_rules import REACTION_BASELINE_QUANTILE as Q
 
@@ -170,10 +171,9 @@ def test_same_title_rows_within_3_minutes_collapse_to_the_earliest_but_9_minutes
         _t(TUE, 12, 14), _t(TUE, 12, 15), _t(TUE, 17, 58), _t(TUE, 14, 1), _t(TUE, 14, 10)}
 
 
-def test_collapse_is_anchored_on_the_earliest_row_of_a_run():
-    events = [("A", _t(TUE, 12, 0)), ("A", _t(TUE, 12, 2)), ("A", _t(TUE, 12, 4)), ("A", _t(TUE, 12, 3))]
-    # 12:02 and 12:03 are within 3 minutes of 12:00; 12:04 is 4 minutes after the kept 12:00 row.
-    assert crr.collapse_same_title_duplicates(events) == [("A", _t(TUE, 12, 0)), ("A", _t(TUE, 12, 4))]
+def test_the_script_uses_the_shared_collapse_rule():
+    # The pure rule and its unit tests live in webapp/reaction_rules.py (shared with the reaction service).
+    assert crr.collapse_same_title_duplicates is reaction_rules.collapse_same_title_duplicates
 
 
 # ---- run(): backfill -----------------------------------------------------------------------------
