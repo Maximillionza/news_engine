@@ -17,13 +17,14 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Optional
 
 from config.settings import EVENT_SURPRISE_DIRECTION
 from data_layer import brent_feed
 from scoring.backtest_store import get_scored_nowcast_snapshot
 from webapp.history import _implied_surprise_direction
+from webapp.reaction_rules import impact_info, title_tag_counts
 from webapp.stats_methods import (
     NEWS_WEIGHT, TIER1_WEIGHT, combine, market_lean, news_lean, news_scale, news_surprise, tier1_surprise,
 )
@@ -90,6 +91,14 @@ class StatsRow:
     nowcast_as_of_utc: Optional[str]
     pre_news_period: bool
     detail: Optional[RowDetail] = None
+    # Impact (market-reaction spec §5), set by build_rows from webapp.reaction_rules.impact_info: the row's own
+    # tag, the effective tag (own, else the title's most common tag, else 'Unrated'), whether it was inferred,
+    # and the filter chip it falls under ('Unrated' for every untagged row, even when inferred High).
+    # The defaults equal impact_info(None, {}) for a row built outside build_rows.
+    impact: Optional[str] = None
+    impact_effective: str = "Unrated"
+    impact_inferred: bool = True
+    impact_bucket: str = "Unrated"
 
 
 def _parse_time(value: str) -> dt.datetime:
@@ -205,13 +214,18 @@ def _call(predicted: Optional[float], surprise: Optional[float], forecast: float
 
 def build_rows(dash_conn: sqlite3.Connection, bt_conn: sqlite3.Connection, year: Optional[int] = None,
                month: Optional[int] = None, event_title: Optional[str] = None,
-               brent_series_fn: Optional[Callable[[], Optional[list]]] = None) -> list[StatsRow]:
+               brent_series_fn: Optional[Callable[[], Optional[list]]] = None,
+               impacts: Optional[frozenset[str]] = None) -> list[StatsRow]:
     """
     Every USD event_history occurrence, ascending by time. Filters are applied AFTER computing so each
     title's scale history (prior |actual - forecast|) is complete regardless of the filter.
 
     brent_series_fn: returns the daily Brent series [(date, price)] or None; defaults to
     data_layer.brent_feed.get_brent_series (cached, fail-open). Tests inject a stub so nothing hits the network.
+
+    impacts: keep only rows whose impact_bucket is in this set ('High', 'Medium', 'Low', 'Unrated');
+    None = no impact filtering, an empty set = no rows. Effective impact is inferred from the tags of ALL
+    USD rows of the title (market-reaction spec §5), so no filter changes what a row inherits.
 
     USD only (spec D2): country NULL rows are non-USD or unattributed prints that reuse US titles (e.g.
     an 01:30Z "CPI m/m"); left in, they would add bogus rows and pollute the US scale history.
@@ -220,6 +234,7 @@ def build_rows(dash_conn: sqlite3.Connection, bt_conn: sqlite3.Connection, year:
         "SELECT * FROM event_history WHERE country = 'USD' "
         "ORDER BY event_time_utc, event_title"   # UNIQUE(title, time): no duplicates
     ).fetchall()
+    title_tags = title_tag_counts((r["event_title"], _own_impact(r)) for r in raw)
 
     brent_series = _LazySeries(brent_series_fn)
     history: dict[str, list[float]] = {}
@@ -236,7 +251,10 @@ def build_rows(dash_conn: sqlite3.Connection, bt_conn: sqlite3.Connection, year:
         except Exception:  # noqa: BLE001 -- one bad row must not break the tab
             logger.warning("stats row failed for %s %s", title, when, exc_info=True)
             row = _not_scoreable(r, title, when)
-        out.append(row)
+        own = _own_impact(r)
+        info = impact_info(own, title_tags.get(title, {}))
+        out.append(replace(row, impact=own, impact_effective=info["effective"],
+                           impact_inferred=info["inferred"], impact_bucket=info["bucket"]))
         # Added only after this row is built, so the scale never sees its own (or a later) surprise.
         f, a = parse_number(r["forecast"]), parse_number(r["actual"])
         if f is not None and a is not None:
@@ -245,8 +263,14 @@ def build_rows(dash_conn: sqlite3.Connection, bt_conn: sqlite3.Connection, year:
     def keep(row: StatsRow) -> bool:
         return ((year is None or row.event_time_utc.year == year)
                 and (month is None or row.event_time_utc.month == month)
-                and (event_title is None or row.event_title == event_title))
+                and (event_title is None or row.event_title == event_title)
+                and (impacts is None or row.impact_bucket in impacts))
     return [row for row in out if keep(row)]
+
+
+def _own_impact(r: sqlite3.Row) -> Optional[str]:
+    """The row's own impact tag, None when untagged (empty text counts as untagged)."""
+    return r["impact"] or None
 
 
 def _not_scoreable(r: sqlite3.Row, title: str, when: dt.datetime) -> StatsRow:

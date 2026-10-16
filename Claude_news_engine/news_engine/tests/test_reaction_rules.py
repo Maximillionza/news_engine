@@ -15,6 +15,7 @@ from webapp.reaction_rules import (
     impact_info,
     rate_display,
     single_outcome,
+    title_tag_counts,
     wilson_interval,
 )
 
@@ -242,3 +243,10 @@ def test_collapse_honours_a_custom_window_and_empty_input():
     events = [("A", _m(12, 0)), ("A", _m(12, 2))]
     assert collapse_same_title_duplicates(events, within=dt.timedelta(minutes=1)) == events
     assert collapse_same_title_duplicates([]) == []
+
+
+def test_title_tag_counts_counts_own_tags_per_title_and_skips_untagged_rows():
+    rows = [("CPI m/m", "High"), ("CPI m/m", None), ("CPI m/m", "High"), ("CPI m/m", "Low"),
+            ("Claims", "Medium"), ("Untagged", None), ("Blank", "")]
+    assert title_tag_counts(rows) == {"CPI m/m": {"High": 2, "Low": 1}, "Claims": {"Medium": 1}}
+    assert impact_info(None, title_tag_counts(rows).get("Untagged", {}))["effective"] == "Unrated"

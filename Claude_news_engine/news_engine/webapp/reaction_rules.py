@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime as dt
 import math
 from collections import defaultdict
-from typing import Optional
+from typing import Iterable, Optional
 
 # "Typical" move = this quantile of ordinary |5-minute moves| for the instrument and UTC hour (owner ruling
 # 2026-10-16: the 75th percentile, so an ordinary window crosses it ~25% of the time; the median gave ~50%).
@@ -131,6 +131,19 @@ def impact_info(own_tag: Optional[str], title_tags: dict[str, int]) -> dict:
         if count > best:
             best, effective = count, tag
     return {"bucket": "Unrated", "effective": effective, "inferred": True}
+
+
+def title_tag_counts(rows: Iterable[tuple[str, Optional[str]]]) -> dict[str, dict[str, int]]:
+    """
+    {title: {own tag: count}} over (title, own impact tag) pairs; untagged (None/empty) rows add nothing.
+    Callers pass ALL USD rows (never a filtered subset), so inheritance does not depend on the filter.
+    """
+    counts: dict[str, dict[str, int]] = {}
+    for title, tag in rows:
+        if tag:
+            per_title = counts.setdefault(title, {})
+            per_title[tag] = per_title.get(tag, 0) + 1
+    return counts
 
 
 def collapse_same_title_duplicates(

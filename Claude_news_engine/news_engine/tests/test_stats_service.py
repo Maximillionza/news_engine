@@ -639,3 +639,74 @@ def test_a_malformed_brent_series_degrades_only_the_brent_line(garbage):
     row = _cpi_row_with_brent(garbage)
     assert row.status == "scored" and row.tier1.verdict == "right" and row.detail.brent is None
     assert row.detail.nowcast_value == pytest.approx(0.4)
+
+
+# --- impact fields and filter (market-reaction spec §5) -------------------------------------------
+
+def _tagged(dash, title, when, forecast, actual, impact, country="USD"):
+    dash.execute(
+        "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, surprise_direction, "
+        "recorded_at_utc, updated_at_utc, source, impact, country) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (title, when.isoformat(), forecast, "0.1%", actual, None, when.isoformat(), when.isoformat(), "t", impact,
+         country),
+    )
+    dash.commit()
+
+
+def test_untagged_rows_inherit_the_title_tag_and_sit_in_the_unrated_bucket(conns):
+    dash, bt = conns
+    _tagged(dash, "CPI m/m", _t(1), "0.3%", "0.2%", None)          # seeded history: no tag
+    _tagged(dash, "CPI m/m", _t(9), "0.3%", "0.4%", "High")
+    _tagged(dash, "CPI m/m", _t(10), "0.3%", "0.4%", "High")
+    _tagged(dash, "CPI m/m", _t(11, 15), "0.3%", "0.4%", "Low", country=None)   # non-USD tag never counts
+    rows = svc.build_rows(dash, bt, event_title="CPI m/m")
+    first, last = rows[0], rows[-1]
+    assert (first.impact, first.impact_bucket, first.impact_effective, first.impact_inferred) == (
+        None, "Unrated", "High", True)
+    assert (last.impact, last.impact_bucket, last.impact_effective, last.impact_inferred) == (
+        "High", "High", "High", False)
+
+
+def test_title_tags_come_from_all_rows_even_when_a_date_filter_hides_them(conns):
+    dash, bt = conns
+    _tagged(dash, "CPI m/m", _t(1), "0.3%", "0.2%", None)
+    _tagged(dash, "CPI m/m", _t(9), "0.3%", "0.4%", "High")
+    [row] = svc.build_rows(dash, bt, month=1)
+    assert row.impact_effective == "High" and row.impact_inferred is True
+
+
+def test_a_title_never_tagged_is_unrated_and_not_scoreable_rows_carry_impact_too(conns):
+    dash, bt = conns
+    _tagged(dash, "Weird Event", _t(10), "N/A", "1.2|0.9", None)
+    [row] = svc.build_rows(dash, bt)
+    assert row.status == "not_scoreable"
+    assert (row.impact, row.impact_bucket, row.impact_effective, row.impact_inferred) == (
+        None, "Unrated", "Unrated", True)
+
+
+def test_impacts_filter_keeps_only_rows_in_the_selected_buckets(conns):
+    dash, bt = conns
+    _tagged(dash, "CPI m/m", _t(1), "0.3%", "0.2%", None)
+    _tagged(dash, "CPI m/m", _t(9), "0.3%", "0.4%", "High")
+    _tagged(dash, "Unemployment Claims", _t(9, 16), "220K", "230K", "Medium")
+    _tagged(dash, "Retail Sales m/m", _t(9, 17), "0.3%", "0.4%", "Low")
+
+    def picked(impacts):
+        return [(r.event_title, r.event_time_utc.month) for r in svc.build_rows(dash, bt, impacts=impacts)]
+
+    assert picked(None) == [("CPI m/m", 1), ("CPI m/m", 9), ("Unemployment Claims", 9), ("Retail Sales m/m", 9)]
+    assert picked(frozenset({"High"})) == [("CPI m/m", 9)]
+    assert picked(frozenset({"Unrated"})) == [("CPI m/m", 1)]       # inferred High still filters as Unrated
+    assert picked(frozenset({"High", "Unrated"})) == [("CPI m/m", 1), ("CPI m/m", 9)]
+    assert picked(frozenset({"Medium", "Low"})) == [("Unemployment Claims", 9), ("Retail Sales m/m", 9)]
+    assert picked(frozenset()) == []
+
+
+def test_impacts_filter_runs_after_the_news_scale_history_is_built(conns):
+    dash, bt = conns
+    for m, f, a in [(1, "0.3%", "0.2%"), (2, "0.3%", "0.4%"), (3, "0.3%", "0.4%")]:
+        _tagged(dash, "CPI m/m", _t(m), f, a, None)      # untagged history: hidden by a High-only filter
+    _tagged(dash, "CPI m/m", _t(10), "0.3%", "0.4%", "High")
+    _print_call(bt, "CPI m/m", _t(10), "higher", 0.5, scored_at=_t(10) - dt.timedelta(days=1))
+    [row] = svc.build_rows(dash, bt, impacts=frozenset({"High"}))
+    assert row.news.predicted == pytest.approx(0.3 + 0.5 * 0.1)     # scale 0.1 came from the hidden rows
