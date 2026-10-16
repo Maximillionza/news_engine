@@ -508,6 +508,43 @@ def test_cli_exits_non_zero_on_a_symbol_error(tmp_path, monkeypatch):
     assert crr.main(["--backfill", "--bt-db", str(bt_path), "--dash-db", str(dash_path)]) == 1
 
 
+def _raise_for(symbol, real):
+    def flaky(conn, sym):
+        if sym == symbol:
+            raise sqlite3.OperationalError(f"database is locked ({sym})")
+        return real(conn, sym)
+    return flaky
+
+
+def test_a_read_error_for_existing_rows_is_reported_and_the_other_symbol_still_runs(monkeypatch):
+    dash, bt = _dash_with_events(), bs.get_connection(":memory:")
+    monkeypatch.setattr(crr, "_existing_reaction_keys", _raise_for("US30", crr._existing_reaction_keys))
+    fetch = _fetch_both()
+    result = crr.run(dash, bt, fetch, "backfill", NOW, ["US30", "XAUUSD"], SINCE)
+    assert "database is locked (US30)" in result["errors"]["US30"] and "XAUUSD" not in result["errors"]
+    assert [call[0] for call in fetch.calls] == ["XAUUSD"]                    # US30 never fetched
+    assert bs.get_release_reactions(bt, "US30", Q, M) == {}
+    assert len(bs.get_release_reactions(bt, "XAUUSD", Q, M)) == 2
+
+
+def test_a_read_error_for_stored_baselines_is_reported_and_the_other_symbol_still_runs(monkeypatch):
+    dash, bt = _dash_with_events(), bs.get_connection(":memory:")
+    monkeypatch.setattr(crr, "_stored_baselines", _raise_for("US30", crr._stored_baselines))
+    result = crr.run(dash, bt, _fetch_both(), "incremental", NOW, ["US30", "XAUUSD"], SINCE)
+    assert "database is locked (US30)" in result["errors"]["US30"] and "XAUUSD" not in result["errors"]
+    assert len(bs.get_release_reactions(bt, "XAUUSD", Q, M)) == 2
+
+
+def test_cli_reports_a_read_error_prints_the_summary_and_exits_non_zero(tmp_path, monkeypatch, capsys):
+    dash_path, bt_path = tmp_path / "dashboard.db", tmp_path / "bt.db"
+    _make_dash_file(dash_path)
+    monkeypatch.setattr(crr, "default_fetch_bars", FakeFetch({"XAUUSD": _scenario_bars()}))
+    monkeypatch.setattr(crr, "_existing_reaction_keys", _raise_for("XAUUSD", crr._existing_reaction_keys))
+    assert crr.main(["--backfill", "--bt-db", str(bt_path), "--dash-db", str(dash_path)]) == 1
+    out = capsys.readouterr()
+    assert "mode=backfill" in out.out and "FAILED XAUUSD" in out.err and "database is locked" in out.err
+
+
 # ---- --refresh-baselines (controller ruling 8) -------------------------------------------------------
 
 def _baseline_rows(bt):

@@ -29,9 +29,10 @@ Rules (controller rulings for Task 3):
     rows (new period_end); existing rows are never touched, and an unchanged period adds nothing. Who runs
     it: the scheduler hook (Task 7) runs `--incremental --refresh-baselines` monthly so the typical move keeps
     up with volatility; ordinary incremental runs keep using the latest stored baselines.
-  * A fetch failure (exception or no bars at all) for one symbol writes nothing for that symbol; a compute
-    or record failure is reported too (rows committed before it stay; a re-run resumes). Either way the
-    other symbols still run and the exit code is 1. --dry-run computes and prints, writes nothing (no schema).
+  * A fetch failure (exception or no bars at all) for one symbol writes nothing for that symbol; a read
+    (existing rows or stored baselines), compute or record failure is reported too (rows committed before
+    it stay; a re-run resumes). Either way the other symbols still run and the exit code is 1.
+    --dry-run computes and prints, writes nothing (no schema).
 
 Usage (from the app dir):
     python scripts/compute_release_reactions.py --backfill [--since 2026-01-01] [--dry-run] --bt-db PATH
@@ -313,7 +314,8 @@ def run(
     left alone; skipped_recent = releases under 10 minutes old (future releases are not counted);
     baselines / baselines_new = hourly baseline rows computed / not yet stored.
     refresh_baselines: recompute baselines for the current period even in incremental mode (new rows only).
-    fetch_failed / errors: per-symbol failures (fetch, or compute/record); the other symbols still run.
+    fetch_failed / errors: per-symbol failures (fetch, or reading existing rows/baselines, compute or record);
+    the other symbols still run.
     """
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
@@ -333,12 +335,16 @@ def run(
         stats = {key: 0 for key in _COUNTERS}
         result["per_symbol"][symbol] = stats
         stats["skipped_recent"] = len(recent)
-        existing = _existing_reaction_keys(bt_conn, symbol)
-        todo = [m for m in eligible if m.isoformat() not in existing]
-        stats["already_present"] = len(eligible) - len(todo)
-        if not eligible or (mode == "incremental" and not todo and not refresh_baselines):
-            continue                                   # nothing to judge or refresh: no fetch at all
-        stored = _stored_baselines(bt_conn, symbol) if mode == "incremental" and not refresh_baselines else {}
+        try:                                           # a read error for one symbol must not stop the others
+            existing = _existing_reaction_keys(bt_conn, symbol)
+            todo = [m for m in eligible if m.isoformat() not in existing]
+            stats["already_present"] = len(eligible) - len(todo)
+            if not eligible or (mode == "incremental" and not todo and not refresh_baselines):
+                continue                               # nothing to judge or refresh: no fetch at all
+            stored = _stored_baselines(bt_conn, symbol) if mode == "incremental" and not refresh_baselines else {}
+        except Exception as exc:
+            result["errors"][symbol] = f"{type(exc).__name__}: {exc}"
+            continue
         need_baselines = not stored
 
         try:
