@@ -87,6 +87,8 @@ The engine's center of gravity is the article-sentiment pipeline, which is the *
 
 ## 3. US-scope triage of the audit's ten recommendations
 
+> **Superseded later the same day (2026-10-16):** scope was clarified. Gold is traded now, and majors, indices and commodities will be added. The triage below is kept for the record. The current status of each item is in `docs/superpowers/specs/2026-10-16-instrument-context-layer-design.md` §7: the JPY pilot becomes the second-instrument template test, and the transmission graph becomes the factor registry plus instrument exposures.
+
 | # | Item | Under US scope | Why |
 |---|---|---|---|
 | P0-1 | Foreign-CB attribution fix | **Keep** | It's a live USD bug. Foreign CBs move DXY (§1). The US-scope fix is cheaper than the full one: exclude foreign-CB articles from FOMC-family scoring and surface them as DXY-relevant alerts instead of building per-currency axes |
