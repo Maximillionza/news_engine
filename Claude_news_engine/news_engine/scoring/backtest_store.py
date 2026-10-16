@@ -118,6 +118,35 @@ CREATE TABLE IF NOT EXISTS tier1_nowcast_snapshots (
     recorded_at_utc TEXT NOT NULL,
     UNIQUE(event_title, event_time_utc, as_of_utc, kind)
 );
+-- Market reaction (Stats sub-tab): append-only 5-minute price reaction per release + instrument.
+-- reaction is 'buy'/'sell'/'none' text (NULL when no call / no_data); a no_data row keeps NULL prices.
+CREATE TABLE IF NOT EXISTS release_reactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_time_utc TEXT NOT NULL,
+    instrument TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('ok', 'no_data')),
+    p0 REAL,
+    p5 REAL,
+    move REAL,
+    move_pct REAL,                      -- percent, (p5 - p0) / p0 * 100
+    typical_abs_move REAL,
+    reaction TEXT CHECK (reaction IS NULL OR reaction IN ('buy', 'sell', 'none')),
+    bar_source TEXT NOT NULL,
+    computed_at_utc TEXT NOT NULL,
+    UNIQUE(event_time_utc, instrument)
+);
+-- Typical absolute 5-minute move per UTC hour; a new period_end_utc appends a new row (history kept).
+CREATE TABLE IF NOT EXISTS reaction_baselines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    instrument TEXT NOT NULL,
+    utc_hour INTEGER NOT NULL CHECK (utc_hour BETWEEN 0 AND 23),
+    median_abs_move REAL NOT NULL,
+    n_windows INTEGER NOT NULL,
+    period_start_utc TEXT NOT NULL,
+    period_end_utc TEXT NOT NULL,
+    computed_at_utc TEXT NOT NULL,
+    UNIQUE(instrument, utc_hour, period_end_utc)
+);
 CREATE TABLE IF NOT EXISTS exogenous_shocks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     series TEXT NOT NULL,
@@ -1190,6 +1219,107 @@ def get_scored_nowcast_snapshot(
         "ORDER BY CASE kind WHEN 'live' THEN 0 ELSE 1 END, as_of_utc DESC, id DESC LIMIT 1",
         (event_title, release_iso, release_iso, *kinds),
     ).fetchone()
+
+
+_REACTION_STATUSES = ("ok", "no_data")
+_REACTION_CALLS = ("buy", "sell", "none")
+
+
+def record_release_reaction(
+    conn: sqlite3.Connection, event_time_utc: dt.datetime, instrument: str, status: str,
+    p0: Optional[float] = None, p5: Optional[float] = None, typical_abs_move: Optional[float] = None,
+    reaction: Optional[str] = None, bar_source: str = "dukascopy_1m",
+) -> int:
+    """
+    Append-only: the first row for (event_time_utc, instrument) wins and a duplicate is ignored, never
+    updated, so a re-run is idempotent. Returns the row id (the existing row's id on a duplicate).
+
+    status 'ok' needs p0 and p5 and derives move = p5 - p0 and move_pct = move / p0 * 100 (percent).
+    status 'no_data' stores NULL prices/move/move_pct/reaction whatever was passed (nothing to report);
+    typical_abs_move may still be kept. reaction is 'buy'/'sell'/'none' or None (no call).
+    """
+    if status not in _REACTION_STATUSES:
+        raise ValueError(f"status must be one of {_REACTION_STATUSES}, got {status!r}")
+    if reaction is not None and reaction not in _REACTION_CALLS:
+        raise ValueError(f"reaction must be one of {_REACTION_CALLS} or None, got {reaction!r}")
+    event_iso = _utc_iso(event_time_utc, "event_time_utc")
+    move: Optional[float] = None
+    move_pct: Optional[float] = None
+    if status == "ok":
+        if p0 is None or p5 is None:
+            raise ValueError("status 'ok' requires both p0 and p5")
+        if p0 == 0:
+            raise ValueError("p0 must be non-zero to derive move_pct")
+        p0, p5 = float(p0), float(p5)
+        move = p5 - p0
+        move_pct = round(move / p0 * 100.0, 6)
+    else:
+        p0, p5, reaction = None, None, None
+    conn.execute(
+        "INSERT OR IGNORE INTO release_reactions (event_time_utc, instrument, status, p0, p5, move, "
+        "move_pct, typical_abs_move, reaction, bar_source, computed_at_utc) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (event_iso, instrument, status, p0, p5, move, move_pct,
+         None if typical_abs_move is None else float(typical_abs_move), reaction, bar_source,
+         dt.datetime.now(dt.timezone.utc).isoformat()),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT id FROM release_reactions WHERE event_time_utc=? AND instrument=?", (event_iso, instrument),
+    ).fetchone()
+    return row["id"]
+
+
+def get_release_reactions(conn: sqlite3.Connection, instrument: str) -> dict[str, sqlite3.Row]:
+    """All stored reactions for an instrument, keyed by the UTC-normalised ISO event time."""
+    rows = conn.execute(
+        "SELECT * FROM release_reactions WHERE instrument = ? ORDER BY event_time_utc", (instrument,),
+    ).fetchall()
+    return {r["event_time_utc"]: r for r in rows}
+
+
+def record_reaction_baseline(
+    conn: sqlite3.Connection, instrument: str, utc_hour: int, median_abs_move: float, n_windows: int,
+    period_start_utc: dt.datetime, period_end_utc: dt.datetime,
+) -> int:
+    """
+    Append-only: a duplicate (instrument, utc_hour, period_end_utc) is ignored. A refreshed baseline uses
+    a later period_end_utc and is added alongside the old one. Returns the row id.
+    """
+    if not 0 <= utc_hour <= 23:
+        raise ValueError(f"utc_hour must be 0..23, got {utc_hour!r}")
+    if median_abs_move < 0:
+        raise ValueError(f"median_abs_move must be >= 0, got {median_abs_move!r}")
+    if n_windows < 0:
+        raise ValueError(f"n_windows must be >= 0, got {n_windows!r}")
+    start_iso = _utc_iso(period_start_utc, "period_start_utc")
+    end_iso = _utc_iso(period_end_utc, "period_end_utc")
+    conn.execute(
+        "INSERT OR IGNORE INTO reaction_baselines (instrument, utc_hour, median_abs_move, n_windows, "
+        "period_start_utc, period_end_utc, computed_at_utc) VALUES (?,?,?,?,?,?,?)",
+        (instrument, int(utc_hour), float(median_abs_move), int(n_windows), start_iso, end_iso,
+         dt.datetime.now(dt.timezone.utc).isoformat()),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT id FROM reaction_baselines WHERE instrument=? AND utc_hour=? AND period_end_utc=?",
+        (instrument, int(utc_hour), end_iso),
+    ).fetchone()
+    return row["id"]
+
+
+def get_latest_reaction_baselines(conn: sqlite3.Connection, instrument: str) -> dict[int, float]:
+    """{utc_hour: median_abs_move} from, per hour, the row with the latest period_end_utc (by instant)."""
+    rows = conn.execute(
+        "SELECT utc_hour, median_abs_move, period_end_utc FROM reaction_baselines WHERE instrument = ?",
+        (instrument,),
+    ).fetchall()
+    best: dict[int, tuple[dt.datetime, float]] = {}
+    for r in rows:
+        end = dt.datetime.fromisoformat(r["period_end_utc"])
+        current = best.get(r["utc_hour"])
+        if current is None or end > current[0]:
+            best[r["utc_hour"]] = (end, r["median_abs_move"])
+    return {hour: value for hour, (_, value) in best.items()}
 
 
 def record_exogenous_shock(
