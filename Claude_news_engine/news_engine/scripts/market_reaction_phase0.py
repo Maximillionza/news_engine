@@ -183,16 +183,21 @@ def _parse_utc(text: str) -> dt.datetime:
     return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
 
 
+def read_usd_events(conn: sqlite3.Connection) -> list:
+    """(title, event_time_utc, forecast, actual) for every USD row, via an already-open connection."""
+    rows = conn.execute(
+        "SELECT event_title, event_time_utc, forecast, actual FROM event_history "
+        "WHERE country = 'USD' ORDER BY event_time_utc").fetchall()
+    return [(r[0], _parse_utc(r[1]), r[2], r[3]) for r in rows]
+
+
 def load_usd_events(db_path: Path) -> list:
     """(title, event_time_utc, forecast, actual) for USD rows since START. Read-only connection."""
     conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
     try:
-        rows = conn.execute(
-            "SELECT event_title, event_time_utc, forecast, actual FROM event_history "
-            "WHERE country = 'USD' ORDER BY event_time_utc").fetchall()
+        events = read_usd_events(conn)
     finally:
         conn.close()
-    events = [(t, _parse_utc(w), f, a) for t, w, f, a in rows]
     return [e for e in events if e[1] >= START]
 
 
