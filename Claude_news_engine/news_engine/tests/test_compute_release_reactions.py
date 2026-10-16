@@ -194,7 +194,7 @@ def test_backfill_writes_one_row_per_release_and_symbol_with_no_data_for_a_missi
 def test_backfill_baselines_one_row_per_hour_with_period_and_counts():
     dash, bt = _dash_with_events(), bs.get_connection(":memory:")
     result = crr.run(dash, bt, _fetch_both(), "backfill", NOW, ["XAUUSD"], SINCE)
-    rows = bt.execute("SELECT utc_hour, median_abs_move, n_windows, period_start_utc, period_end_utc "
+    rows = bt.execute("SELECT utc_hour, baseline_abs_move, n_windows, period_start_utc, period_end_utc "
                       "FROM reaction_baselines WHERE instrument='XAUUSD' ORDER BY utc_hour").fetchall()
     # Hour 12: Mon 12 + Tue 11 (release window out). Hour 13: Mon 12 + Tue 13:00-13:25 (6; later starts are
     # after period_end = the last release minute). Hour 14: Mon 14:00 and 14:05 only.
@@ -275,7 +275,8 @@ def test_numpy_hour_keys_are_stored_as_plain_ints(monkeypatch):
 
 def test_incremental_skips_minutes_with_rows_and_uses_the_stored_baselines():
     dash, bt = _dash_with_events(), bs.get_connection(":memory:")
-    bs.record_release_reaction(bt, REL_1230, "XAUUSD", "no_data", baseline_quantile=Q)   # already present
+    bs.record_release_reaction(bt, REL_1230, "XAUUSD", "no_data", baseline_quantile=Q,
+                               reaction_multiple=1.0)                       # already present
     bs.record_reaction_baseline(bt, "XAUUSD", 13, 0.25, 50, _t(MON, 0, 0), _t(MON, 23, 0), quantile=Q)
     opens = _scenario_bars()
     opens[_t(TUE, 13, 35)] = opens[_t(TUE, 13, 30)] + 0.3                    # 13:30 now has its end bar
@@ -422,7 +423,7 @@ def test_rows_store_the_quantile_and_multiple():
 def test_rows_under_the_old_median_quantile_are_untouched_by_a_075_run():
     dash, bt = _dash_with_events(), bs.get_connection(":memory:")
     bs.record_release_reaction(bt, REL_1230, "XAUUSD", "ok", p0=1.0, p5=2.0, typical_abs_move=0.9,
-                               reaction="buy", baseline_quantile=0.5)
+                               reaction="buy", baseline_quantile=0.5, reaction_multiple=1.0)
     bs.record_reaction_baseline(bt, "XAUUSD", 12, 99.0, 5, _t(MON, 0, 0), _t(MON, 23, 0), quantile=0.5)
     result = crr.run(dash, bt, _fetch_both(), "incremental", NOW, ["XAUUSD"], SINCE)
     assert result["written"] == 2 and result["already_present"] == 0      # the 0.5 row does not count
@@ -510,7 +511,7 @@ def test_cli_exits_non_zero_on_a_symbol_error(tmp_path, monkeypatch):
 
 def _baseline_rows(bt):
     return [tuple(r) for r in bt.execute(
-        "SELECT id, utc_hour, median_abs_move, n_windows, period_end_utc FROM reaction_baselines ORDER BY id")]
+        "SELECT id, utc_hour, baseline_abs_move, n_windows, period_end_utc FROM reaction_baselines ORDER BY id")]
 
 
 def test_refresh_baselines_appends_rows_for_the_new_period_and_keeps_the_old_ones():

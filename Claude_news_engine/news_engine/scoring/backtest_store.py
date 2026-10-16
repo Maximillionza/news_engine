@@ -141,12 +141,12 @@ CREATE TABLE IF NOT EXISTS release_reactions (
     UNIQUE(event_time_utc, instrument, baseline_quantile)
 );
 -- Typical absolute 5-minute move per UTC hour; a new period_end_utc appends a new row (history kept).
--- median_abs_move holds the `quantile` of |5-min move| (0.5 = the median; the name predates the quantile).
+-- baseline_abs_move is the `quantile` of ordinary |5-min moves| for that instrument and UTC hour.
 CREATE TABLE IF NOT EXISTS reaction_baselines (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     instrument TEXT NOT NULL,
     utc_hour INTEGER NOT NULL CHECK (utc_hour BETWEEN 0 AND 23),
-    median_abs_move REAL NOT NULL,
+    baseline_abs_move REAL NOT NULL,
     n_windows INTEGER NOT NULL,
     period_start_utc TEXT NOT NULL,
     period_end_utc TEXT NOT NULL,
@@ -1244,13 +1244,14 @@ def record_release_reaction(
     conn: sqlite3.Connection, event_time_utc: dt.datetime, instrument: str, status: str,
     p0: Optional[float] = None, p5: Optional[float] = None, typical_abs_move: Optional[float] = None,
     reaction: Optional[str] = None, bar_source: str = "dukascopy_1m",
-    baseline_quantile: float = 0.5, reaction_multiple: float = 1.0,
+    *, baseline_quantile: float, reaction_multiple: float,
 ) -> int:
     """
     Append-only: the first row for (event_time_utc, instrument, baseline_quantile) wins and a duplicate is
     ignored, never updated, so a re-run is idempotent. Returns the row id (the existing row's id on a
     duplicate). Rows judged against another baseline quantile are separate rows and never block each other.
-    reaction_multiple (finite, > 0) is the multiple of typical_abs_move a move had to exceed.
+    reaction_multiple (finite, > 0) is the multiple of typical_abs_move a move had to exceed. Both are
+    required keyword arguments (no defaults) so a caller can never silently write an old version.
 
     status 'ok' needs p0 and p5 and derives move = p5 - p0 and move_pct = move / p0 * 100 (percent).
     status 'no_data' stores NULL prices/move/move_pct/reaction; passing p0, p5 or reaction with it is a
@@ -1313,18 +1314,18 @@ def get_release_reactions(conn: sqlite3.Connection, instrument: str, quantile: f
 
 
 def record_reaction_baseline(
-    conn: sqlite3.Connection, instrument: str, utc_hour: int, median_abs_move: float, n_windows: int,
-    period_start_utc: dt.datetime, period_end_utc: dt.datetime, quantile: float = 0.5,
+    conn: sqlite3.Connection, instrument: str, utc_hour: int, baseline_abs_move: float, n_windows: int,
+    period_start_utc: dt.datetime, period_end_utc: dt.datetime, *, quantile: float,
 ) -> int:
     """
     Append-only: a duplicate (instrument, utc_hour, quantile, period_end_utc) is ignored. A refreshed
-    baseline uses a later period_end_utc and is added alongside the old one. `median_abs_move` is the
-    `quantile` of |5-min move| (the parameter name predates the quantile). Returns the row id.
+    baseline uses a later period_end_utc and is added alongside the old one. `baseline_abs_move` is the
+    `quantile` of |5-min move|; `quantile` is a required keyword argument (no default). Returns the row id.
     """
     if isinstance(utc_hour, bool) or not isinstance(utc_hour, int) or not 0 <= utc_hour <= 23:
         raise ValueError(f"utc_hour must be an integer 0..23, got {utc_hour!r}")
-    if not math.isfinite(median_abs_move) or median_abs_move < 0:
-        raise ValueError(f"median_abs_move must be finite and >= 0, got {median_abs_move!r}")
+    if not math.isfinite(baseline_abs_move) or baseline_abs_move < 0:
+        raise ValueError(f"baseline_abs_move must be finite and >= 0, got {baseline_abs_move!r}")
     if n_windows < 0:
         raise ValueError(f"n_windows must be >= 0, got {n_windows!r}")
     quantile = _check_quantile(quantile, "quantile")
@@ -1333,9 +1334,9 @@ def record_reaction_baseline(
     if period_start_utc > period_end_utc:
         raise ValueError(f"period_start_utc {start_iso} is after period_end_utc {end_iso}")
     conn.execute(
-        "INSERT OR IGNORE INTO reaction_baselines (instrument, utc_hour, median_abs_move, n_windows, "
+        "INSERT OR IGNORE INTO reaction_baselines (instrument, utc_hour, baseline_abs_move, n_windows, "
         "period_start_utc, period_end_utc, computed_at_utc, quantile) VALUES (?,?,?,?,?,?,?,?)",
-        (instrument, int(utc_hour), float(median_abs_move), int(n_windows), start_iso, end_iso,
+        (instrument, int(utc_hour), float(baseline_abs_move), int(n_windows), start_iso, end_iso,
          dt.datetime.now(dt.timezone.utc).isoformat(), quantile),
     )
     conn.commit()
@@ -1352,7 +1353,7 @@ def get_latest_reaction_baselines(conn: sqlite3.Connection, instrument: str, qua
     instant). `quantile` is required so baselines of different quantiles are never mixed.
     """
     rows = conn.execute(
-        "SELECT utc_hour, median_abs_move, period_end_utc FROM reaction_baselines "
+        "SELECT utc_hour, baseline_abs_move, period_end_utc FROM reaction_baselines "
         "WHERE instrument = ? AND quantile = ?",
         (instrument, float(quantile)),
     ).fetchall()
@@ -1361,7 +1362,7 @@ def get_latest_reaction_baselines(conn: sqlite3.Connection, instrument: str, qua
         end = dt.datetime.fromisoformat(r["period_end_utc"])
         current = best.get(r["utc_hour"])
         if current is None or end > current[0]:
-            best[r["utc_hour"]] = (end, r["median_abs_move"])
+            best[r["utc_hour"]] = (end, r["baseline_abs_move"])
     return {hour: value for hour, (_, value) in best.items()}
 
 
