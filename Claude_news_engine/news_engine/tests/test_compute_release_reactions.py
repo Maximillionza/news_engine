@@ -431,3 +431,121 @@ def test_rows_under_the_old_median_quantile_are_untouched_by_a_075_run():
     new = bs.get_release_reactions(bt, "XAUUSD", Q)[REL_1230.isoformat()]
     assert new["typical_abs_move"] == pytest.approx(0.5)                   # the stored 0.5-quantile 99.0 is ignored
     assert bs.get_latest_reaction_baselines(bt, "XAUUSD", 0.5) == {12: 99.0}
+
+
+# ---- raw duplicate minutes stay out of the baseline (controller ruling 5) ----------------------------
+
+def test_raw_duplicate_minutes_are_excluded_from_the_baseline_but_judged_once():
+    dash = ws.get_connection(":memory:")
+    for minute in (14, 15, 16):
+        _insert_event(dash, "ADP Weekly Employment Change", _t(TUE, 12, minute))
+    _insert_event(dash, "ISM Services PMI", REL_1330)                  # keeps the period open past 12:15
+    judged, excluded = crr.release_minute_sets(dash)
+    assert judged == {_t(TUE, 12, 14), REL_1330}
+    assert excluded == {_t(TUE, 12, 14), _t(TUE, 12, 15), _t(TUE, 12, 16), REL_1330}
+    bt = bs.get_connection(":memory:")
+    result = crr.run(dash, bt, _fetch_both(), "backfill", NOW, ["XAUUSD"], SINCE)
+    assert result["written"] == 2
+    assert set(bs.get_release_reactions(bt, "XAUUSD", Q)) == {_t(TUE, 12, 14).isoformat(), REL_1330.isoformat()}
+    # Hour 12: Mon 12 + Tue 12 grid windows, minus the Tue 12:15 start (a raw release minute); 12:14 and 12:16
+    # are off the 5-minute grid. Without the raw exclusion this would be 24.
+    assert bt.execute("SELECT n_windows FROM reaction_baselines WHERE utc_hour = 12").fetchone()[0] == 23
+
+
+# ---- naive dict keys (controller ruling 6) -----------------------------------------------------------
+
+def test_naive_dict_keys_are_refused_not_guessed():
+    naive = {dt.datetime(2026, 3, 2, 12, 0): 100.0, dt.datetime(2026, 3, 2, 12, 5): 101.0}
+    with pytest.raises(ValueError):
+        crr.price_at_minute(naive, _t(MON, 12, 0))
+    with pytest.raises(ValueError):
+        crr.compute_baselines(naive, set())
+    with pytest.raises(ValueError):
+        crr.reaction_for(naive, _t(MON, 12, 0), 0.5)
+
+
+# ---- per-symbol failure isolation beyond the fetch (controller ruling 7) -----------------------------
+
+def test_a_record_error_for_one_symbol_is_reported_and_the_other_symbol_still_runs(monkeypatch):
+    dash, bt = _dash_with_events(), bs.get_connection(":memory:")
+    real = bs.record_reaction_baseline
+
+    def flaky(conn, instrument, *args, **kwargs):
+        if instrument == "US30":
+            raise sqlite3.OperationalError("disk I/O error")
+        return real(conn, instrument, *args, **kwargs)
+
+    monkeypatch.setattr(bs, "record_reaction_baseline", flaky)
+    result = crr.run(dash, bt, _fetch_both(), "backfill", NOW, ["US30", "XAUUSD"], SINCE)
+    assert "disk I/O error" in result["errors"]["US30"]
+    assert bs.get_release_reactions(bt, "US30", Q) == {}
+    assert len(bs.get_release_reactions(bt, "XAUUSD", Q)) == 2
+
+
+def test_a_compute_error_for_one_symbol_is_reported_and_the_other_symbol_still_runs(monkeypatch):
+    dash, bt = _dash_with_events(), bs.get_connection(":memory:")
+    real, calls = crr.compute_baselines, []
+
+    def flaky(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:                                   # the first symbol processed: US30
+            raise RuntimeError("bad bars")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(crr, "compute_baselines", flaky)
+    result = crr.run(dash, bt, _fetch_both(), "backfill", NOW, ["US30", "XAUUSD"], SINCE)
+    assert "bad bars" in result["errors"]["US30"] and "XAUUSD" not in result["errors"]
+    assert len(bs.get_release_reactions(bt, "XAUUSD", Q)) == 2
+
+
+def test_cli_exits_non_zero_on_a_symbol_error(tmp_path, monkeypatch):
+    dash_path, bt_path = tmp_path / "dashboard.db", tmp_path / "bt.db"
+    _make_dash_file(dash_path)
+    monkeypatch.setattr(crr, "default_fetch_bars", FakeFetch({"XAUUSD": _scenario_bars()}))
+    monkeypatch.setattr(crr, "compute_baselines", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert crr.main(["--backfill", "--bt-db", str(bt_path), "--dash-db", str(dash_path)]) == 1
+
+
+# ---- --refresh-baselines (controller ruling 8) -------------------------------------------------------
+
+def _baseline_rows(bt):
+    return [tuple(r) for r in bt.execute(
+        "SELECT id, utc_hour, median_abs_move, n_windows, period_end_utc FROM reaction_baselines ORDER BY id")]
+
+
+def test_refresh_baselines_appends_rows_for_the_new_period_and_keeps_the_old_ones():
+    dash, bt = _dash_with_events(), bs.get_connection(":memory:")
+    crr.run(dash, bt, _fetch_both(), "backfill", NOW, ["XAUUSD"], SINCE)
+    old = _baseline_rows(bt)
+    _insert_event(dash, "Fed Chair Speaks", _t(TUE, 14, 0))
+    crr.run(dash, bt, _fetch_both(), "incremental", NOW, ["XAUUSD"], SINCE)     # no flag: stored baselines
+    assert _baseline_rows(bt) == old
+    fetch = _fetch_both()
+    result = crr.run(dash, bt, fetch, "incremental", NOW, ["XAUUSD"], SINCE, refresh_baselines=True)
+    assert fetch.calls and result["written"] == 0 and result["baselines_new"] == 3
+    rows = _baseline_rows(bt)
+    assert rows[:3] == old                                                     # old rows untouched
+    assert {r[4] for r in rows[3:]} == {_t(TUE, 14, 0).isoformat()}            # new period_end
+    assert bs.get_latest_reaction_baselines(bt, "XAUUSD", Q) == {r[1]: r[2] for r in rows[3:]}
+
+
+def test_refresh_with_an_unchanged_period_adds_nothing():
+    dash, bt = _dash_with_events(), bs.get_connection(":memory:")
+    crr.run(dash, bt, _fetch_both(), "backfill", NOW, ["XAUUSD"], SINCE)
+    result = crr.run(dash, bt, _fetch_both(), "incremental", NOW, ["XAUUSD"], SINCE, refresh_baselines=True)
+    assert (result["baselines"], result["baselines_new"]) == (3, 0) and _rows(bt, "reaction_baselines") == 3
+
+
+def test_cli_passes_refresh_baselines_through(tmp_path, monkeypatch):
+    dash_path, bt_path = tmp_path / "dashboard.db", tmp_path / "bt.db"
+    _make_dash_file(dash_path)
+    seen = {}
+
+    def fake_run(*args, **kwargs):
+        seen.update(kwargs)
+        return {"fetch_failed": {}, "errors": {}, "dry_run": False, "mode": "incremental", "unresolved": [],
+                "per_symbol": {}, "baselines_by_symbol": {}, **{key: 0 for key in crr._COUNTERS}}
+
+    monkeypatch.setattr(crr, "run", fake_run)
+    assert crr.main(["--incremental", "--refresh-baselines", "--bt-db", str(bt_path), "--dash-db", str(dash_path)]) == 0
+    assert seen["refresh_baselines"] is True

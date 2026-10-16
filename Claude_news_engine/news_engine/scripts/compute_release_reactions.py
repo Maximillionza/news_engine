@@ -9,7 +9,9 @@ release_reactions and reaction_baselines of backtest_log.db. Never interpolates:
 Rules (controller rulings for Task 3):
   * Release minutes: USD rows only; same-title rows within 3 minutes of the earliest row of their run are one
     event listed twice and collapse to that earliest row (a 9-minute pair is two events). The distinct exact
-    minutes left are the release minutes; the same set is excluded from the baseline windows.
+    minutes left are the release minutes that get judged. Baseline windows exclude EVERY raw USD row minute,
+    including the collapsed duplicates (controller ruling 5). The release's own day is not excluded from
+    the baseline: one row per hour cannot do that (about 0.5% of windows).
   * Baseline per instrument per UTC hour: the REACTION_BASELINE_QUANTILE (0.75, owner ruling 2026-10-16;
     linear interpolation like numpy) of |open(s+5) - open(s)| over windows starting on 5-minute boundaries,
     weekdays only, start not a release minute, both bars present. A reaction is |move| > that value x
@@ -23,12 +25,17 @@ Rules (controller rulings for Task 3):
   * --backfill recomputes and records the baselines, then records every release minute since --since that
     has no row yet. --incremental only records release minutes with no row, judged against the latest stored
     baselines (computed and recorded first if none exist). Rows already present are counted, never rewritten.
-  * A fetch failure (exception or no bars at all) for one symbol writes nothing for that symbol, the other
-    symbols still run, and the exit code is 1. --dry-run computes and prints, writes nothing (no schema either).
+  * --refresh-baselines (any mode) recomputes the baselines for the current period and records them as NEW
+    rows (new period_end); existing rows are never touched, and an unchanged period adds nothing. Who runs
+    it: the scheduler hook (Task 7) runs `--incremental --refresh-baselines` monthly so the typical move keeps
+    up with volatility; ordinary incremental runs keep using the latest stored baselines.
+  * A fetch failure (exception or no bars at all) for one symbol writes nothing for that symbol; a compute
+    or record failure is reported too (rows committed before it stay; a re-run resumes). Either way the
+    other symbols still run and the exit code is 1. --dry-run computes and prints, writes nothing (no schema).
 
 Usage (from the app dir):
     python scripts/compute_release_reactions.py --backfill [--since 2026-01-01] [--dry-run] --bt-db PATH
-    python scripts/compute_release_reactions.py --incremental --bt-db PATH [--dash-db PATH]
+    python scripts/compute_release_reactions.py --incremental --bt-db PATH [--dash-db PATH] [--refresh-baselines]
 Safety: refuses (exit 2) to target the app's default (live) backtest_log.db unless --bt-db is given or
 STATS_BACKFILL_LIVE=1 is set; the refusal happens before any database is opened. dashboard.db is always
 opened read-only (sqlite URI mode=ro).
@@ -88,6 +95,10 @@ def _release_minute(when: dt.datetime) -> dt.datetime:
     return _aware_utc(when, "release time").replace(second=0, microsecond=0)
 
 
+class _Opens(dict):
+    """A {aware UTC minute: open} dict already validated by to_opens (so it is not re-checked per call)."""
+
+
 def to_opens(bars: Bars) -> dict[dt.datetime, float]:
     """
     {aware UTC minute start: open} from a pandas Series (UTC DatetimeIndex -> open) or a mapping.
@@ -103,7 +114,7 @@ def to_opens(bars: Bars) -> dict[dt.datetime, float]:
         pairs = ((_aware_utc(ts, "bar timestamp"), value) for ts, value in bars.items())
     else:
         raise TypeError(f"bars must be a pandas Series or a mapping, got {type(bars).__name__}")
-    opens: dict[dt.datetime, float] = {}
+    opens = _Opens()
     for when, value in pairs:
         if value is None:
             continue
@@ -114,8 +125,8 @@ def to_opens(bars: Bars) -> dict[dt.datetime, float]:
 
 
 def _as_opens(bars: Bars) -> dict[dt.datetime, float]:
-    """A plain dict is taken as already normalised by to_opens (run() normalises once per symbol)."""
-    return bars if type(bars) is dict else to_opens(bars)
+    """Only to_opens output skips validation; any other dict or Series is normalised (naive keys raise)."""
+    return bars if isinstance(bars, _Opens) else to_opens(bars)
 
 
 def price_at_minute(bars: Bars, when: dt.datetime) -> Optional[float]:
@@ -198,10 +209,21 @@ def collapse_same_title_duplicates(
     return sorted(kept, key=lambda event: (event[1], event[0]))
 
 
+def release_minute_sets(dash_conn: sqlite3.Connection) -> tuple[set[dt.datetime], set[dt.datetime]]:
+    """
+    (judged, excluded): judged = distinct UTC minutes of the USD rows after the same-title duplicate collapse
+    (each is one release); excluded = EVERY raw USD row minute, including the dropped duplicates, which no
+    baseline window may start on (controller ruling 5).
+    """
+    events = [(title, when) for title, when, _forecast, _actual in phase0.read_usd_events(dash_conn)]
+    judged = {_release_minute(when) for _title, when in collapse_same_title_duplicates(events)}
+    excluded = {_release_minute(when) for _title, when in events}
+    return judged, excluded
+
+
 def usd_release_minutes(dash_conn: sqlite3.Connection) -> set[dt.datetime]:
     """Distinct UTC release minutes of the USD event_history rows after the duplicate collapse."""
-    events = [(title, when) for title, when, _forecast, _actual in phase0.read_usd_events(dash_conn)]
-    return {_release_minute(when) for _title, when in collapse_same_title_duplicates(events)}
+    return release_minute_sets(dash_conn)[0]
 
 
 # =============================================================================================
@@ -249,28 +271,79 @@ _COUNTERS = ("written", "already_present", "ok", "no_data", "buy", "sell", "none
              "skipped_recent", "skipped_pending", "baselines", "baselines_new")
 
 
+def _judge_and_record(
+    bt_conn: Optional[sqlite3.Connection], symbol: str, opens: dict, stats: dict, result: dict,
+    stored: dict[int, float], need_baselines: bool, eligible: list[dt.datetime], todo: list[dt.datetime],
+    excluded_minutes: set[dt.datetime], dry_run: bool,
+) -> None:
+    """Baselines (computed or stored), then one reaction row per todo minute. Raises on any failure."""
+    if need_baselines:
+        period = (min(opens), eligible[-1])
+        computed = {int(hour): (float(value), int(n))
+                    for hour, (value, n) in compute_baselines(opens, excluded_minutes, period).items()}
+        already = _baseline_hours_at(bt_conn, symbol, period[1])
+        stats["baselines"] = len(computed)
+        stats["baselines_new"] = sum(1 for hour in computed if hour not in already)
+        if not dry_run:
+            for hour, (value, n) in sorted(computed.items()):
+                backtest_store.record_reaction_baseline(bt_conn, symbol, hour, value, n, *period,
+                                                        quantile=REACTION_BASELINE_QUANTILE)
+        typical_by_hour = {hour: value for hour, (value, _n) in computed.items()}
+        result["baselines_by_symbol"][symbol] = {
+            "source": "computed", "period": [p.isoformat() for p in period],
+            "hours": {hour: {"value": value, "n_windows": n} for hour, (value, n) in sorted(computed.items())}}
+    else:
+        typical_by_hour = {int(hour): float(value) for hour, value in stored.items()}
+        result["baselines_by_symbol"][symbol] = {
+            "source": "stored", "period": None,
+            "hours": {hour: {"value": value, "n_windows": None} for hour, value in sorted(typical_by_hour.items())}}
+
+    last_bar = max(opens)
+    version = {"bar_source": BAR_SOURCE, "baseline_quantile": REACTION_BASELINE_QUANTILE,
+               "reaction_multiple": REACTION_MIN_MULTIPLE}
+    for minute in todo:
+        if minute + WINDOW > last_bar:                 # the feed has not reached t+5 yet: try again later
+            stats["skipped_pending"] += 1
+            continue
+        out = reaction_for(opens, minute, typical_by_hour.get(minute.hour), REACTION_MIN_MULTIPLE)
+        if not dry_run:
+            if out["status"] == "ok":
+                backtest_store.record_release_reaction(
+                    bt_conn, minute, symbol, "ok", p0=out["p0"], p5=out["p5"],
+                    typical_abs_move=out["typical"], reaction=out["reaction"], **version)
+            else:
+                backtest_store.record_release_reaction(
+                    bt_conn, minute, symbol, "no_data", typical_abs_move=out["typical"], **version)
+        stats["written"] += 1
+        stats[out["status"]] += 1
+        if out["reaction"] is not None:
+            stats[out["reaction"]] += 1
+
+
 def run(
     dash_conn: sqlite3.Connection, bt_conn: Optional[sqlite3.Connection], fetch_bars: FetchBars, mode: str,
     now: dt.datetime, symbols: list[str], since: dt.datetime, dry_run: bool = False,
-    resolve: Optional[Callable[[str], Optional[str]]] = None,
+    resolve: Optional[Callable[[str], Optional[str]]] = None, refresh_baselines: bool = False,
 ) -> dict:
     """
     Compute and (unless dry_run) record reactions and baselines. Counts are per (release minute, symbol):
     written = rows newly recorded (would be, on a dry run); already_present = rows that existed and were
     left alone; skipped_recent = releases under 10 minutes old (future releases are not counted);
     baselines / baselines_new = hourly baseline rows computed / not yet stored.
+    refresh_baselines: recompute baselines for the current period even in incremental mode (new rows only).
+    fetch_failed / errors: per-symbol failures (fetch, or compute/record); the other symbols still run.
     """
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
     now, since = _aware_utc(now, "now"), _aware_utc(since, "since")
     resolve = resolve or _resolve_dukascopy
-    release_minutes = usd_release_minutes(dash_conn)
+    release_minutes, excluded_minutes = release_minute_sets(dash_conn)
     cutoff = now - MIN_AGE
     eligible = sorted(m for m in release_minutes if since <= m <= cutoff)
     recent = [m for m in release_minutes if since <= m and cutoff < m <= now]
 
     result: dict = {"mode": mode, "dry_run": dry_run, **{key: 0 for key in _COUNTERS},
-                    "fetch_failed": {}, "unresolved": [], "per_symbol": {}, "baselines_by_symbol": {}}
+                    "fetch_failed": {}, "errors": {}, "unresolved": [], "per_symbol": {}, "baselines_by_symbol": {}}
     for symbol in symbols:
         if resolve(symbol) is None:
             result["unresolved"].append(symbol)
@@ -281,9 +354,9 @@ def run(
         existing = _existing_reaction_keys(bt_conn, symbol)
         todo = [m for m in eligible if m.isoformat() not in existing]
         stats["already_present"] = len(eligible) - len(todo)
-        if not eligible or (mode == "incremental" and not todo):
-            continue                                   # nothing to judge: no fetch at all
-        stored = _stored_baselines(bt_conn, symbol) if mode == "incremental" else {}
+        if not eligible or (mode == "incremental" and not todo and not refresh_baselines):
+            continue                                   # nothing to judge or refresh: no fetch at all
+        stored = _stored_baselines(bt_conn, symbol) if mode == "incremental" and not refresh_baselines else {}
         need_baselines = not stored
 
         try:
@@ -293,48 +366,12 @@ def run(
         except Exception as exc:                       # one symbol's feed failure must not stop the others
             result["fetch_failed"][symbol] = f"{type(exc).__name__}: {exc}"
             continue
-
-        if need_baselines:
-            period = (min(opens), eligible[-1])
-            computed = {int(hour): (float(value), int(n))
-                        for hour, (value, n) in compute_baselines(opens, release_minutes, period).items()}
-            already = _baseline_hours_at(bt_conn, symbol, period[1])
-            stats["baselines"] = len(computed)
-            stats["baselines_new"] = sum(1 for hour in computed if hour not in already)
-            if not dry_run:
-                for hour, (value, n) in sorted(computed.items()):
-                    backtest_store.record_reaction_baseline(bt_conn, symbol, hour, value, n, *period,
-                                                            quantile=REACTION_BASELINE_QUANTILE)
-            typical_by_hour = {hour: value for hour, (value, _n) in computed.items()}
-            result["baselines_by_symbol"][symbol] = {
-                "source": "computed", "period": [p.isoformat() for p in period],
-                "hours": {hour: {"value": value, "n_windows": n} for hour, (value, n) in sorted(computed.items())}}
-        else:
-            typical_by_hour = {int(hour): float(value) for hour, value in stored.items()}
-            result["baselines_by_symbol"][symbol] = {
-                "source": "stored", "period": None,
-                "hours": {hour: {"value": value, "n_windows": None} for hour, value in sorted(typical_by_hour.items())}}
-
-        last_bar = max(opens)
-        for minute in todo:
-            if minute + WINDOW > last_bar:             # the feed has not reached t+5 yet: try again later
-                stats["skipped_pending"] += 1
-                continue
-            out = reaction_for(opens, minute, typical_by_hour.get(minute.hour), REACTION_MIN_MULTIPLE)
-            if not dry_run:
-                version = {"bar_source": BAR_SOURCE, "baseline_quantile": REACTION_BASELINE_QUANTILE,
-                           "reaction_multiple": REACTION_MIN_MULTIPLE}
-                if out["status"] == "ok":
-                    backtest_store.record_release_reaction(
-                        bt_conn, minute, symbol, "ok", p0=out["p0"], p5=out["p5"],
-                        typical_abs_move=out["typical"], reaction=out["reaction"], **version)
-                else:
-                    backtest_store.record_release_reaction(
-                        bt_conn, minute, symbol, "no_data", typical_abs_move=out["typical"], **version)
-            stats["written"] += 1
-            stats[out["status"]] += 1
-            if out["reaction"] is not None:
-                stats[out["reaction"]] += 1
+        try:
+            _judge_and_record(bt_conn, symbol, opens, stats, result, stored, need_baselines, eligible, todo,
+                              excluded_minutes, dry_run)
+        except Exception as exc:                       # compute/record failure: report, keep going
+            # Rows recorded before the failure stay (append-only, each committed); a re-run resumes.
+            result["errors"][symbol] = f"{type(exc).__name__}: {exc}"
 
     for stats in result["per_symbol"].values():
         for key in _COUNTERS:
@@ -378,6 +415,9 @@ def _print_summary(result: dict) -> None:
         print("unresolved symbols (skipped, no Dukascopy mapping): " + ", ".join(result["unresolved"]))
     for symbol, error in result["fetch_failed"].items():
         print(f"FETCH FAILED {symbol}: {error} (nothing written for {symbol})", file=sys.stderr)
+    for symbol, error in result.get("errors", {}).items():
+        print(f"FAILED {symbol}: {error} (rows recorded before the failure are kept; re-run to resume)",
+              file=sys.stderr)
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -386,6 +426,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     which.add_argument("--backfill", action="store_true", help="recompute baselines; record every missing release")
     which.add_argument("--incremental", action="store_true", help="record missing releases with stored baselines")
     parser.add_argument("--dry-run", action="store_true", help="compute and print; write nothing")
+    parser.add_argument("--refresh-baselines", action="store_true",
+                        help="recompute baselines for the current period and record them as new rows (any mode)")
     parser.add_argument("--bt-db", type=Path, default=None, help="backtest_log.db to write (required unless "
                                                                   f"{LIVE_ENV_VAR}=1)")
     parser.add_argument("--dash-db", type=Path, default=None, help="dashboard.db to read (opened read-only)")
@@ -404,13 +446,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         bt_conn = _open_bt(bt_path, args.dry_run)
         symbols = dash_store.list_tracked_symbols(dash_conn)
         result = run(dash_conn, bt_conn, default_fetch_bars, "backfill" if args.backfill else "incremental",
-                     dt.datetime.now(UTC), symbols, since, dry_run=args.dry_run)
+                     dt.datetime.now(UTC), symbols, since, dry_run=args.dry_run,
+                     refresh_baselines=args.refresh_baselines)
     finally:
         dash_conn.close()
         if bt_conn is not None:
             bt_conn.close()
     _print_summary(result)
-    return 1 if result["fetch_failed"] else 0
+    return 1 if result["fetch_failed"] or result.get("errors") else 0
 
 
 if __name__ == "__main__":
