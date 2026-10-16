@@ -1,6 +1,6 @@
 # Instrument Context Layer — Design
 
-**Status:** PROPOSED 2026-10-16 (SAST). Not approved, nothing built. Per this project's convention (brainstorm → spec → plan → subagent-driven build), this needs your sign-off before a plan is written.
+**Status:** PROPOSED 2026-10-16 (SAST). Revised the same day to frame everything around the engine's original event → dollar (anchor) → instrument chain (§2) and to add Phase 0b (measure both links). Not approved, nothing built. Per this project's convention (brainstorm → spec → plan → subagent-driven build), this needs your sign-off before a plan is written.
 
 **Why now:** you've confirmed scope. Gold is traded today, but majors, indices and commodities will be added. That supersedes the US-only triage in `docs/fundamental-analysis-industry-benchmark-2026-10-16.md` §3. The 2026-10-16 audit's §5 sketched per-currency axes plus a gold axis; this spec turns that sketch into a contract that every future instrument follows.
 
@@ -35,23 +35,47 @@ Building gold's context the obvious way — more `XAUUSD` rows in #4–#8, more 
 
 ---
 
-## 2. Design principle: a factor model with per-instrument context providers
+## 2. Design principle: keep the engine's event → anchor → instrument chain
 
-News and events produce **shocks to factors**. Instruments have **exposures** to factors. The impact on an instrument is the sum over factors of its exposure times that factor's shock:
+**Revision (2026-10-16, after design feedback).** The engine was built event-first, not instrument-first:
+
+1. How does this event move the **dollar**?
+2. How does an instrument **typically** react when the dollar moves that way?
+3. Predict the instrument from those two steps.
+
+This design keeps that chain exactly. It generalizes only the middle node. Throughout this spec, **"factor" means "anchor"**: the first asset an event hits, which the instrument then reacts to.
 
 ```text
-impact(instrument) = Σ_f exposure[instrument][f] × shock[f]
+ event ──link 1──▶ anchor reaction ──link 2──▶ instrument's typical reaction to that anchor ──▶ prediction
+         (direction + size)                     (measured from past event windows)
+
+ today:  US CPI  ──▶ USD  ──▶ gold ≈ −1 × USD           (link 2 is a fixed constant)
+ later:  ECB     ──▶ EUR  ──▶ EURUSD ≈ +1 × EUR
+         OPEC+   ──▶ OIL  ──▶ USOIL, USDCAD, US30 (each its own measured reaction)
+         war     ──▶ SAFE_HAVEN ──▶ gold, USDJPY, US30
 ```
+
+For every USD event, nothing changes: the anchor is the dollar, as now. A second anchor is only needed when an event's first hit isn't the dollar, which happens as soon as majors, indices and commodities are added.
+
+`[Certain]` Three things in the current code fall short of the design as described:
+
+| Your design step | What the code does today | Gap |
+|---|---|---|
+| Link 1: event → dollar reaction | Predicted (surprise sign × polarity, sentiment, Kalshi) | **The dollar's actual reaction is never measured.** `scoring/outcome_classifier.py:33` grades only the instrument's own price. When a call is wrong, you can't tell whether the dollar read was wrong (link 1) or the instrument's response to the dollar was wrong (link 2) |
+| Link 2: how the instrument *typically* reacts to that dollar move | Fixed constants: gold −1.0, USD-quote FX −1.0, USD-base FX +1.0, indices −0.7 (`_map_to_instrument_score`) | **"Typically" is assumed, never measured.** No beta or co-movement is estimated anywhere in `scoring/`, `data_layer/` or `webapp/`. Gold's real response to DXY is regime-dependent (the repo's own Layer2 notes say the real-yield link broke after 2024), and a constant can't follow that |
+| The chain is the only route | Some layers already bypass the dollar: `alerting/direction.py` maps (shock category → instrument class) directly, and the relevance/magnitude grids map event → symbol directly | The codebase is already a hybrid. Making every route go event → anchor → instrument restores the design you intended, and gives each route one shared place to be measured |
+
+**Consequence for this spec:** link 2 is **measured, not hand-set**. For every past graded event window, record the anchor's move (DXY from Dukascopy, which `data_layer/discovery_detector.py` already fetches) and the instrument's move over the same window. The instrument's typical reaction per anchor is the slope of instrument move on anchor move, re-estimated on a rolling window and dated. Today's constants stay as the cold-start value until enough windows exist. That is your step 2, made empirical.
 
 What goes into each layer:
 
-- **Evidence is cited once per edge**: event → factor once, and instrument → factor once. It is no longer cited once per (event, instrument) cell, so maintenance grows as events + instruments instead of events × instruments.
-- **Shared factors** carry everything instruments have in common: USD, other currency axes, US rates, risk appetite, safe haven, oil.
-- **Context providers** carry what's specific to an instrument (gold's central-bank buying, oil's inventories), behind **one interface every instrument uses**. Gold is just the first provider.
+- **Evidence is cited once per link.** Event → anchor is cited once and instrument → anchor is measured once, not once per (event, instrument) cell. Maintenance grows as events + instruments, not events × instruments.
+- **Shared anchors** cover what instruments have in common: USD, other currencies, US rates, risk appetite, safe haven, oil.
+- **Context providers** carry what's specific to an instrument (gold's central-bank buying, oil's inventories), behind **one interface every instrument uses**. Gold is just the first provider. They adjust confidence around the chain's prediction; they don't replace the chain.
 
-`[Likely]` This is the standard organizing principle of multi-asset macro and risk systems: factor exposures plus asset-specific drivers. Macrosynergy's JPMaQS, for example, organizes indicators by currency area and factor family. It's a structure choice, not an accuracy claim. Exposures start hand-set and cited (the same discipline as today's trust weights) and get calibrated from the outcome DB once n allows.
+`[Likely]` The general structure (anchors/factors plus asset-specific drivers) is how multi-asset macro and risk systems are organized; Macrosynergy's JPMaQS, for example, organizes by currency area and factor family. It's a structure choice, not an accuracy claim.
 
-**Behaviour-preserving start.** `[Certain]` by arithmetic, today's mapping is already a one-factor exposure vector:
+**Behaviour-preserving start.** `[Certain]` by arithmetic, today's mapping is already a one-anchor chain:
 
 | `usd_relationship` today | Equivalent exposure vector |
 |---|---|
@@ -113,7 +137,9 @@ class InstrumentProfile:
 
 Lookup rule: a hand-written profile wins. Otherwise `classify_symbol()` generates a default from the table in §2, which keeps today's behaviour for every symbol the picker can add.
 
-Gold's profile is the first hand-written one. Values are starting points, `[Guessing]` until calibrated:
+`exposures` holds link 2: the instrument's typical reaction per anchor. Each value is the **measured** event-window slope once enough graded windows exist (§2, Phase 0b). The hand-written numbers below are cold-start values only, and each records whether it is a `prior` or `measured`, plus the window count and date range.
+
+Gold's profile is the first hand-written one. Values are cold-start priors, `[Guessing]` until measured:
 
 ```python
 XAUUSD = InstrumentProfile(
@@ -244,6 +270,7 @@ If it needs a core edit, the design failed and gets fixed before a third instrum
 |---|---|---|---|
 | **Pre-0** (audit P0-1, now) | Foreign-CB exclusion from FOMC-family scoring, as a live-bug stopgap. The foreign-CB name list is reused as Phase 1's attribution fast path, so it isn't throwaway | Removes mis-signed articles | Low |
 | **0** | Factor registry, profiles with generated defaults, dot product replacing `usd_relationship` mapping | **None** (regression-tested) | Low |
+| **0b** | **Measure both links of the existing chain.** For every graded event window, also record DXY's move over the same window. Report three numbers: link-1 accuracy (did the dollar move the way the engine predicted?), link-2 accuracy (given the dollar's actual move, did the instrument follow its assumed reaction?), and the measured slope per instrument vs DXY. Works on the existing USD-only chain, before any new anchor | **None** to predictions; adds diagnostics | Low |
 | **1** | `(country, title)` event→factor map, standardized surprises (P0-2), article attribution to factors | Surprise scaling changes, so re-run the essence history and report how many past directions change | Medium |
 | **2** | **Gold context provider**: COMEX COT, GVZ expected magnitude, GPR, ETF and central-bank flows where a free source is confirmed | Confidence and flags only, plus `expected_magnitude_pct` | Medium |
 | **3** | Shock routing via exposures, unified taxonomy, vol-scaled thresholds | Gold starts receiving trade-policy alerts | Medium |
@@ -277,7 +304,7 @@ Benchmark §4 (ACE integration, validation horizon, revisions, dispersion, magni
 
 ## 8. Non-goals and risks
 
-- **Not a statistically fitted factor model yet.** Exposures are cited starting values. Calibrating them from graded outcomes waits for sample size, the same as every other constant in `config/settings.py`.
+- **Not a full statistical factor model.** Link 2 is a simple per-anchor slope measured over past event windows (Phase 0b). Until each instrument has enough graded windows, the cold-start constants stay in force, the same honesty as every other constant in `config/settings.py`. A small-sample slope must not silently replace the prior; set a minimum window count, as `MIN_OCCURRENCES_FOR_TREND_PRIOR` does today.
 - **Exposures drift with regime.** Gold's real-yield link weakened after 2022, per the repo's Layer2 notes. Exposures are dated (`exposures_as_of`) and meant to be revisited; the gold provider exists precisely because shared factors under-explain gold.
 - **Each new currency or commodity adds data feeds,** and each feed is a failure mode for a one-person operation (benchmark §4.9). Onboard instruments one at a time, behind the §4 acceptance test.
 - **No ACE changes here.** The ACE news-blackout fix and any ACE bridge are separate work.
@@ -287,3 +314,4 @@ Benchmark §4 (ACE integration, validation horizon, revisions, dispersion, magni
 1. Is the second instrument EURUSD, or something you'll actually trade sooner?
 2. Is the gold provider's ETF and central-bank data allowed to come from a registration-gated source (WGC Goldhub), or only open APIs?
 3. Phase 0 changes no numbers, but it touches the scoring core. Should it ship on its own before any Phase 1 work?
+4. Should Phase 0b (measuring link 1 and link 2 on the existing USD chain) go first of all? It needs no design decision about new anchors, and it tells you which half of the chain is producing today's misses.
