@@ -100,11 +100,27 @@ def test_no_data_row_stores_null_prices_and_derived_fields(conn):
     assert row["typical_abs_move"] == pytest.approx(2.5)
 
 
-def test_no_data_row_ignores_supplied_prices_and_reaction(conn):
-    bs.record_release_reaction(conn, RELEASE, "XAUUSD", "no_data", p0=1.0, p5=2.0, reaction="buy")
-    row = bs.get_release_reactions(conn, "XAUUSD")[KEY]
-    for col in ("p0", "p5", "move", "move_pct", "reaction"):
-        assert row[col] is None
+def test_no_data_row_with_prices_or_reaction_is_rejected(conn):
+    for kw in ({"p0": 1.0}, {"p5": 2.0}, {"reaction": "buy"}):
+        with pytest.raises(ValueError):
+            bs.record_release_reaction(conn, RELEASE, "XAUUSD", "no_data", **kw)
+    assert conn.execute("SELECT COUNT(*) FROM release_reactions").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("field", ["p0", "p5", "typical_abs_move"])
+def test_non_finite_reaction_inputs_are_rejected_and_write_nothing(conn, field, bad):
+    kw = {"p0": 2000.0, "p5": 2005.0, "typical_abs_move": 3.0}
+    kw[field] = bad
+    with pytest.raises(ValueError):
+        bs.record_release_reaction(conn, RELEASE, "XAUUSD", "ok", **kw)
+    assert conn.execute("SELECT COUNT(*) FROM release_reactions").fetchone()[0] == 0
+
+
+def test_negative_typical_abs_move_is_rejected(conn):
+    with pytest.raises(ValueError):
+        _ok(conn, typical_abs_move=-0.1)
+    assert conn.execute("SELECT COUNT(*) FROM release_reactions").fetchone()[0] == 0
 
 
 def test_reaction_none_text_is_stored_and_python_none_is_null(conn):
@@ -176,3 +192,24 @@ def test_baseline_validation(conn):
 def test_baselines_scoped_per_instrument_and_empty_default(conn):
     bs.record_reaction_baseline(conn, "XAUUSD", 12, 2.0, 50, P_START, P_END_1)
     assert bs.get_latest_reaction_baselines(conn, "EURUSD") == {}
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_median_abs_move_is_rejected_and_writes_nothing(conn, bad):
+    with pytest.raises(ValueError):
+        bs.record_reaction_baseline(conn, "XAUUSD", 12, bad, 5, P_START, P_END_1)
+    assert conn.execute("SELECT COUNT(*) FROM reaction_baselines").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("bad_hour", [12.5, True, "12", 12.0])
+def test_non_integer_utc_hour_is_rejected(conn, bad_hour):
+    with pytest.raises(ValueError):
+        bs.record_reaction_baseline(conn, "XAUUSD", bad_hour, 2.0, 5, P_START, P_END_1)
+    assert conn.execute("SELECT COUNT(*) FROM reaction_baselines").fetchone()[0] == 0
+
+
+def test_period_start_after_end_is_rejected_but_equal_is_allowed(conn):
+    with pytest.raises(ValueError):
+        bs.record_reaction_baseline(conn, "XAUUSD", 12, 2.0, 5, P_END_1, P_START)
+    assert conn.execute("SELECT COUNT(*) FROM reaction_baselines").fetchone()[0] == 0
+    bs.record_reaction_baseline(conn, "XAUUSD", 12, 2.0, 0, P_START, P_START)

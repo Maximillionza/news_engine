@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -1235,14 +1236,21 @@ def record_release_reaction(
     updated, so a re-run is idempotent. Returns the row id (the existing row's id on a duplicate).
 
     status 'ok' needs p0 and p5 and derives move = p5 - p0 and move_pct = move / p0 * 100 (percent).
-    status 'no_data' stores NULL prices/move/move_pct/reaction whatever was passed (nothing to report);
-    typical_abs_move may still be kept. reaction is 'buy'/'sell'/'none' or None (no call).
+    status 'no_data' stores NULL prices/move/move_pct/reaction; passing p0, p5 or reaction with it is a
+    contradictory call and raises ValueError (an append-only table must not silently drop data).
+    typical_abs_move may be kept on either status. reaction is 'buy'/'sell'/'none' or None (no call).
+    Prices and typical_abs_move must be finite (NaN/inf would be bound as NULL by sqlite).
     """
     if status not in _REACTION_STATUSES:
         raise ValueError(f"status must be one of {_REACTION_STATUSES}, got {status!r}")
     if reaction is not None and reaction not in _REACTION_CALLS:
         raise ValueError(f"reaction must be one of {_REACTION_CALLS} or None, got {reaction!r}")
     event_iso = _utc_iso(event_time_utc, "event_time_utc")
+    for name, value in (("p0", p0), ("p5", p5), ("typical_abs_move", typical_abs_move)):
+        if value is not None and not math.isfinite(value):
+            raise ValueError(f"{name} must be finite, got {value!r}")
+    if typical_abs_move is not None and typical_abs_move < 0:
+        raise ValueError(f"typical_abs_move must be >= 0, got {typical_abs_move!r}")
     move: Optional[float] = None
     move_pct: Optional[float] = None
     if status == "ok":
@@ -1253,8 +1261,8 @@ def record_release_reaction(
         p0, p5 = float(p0), float(p5)
         move = p5 - p0
         move_pct = round(move / p0 * 100.0, 6)
-    else:
-        p0, p5, reaction = None, None, None
+    elif p0 is not None or p5 is not None or reaction is not None:
+        raise ValueError("status 'no_data' must not carry p0, p5 or reaction")
     conn.execute(
         "INSERT OR IGNORE INTO release_reactions (event_time_utc, instrument, status, p0, p5, move, "
         "move_pct, typical_abs_move, reaction, bar_source, computed_at_utc) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -1285,14 +1293,16 @@ def record_reaction_baseline(
     Append-only: a duplicate (instrument, utc_hour, period_end_utc) is ignored. A refreshed baseline uses
     a later period_end_utc and is added alongside the old one. Returns the row id.
     """
-    if not 0 <= utc_hour <= 23:
-        raise ValueError(f"utc_hour must be 0..23, got {utc_hour!r}")
-    if median_abs_move < 0:
-        raise ValueError(f"median_abs_move must be >= 0, got {median_abs_move!r}")
+    if isinstance(utc_hour, bool) or not isinstance(utc_hour, int) or not 0 <= utc_hour <= 23:
+        raise ValueError(f"utc_hour must be an integer 0..23, got {utc_hour!r}")
+    if not math.isfinite(median_abs_move) or median_abs_move < 0:
+        raise ValueError(f"median_abs_move must be finite and >= 0, got {median_abs_move!r}")
     if n_windows < 0:
         raise ValueError(f"n_windows must be >= 0, got {n_windows!r}")
     start_iso = _utc_iso(period_start_utc, "period_start_utc")
     end_iso = _utc_iso(period_end_utc, "period_end_utc")
+    if period_start_utc > period_end_utc:
+        raise ValueError(f"period_start_utc {start_iso} is after period_end_utc {end_iso}")
     conn.execute(
         "INSERT OR IGNORE INTO reaction_baselines (instrument, utc_hour, median_abs_move, n_windows, "
         "period_start_utc, period_end_utc, computed_at_utc) VALUES (?,?,?,?,?,?,?)",
