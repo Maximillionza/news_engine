@@ -15,7 +15,8 @@ WHEN = dt.datetime(2026, 10, 14, 12, 30, tzinfo=UTC)
 AS_OF = WHEN - dt.timedelta(hours=40)
 
 ROW_KEYS = {"event_title", "event_time_utc", "forecast", "actual", "forecast_text", "actual_text", "status",
-            "tier1_tracked", "nowcast_as_of_utc", "pre_news_period", "tier1", "news", "combined", "detail"}
+            "tier1_tracked", "nowcast_as_of_utc", "pre_news_period", "tier1", "news", "combined", "detail",
+            "impact", "impact_effective", "impact_inferred", "impact_bucket"}
 CALL_KEYS = {"predicted", "surprise", "verdict", "miss", "leans", "note", "kind"}
 DETAIL_KEYS = {"forecast_text", "nowcast_value", "nowcast_as_of_utc", "tier1_surprise", "news_lean", "news_scale",
                "news_surprise", "combined_surprise", "weights", "hand_logged", "news_article_count", "brent"}
@@ -75,6 +76,8 @@ def test_events_route_serves_every_field_the_tab_renders(client):
     assert row["forecast_text"] == "0.3%" and row["actual_text"] == "0.4%"
     assert row["status"] == "scored" and row["tier1_tracked"] is True
     assert row["pre_news_period"] is False
+    assert (row["impact"], row["impact_effective"], row["impact_inferred"], row["impact_bucket"]) == (
+        "High", "High", False, "High")
     assert row["nowcast_as_of_utc"] == AS_OF.isoformat()
     assert set(row["tier1"]) == CALL_KEYS
     assert row["tier1"]["verdict"] == "right" and row["tier1"]["leans"]["XAUUSD"] == "sell"
@@ -193,6 +196,77 @@ def test_scoreboard_route_serves_live_reconstructed_and_with_news_counts(full_cl
         "by_kind": {"live": one_right, "reconstructed": zero}, "with_news": one_right,
     }
     assert data["min_for_percent"] == 20
+
+
+# --- impacts filter (market-reaction spec section 5): shared by events, chart and scoreboard ---------------------
+
+@pytest.fixture
+def mixed_client(monkeypatch):
+    """Two CPI prints with a Tier 1 snapshot each: WHEN tagged High, one month earlier tagged Low."""
+    dash, bt = ws.get_connection(":memory:"), bs.get_connection(":memory:")
+    earlier = WHEN - dt.timedelta(days=30)
+    dash.execute(
+        "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, surprise_direction, "
+        "recorded_at_utc, updated_at_utc, source, impact, country) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        ("CPI m/m", earlier.isoformat(), "0.3%", "0.1%", "0.5%", None, earlier.isoformat(), earlier.isoformat(),
+         "t", "Low", "USD"))
+    dash.commit()
+    _insert_event(dash, WHEN, "0.3%", "0.4%")
+    bs.record_nowcast_snapshot(bt, "CPI m/m", earlier, 0.5, earlier - dt.timedelta(hours=40), "cleveland", "live")
+    bs.record_nowcast_snapshot(bt, "CPI m/m", WHEN, 0.4, AS_OF, "cleveland", "live")
+    monkeypatch.setattr(app_module, "_stats_connections", lambda: (dash, bt))
+    return app_module.app.test_client()
+
+
+def _impacts_of(client, query):
+    rows = client.get("/api/stats/events?event=CPI%20m/m" + query).get_json()["rows"]
+    return [r["impact"] for r in rows]
+
+
+def test_events_impacts_filter(mixed_client):
+    assert _impacts_of(mixed_client, "") == ["Low", "High"]                    # default: no filtering
+    assert _impacts_of(mixed_client, "&impacts=High") == ["High"]
+    assert _impacts_of(mixed_client, "&impacts=Low") == ["Low"]
+    assert _impacts_of(mixed_client, "&impacts=High,Low") == ["Low", "High"]
+    assert _impacts_of(mixed_client, "&impacts=Medium") == []
+    assert _impacts_of(mixed_client, "&impacts=Unrated") == []                 # both rows carry their own tag
+
+
+@pytest.mark.parametrize("query", ["&impacts=", "&impacts=Bogus", "&impacts=high", "&impacts=,"])
+def test_events_unknown_or_empty_impacts_mean_no_filter(mixed_client, query):
+    assert _impacts_of(mixed_client, query) == ["Low", "High"]
+    assert _impacts_of(mixed_client, "&impacts=Bogus,High") == ["High"]        # unknown values are ignored
+
+
+def test_events_serves_inferred_impact_for_an_untagged_row(mixed_client):
+    dash = app_module._stats_connections()[0]
+    dash.execute("UPDATE event_history SET impact = NULL WHERE impact = 'Low'")
+    dash.commit()
+    low, high = mixed_client.get("/api/stats/events?event=CPI%20m/m").get_json()["rows"]
+    assert (low["impact"], low["impact_effective"], low["impact_inferred"], low["impact_bucket"]) == (
+        None, "High", True, "Unrated")
+    assert (high["impact"], high["impact_effective"], high["impact_inferred"], high["impact_bucket"]) == (
+        "High", "High", False, "High")
+    assert _impacts_of(mixed_client, "&impacts=Unrated") == [None]
+    assert _impacts_of(mixed_client, "&impacts=High") == ["High"]
+
+
+def test_chart_impacts_filter(mixed_client):
+    def points(query):
+        return mixed_client.get("/api/stats/chart?event=CPI%20m/m&method=tier1" + query).get_json()["points"]
+    assert len(points("")) == 2
+    assert [p["event_time_utc"] for p in points("&impacts=High")] == [WHEN.isoformat()]
+    assert [p["actual"] for p in points("&impacts=Low")] == [0.5]
+    assert len(points("&impacts=Bogus")) == 2 and len(points("&impacts=")) == 2
+
+
+def test_scoreboard_impacts_filter(mixed_client):
+    def scored(query):
+        return mixed_client.get("/api/stats/scoreboard?event=CPI%20m/m" + query).get_json()["methods"]["tier1"]["scored"]
+    assert scored("") == 2
+    assert scored("&impacts=High") == 1 and scored("&impacts=Low") == 1
+    assert scored("&impacts=Medium") == 0
+    assert scored("&impacts=Bogus") == 2 and scored("&impacts=") == 2
 
 
 def test_components_route(client):

@@ -37,6 +37,7 @@ from scoring.backtest_store import (
 )
 from webapp.predictions_service import build_predictions_payload, _print_prediction_dict
 from webapp import stats_service
+from webapp import reaction_service
 from webapp.metric_components import get_components
 from alerting import store as alerting_store
 
@@ -467,6 +468,8 @@ def _stats_row_dict(r):
         "pre_news_period": r.pre_news_period,
         "tier1": _method_dict(r.tier1), "news": _method_dict(r.news), "combined": _method_dict(r.combined),
         "detail": _detail_dict(r.detail),
+        "impact": r.impact, "impact_effective": r.impact_effective,
+        "impact_inferred": r.impact_inferred, "impact_bucket": r.impact_bucket,
     }
 
 
@@ -479,11 +482,21 @@ def _int_arg(name):
     return value if value > 0 else None
 
 
+# Filter chips shared by every Stats sub-tab (market-reaction spec section 5); case-sensitive.
+_IMPACT_BUCKETS = frozenset({"High", "Medium", "Low", "Unrated"})
+
+
+def _impacts_arg():
+    """`impacts` query arg (comma list) as a frozenset of known buckets; None (no filtering) if absent, empty or all unknown."""
+    tokens = (token.strip() for token in request.args.get("impacts", "").split(","))
+    return frozenset(t for t in tokens if t in _IMPACT_BUCKETS) or None
+
+
 @app.route("/api/stats/events", methods=["GET"])
 def get_stats_events():
     with _stats_conns() as (dash, bt):
         rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), month=_int_arg("month"),
-                                        event_title=request.args.get("event"))
+                                        event_title=request.args.get("event"), impacts=_impacts_arg())
     return jsonify({"rows": [_stats_row_dict(r) for r in rows],
                     "news_start_utc": stats_service.NEWS_START_UTC.isoformat(), "disclaimers": STATS_DISCLAIMERS})
 
@@ -496,7 +509,7 @@ def get_stats_chart():
     with _stats_conns() as (dash, bt):
         # These routes never show Brent, so they must not trigger (or wait on) a FRED fetch.
         rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), event_title=event,
-                                        brent_series_fn=lambda: None)
+                                        brent_series_fn=lambda: None, impacts=_impacts_arg())
     return jsonify(stats_service.build_chart(rows, method))
 
 
@@ -504,8 +517,90 @@ def get_stats_chart():
 def get_stats_scoreboard():
     with _stats_conns() as (dash, bt):
         rows = stats_service.build_rows(dash, bt, year=_int_arg("year"), month=_int_arg("month"),
-                                        event_title=request.args.get("event"), brent_series_fn=lambda: None)
+                                        event_title=request.args.get("event"), brent_series_fn=lambda: None,
+                                        impacts=_impacts_arg())
     return jsonify({**stats_service.build_scoreboard(rows), "footnote": STATS_FOOTNOTE})
+
+
+# --- Market reaction sub-tab: explicit serializers over webapp.reaction_service (read-only) ---------------------
+REACTION_DEFAULT_INSTRUMENT = "XAUUSD"
+REACTION_WINDOW_LABEL = "5 min after release"
+
+
+def _rate_dict(rate):
+    return {"k": rate["k"], "n": rate["n"], "percent": rate["percent"], "interval": rate["interval"],
+            "few": rate["few"]}
+
+
+def _leaderboard_row_dict(r):
+    return {
+        "event_title": r["event_title"], "impact_effective": r["impact_effective"],
+        "impact_inferred": r["impact_inferred"], "releases": r["releases"], "solo": r["solo"],
+        "shared": r["shared"], "in_conflict": r["in_conflict"],
+        "reaction": _rate_dict(r["reaction"]), "hit": _rate_dict(r["hit"]),
+        "avg_move_pct": r["avg_move_pct"],
+        "engine": None if r["engine"] is None else {"k": r["engine"]["k"], "n": r["engine"]["n"]},
+        "few": r["few"],
+    }
+
+
+def _reaction_release_dict(r):
+    return {
+        "event_time_utc": r["event_time_utc"], "move": r["move"], "move_pct": r["move_pct"],
+        "threshold": r["threshold"], "reaction": r["reaction"], "lean": r["lean"], "credit": r["credit"],
+        "cluster_size": r["cluster_size"], "hidden_in_cluster": r["hidden_in_cluster"],
+        "cluster": [{"event_title": m["event_title"], "lean": m["lean"], "credit": m["credit"],
+                     "impact_effective": m["impact_effective"]} for m in r["cluster"]],
+        "engine_call": (None if r["engine_call"] is None
+                        else {"method": r["engine_call"]["method"], "verdict": r["engine_call"]["verdict"]}),
+        "note": r["note"],
+    }
+
+
+def _reaction_instrument(dash):
+    """(instrument, tracked symbols) or (None, error response): `instrument` must be a tracked symbol."""
+    tracked = list_tracked_symbols(dash)
+    requested = request.args.get("instrument") or None
+    if requested is not None:
+        if requested not in tracked:
+            return None, (jsonify({"error": f"instrument must be one of the tracked symbols: {', '.join(tracked)}"}), 400)
+        return requested, tracked
+    if REACTION_DEFAULT_INSTRUMENT in tracked:
+        return REACTION_DEFAULT_INSTRUMENT, tracked
+    if tracked:
+        return tracked[0], tracked
+    return None, (jsonify({"error": "instrument is required: no symbols are tracked"}), 400)
+
+
+@app.route("/api/stats/reaction/leaderboard", methods=["GET"])
+def get_reaction_leaderboard():
+    with _stats_conns() as (dash, bt):
+        instrument, tracked = _reaction_instrument(dash)
+        if instrument is None:
+            return tracked
+        board = reaction_service.build_leaderboard(
+            dash, bt, instrument, _impacts_arg(), _int_arg("year"), _int_arg("month"))
+    return jsonify({
+        "instrument": board["instrument"], "instruments": tracked, "window": REACTION_WINDOW_LABEL,
+        "quantile": board["quantile"], "rows": [_leaderboard_row_dict(r) for r in board["rows"]],
+        "disclaimers": {"association": board["disclaimers"]["association"],
+                        "cluster": board["disclaimers"]["cluster"]},
+    })
+
+
+@app.route("/api/stats/reaction/releases", methods=["GET"])
+def get_reaction_releases():
+    event = request.args.get("event")
+    if not event:
+        return jsonify({"error": "event is required"}), 400
+    with _stats_conns() as (dash, bt):
+        instrument, tracked = _reaction_instrument(dash)
+        if instrument is None:
+            return tracked
+        payload = reaction_service.build_event_releases(
+            dash, bt, instrument, event, _impacts_arg(), _int_arg("year"), _int_arg("month"))
+    return jsonify({"event_title": payload["event_title"], "instrument": payload["instrument"],
+                    "releases": [_reaction_release_dict(r) for r in payload["releases"]]})
 
 
 @app.route("/api/stats/components/<metric>", methods=["GET"])
