@@ -2,6 +2,7 @@
 
 **Prepared:** 2026-10-16 (SAST)
 **Builds on, does not repeat:** `docs/fundamental-analysis-swot-2026-08-14.md`, `docs/fundamental-analysis-alignment-review-2026-09-02.md`, `docs/fundamental-analysis-review-2026-09-11.md`, `docs/feature-inventory-2026-09-11.md`.
+**Companion:** `docs/fundamental-analysis-industry-benchmark-2026-10-16.md` has the stage-by-stage benchmark against industry-standard practice, the US-only-scope triage of §7 below, and the ACE integration findings.
 **Questions answered:** (1) which fundamental-analysis (FA) techniques the engine actually uses to assess news events, (2) which factors are missing given the engine is USD-centric, and how it could anticipate non-USD events (the "US slows soy exports to Japan → yen" case), (3) what comparable tools do that is worth copying.
 **Method:** a direct read of `config/`, `data_layer/`, `scoring/`, `alerting/` and `webapp/` at commit `386728f`. I also ran three probes that push hand-written headlines and calendar rows through the engine's real code paths; they live in `scripts/audit_fa_probes.py` (no network, no DB writes, re-runnable). External research came from web searches, with sources at the end.
 **Not available to this audit:** the live `scoring/backtest_log.db` / `webapp/dashboard.db` (gitignored) and `docs/News_Engine_Causation_Matrix_v2.xlsx` aren't in the checkout. So accuracy figures can't be re-pulled, and §3 cites the last real snapshot (2026-09-11). FinBERT couldn't be executed either, because torch isn't installed in this environment.
