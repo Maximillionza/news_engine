@@ -15,7 +15,9 @@ REACTION_MIN_MULTIPLE = 1.0   # |move| must exceed typical * this to count as a 
 MIN_PERCENT_RELEASES = 20     # below this many releases the percentage is hidden (counts stay)
 FEW_RELEASES_TAG = 8          # below this many releases a title carries a "few releases" tag
 
-_EPS = 1e-9                   # absorbs float noise at the threshold (0.1 * 3 != 0.3 exactly)
+# Absolute tolerance (1e-9): move and typical must be in the same absolute price units; it exists so
+# float noise at the threshold (0.1 * 3 != 0.3 exactly) cannot flip "equal to typical" into a reaction.
+_EPS = 1e-9
 _IMPACT_ORDER = ("High", "Medium", "Low")   # tie-break order, strongest first
 
 

@@ -31,6 +31,12 @@ def test_float_noise_at_the_threshold_does_not_flip_the_result():
     # 0.3 is typical * 3 only up to float noise (0.1 * 3 == 0.30000000000000004)
     assert classify_reaction(0.3, 0.1, 3.0) == "none"
     assert classify_reaction(-0.3, 0.1, 3.0) == "none"
+    # 0.1 * 3 == 0.30000000000000004 is a hair ABOVE 0.3: only the epsilon keeps this "none"
+    assert classify_reaction(0.1 * 3, 0.3) == "none"
+    assert classify_reaction(-(0.1 * 3), 0.3) == "none"
+    # a genuinely larger move still flips
+    assert classify_reaction(0.3 + 1e-6, 0.3) == "buy"
+    assert classify_reaction(-(0.3 + 1e-6), 0.3) == "sell"
 
 
 def test_missing_or_zero_baseline_gives_none():
