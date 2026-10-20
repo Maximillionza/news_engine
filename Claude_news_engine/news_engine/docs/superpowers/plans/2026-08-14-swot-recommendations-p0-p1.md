@@ -130,6 +130,6 @@
 ## Explicitly deferred (documented, not implemented this pass)
 
 - **R5** (macro-backdrop DXY/real-yield cross-check) — no live data source in this codebase; needs a scoped follow-up spec before any code, per user's non-response defaulting to "document only."
-- **R7** (EV/Kelly position sizing) — out of scope per default answer: sizing belongs in the MQL5 ACE EA, not this Python signal engine.
+- **R7** (EV/Kelly position sizing) — out of scope per default answer: this engine produces directional signals, not position sizes.
 - **R8** (recalibrate trust weights/constants against real outcome data) and **R10** (echo-chamber self-check on trend-streak) — both require an accumulated real (non-seeded) outcome dataset that doesn't exist yet; revisit once `confirm_backtest_outcomes.py` has enough real rows.
 - **R9** (competing-story/shock flag) — P2, smallest remaining item, left for a follow-up pass; not blocking any P0/P1 item.
