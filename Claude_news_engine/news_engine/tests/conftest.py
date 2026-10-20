@@ -1,0 +1,32 @@
+"""
+Suite-wide network guard (B2, 2026-10-21).
+
+The shock-alert classifier tries Ollama first, and Ollama is live on the
+owner's box (and may even be auto-started from OLLAMA_EXECUTABLE), so any
+test that only patches the Claude call would otherwise reach the real
+local model. A .env Telegram token could likewise send a real message.
+This autouse fixture makes the unmocked defaults inert:
+
+- Telegram bot token / chat id blanked -> send_alert() skips the push.
+- Ollama pointed at port 9 (discard; nothing listens) and at an
+  executable path that doesn't exist -> no auto-start.
+- ANTHROPIC_API_KEY unset -> no real Claude call can authenticate.
+
+Tests that patch these themselves still win inside their own
+`with patch(...)`. requests.post is deliberately not patched globally,
+because other suites rely on mocking it their own way.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _no_real_network(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("alerting.notify_telegram.TELEGRAM_BOT_TOKEN", "")
+    monkeypatch.setattr("alerting.notify_telegram.TELEGRAM_CHAT_ID", "")
+    monkeypatch.setattr("alerting.llm_classify.OLLAMA_BASE_URL", "http://127.0.0.1:9")
+    monkeypatch.setattr("alerting.llm_classify.OLLAMA_EXECUTABLE", str(tmp_path / "no-ollama.exe"))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)

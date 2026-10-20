@@ -31,7 +31,13 @@ CREATE TABLE IF NOT EXISTS shock_alerts (
     reality_move_5min_json TEXT,
     reality_move_secondary_json TEXT,
     reality_check_at_utc TEXT,
-    reality_mismatch INTEGER
+    reality_mismatch INTEGER,
+    polarity TEXT,
+    country TEXT,
+    us_link TEXT,
+    capped_no_us_link INTEGER,
+    original_severity TEXT,
+    first_published_utc TEXT
 );
 
 CREATE TABLE IF NOT EXISTS shock_near_misses (
@@ -51,7 +57,27 @@ CREATE TABLE IF NOT EXISTS provider_cooldown (
     provider TEXT PRIMARY KEY,
     until_utc TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS classifier_outage_notices (
+    utc_date TEXT PRIMARY KEY,
+    sent_at_utc TEXT NOT NULL,
+    detail TEXT
+);
 """
+# No index on the B2 shock_alerts columns may live in _SCHEMA: it runs
+# before _migrate_shock_alert_columns() on an old DB, where those columns
+# don't exist yet, so the CREATE INDEX would fail.
+
+# B2 (2026-10-21) columns, all nullable -- NULL means "unknown" and every
+# reader keeps pre-B2 behaviour for it (no cap, age derived from sources[0]).
+_SHOCK_ALERT_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("polarity", "TEXT"),
+    ("country", "TEXT"),
+    ("us_link", "TEXT"),
+    ("capped_no_us_link", "INTEGER"),
+    ("original_severity", "TEXT"),
+    ("first_published_utc", "TEXT"),
+)
 
 _schema_ready_paths: set[str] = set()
 
@@ -72,6 +98,34 @@ class ShockAlertRow:
     reality_move_secondary: Optional[dict]
     reality_check_at_utc: Optional[dt.datetime]
     reality_mismatch: Optional[bool]
+    polarity: Optional[str] = None
+    country: Optional[str] = None
+    us_link: Optional[str] = None
+    capped_no_us_link: Optional[bool] = None
+    original_severity: Optional[str] = None
+    first_published_utc: Optional[dt.datetime] = None
+
+
+def _migrate_shock_alert_columns(conn: sqlite3.Connection) -> None:
+    """
+    Same reasoning as scoring/backtest_store.py's column migrations --
+    CREATE TABLE IF NOT EXISTS doesn't retroactively add a column to the
+    live shock_alerts.db. Unlike those, two processes (the 2-minute poller
+    and the webapp) can open the same old DB at once: both read the old
+    PRAGMA, one ALTER wins and the other gets "duplicate column name".
+    That one error means the column is there, so it is swallowed; any
+    other OperationalError is real and re-raised.
+    """
+    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(shock_alerts)").fetchall()}
+    for name, sql_type in _SHOCK_ALERT_ADDED_COLUMNS:
+        if name in existing_columns:
+            continue
+        try:
+            conn.execute(f"ALTER TABLE shock_alerts ADD COLUMN {name} {sql_type}")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc):
+                raise
+    conn.commit()
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
@@ -81,24 +135,53 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     # ready-cache so idempotent CREATE TABLE IF NOT EXISTS doesn't re-run
     # on every call. ":memory:" is never cached -- each call creates a
     # genuinely separate empty DB.
+    # The cache is per process, so the 2-minute poller migrates on its first tick after the merge.
     path = db_path if db_path is not None else DB_PATH
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     if path == ":memory:":
         conn.executescript(_SCHEMA)
+        _migrate_shock_alert_columns(conn)
         return conn
     path_key = str(Path(path).resolve())
     if path_key not in _schema_ready_paths:
         conn.executescript(_SCHEMA)
+        _migrate_shock_alert_columns(conn)
         _schema_ready_paths.add(path_key)
     return conn
 
 
+def _parse_utc(value: str) -> dt.datetime:
+    """ISO string -> aware datetime; a naive value is treated as UTC."""
+    parsed = dt.datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed
+
+
+def _first_source_published(sources: list[dict]) -> Optional[dt.datetime]:
+    """
+    Fallback for pre-B2 rows whose first_published_utc column is NULL.
+    sources[0] is the source present at detection (append_source only
+    appends), so it is the right one -- not the min across sources.
+    None when the data is missing or garbage rather than crashing a reader.
+    """
+    try:
+        return _parse_utc(sources[0]["published_utc"])
+    except (IndexError, KeyError, TypeError, ValueError):
+        return None
+
+
 def _row_to_shock_alert(d: dict) -> ShockAlertRow:
+    sources = json.loads(d["sources_json"])
+    if d["first_published_utc"]:
+        first_published_utc = _parse_utc(d["first_published_utc"])
+    else:
+        first_published_utc = _first_source_published(sources)
     return ShockAlertRow(
         id=d["id"],
         headline=d["headline"],
-        sources=json.loads(d["sources_json"]),
+        sources=sources,
         detected_at_utc=dt.datetime.fromisoformat(d["detected_at_utc"]),
         category=d["category"],
         severity=d["severity"],
@@ -110,6 +193,12 @@ def _row_to_shock_alert(d: dict) -> ShockAlertRow:
         reality_move_secondary=json.loads(d["reality_move_secondary_json"]) if d["reality_move_secondary_json"] else None,
         reality_check_at_utc=dt.datetime.fromisoformat(d["reality_check_at_utc"]) if d["reality_check_at_utc"] else None,
         reality_mismatch=bool(d["reality_mismatch"]) if d["reality_mismatch"] is not None else None,
+        polarity=d["polarity"],
+        country=d["country"],
+        us_link=d["us_link"],
+        capped_no_us_link=bool(d["capped_no_us_link"]) if d["capped_no_us_link"] is not None else None,
+        original_severity=d["original_severity"],
+        first_published_utc=first_published_utc,
     )
 
 
@@ -125,17 +214,60 @@ def record_alert(
     classification_method: str,
     rationale: Optional[str],
     affected_symbols: list[dict],
+    *,
+    polarity: Optional[str] = None,
+    country: Optional[str] = None,
+    us_link: Optional[str] = None,
+    capped_no_us_link: Optional[bool] = None,
+    original_severity: Optional[str] = None,
 ) -> int:
-    """Inserts a new shock_alerts row with one initial source; returns the new row's id."""
+    """
+    Inserts a new shock_alerts row with one initial source; returns the new row's id.
+    first_published_utc is always the detection source's published time --
+    at detection the alert has exactly one source, so it is the earliest.
+    """
     sources = [{"source": source, "url": url, "published_utc": published_utc.isoformat()}]
     cur = conn.execute(
         "INSERT INTO shock_alerts (headline, sources_json, detected_at_utc, category, severity, "
-        "classification_method, rationale, affected_symbols_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "classification_method, rationale, affected_symbols_json, polarity, country, us_link, "
+        "capped_no_us_link, original_severity, first_published_utc) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (headline, json.dumps(sources), detected_at_utc.isoformat(), category, severity,
-         classification_method, rationale, json.dumps(affected_symbols)),
+         classification_method, rationale, json.dumps(affected_symbols), polarity, country, us_link,
+         None if capped_no_us_link is None else int(capped_no_us_link), original_severity,
+         published_utc.isoformat()),
     )
     conn.commit()
     return cur.lastrowid
+
+
+def update_alert_assessment(
+    conn: sqlite3.Connection,
+    alert_id: int,
+    *,
+    severity: str,
+    polarity: Optional[str],
+    country: Optional[str],
+    us_link: Optional[str],
+    capped_no_us_link: bool,
+    original_severity: str,
+    affected_symbols: list[dict],
+) -> None:
+    """
+    Rewrites an alert's whole assessment in one statement -- used by
+    poll_once.py when a corroborating article lifts the no-US-link cap,
+    so the severity, the cap flag and the leans can never disagree (a
+    High left carrying the capped alert's stale lean-less symbols).
+    Sources and first_published_utc are detection-time facts and are
+    left alone.
+    """
+    conn.execute(
+        "UPDATE shock_alerts SET severity = ?, polarity = ?, country = ?, us_link = ?, "
+        "capped_no_us_link = ?, original_severity = ?, affected_symbols_json = ? WHERE id = ?",
+        (severity, polarity, country, us_link, int(capped_no_us_link), original_severity,
+         json.dumps(affected_symbols), alert_id),
+    )
+    conn.commit()
 
 
 def append_source(conn: sqlite3.Connection, alert_id: int, source: str, url: str, published_utc: dt.datetime) -> None:
@@ -188,6 +320,27 @@ def set_provider_cooldown(conn: sqlite3.Connection, provider: str, until_utc: dt
         "INSERT INTO provider_cooldown (provider, until_utc) VALUES (?, ?) "
         "ON CONFLICT(provider) DO UPDATE SET until_utc = excluded.until_utc",
         (provider, until_utc.isoformat()),
+    )
+    conn.commit()
+
+
+def outage_notice_sent(conn: sqlite3.Connection, utc_date: dt.date) -> bool:
+    """Whether the 'classifier down' Telegram notice already went out on this UTC day."""
+    row = conn.execute(
+        "SELECT 1 FROM classifier_outage_notices WHERE utc_date = ?", (utc_date.isoformat(),)
+    ).fetchone()
+    return row is not None
+
+
+def record_outage_notice(conn: sqlite3.Connection, utc_date: dt.date, sent_at_utc: dt.datetime, detail: str) -> None:
+    """
+    Marks the day's outage notice as sent -- call only after the send
+    succeeded, so a failed send leaves the day open for a retry. INSERT OR
+    IGNORE keeps it at one row per UTC day even if two ticks race.
+    """
+    conn.execute(
+        "INSERT OR IGNORE INTO classifier_outage_notices (utc_date, sent_at_utc, detail) VALUES (?, ?, ?)",
+        (utc_date.isoformat(), sent_at_utc.isoformat(), detail),
     )
     conn.commit()
 
