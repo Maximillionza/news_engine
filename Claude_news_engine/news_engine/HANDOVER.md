@@ -49,8 +49,8 @@ assumed wrong.
 
 No API keys required to start (RSS-only by default). Alpha Vantage is
 opt-in: copy `.env.example` → `.env`, set `ALPHA_VANTAGE_API_KEY`. A real
-key (`UB1NI694Q1SN2IE6`) is already in the gitignored `.env` — never
-committed, confirmed via `git status`.
+key (`<redacted 2026-10-20: this key was committed and pushed earlier; rotate it at Alpha Vantage>`) is already in the gitignored `.env` —
+(correction 2026-10-20: it WAS committed in 44aefb5 and pushed; the line is redacted here, and the key must be rotated).
 
 ## Architecture map
 
