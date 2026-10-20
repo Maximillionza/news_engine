@@ -25,4 +25,24 @@ $tr = "wscript.exe //B `"$vbsPath`" baselines"
 schtasks.exe /Create /F /TN "NewsEngine_ReactionBaselines" /SC MONTHLY /D 1 /ST 03:15 /TR $tr | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "schtasks failed to register NewsEngine_ReactionBaselines" }
 
+# schtasks /SC MONTHLY cannot set StartWhenAvailable, and Set-ScheduledTask rejects this task
+# ("The parameter is incorrect"), so flip the flag in the task XML and re-import it. Without it a
+# PC that is asleep at 03:15 on the 1st skips the monthly baseline refresh until next month.
+$xmlPath = Join-Path $env:TEMP "ne_reaction_baselines.xml"
+schtasks.exe /Query /TN "NewsEngine_ReactionBaselines" /XML | Out-File -Encoding unicode $xmlPath
+[xml]$x = Get-Content $xmlPath
+$ns = New-Object System.Xml.XmlNamespaceManager($x.NameTable)
+$ns.AddNamespace("t", $x.DocumentElement.NamespaceURI)
+$swa = $x.SelectSingleNode("//t:Settings/t:StartWhenAvailable", $ns)
+if ($swa -eq $null) {
+    $swa = $x.CreateElement("StartWhenAvailable", $x.DocumentElement.NamespaceURI)
+    $x.SelectSingleNode("//t:Settings", $ns).AppendChild($swa) | Out-Null
+}
+$swa.InnerText = "true"
+$x.Save($xmlPath)
+schtasks.exe /Create /F /TN "NewsEngine_ReactionBaselines" /XML $xmlPath | Out-Null
+$importExit = $LASTEXITCODE
+Remove-Item $xmlPath
+if ($importExit -ne 0) { throw "schtasks failed to set StartWhenAvailable on NewsEngine_ReactionBaselines" }
+
 Write-Host "Registered NewsEngine_ReactionIncremental (hourly at :20) and NewsEngine_ReactionBaselines (monthly, 1st 03:15)"
