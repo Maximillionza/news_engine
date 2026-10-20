@@ -9,9 +9,9 @@
 // once, matching the pattern of card.test.js's own double-escaping
 // regression test.
 //
-// Must import ../dashboard/test-dom-setup.js FIRST (before anything that
+// Must import ../dashboard/dom-setup.js FIRST (before anything that
 // imports the vendored lit-html.js) — see that file's header comment.
-import "../dashboard/test-dom-setup.js";
+import "../dashboard/dom-setup.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { render } from "../../vendor/lit-html.js";

@@ -1,10 +1,10 @@
 // webapp/static/js/dashboard/card.test.js
 //
-// Must import ./test-dom-setup.js FIRST (before card.js/card-view-model.js):
+// Must import ./dom-setup.js FIRST (before card.js/card-view-model.js):
 // see that file's header comment — the vendored lit-html.js reads the
 // global `document` at module-load time, so a jsdom document must already
 // be installed as a global before lit-html.js's own top-level code runs.
-import "./test-dom-setup.js";
+import "./dom-setup.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { render } from "../../vendor/lit-html.js";

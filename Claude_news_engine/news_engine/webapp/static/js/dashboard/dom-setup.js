@@ -1,4 +1,4 @@
-// webapp/static/js/dashboard/test-dom-setup.js
+// webapp/static/js/dashboard/dom-setup.js
 //
 // Side-effecting module: installs a minimal jsdom `document`/`window` as
 // Node globals before any vendored lit-html module is imported.
