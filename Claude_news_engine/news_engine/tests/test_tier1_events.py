@@ -72,3 +72,14 @@ def test_late_check_reason_call_logged_inside_the_window_is_none():
 def test_late_check_reason_fresh_late_check_resets_staleness():
     # newest reading is a late check at 11-09 06:06 -> 11-10 06:00 is not stale
     assert late_check_reason(_at(9, 6, 6), RELEASE, _at(10, 6), False) is None
+
+
+def test_daily_0806_sast_run_fires_the_24h_check_on_the_release_morning_not_the_day_before():
+    # Research task cadence: daily 08:06 SAST = 06:06 UTC (owner ruling 2026-10-20, refresh on the release morning).
+    release_1230 = dt.datetime(2026, 11, 12, 12, 30, tzinfo=UTC)
+    call = _at(9, 6, 6)                                   # fresh call (3 days before), not stale on either run
+    day_before = _at(11, 6, 6)                            # ~30.4h out: outside the 24h window
+    release_morning = _at(12, 6, 6)                       # ~6.4h out
+    assert late_check_reason(call, release_1230, day_before, False) is None
+    assert late_check_reason(call, release_1230, release_morning, False) == "release_within_24h"
+    assert late_check_reason(call, release_1230, _at(12, 6, 12), False) == "release_within_24h"  # scheduler jitter
