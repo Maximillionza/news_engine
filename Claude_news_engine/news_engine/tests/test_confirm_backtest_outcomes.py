@@ -243,3 +243,12 @@ if __name__ == "__main__":
     test_final_rows_are_never_re_polled()
     test_clear_move_is_still_auto_confirmed_regardless_of_age()
     print("All confirm_backtest_outcomes tests passed.")
+
+
+def test_auto_run_survives_a_failing_health_notice(capsys):
+    with tempfile.TemporaryDirectory() as tmp, \
+         patch.object(sys, "argv", ["confirm_backtest_outcomes.py", "--auto", "--list"]), \
+         patch.object(confirm_cli, "get_connection", lambda: get_connection(Path(tmp) / "test.db")), \
+         patch.object(confirm_cli, "maybe_send_health_notice", side_effect=ImportError("nope")):
+        confirm_cli.main()
+    assert "health notice skipped" in capsys.readouterr().out

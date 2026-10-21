@@ -3,6 +3,7 @@ Tests for ops/single_instance.py (B4 O8) - real OS file locks in tmp dirs,
 a real child process for the crash case, no network.
 """
 import socket
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -103,3 +104,20 @@ def test_restart_loop_stops_on_exit_code_3():
     branch = text.index('if "%EXITCODE%"=="3"')
     assert "exit /b 3" in text[branch:text.index("goto loop")]
     assert branch < text.index("goto loop")
+
+
+def test_default_lock_dir_is_redirected_so_tests_never_touch_the_real_ops_files(monkeypatch):
+    real_dir = Path(single_instance.__file__).parent
+    assert single_instance.LOCK_DIR != real_dir  # conftest autouse fixture
+    real = real_dir / "accumulator.pid"
+    before = real.stat().st_mtime_ns if real.exists() else None
+
+    from scripts import run_accumulator
+    monkeypatch.setattr(run_accumulator, "start_accumulator", lambda tracked: None)
+    monkeypatch.setattr(run_accumulator.store, "list_tracked_symbols", lambda conn: [])
+    monkeypatch.setattr(run_accumulator.store, "get_connection", lambda *a, **k: sqlite3.connect(":memory:"))
+    run_accumulator.main()
+
+    assert (single_instance.LOCK_DIR / "accumulator.pid").exists()
+    after = real.stat().st_mtime_ns if real.exists() else None
+    assert after == before

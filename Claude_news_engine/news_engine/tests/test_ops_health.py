@@ -401,11 +401,59 @@ def test_notice_never_raises(c, monkeypatch, capsys):
 
 def test_notice_with_its_own_connections_closes_them(monkeypatch, tmp_path):
     opened = _open(tmp_path)
-    monkeypatch.setattr(health, "open_health_connections",
-                        lambda: (opened.dash, opened.bt, opened.alerts, opened.ops))
+    monkeypatch.setattr(ops_state, "get_connection", lambda *a, **k: opened.ops)
+    monkeypatch.setattr(health, "open_data_connections", lambda: (opened.dash, opened.bt, opened.alerts))
     monkeypatch.setattr(health, "build_health", MagicMock(return_value=[RED]))
     send = MagicMock(return_value=True)
     assert health.maybe_send_health_notice(NOW, send=send) is True
     assert send.call_count == 1
     with pytest.raises(Exception):
         opened.ops.execute("SELECT 1")
+
+
+def test_notice_with_own_connections_opens_only_ops_when_the_day_is_done(monkeypatch, tmp_path):
+    opened = _open(tmp_path)
+    ops_state.record_health_notice(opened.ops, NOW.date(), NOW, "x")
+    monkeypatch.setattr(ops_state, "get_connection", lambda *a, **k: opened.ops)
+    data_opener = MagicMock(side_effect=AssertionError("data DBs must not be opened"))
+    monkeypatch.setattr(health, "open_data_connections", data_opener)
+    assert health.maybe_send_health_notice(NOW, send=MagicMock()) is False
+    data_opener.assert_not_called()
+    with pytest.raises(Exception):
+        opened.ops.execute("SELECT 1")  # the ops connection it opened was closed
+
+
+def test_notice_claims_the_day_before_sending(c, monkeypatch):
+    monkeypatch.setattr(health, "build_health", MagicMock(return_value=[RED]))
+    seen = []
+
+    def send(text):
+        seen.append(ops_state.health_notice_sent(c.ops, NOW.date()))
+        return True
+
+    assert health.maybe_send_health_notice(NOW, send=send, connections=_conn_tuple(c)) is True
+    assert seen == [True]  # the claim existed while the send ran
+
+
+def test_a_trigger_that_loses_the_claim_race_does_not_send(c, monkeypatch):
+    monkeypatch.setattr(health, "build_health", MagicMock(return_value=[RED]))
+    monkeypatch.setattr(ops_state, "health_notice_sent", lambda *a: False)  # stale read: day looked open
+    ops_state.record_health_notice(c.ops, NOW.date(), NOW, "other trigger")
+    send = MagicMock(return_value=True)
+    assert health.maybe_send_health_notice(NOW, send=send, connections=_conn_tuple(c)) is False
+    send.assert_not_called()
+
+
+def test_a_raising_send_releases_the_claim(c, monkeypatch):
+    monkeypatch.setattr(health, "build_health", MagicMock(return_value=[RED]))
+    assert health.maybe_send_health_notice(
+        NOW, send=MagicMock(side_effect=RuntimeError("net")), connections=_conn_tuple(c)) is False
+    assert not ops_state.health_notice_sent(c.ops, NOW.date())
+
+
+def test_job_that_ran_but_never_succeeded_shows_its_last_exit_code(c):
+    ops_state.record_job_run(c.ops, "tier1_capture_weekly", NOW - dt.timedelta(hours=2), 2)
+    item = _build(c)["tier1_capture_weekly"]
+    assert item.last_success_utc is None
+    assert "no successful run" in item.detail
+    assert "last run 2026-10-20 10:00 SAST exited 2" in item.detail

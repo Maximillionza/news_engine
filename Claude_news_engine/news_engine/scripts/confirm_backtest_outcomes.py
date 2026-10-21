@@ -42,7 +42,6 @@ from scoring.backtest_store import (
     get_connection, get_predictions_awaiting_outcome, record_outcome, record_dismissal,
 )
 from scoring.tier1_comparison import compute_and_record_tier1_comparison
-from ops.health import maybe_send_health_notice
 
 # B4 O3: a below-threshold row older than this is final "no reaction".
 FINAL_NO_REACTION_AFTER = dt.timedelta(days=3)
@@ -148,6 +147,12 @@ def run_auto_confirm_phase(conn, now: Optional[dt.datetime] = None) -> dict:
     }
 
 
+def maybe_send_health_notice() -> bool:
+    """Lazy indirection to ops.health (so a broken health module can never stop the outcome job)."""
+    from ops.health import maybe_send_health_notice as _send
+    return _send()
+
+
 def main():
     list_only = "--list" in sys.argv
     auto = "--auto" in sys.argv
@@ -164,7 +169,10 @@ def main():
             )
             # B4 O6: the scheduled (--auto) run also triggers the once-per-UTC-day
             # health notice, so a dead shock poll is still reported. Never raises.
-            maybe_send_health_notice()
+            try:
+                maybe_send_health_notice()
+            except Exception as exc:  # noqa: BLE001 - fail-open: the notice never breaks the job
+                print(f"WARNING: health notice skipped: {exc}")
 
         awaiting = get_predictions_awaiting_outcome(conn)
 

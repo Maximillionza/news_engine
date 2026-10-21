@@ -125,6 +125,22 @@ def health_notice_sent(conn: sqlite3.Connection, utc_date: dt.date) -> bool:
     return row is not None
 
 
+def claim_health_notice(conn: sqlite3.Connection, utc_date: dt.date, claimed_at_utc: dt.datetime, detail: str) -> bool:
+    """Atomically claim the day's notice: True only for the one caller whose INSERT created the row."""
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO health_notices (utc_date, sent_at_utc, detail) VALUES (?, ?, ?)",
+        (utc_date.isoformat(), claimed_at_utc.isoformat(), detail),
+    )
+    conn.commit()
+    return cur.rowcount == 1
+
+
+def release_health_notice(conn: sqlite3.Connection, utc_date: dt.date) -> None:
+    """Delete the day's claim (the send failed, so the next trigger retries)."""
+    conn.execute("DELETE FROM health_notices WHERE utc_date = ?", (utc_date.isoformat(),))
+    conn.commit()
+
+
 def record_health_notice(conn: sqlite3.Connection, utc_date: dt.date, sent_at_utc: dt.datetime, detail: str) -> None:
     conn.execute(
         "INSERT OR IGNORE INTO health_notices (utc_date, sent_at_utc, detail) VALUES (?, ?, ?)",

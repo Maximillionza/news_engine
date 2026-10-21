@@ -29,7 +29,6 @@ from alerting.taxonomy import NEAR_MISS_LOG_THRESHOLD
 from config.settings import LLM_CYCLE_BUDGET_SECONDS, LOCAL_TZ, TELEGRAM_MIN_SEVERITY
 from data_layer.news_feed import NewsArticle
 from data_layer.rss_sources import FREE_PREVIEW_FEEDS, RSSNewsSource
-from ops.health import maybe_send_health_notice
 from webapp.store import get_connection as get_webapp_connection, list_tracked_symbols
 
 _DEFAULT_LOOKBACK = dt.timedelta(minutes=10)  # first-ever run for a source, or a missing cursor
@@ -322,6 +321,19 @@ def _maybe_escalate(
         store.set_delivery_status(conn, alert_id, "sent" if sent else "failed")
 
 
+def maybe_send_health_notice() -> bool:
+    """Lazy indirection to ops.health (so a broken health module can never stop the poll)."""
+    from ops.health import maybe_send_health_notice as _send
+    return _send()
+
+
+def _send_health_notice_fail_open() -> None:
+    try:
+        maybe_send_health_notice()
+    except Exception as exc:  # noqa: BLE001 - the notice must never break the poll
+        print(f"[poll_once] WARNING: health notice skipped: {exc}")
+
+
 def main() -> None:
     """
     One scheduled poll, then the once-per-UTC-day health notice (B4 O6).
@@ -331,7 +343,7 @@ def main() -> None:
     try:
         run_poll_cycle()
     finally:
-        maybe_send_health_notice()
+        _send_health_notice_fail_open()
 
 
 if __name__ == "__main__":

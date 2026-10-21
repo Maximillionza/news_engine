@@ -259,6 +259,8 @@ def maybe_refresh_macro_calendar(now: Optional[dt.datetime] = None) -> Optional[
         return None
     try:
         import scripts.refresh_macro_calendar as refresh_macro_calendar  # lazy: pulls in FRED settings
+        if not refresh_macro_calendar.is_due():
+            return None  # gate checked here too, so a not-due iteration prints nothing
         result = refresh_macro_calendar.run()
     except Exception as exc:  # noqa: BLE001 — display-only data must never stop the scheduler
         print(f"[scheduler] WARNING: macro calendar refresh failed: {exc}")

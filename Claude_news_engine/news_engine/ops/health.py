@@ -163,6 +163,8 @@ def _aged_item(
     if last_success is None:
         status = "red" if now - tracking_since > spec.red_after else "amber"
         detail = f"no successful run since tracking started {_sast(tracking_since)}"
+        if run is not None:
+            detail += f"; last run {_sast(run.last_run_utc)} exited {run.last_exit_code}"
         return HealthItem(spec.key, spec.label, status, None, None, expected, detail)
     age = now - last_success
     status = _grade(age, spec.amber_after, spec.red_after)
@@ -423,21 +425,34 @@ def health_item_dict(item: HealthItem) -> dict:
     }
 
 
-def open_health_connections() -> tuple[sqlite3.Connection, sqlite3.Connection, sqlite3.Connection, sqlite3.Connection]:
-    """(dashboard, backtest, alerts, ops) connections; the opened ones are closed if a later open fails."""
+def _close_all(conns) -> None:
+    for conn in conns:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def open_data_connections() -> tuple[sqlite3.Connection, sqlite3.Connection, sqlite3.Connection]:
+    """(dashboard, backtest, alerts) connections; the opened ones are closed if a later open fails."""
     opened: list[sqlite3.Connection] = []
     try:
-        for opener in (webapp_store.get_connection, backtest_store.get_connection,
-                       alerting_store.get_connection, ops_state.get_connection):
+        for opener in (webapp_store.get_connection, backtest_store.get_connection, alerting_store.get_connection):
             opened.append(opener())
     except Exception:
-        for conn in opened:
-            try:
-                conn.close()
-            except Exception:
-                pass
+        _close_all(opened)
         raise
-    return opened[0], opened[1], opened[2], opened[3]
+    return opened[0], opened[1], opened[2]
+
+
+def open_health_connections() -> tuple[sqlite3.Connection, sqlite3.Connection, sqlite3.Connection, sqlite3.Connection]:
+    """(dashboard, backtest, alerts, ops) connections; the opened ones are closed if a later open fails."""
+    data = open_data_connections()
+    try:
+        return (*data, ops_state.get_connection())
+    except Exception:
+        _close_all(data)
+        raise
 
 
 def health_notice_text(red_items: list[HealthItem], now: dt.datetime) -> str:
@@ -455,37 +470,49 @@ def maybe_send_health_notice(
 ) -> bool:
     """
     At most one Telegram notice per UTC day listing the RED items (B2's
-    once-per-day pattern). The ledger is checked before anything is built,
-    so the other 700-odd polls of the day cost one query. The day is only
-    marked after a confirmed send, so a failed send retries on the next
-    trigger. Never raises: it runs at the end of the shock poll and the
-    outcome job, and must never fail them. Closes connections it opened.
+    once-per-day pattern). The ops ledger is checked first, so the other
+    700-odd polls of the day cost one small DB open and one query (the
+    dashboard, backtest and alerts DBs are opened only while the day is
+    still open). The day is claimed (atomic INSERT OR IGNORE) before the
+    send, so the shock poll and the outcome job cannot both send; a failed
+    send deletes the claim, so the next trigger retries. Never raises: it
+    runs at the end of the shock poll and the outcome job, and must never
+    fail them. Closes connections it opened (those passed in stay open).
     """
+    opened: list[sqlite3.Connection] = []
     try:
         now = _as_utc(now) if now is not None else dt.datetime.now(UTC)
         utc_day = now.date()
-        owned = connections is None
-        conns = open_health_connections() if owned else connections
-        try:
-            dash, bt, alerts, ops = conns
+        if connections is None:
+            ops = ops_state.get_connection()
+            opened.append(ops)
             if ops_state.health_notice_sent(ops, utc_day):
                 return False
-            items = build_health(now, dash_conn=dash, bt_conn=bt, alerts_conn=alerts, ops_conn=ops)
-            red = [item for item in items if item.status == "red"]
-            if not red:
+            data = open_data_connections()
+            opened.extend(data)
+            dash, bt, alerts = data
+        else:
+            dash, bt, alerts, ops = connections
+            if ops_state.health_notice_sent(ops, utc_day):
                 return False
-            sender = send if send is not None else notify_telegram.send_notice
-            if not sender(health_notice_text(red, now)):
-                return False
-            ops_state.record_health_notice(ops, utc_day, now, ", ".join(item.key for item in red)[:300])
-            return True
-        finally:
-            if owned:
-                for conn in conns:
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
+        items = build_health(now, dash_conn=dash, bt_conn=bt, alerts_conn=alerts, ops_conn=ops)
+        red = [item for item in items if item.status == "red"]
+        if not red:
+            return False
+        if not ops_state.claim_health_notice(ops, utc_day, now, ", ".join(item.key for item in red)[:300]):
+            return False  # the other trigger claimed the day first
+        sender = send if send is not None else notify_telegram.send_notice
+        try:
+            sent = sender(health_notice_text(red, now))
+        except Exception:
+            ops_state.release_health_notice(ops, utc_day)
+            raise
+        if not sent:
+            ops_state.release_health_notice(ops, utc_day)
+            return False
+        return True
     except Exception as exc:  # fail-open: the notice must never break the job that triggered it
         print(f"[ops.health] WARNING: health notice skipped: {exc}")
         return False
+    finally:
+        _close_all(opened)

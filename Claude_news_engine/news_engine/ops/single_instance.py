@@ -25,6 +25,11 @@ ALREADY_RUNNING_EXIT_CODE = 3
 LOCK_DIR = Path(__file__).parent  # files: ops/<name>.lock, ops/<name>.pid
 
 
+def _resolve_dir(lock_dir: Optional[Path]) -> Path:
+    """None -> the module's LOCK_DIR read at call time, so tests can redirect it."""
+    return Path(lock_dir) if lock_dir is not None else Path(LOCK_DIR)
+
+
 class InstanceLock:
     """Holds the open lock file; the lock lives as long as this object (or the process)."""
 
@@ -47,7 +52,7 @@ class InstanceLock:
             handle.close()
 
 
-def try_acquire(name: str, lock_dir: Path = LOCK_DIR) -> Optional[InstanceLock]:
+def try_acquire(name: str, lock_dir: Optional[Path] = None) -> Optional[InstanceLock]:
     """
     Take a non-blocking exclusive OS lock on byte 0 of <name>.lock. None if
     another process (or another handle in this one) already holds it.
@@ -56,7 +61,7 @@ def try_acquire(name: str, lock_dir: Path = LOCK_DIR) -> Optional[InstanceLock]:
     instance never leaves a stale lock behind (no PID-liveness guessing,
     no PID-reuse risk). The .pid file is informational only.
     """
-    lock_dir = Path(lock_dir)
+    lock_dir = _resolve_dir(lock_dir)
     handle = open(lock_dir / f"{name}.lock", "a+")
     try:
         handle.seek(0)
@@ -74,9 +79,9 @@ def try_acquire(name: str, lock_dir: Path = LOCK_DIR) -> Optional[InstanceLock]:
     return InstanceLock(handle)
 
 
-def running_pid(name: str, lock_dir: Path = LOCK_DIR) -> Optional[int]:
+def running_pid(name: str, lock_dir: Optional[Path] = None) -> Optional[int]:
     try:
-        return int((Path(lock_dir) / f"{name}.pid").read_text().strip())
+        return int((_resolve_dir(lock_dir) / f"{name}.pid").read_text().strip())
     except Exception:  # noqa: BLE001 - informational; any failure means "unknown"
         return None
 
@@ -88,7 +93,7 @@ def port_in_use(port: int, host: str = "127.0.0.1") -> bool:
         return sock.connect_ex((host, port)) == 0
 
 
-def claim_or_exit(name: str, *, port: Optional[int] = None, lock_dir: Path = LOCK_DIR) -> InstanceLock:
+def claim_or_exit(name: str, *, port: Optional[int] = None, lock_dir: Optional[Path] = None) -> InstanceLock:
     """Return the held lock, or exit with code 3 if another copy is running (lock busy, or the port is already answering)."""
     lock = try_acquire(name, lock_dir)
     if lock is not None and port is not None and port_in_use(port):

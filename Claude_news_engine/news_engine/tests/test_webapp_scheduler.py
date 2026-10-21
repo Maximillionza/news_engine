@@ -568,6 +568,8 @@ def test_macro_refresh_retries_after_6_hours_not_every_cycle():
     import scripts.refresh_macro_calendar as refresh
     t0 = dt.datetime(2026, 10, 21, 8, 0, tzinfo=UTC_TZ)
     scheduler._macro_retry_not_before = None
+    refresh_due = patch.object(refresh, "is_due", return_value=True)
+    refresh_due.start()
     with patch.object(refresh, "run", return_value=0) as run:
         assert scheduler.maybe_refresh_macro_calendar(now=t0) == 0
         assert scheduler.maybe_refresh_macro_calendar(now=t0 + dt.timedelta(hours=1)) is None
@@ -589,3 +591,16 @@ def test_macro_refresh_retries_after_6_hours_not_every_cycle():
         assert scheduler.maybe_refresh_macro_calendar(now=t0) is None
     assert scheduler._macro_retry_not_before == t0 + dt.timedelta(hours=6)
     scheduler._macro_retry_not_before = None
+    refresh_due.stop()
+
+
+def test_macro_refresh_prints_nothing_and_skips_run_when_not_due(capsys):
+    import scripts.refresh_macro_calendar as refresh
+    scheduler._macro_retry_not_before = None
+    with patch.object(refresh, "is_due", return_value=False), \
+         patch.object(refresh, "run") as run:
+        assert scheduler.maybe_refresh_macro_calendar(
+            now=dt.datetime(2026, 10, 21, 8, 0, tzinfo=UTC_TZ)) is None
+    run.assert_not_called()
+    assert capsys.readouterr().out == ""
+    assert scheduler._macro_retry_not_before is None

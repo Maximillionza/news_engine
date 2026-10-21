@@ -902,3 +902,11 @@ def test_poll_cycle_prunes_old_near_misses():
     src.fetch.return_value = []
     _b4_cycle(conn, webapp_conn, _T0, {"feed_a": "https://example.com/a"}, {"feed_a": src})
     assert conn.execute("SELECT COUNT(*) FROM shock_near_misses").fetchone()[0] == 0
+
+
+def test_poll_main_survives_a_broken_health_module(capsys):
+    from alerting import poll_once
+    with patch("alerting.poll_once.run_poll_cycle"), \
+         patch.dict("sys.modules", {"ops.health": None}):  # import raises ImportError
+        poll_once.main()
+    assert "health notice skipped" in capsys.readouterr().out

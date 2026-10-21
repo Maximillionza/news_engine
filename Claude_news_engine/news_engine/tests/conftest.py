@@ -32,3 +32,7 @@ def _no_real_network(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     # B4: no test may write the real ops/ops_state.db.
     monkeypatch.setattr("ops.state.DB_PATH", tmp_path / "ops_state.db")
+    # B4: no test may touch the real ops/*.lock or ops/*.pid either.
+    lock_dir = tmp_path / "locks"
+    lock_dir.mkdir()
+    monkeypatch.setattr("ops.single_instance.LOCK_DIR", lock_dir)
