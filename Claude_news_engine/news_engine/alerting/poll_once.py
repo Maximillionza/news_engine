@@ -17,14 +17,16 @@ from __future__ import annotations
 
 import datetime as dt
 import time
+from typing import Optional
 
 from alerting import dedup, direction, llm_classify, notify_telegram, store
+from alerting.source_backoff import FEED_BACKOFF_AFTER_FAILURES, backoff_delay, in_backoff
 from alerting.freshness import freshness_line
 from alerting.symbol_relevance import affected_symbols
 from alerting.us_link import cap_note, cap_severity, rule_country_us_link
 from alerting.triage import triage_article, TriageResult
 from alerting.taxonomy import NEAR_MISS_LOG_THRESHOLD
-from config.settings import LLM_CYCLE_BUDGET_SECONDS, TELEGRAM_MIN_SEVERITY
+from config.settings import LLM_CYCLE_BUDGET_SECONDS, LOCAL_TZ, TELEGRAM_MIN_SEVERITY
 from data_layer.news_feed import NewsArticle
 from data_layer.rss_sources import FREE_PREVIEW_FEEDS, RSSNewsSource
 from webapp.store import get_connection as get_webapp_connection, list_tracked_symbols
@@ -60,12 +62,22 @@ def run_poll_cycle(conn=None, webapp_conn=None) -> None:
 
     fetched: list[tuple[str, dt.datetime, list[NewsArticle]]] = []
     for name, url in FREE_PREVIEW_FEEDS.items():
+        health = store.get_source_health(conn, name)
+        if in_backoff(health, now):
+            continue  # B4 O5: a feed that keeps failing is skipped silently until its backoff ends
         since = store.get_cursor(conn, name) or (now - _DEFAULT_LOOKBACK)
         try:
-            articles = RSSNewsSource(name, url).fetch(query="", since_utc=since, limit=50)
+            articles = RSSNewsSource(name, url).fetch(
+                query="", since_utc=since, limit=50, raise_on_parse_error=True)
         except Exception as exc:  # noqa: BLE001 -- one broken feed must never block the others
-            print(f"[poll_once] WARNING: fetch failed for source {name!r}: {exc}")
+            _record_feed_failure(conn, name, health, now, exc)
             continue
+        recovered = store.record_source_success(conn, name, now)
+        if recovered is not None and recovered.consecutive_failures >= FEED_BACKOFF_AFTER_FAILURES:
+            print(
+                f"[poll_once] source {name!r} recovered after {recovered.consecutive_failures} "
+                f"consecutive failures (failing since {_sast(recovered.failing_since_utc)})"
+            )
         fetched.append((name, since, articles))
 
     hard_rule: list[tuple[NewsArticle, TriageResult]] = []
@@ -75,7 +87,8 @@ def run_poll_cycle(conn=None, webapp_conn=None) -> None:
             result = triage_article(article)
             if not result.matched:
                 if result.near_miss_score is not None and result.near_miss_score >= NEAR_MISS_LOG_THRESHOLD:
-                    store.record_near_miss(conn, article.title, result.near_miss_category, result.near_miss_score)
+                    store.record_near_miss(
+                        conn, article.title, result.near_miss_category, result.near_miss_score, seen_at_utc=now)
                 continue
             (hard_rule if result.rule_tier_hit else ambiguous).append((article, result))
 
@@ -88,6 +101,32 @@ def run_poll_cycle(conn=None, webapp_conn=None) -> None:
 
     for name, since, articles in fetched:
         _advance_cursor(conn, name, since, articles)
+
+    store.prune_near_misses(conn, now)  # K15: 30-day retention, bounded per cycle
+
+
+def _sast(when: Optional[dt.datetime]) -> str:
+    return when.astimezone(LOCAL_TZ).strftime("%Y-%m-%d %H:%M SAST") if when else "unknown"
+
+
+def _record_feed_failure(
+    conn, name: str, health: Optional[store.SourceHealth], now: dt.datetime, exc: Exception,
+) -> None:
+    """
+    Persists the failure and logs it: a plain warning for the first failures, ONE line when the
+    feed enters backoff (3rd consecutive failure), nothing further while it stays down.
+    """
+    failures = (health.consecutive_failures if health else 0) + 1
+    delay = backoff_delay(failures)
+    until = now + delay if delay is not None else None
+    store.record_source_failure(conn, name, now, str(exc), until)
+    if failures < FEED_BACKOFF_AFTER_FAILURES:
+        print(f"[poll_once] WARNING: fetch failed for source {name!r}: {exc}")
+    elif failures == FEED_BACKOFF_AFTER_FAILURES:
+        print(
+            f"[poll_once] source {name!r} in backoff after {FEED_BACKOFF_AFTER_FAILURES} consecutive failures, "
+            f"skipped until {_sast(until)} (last error: {exc})"
+        )
 
 
 def _advance_cursor(conn, name: str, since: dt.datetime, articles: list[NewsArticle]) -> None:

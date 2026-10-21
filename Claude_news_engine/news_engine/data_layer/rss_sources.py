@@ -57,6 +57,10 @@ OFFICIAL_OUTCOME_FEEDS = {
 }
 
 
+class RSSParseError(ValueError):
+    """A feed returned something that is not parseable XML (opt-in via raise_on_parse_error)."""
+
+
 class RSSNewsSource:
     """
     Generic RSS fetcher. One instance per feed. Use FREE_PREVIEW_FEEDS
@@ -69,12 +73,19 @@ class RSSNewsSource:
         self.name = name
         self.feed_url = feed_url
 
-    def fetch(self, query: str, since_utc: dt.datetime, limit: int = 50) -> list[NewsArticle]:
+    def fetch(
+        self, query: str, since_utc: dt.datetime, limit: int = 50, *, raise_on_parse_error: bool = False,
+    ) -> list[NewsArticle]:
         """
         query is applied as a simple case-insensitive substring filter over
         title+summary, since most of these feeds don't support server-side
         search. Pass an empty string to skip filtering and get everything
         in the window.
+
+        raise_on_parse_error: a malformed feed raises RSSParseError instead of
+        returning []. The shock poller opts in so a feed that has started
+        returning HTML/garbage counts as a failure for backoff; the default
+        keeps the print-and-empty behaviour the accumulator relies on.
         """
         resp = requests.get(
             self.feed_url,
@@ -94,7 +105,7 @@ class RSSNewsSource:
         )
         resp.raise_for_status()
 
-        articles = self._parse_rss(resp.content, since_utc, limit)
+        articles = self._parse_rss(resp.content, since_utc, limit, raise_on_parse_error=raise_on_parse_error)
 
         if query:
             q = query.lower()
@@ -104,11 +115,15 @@ class RSSNewsSource:
             ]
         return articles
 
-    def _parse_rss(self, xml_bytes: bytes, since_utc: dt.datetime, limit: int) -> list[NewsArticle]:
+    def _parse_rss(
+        self, xml_bytes: bytes, since_utc: dt.datetime, limit: int, raise_on_parse_error: bool = False,
+    ) -> list[NewsArticle]:
         articles: list[NewsArticle] = []
         try:
             root = ET.fromstring(xml_bytes)
         except ET.ParseError as exc:
+            if raise_on_parse_error:
+                raise RSSParseError(f"failed to parse feed '{self.name}': {exc}") from exc
             print(f"[rss_feed] WARNING: failed to parse feed '{self.name}': {exc}")
             return articles
 

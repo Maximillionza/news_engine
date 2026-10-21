@@ -755,3 +755,131 @@ def test_supply_term_in_the_summary_alone_keeps_global_supply():
         _reply("geopolitical_conflict", "RU"), summary="The Novorossiysk oil terminal halted loadings.")
 
     assert alert.us_link == "global_supply" and alert.capped_no_us_link is False
+
+
+# --- B4: feed backoff (O5) and near-miss trim (K15) ---
+
+_T0 = dt.datetime(2026, 10, 21, 8, 0, tzinfo=UTC)
+
+
+def _min(n: int) -> dt.datetime:
+    return _T0 + dt.timedelta(minutes=n)
+
+
+def _b4_cycle(conn, webapp_conn, now, feeds, sources):
+    """One poll cycle at a fixed clock; `sources` maps feed name -> MagicMock source."""
+    with patch("alerting.poll_once.FREE_PREVIEW_FEEDS", feeds), \
+         patch("alerting.poll_once._utcnow", return_value=now), \
+         patch("alerting.poll_once.RSSNewsSource", side_effect=lambda name, url: sources[name]), \
+         patch("alerting.poll_once.notify_telegram.send_alert", return_value=True):
+        run_poll_cycle(conn=conn, webapp_conn=webapp_conn)
+
+
+def test_backoff_enters_once_and_recovery_logs_once(capsys):
+    conn = store.get_connection(":memory:")
+    webapp_conn = webapp_store.get_connection(":memory:")
+    feeds = {"feed_a": "https://example.com/a"}
+    src = MagicMock()
+    src.fetch.side_effect = RuntimeError("feed down")
+    sources = {"feed_a": src}
+
+    for m in (0, 2, 4):
+        _b4_cycle(conn, webapp_conn, _min(m), feeds, sources)
+    h = store.get_source_health(conn, "feed_a")
+    assert h.consecutive_failures == 3
+    assert h.backoff_until_utc == _min(4) + dt.timedelta(minutes=10)
+    out = capsys.readouterr().out
+    assert out.count("in backoff after 3 consecutive failures") == 1
+    assert out.count("WARNING: fetch failed") == 2  # failures 1 and 2 only
+
+    _b4_cycle(conn, webapp_conn, _min(6), feeds, sources)  # inside the backoff window: skipped silently
+    assert src.fetch.call_count == 3
+    assert capsys.readouterr().out == ""
+
+    _b4_cycle(conn, webapp_conn, _min(15), feeds, sources)  # window over: fails again, longer backoff, no new line
+    h = store.get_source_health(conn, "feed_a")
+    assert h.consecutive_failures == 4
+    assert h.backoff_until_utc == _min(15) + dt.timedelta(minutes=20)
+    assert capsys.readouterr().out == ""
+
+    src.fetch.side_effect = None
+    src.fetch.return_value = []
+    _b4_cycle(conn, webapp_conn, _min(36), feeds, sources)
+    out = capsys.readouterr().out
+    assert out.count("recovered after 4 consecutive failures") == 1
+    h = store.get_source_health(conn, "feed_a")
+    assert h.consecutive_failures == 0 and h.backoff_until_utc is None
+
+    _b4_cycle(conn, webapp_conn, _min(38), feeds, sources)
+    assert src.fetch.call_count == 6  # fetching normally again
+    assert "recovered" not in capsys.readouterr().out
+
+
+def test_healthy_feed_unaffected_by_a_failing_one():
+    conn = store.get_connection(":memory:")
+    webapp_conn = webapp_store.get_connection(":memory:")
+    feeds = {"feed_a": "https://example.com/a", "feed_b": "https://example.com/b"}
+    bad = MagicMock()
+    bad.fetch.side_effect = RuntimeError("down")
+    good = MagicMock()
+    sources = {"feed_a": bad, "feed_b": good}
+
+    for i in range(5):
+        good.fetch.return_value = [NewsArticle(
+            title="Local bakery wins regional award", summary="", source="feed_b", source_type="rss_feed_b",
+            published_utc=_min(2 * i), url="https://example.com/b1")]
+        _b4_cycle(conn, webapp_conn, _min(2 * i), feeds, sources)
+
+    assert good.fetch.call_count == 5
+    assert store.get_cursor(conn, "feed_b") == _min(8) + dt.timedelta(microseconds=1)
+    hb = store.get_source_health(conn, "feed_b")
+    assert hb.consecutive_failures == 0 and hb.last_success_utc == _min(8)
+
+
+def test_parse_error_counts_as_a_failure():
+    from data_layer.rss_sources import RSSParseError
+    conn = store.get_connection(":memory:")
+    webapp_conn = webapp_store.get_connection(":memory:")
+    src = MagicMock()
+    src.fetch.side_effect = RSSParseError("failed to parse feed 'feed_a': bad xml")
+    _b4_cycle(conn, webapp_conn, _min(0), {"feed_a": "https://example.com/a"}, {"feed_a": src})
+
+    assert store.get_source_health(conn, "feed_a").consecutive_failures == 1
+    assert src.fetch.call_args.kwargs["raise_on_parse_error"] is True
+
+
+def test_near_miss_below_new_threshold_is_not_logged():
+    from alerting.taxonomy import NEAR_MISS_LOG_THRESHOLD
+    assert NEAR_MISS_LOG_THRESHOLD == 0.5
+    conn = store.get_connection(":memory:")
+    webapp_conn = webapp_store.get_connection(":memory:")
+    src = MagicMock()
+    sources = {"feed_a": src}
+    feeds = {"feed_a": "https://example.com/a"}
+
+    def run(score, minute):
+        src.fetch.return_value = [_article("Oil edges higher")]
+        tr = TriageResult(matched=False, category=None, rule_tier_hit=False, matched_keywords=[],
+                          near_miss_score=score, near_miss_category="energy")
+        with patch("alerting.poll_once.triage_article", return_value=tr):
+            _b4_cycle(conn, webapp_conn, _min(minute), feeds, sources)
+
+    def count():
+        return conn.execute("SELECT COUNT(*) FROM shock_near_misses").fetchone()[0]
+
+    run(1 / 3, 0)
+    assert count() == 0
+    run(0.5, 2)
+    assert count() == 1
+    run(0.5, 4)  # same headline within 24h
+    assert count() == 1
+
+
+def test_poll_cycle_prunes_old_near_misses():
+    conn = store.get_connection(":memory:")
+    webapp_conn = webapp_store.get_connection(":memory:")
+    store.record_near_miss(conn, "ancient", "energy", 0.5, _T0 - dt.timedelta(days=31))
+    src = MagicMock()
+    src.fetch.return_value = []
+    _b4_cycle(conn, webapp_conn, _T0, {"feed_a": "https://example.com/a"}, {"feed_a": src})
+    assert conn.execute("SELECT COUNT(*) FROM shock_near_misses").fetchone()[0] == 0

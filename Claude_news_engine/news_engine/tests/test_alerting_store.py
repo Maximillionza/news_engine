@@ -403,3 +403,53 @@ def test_guard_blanks_telegram_and_points_ollama_nowhere():
     assert llm_classify.OLLAMA_EXECUTABLE.endswith("no-ollama.exe")
     assert not os.path.exists(llm_classify.OLLAMA_EXECUTABLE)
     assert "ANTHROPIC_API_KEY" not in os.environ
+
+
+def test_source_failure_streak_and_reset():
+    conn = store.get_connection(":memory:")
+    t0 = dt.datetime(2026, 10, 21, 8, 0, tzinfo=UTC)
+    assert store.get_source_health(conn, "feed_a") is None
+
+    first = store.record_source_failure(conn, "feed_a", t0, "boom", None)
+    second = store.record_source_failure(conn, "feed_a", t0 + dt.timedelta(minutes=2), "boom2", None)
+    assert first.consecutive_failures == 1
+    assert second.consecutive_failures == 2
+    assert second.failing_since_utc == t0  # first failure of the streak is kept
+    assert second.last_failure_utc == t0 + dt.timedelta(minutes=2)
+    assert second.last_error == "boom2"
+
+    prev = store.record_source_success(conn, "feed_a", t0 + dt.timedelta(minutes=4))
+    assert prev is not None and prev.consecutive_failures == 2
+    after = store.get_source_health(conn, "feed_a")
+    assert after.consecutive_failures == 0
+    assert after.failing_since_utc is None and after.backoff_until_utc is None
+    assert after.last_success_utc == t0 + dt.timedelta(minutes=4)
+
+    # A success on an already-clean row (or a brand-new feed) reports nothing to recover from.
+    assert store.record_source_success(conn, "feed_a", t0 + dt.timedelta(minutes=6)) is None
+    assert store.record_source_success(conn, "feed_new", t0) is None
+    assert [h.source for h in store.list_source_health(conn)] == ["feed_a", "feed_new"]
+
+
+def test_near_miss_repeat_within_24h_is_skipped():
+    conn = store.get_connection(":memory:")
+    t0 = dt.datetime(2026, 10, 21, 8, 0, tzinfo=UTC)
+    assert isinstance(store.record_near_miss(conn, "Oil edges up", "energy", 0.5, t0), int)
+    assert store.record_near_miss(conn, "Oil edges up", "energy", 0.5, t0 + dt.timedelta(hours=23)) is None
+    assert isinstance(store.record_near_miss(conn, "Oil edges up", "energy", 0.5, t0 + dt.timedelta(hours=25)), int)
+    assert isinstance(store.record_near_miss(conn, "Other headline", "energy", 0.5, t0 + dt.timedelta(minutes=1)), int)
+    assert conn.execute("SELECT COUNT(*) FROM shock_near_misses").fetchone()[0] == 3
+
+
+def test_prune_near_misses_keeps_30_days_and_is_bounded():
+    conn = store.get_connection(":memory:")
+    now = dt.datetime(2026, 10, 21, 8, 0, tzinfo=UTC)
+    for i in range(3):
+        store.record_near_miss(conn, f"old {i}", "energy", 0.5, now - dt.timedelta(days=31))
+    store.record_near_miss(conn, "recent", "energy", 0.5, now - dt.timedelta(days=29))
+
+    assert store.prune_near_misses(conn, now, max_rows=2) == 2
+    assert store.prune_near_misses(conn, now, max_rows=2) == 1
+    assert store.prune_near_misses(conn, now, max_rows=2) == 0
+    left = [r["headline"] for r in conn.execute("SELECT headline FROM shock_near_misses")]
+    assert left == ["recent"]

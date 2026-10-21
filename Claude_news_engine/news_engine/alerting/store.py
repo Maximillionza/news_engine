@@ -48,9 +48,22 @@ CREATE TABLE IF NOT EXISTS shock_near_misses (
     seen_at_utc TEXT NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_near_miss_headline_seen ON shock_near_misses(headline, seen_at_utc);
+CREATE INDEX IF NOT EXISTS idx_near_miss_seen ON shock_near_misses(seen_at_utc);
+
 CREATE TABLE IF NOT EXISTS poll_cursor (
     source TEXT PRIMARY KEY,
     last_seen_utc TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS source_health (
+    source TEXT PRIMARY KEY,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    failing_since_utc TEXT,
+    backoff_until_utc TEXT,
+    last_success_utc TEXT,
+    last_failure_utc TEXT,
+    last_error TEXT
 );
 
 CREATE TABLE IF NOT EXISTS provider_cooldown (
@@ -302,6 +315,85 @@ def set_cursor(conn: sqlite3.Connection, source: str, last_seen_utc: dt.datetime
     conn.commit()
 
 
+@dataclass
+class SourceHealth:
+    """Per-feed failure streak and backoff state (B4 O5); one row per RSS feed."""
+    source: str
+    consecutive_failures: int
+    failing_since_utc: Optional[dt.datetime]
+    backoff_until_utc: Optional[dt.datetime]
+    last_success_utc: Optional[dt.datetime]
+    last_failure_utc: Optional[dt.datetime]
+    last_error: Optional[str]
+
+
+def _row_to_source_health(row: sqlite3.Row) -> SourceHealth:
+    def _opt(value: Optional[str]) -> Optional[dt.datetime]:
+        return _parse_utc(value) if value else None
+
+    return SourceHealth(
+        source=row["source"],
+        consecutive_failures=row["consecutive_failures"],
+        failing_since_utc=_opt(row["failing_since_utc"]),
+        backoff_until_utc=_opt(row["backoff_until_utc"]),
+        last_success_utc=_opt(row["last_success_utc"]),
+        last_failure_utc=_opt(row["last_failure_utc"]),
+        last_error=row["last_error"],
+    )
+
+
+def get_source_health(conn: sqlite3.Connection, source: str) -> Optional[SourceHealth]:
+    row = conn.execute("SELECT * FROM source_health WHERE source = ?", (source,)).fetchone()
+    return _row_to_source_health(row) if row is not None else None
+
+
+def list_source_health(conn: sqlite3.Connection) -> list[SourceHealth]:
+    rows = conn.execute("SELECT * FROM source_health ORDER BY source").fetchall()
+    return [_row_to_source_health(r) for r in rows]
+
+
+def record_source_success(conn: sqlite3.Connection, source: str, now: dt.datetime) -> Optional[SourceHealth]:
+    """
+    Resets the feed's failure streak. Returns the previous row when it had
+    failures (so the caller can log the recovery once), else None.
+    """
+    previous = get_source_health(conn, source)
+    conn.execute(
+        "INSERT INTO source_health (source, consecutive_failures, last_success_utc) VALUES (?, 0, ?) "
+        "ON CONFLICT(source) DO UPDATE SET consecutive_failures = 0, failing_since_utc = NULL, "
+        "backoff_until_utc = NULL, last_success_utc = excluded.last_success_utc",
+        (source, now.isoformat()),
+    )
+    conn.commit()
+    if previous is not None and previous.consecutive_failures > 0:
+        return previous
+    return None
+
+
+def record_source_failure(
+    conn: sqlite3.Connection, source: str, now: dt.datetime, error: str,
+    backoff_until: Optional[dt.datetime],
+) -> SourceHealth:
+    """Counts one more failure; the first failure of a streak fixes failing_since_utc."""
+    previous = get_source_health(conn, source)
+    ongoing = previous is not None and previous.consecutive_failures > 0
+    failures = (previous.consecutive_failures if ongoing else 0) + 1
+    failing_since = previous.failing_since_utc if ongoing and previous.failing_since_utc else now
+    conn.execute(
+        "INSERT INTO source_health (source, consecutive_failures, failing_since_utc, backoff_until_utc, "
+        "last_failure_utc, last_error) VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(source) DO UPDATE SET consecutive_failures = excluded.consecutive_failures, "
+        "failing_since_utc = excluded.failing_since_utc, backoff_until_utc = excluded.backoff_until_utc, "
+        "last_failure_utc = excluded.last_failure_utc, last_error = excluded.last_error",
+        (
+            source, failures, failing_since.isoformat(),
+            backoff_until.isoformat() if backoff_until else None, now.isoformat(), (error or "")[:300],
+        ),
+    )
+    conn.commit()
+    return get_source_health(conn, source)
+
+
 def get_provider_cooldown_until(conn: sqlite3.Connection, provider: str) -> Optional[dt.datetime]:
     """When `provider` may be tried again, or None if it has no recorded cooldown."""
     row = conn.execute("SELECT until_utc FROM provider_cooldown WHERE provider = ?", (provider,)).fetchone()
@@ -345,18 +437,53 @@ def record_outage_notice(conn: sqlite3.Connection, utc_date: dt.date, sent_at_ut
     conn.commit()
 
 
+NEAR_MISS_REPEAT_WINDOW = dt.timedelta(hours=24)  # same headline is logged at most once per window
+NEAR_MISS_RETENTION = dt.timedelta(days=30)
+NEAR_MISS_PRUNE_BATCH = 500  # rows deleted per call, so one poll cycle never runs a huge DELETE
+
+
 def record_near_miss(
     conn: sqlite3.Connection, headline: str, closest_category: Optional[str],
     near_miss_score: Optional[float], seen_at_utc: Optional[dt.datetime] = None,
-) -> int:
-    """Rolling audit log for taxonomy tuning -- never read by the live alerting path itself."""
+) -> Optional[int]:
+    """
+    Rolling audit log for taxonomy tuning -- never read by the live alerting path itself.
+    Returns None (nothing inserted) when the same headline was already logged in the last 24h:
+    feeds keep a story for hours, so every 2-minute cycle used to re-log it.
+    """
     seen_at_utc = seen_at_utc or dt.datetime.now(dt.timezone.utc)
+    repeat = conn.execute(
+        "SELECT 1 FROM shock_near_misses WHERE headline = ? AND julianday(seen_at_utc) >= julianday(?) LIMIT 1",
+        (headline, (seen_at_utc - NEAR_MISS_REPEAT_WINDOW).isoformat()),
+    ).fetchone()
+    if repeat is not None:
+        return None
     cur = conn.execute(
         "INSERT INTO shock_near_misses (headline, closest_category, near_miss_score, seen_at_utc) VALUES (?, ?, ?, ?)",
         (headline, closest_category, near_miss_score, seen_at_utc.isoformat()),
     )
     conn.commit()
     return cur.lastrowid
+
+
+def prune_near_misses(
+    conn: sqlite3.Connection, now: dt.datetime, retention: dt.timedelta = NEAR_MISS_RETENTION,
+    max_rows: int = NEAR_MISS_PRUNE_BATCH,
+) -> int:
+    """
+    Deletes at most `max_rows` of the oldest near-misses past retention and returns the count.
+    Bounded on purpose (runs inside the 2-minute poll); a backlog drains over a few cycles.
+    The only DELETE in the alerting store.
+    """
+    cutoff = (now - retention).isoformat()
+    cur = conn.execute(
+        "DELETE FROM shock_near_misses WHERE id IN ("
+        "SELECT id FROM shock_near_misses WHERE julianday(seen_at_utc) < julianday(?) "
+        "ORDER BY seen_at_utc LIMIT ?)",
+        (cutoff, max_rows),
+    )
+    conn.commit()
+    return cur.rowcount
 
 
 def list_recent_alerts_in_category(conn: sqlite3.Connection, category: str, since_utc: dt.datetime) -> list[ShockAlertRow]:

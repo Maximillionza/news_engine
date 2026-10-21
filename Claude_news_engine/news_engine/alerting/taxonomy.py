@@ -29,7 +29,9 @@ SHOCK_CATEGORIES = [
     "natural_disaster_supply_chain",
 ]
 
-NEAR_MISS_LOG_THRESHOLD = 0.3  # triage.py's near_miss_score scale — tunable once real examples exist
+# triage.py's near_miss_score scale. Was 0.3 until B4 (2026-10-21): scores are word-overlap
+# fractions (1/3, 1/2, 2/3, 3/4, 1) and 0.3 logged single-word overlaps (3,479 of 8,334 live rows).
+NEAR_MISS_LOG_THRESHOLD = 0.5
 
 HARD_RULE_PATTERNS: dict[str, list[str]] = {
     "energy": [
