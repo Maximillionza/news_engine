@@ -41,7 +41,7 @@ function _alertHtml(row) {
     <div class="meta-text-sm">Affects: ${symbolsLine}</div>
     ${row.rationale ? `<div class="meta-text-sm">${escapeHtml(row.rationale)}</div>` : ""}
     <div class="meta-text-sm">Sources: ${sourcesLine}</div>
-    <div class="meta-text-sm">${new Date(row.detected_at_utc).toLocaleString()}${freshness ? ` · ${escapeHtml(freshness)}` : ""}${mismatchBadge}</div>
+    <div class="meta-text-sm">${new Date(row.detected_at_utc).toLocaleString()}${freshness ? ` Â· ${escapeHtml(freshness)}` : ""}${mismatchBadge}</div>
   </div>`;
 }
 
