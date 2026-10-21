@@ -170,3 +170,21 @@ def test_unknown_instrument_and_naive_release_are_refused(tmp_path, capsys):
     assert cli.main(["record-call", *naive], now=NOW) == 2
     assert "UTC offset" in capsys.readouterr().err
     assert _count(paths) == 0
+
+
+def test_non_utc_release_offset_is_normalised_to_utc(tmp_path, capsys):
+    """+02:00 spelling must store the +00:00 key, so it is found and a +00:00 repeat is refused as a second call."""
+    paths = _setup(tmp_path)
+    args = _call_args(paths)
+    args[args.index("--release") + 1] = "2026-11-12T15:30:00+02:00"
+    assert cli.main(["record-call", *args], now=NOW) == 0
+    capsys.readouterr()
+    conn = bs.get_connection(paths[1])
+    try:
+        stored = conn.execute("SELECT event_time_utc FROM tier1_predictions").fetchone()[0]
+    finally:
+        conn.close()
+    assert stored == "2026-11-12T13:30:00+00:00"
+    assert cli.main(["record-call", *_call_args(paths, direction="bearish")], now=NOW) == 2
+    assert "first pre-release call stands" in capsys.readouterr().err
+    assert _count(paths) == 1

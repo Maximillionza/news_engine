@@ -109,7 +109,7 @@ def _check_target(args: argparse.Namespace, dash_conn, now: dt.datetime) -> dt.d
     if args.instrument not in list_tracked_symbols(dash_conn):
         raise Refused(f"instrument {args.instrument!r} is not tracked")
     try:
-        release = parse_aware(args.release)
+        release = parse_aware(args.release).astimezone(UTC)  # stored/keyed as +00:00 everywhere
     except ValueError as exc:
         raise Refused(str(exc))
     if now >= release:
