@@ -43,7 +43,9 @@ from alerting import store
 from alerting.direction import normalize_polarity
 from alerting.taxonomy import SHOCK_CATEGORIES
 from alerting.triage import TriageResult
-from alerting.us_link import normalize_country, normalize_us_link, reconcile
+from alerting.us_link import (
+    GLOBAL_SUPPLY_REJECTED_NOTE, check_global_supply, normalize_country, normalize_us_link, reconcile,
+)
 from config.settings import (
     CLASSIFIER_PROVIDER_ORDER, CLAUDE_CLASSIFY_MODEL, CLAUDE_COOLDOWN_MINUTES, CLAUDE_TIMEOUT_SECONDS,
     OLLAMA_BASE_URL, OLLAMA_CLASSIFY_MODEL, OLLAMA_COOLDOWN_MINUTES, OLLAMA_EXECUTABLE,
@@ -130,7 +132,12 @@ def _build_prompt(article: NewsArticle, triage: TriageResult) -> str:
         "US link examples (headline -> country, us_link):\n"
         "- Fed chair signals emergency cut -> US, direct\n"
         "- Tanker struck near Strait of Hormuz -> XX, global_supply\n"
-        "- Protesters clash with police in Lima -> PE, none\n\n"
+        "- Protesters clash with police in Lima -> PE, none\n"
+        # Counter-examples a 3B model got wrong (smoke test 2026-10-21): a drone hit on a
+        # non-energy site is not a supply story; an oil-site strike is.
+        "- Drone attack shuts data centre in Russia -> RU, none\n"
+        "- Unrest spreads across France as protesters clash with police -> FR, none\n"
+        "- Drone strike sets Russian oil refinery on fire -> RU, global_supply\n\n"
         "Respond with ONLY a JSON object, no other text, in exactly this shape:\n"
         '{"category": "<one of the valid categories>", "severity": "High"|"Medium"|"Low", '
         '"polarity": "escalation"|"relief"|"hawkish"|"dovish"|"unclear", '
@@ -323,6 +330,10 @@ def classify_candidate(
             problems.append(f"{name}: unusable response ({exc})")
             continue
         country, us_link = _extract_country_and_us_link(text)
+        # Deterministic check on the model's "global_supply": not a supply story -> "none" (capped).
+        us_link, rejected = check_global_supply(us_link, category, f"{article.title}\n{article.summary or ''}")
+        if rejected:
+            rationale = f"{rationale} -- {GLOBAL_SUPPLY_REJECTED_NOTE}" if rationale else GLOBAL_SUPPLY_REJECTED_NOTE
         return ClassificationResult(
             category=category, severity=severity, rationale=rationale, provider=name,
             polarity=_extract_polarity(text), country=country, us_link=us_link,

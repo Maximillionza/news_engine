@@ -400,3 +400,25 @@ def test_start_ollama_gives_up_after_the_wait_and_when_the_exe_is_missing():
          patch("alerting.llm_classify.time.sleep"), \
          patch("alerting.llm_classify.time.monotonic", side_effect=[0, 1, 30]):
         assert llm_classify._start_ollama() is False
+
+
+def test_prompt_carries_us_link_counter_examples():
+    prompt = llm_classify._build_prompt(_article(), _triage())
+    assert "Drone attack shuts data centre in Russia -> RU, none" in prompt
+    assert "Unrest spreads across France as protesters clash with police -> FR, none" in prompt
+    assert "Drone strike sets Russian oil refinery on fire -> RU, global_supply" in prompt
+
+
+def test_classifier_global_supply_on_a_non_supply_story_becomes_none_with_a_note():
+    article = NewsArticle(
+        title="Russia builds major new drone attack base", summary="", source="t", source_type="rss_t",
+        published_utc=dt.datetime(2026, 10, 21, tzinfo=UTC), url="https://example.com")
+    triage = TriageResult(matched=True, category="geopolitical_conflict", rule_tier_hit=False,
+                          matched_keywords=[], near_miss_score=None)
+    reply = ('{"category":"geopolitical_conflict","severity":"High","polarity":"escalation",'
+             '"country":"RU","us_link":"global_supply","rationale":"Military build-up."}')
+    with patch("alerting.llm_classify._call_ollama", return_value=reply):
+        result = classify_candidate(article, triage)
+    assert result.us_link == "none"
+    assert result.rationale.startswith("Military build-up.")
+    assert result.rationale.endswith("us_link global_supply rejected: not a supply story")

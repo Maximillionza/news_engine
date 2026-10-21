@@ -68,6 +68,18 @@ SHOCK_FRESH_MAX_MINUTES = 5
 SHOCK_DELAYED_MAX_MINUTES = 15
 SHOCK_STALE_MAX_MINUTES = 60
 
+# B2 global_supply guard (smoke test 2026-10-21): the 3B local model tagged two
+# Russia drone stories (a data centre, a drone base) us_link="global_supply",
+# so the no-US-link cap never fired. The classifier's "global_supply" is now
+# accepted only when the category is "energy" or the headline/summary contains
+# one of these terms (whole word, case-insensitive, a plural "s"/"es" also
+# matches); otherwise it becomes "none" (alerting/us_link.check_global_supply).
+SHOCK_GLOBAL_SUPPLY_TERMS = (
+    "oil", "crude", "brent", "wti", "gas", "lng", "opec", "pipeline", "refinery",
+    "tanker", "shipping", "shipping lane", "strait", "hormuz", "bab el-mandeb",
+    "red sea", "suez", "port", "chokepoint", "export ban", "embargo", "supply",
+)
+
 # --- FRED (St. Louis Fed) month-lookahead calendar source — READ-ONLY,
 # comparison/logging use only, NOT wired into scoring or the live
 # dashboard/accumulator pipelines (see docs/calendar-lookahead-source-research-2026-08-15.md

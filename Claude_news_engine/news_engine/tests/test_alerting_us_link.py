@@ -86,3 +86,45 @@ def test_cap_note_wording():
     assert cap_note("High", False) is None
     assert cap_note("High", None) is None
     assert cap_note(None, None) is None
+
+
+# --- global_supply plausibility guard (B2 smoke-test fix 2026-10-21) ---
+
+from alerting.us_link import check_global_supply  # noqa: E402
+
+
+@pytest.mark.parametrize("text", [
+    "Russia's Yandex says data centre in Vladimir area shut down after drone attack",
+    "Russia builds major new drone attack base",
+    "Analysts report strong support for the government",  # "port" only inside other words
+    "Unrest spreads across France",
+])
+def test_global_supply_without_a_supply_term_is_rejected(text):
+    assert check_global_supply("global_supply", "geopolitical_conflict", text) == ("none", True)
+
+
+@pytest.mark.parametrize("text", [
+    "Houthis strike tanker in Red Sea",
+    "Brent jumps as Hormuz traffic slows",
+    "Drone hits Ryazan oil refinery",
+    "Strike closes two ports in Chile",          # plural of a listed term
+    "Shipping lane disrupted near Bab el-Mandeb",
+    "EU agrees embargo on Russian LNG",
+    "Gas flows via pipeline halted",
+    "OPEC sees tighter market",
+    "WTI slips; crude stocks build",
+    "Suez traffic resumes",
+    "Country imposes export ban on grain",
+    "Global supply of copper tightens",
+])
+def test_global_supply_with_a_supply_term_is_kept(text):
+    assert check_global_supply("global_supply", "geopolitical_conflict", text) == ("global_supply", False)
+
+
+def test_energy_category_keeps_global_supply_without_a_term():
+    assert check_global_supply("global_supply", "energy", "Saudi Aramco cuts output at Abqaiq") == ("global_supply", False)
+
+
+@pytest.mark.parametrize("link", ["direct", "none", None])
+def test_other_links_pass_through_unchanged(link):
+    assert check_global_supply(link, "geopolitical_conflict", "Russia builds drone base") == (link, False)

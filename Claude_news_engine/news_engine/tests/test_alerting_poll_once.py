@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 from unittest.mock import MagicMock, patch
 
 from alerting import store
@@ -681,3 +682,76 @@ def test_escalation_push_shows_the_original_story_age():
         send, _ = _cycle(conn, _tracked_webapp(), "Strait of Hormuz closed", triage, None, existing_id=alert_id)
     assert send.call_args.kwargs["is_escalation"] is True
     assert send.call_args.kwargs["freshness_line"] == "Published 14:00 SAST · +4 min · Fresh"
+
+
+# --- B2 smoke-test fix: global_supply is accepted only for a genuine supply story ---
+# Real run 2026-10-21 (Ollama llama3.2:3b): both Russia drone headlines came back
+# us_link="global_supply", so the no-US-link cap and no-lean rule never fired.
+# These go through the real classify_candidate with only the model's raw reply mocked.
+
+def _run_with_model_reply(title, category, reply, summary=""):
+    """One fresh alert through run_poll_cycle -> classify_candidate; only the Ollama reply text is mocked."""
+    conn = store.get_connection(":memory:")
+    article = _article(title)
+    article.summary = summary
+    send = MagicMock(return_value=True)
+    with patch("alerting.poll_once.FREE_PREVIEW_FEEDS", {"feed_a": "u"}), \
+         patch("alerting.poll_once.RSSNewsSource") as source_cls, \
+         patch("alerting.poll_once.triage_article", return_value=_triage_result(category)), \
+         patch("alerting.llm_classify.CLASSIFIER_PROVIDER_ORDER", ("ollama",)), \
+         patch("alerting.llm_classify._call_ollama", return_value=reply), \
+         patch("alerting.poll_once.notify_telegram.send_notice", MagicMock(return_value=True)), \
+         patch("alerting.poll_once.notify_telegram.send_alert", send):
+        source_cls.return_value.fetch.return_value = [article]
+        run_poll_cycle(conn=conn, webapp_conn=_tracked_webapp())
+    return store.list_recent_alerts(conn, _ALL_TIME)[0], send
+
+
+def _reply(category, country, link="global_supply"):
+    return json.dumps({"category": category, "severity": "High", "polarity": "escalation",
+                       "country": country, "us_link": link, "rationale": "Model says supply."})
+
+
+@pytest.mark.parametrize("headline", [
+    "Russia's Yandex says data centre in Vladimir area shut down after drone attack",
+    "Russia builds major new drone attack base",
+])
+def test_global_supply_on_a_non_supply_story_is_downgraded_to_none_and_capped(headline):
+    alert, send = _run_with_model_reply(headline, "geopolitical_conflict", _reply("geopolitical_conflict", "RU"))
+
+    assert alert.us_link == "none" and alert.country == "RU"
+    assert alert.severity == "Medium" and alert.original_severity == "High"
+    assert alert.capped_no_us_link is True
+    assert alert.affected_symbols
+    assert all(s["lean"] == "mixed" and s["lean_why"] == NO_US_LINK_WHY for s in alert.affected_symbols)
+    assert "us_link global_supply rejected: not a supply story" in alert.rationale
+    assert send.call_args.args[2] == "Medium"
+    assert NO_US_LINK_WHY in send.call_args.kwargs["cap_note"]
+
+
+def test_red_sea_tanker_attack_keeps_global_supply_and_is_not_capped():
+    alert, send = _run_with_model_reply(
+        "Houthis strike tanker in Red Sea", "geopolitical_conflict", _reply("geopolitical_conflict", "YE"))
+
+    assert alert.us_link == "global_supply"
+    assert alert.severity == "High" and alert.capped_no_us_link is False
+    assert {s["symbol"]: s["lean"] for s in alert.affected_symbols} == {"XAUUSD": "buy", "US30": "sell"}
+    assert "rejected" not in alert.rationale
+    assert send.call_args.kwargs["cap_note"] is None
+
+
+def test_energy_category_keeps_global_supply_without_a_listed_term():
+    alert, _ = _run_with_model_reply(
+        "Saudi Aramco cuts output at Abqaiq after fire", "energy", _reply("energy", "SA"))
+
+    assert alert.us_link == "global_supply"
+    assert alert.severity == "High" and alert.capped_no_us_link is False
+    assert "rejected" not in alert.rationale
+
+
+def test_supply_term_in_the_summary_alone_keeps_global_supply():
+    alert, _ = _run_with_model_reply(
+        "Drone attack hits Russian Black Sea facility", "geopolitical_conflict",
+        _reply("geopolitical_conflict", "RU"), summary="The Novorossiysk oil terminal halted loadings.")
+
+    assert alert.us_link == "global_supply" and alert.capped_no_us_link is False

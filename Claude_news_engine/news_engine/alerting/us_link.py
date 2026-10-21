@@ -30,6 +30,7 @@ import re
 from typing import Iterable, Optional
 
 from alerting.direction import NO_US_LINK_WHY
+from config.settings import SHOCK_GLOBAL_SUPPLY_TERMS
 
 US_LINKS = ("direct", "global_supply", "none")
 
@@ -111,6 +112,36 @@ def reconcile(country: Optional[str], us_link: Optional[str]) -> Optional[str]:
     if country == "US":
         return "direct"
     return us_link
+
+
+GLOBAL_SUPPLY_REJECTED_NOTE = "us_link global_supply rejected: not a supply story"
+
+# Whole-word match of any term; spaces in a term match any run of whitespace, and a
+# trailing "s"/"es" also matches (ports, tankers, pipelines). "port" never matches
+# inside "report" or "export".
+_SUPPLY_TERM_RE = re.compile(
+    r"\b(?:" + "|".join(
+        r"\s+".join(re.escape(word) for word in term.split())
+        for term in sorted(SHOCK_GLOBAL_SUPPLY_TERMS, key=len, reverse=True)
+    ) + r")(?:e?s)?\b",
+    re.IGNORECASE,
+)
+
+
+def check_global_supply(us_link: Optional[str], category: Optional[str], text: str) -> tuple[Optional[str], bool]:
+    """
+    (us_link, rejected). A classifier's "global_supply" stands only for an
+    energy-category story or one whose text names a supply term
+    (SHOCK_GLOBAL_SUPPLY_TERMS); otherwise it is downgraded to "none" and
+    rejected=True, so the no-US-link cap applies. A small model was seen
+    calling Russia drone stories "global_supply" (smoke test 2026-10-21).
+    "direct", "none" and unknown pass through unchanged.
+    """
+    if us_link != "global_supply":
+        return us_link, False
+    if category == "energy" or _SUPPLY_TERM_RE.search(text or ""):
+        return us_link, False
+    return "none", True
 
 
 def rule_country_us_link(matched_keywords: Iterable[str]) -> tuple[Optional[str], Optional[str]]:
