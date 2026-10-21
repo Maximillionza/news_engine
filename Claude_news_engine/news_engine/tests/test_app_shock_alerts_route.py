@@ -52,3 +52,82 @@ def test_shock_alerts_route_serves_the_lean_fields_the_tab_renders(monkeypatch):
     with app.test_client() as c:
         data = c.get("/api/shock-alerts").get_json()
     assert data["rows"][0]["affected_symbols"] == affected
+
+
+EXPECTED_ROW_KEYS = {
+    "id", "headline", "sources", "detected_at_utc", "category", "severity",
+    "classification_method", "rationale", "affected_symbols", "delivery_status",
+    "reality_mismatch", "polarity", "country", "us_link", "capped_no_us_link",
+    "original_severity", "first_published_utc", "age_minutes", "freshness_band",
+}
+
+
+def _conn(monkeypatch):
+    conn = alerting_store.get_connection(":memory:")
+    monkeypatch.setattr(alerting_store, "get_connection", lambda *a, **kw: conn)
+    return conn
+
+
+def _record(conn, **extra):
+    detected = dt.datetime.now(UTC).replace(microsecond=0)
+    kwargs = dict(
+        headline="Russia strikes pipeline", source="reuters_business", url="https://x",
+        published_utc=detected - dt.timedelta(minutes=2), detected_at_utc=detected,
+        category="energy", severity="Medium", classification_method="llm", rationale=None,
+        affected_symbols=[],
+    )
+    kwargs.update(extra)
+    return alerting_store.record_alert(conn, **kwargs)
+
+
+def test_shock_alert_route_row_key_set_is_exact(monkeypatch):
+    conn = _conn(monkeypatch)
+    _record(conn)
+    with app.test_client() as c:
+        row = c.get("/api/shock-alerts").get_json()["rows"][0]
+    assert set(row) == EXPECTED_ROW_KEYS
+
+
+def test_shock_alert_route_serves_new_fields(monkeypatch):
+    conn = _conn(monkeypatch)
+    _record(conn, polarity="escalation", country="RU", us_link="none",
+            capped_no_us_link=True, original_severity="High")
+    with app.test_client() as c:
+        row = c.get("/api/shock-alerts").get_json()["rows"][0]
+    assert (row["polarity"], row["country"], row["us_link"]) == ("escalation", "RU", "none")
+    assert row["capped_no_us_link"] is True
+    assert row["original_severity"] == "High"
+    assert row["age_minutes"] == 2
+    assert row["freshness_band"] == "Fresh"
+    assert dt.datetime.fromisoformat(row["first_published_utc"]) == (
+        dt.datetime.fromisoformat(row["detected_at_utc"]) - dt.timedelta(minutes=2)
+    )
+
+
+def test_shock_alert_route_serves_freshness_for_old_rows(monkeypatch):
+    conn = _conn(monkeypatch)
+    alert_id = _record(conn)
+    # Simulate a pre-B2 row: every new column NULL, so the time must come from sources[0].
+    conn.execute(
+        "UPDATE shock_alerts SET polarity=NULL, country=NULL, us_link=NULL, "
+        "capped_no_us_link=NULL, original_severity=NULL, first_published_utc=NULL WHERE id=?",
+        (alert_id,),
+    )
+    conn.commit()
+    with app.test_client() as c:
+        row = c.get("/api/shock-alerts").get_json()["rows"][0]
+    assert row["first_published_utc"] is not None
+    assert row["age_minutes"] == 2
+    assert row["freshness_band"] == "Fresh"
+    assert row["country"] is None and row["us_link"] is None and row["polarity"] is None
+    assert row["capped_no_us_link"] is None and row["original_severity"] is None
+
+    conn.execute("UPDATE shock_alerts SET sources_json='[]' WHERE id=?", (alert_id,))
+    conn.commit()
+    with app.test_client() as c:
+        resp = c.get("/api/shock-alerts")
+    assert resp.status_code == 200
+    row = resp.get_json()["rows"][0]
+    assert row["first_published_utc"] is None
+    assert row["age_minutes"] is None
+    assert row["freshness_band"] is None

@@ -2,6 +2,7 @@
 import { escapeHtml } from "../format.js";
 import { fetchShockAlerts } from "../api.js";
 import { affectsLineHtml } from "./affects.js";
+import { freshnessText, contextTagsText, capBadgeHtml } from "./alert-meta.js";
 
 let shockAlertsLoaded = false;
 
@@ -31,13 +32,16 @@ function _alertHtml(row) {
   const deliveryBadge = row.severity === "High" && row.delivery_status === "failed"
     ? ' <span style="color:#c62828;font-weight:bold">⚠ push failed</span>'
     : "";
+  const tags = contextTagsText(row);
+  const freshness = freshnessText(row);
   return `<div class="shock-alert-card" style="border-left:4px solid ${SEVERITY_COLOR[row.severity] || "#888"}">
-    <div><b>${escapeHtml(row.severity)} — ${escapeHtml(row.category)}</b>${deliveryBadge}</div>
+    <div><b>${escapeHtml(row.severity)} — ${escapeHtml(row.category)}</b>${deliveryBadge}${capBadgeHtml(row)}</div>
     <div>${escapeHtml(row.headline)}</div>
+    ${tags ? `<div class="meta-text-sm">${tags}</div>` : ""}
     <div class="meta-text-sm">Affects: ${symbolsLine}</div>
     ${row.rationale ? `<div class="meta-text-sm">${escapeHtml(row.rationale)}</div>` : ""}
     <div class="meta-text-sm">Sources: ${sourcesLine}</div>
-    <div class="meta-text-sm">${new Date(row.detected_at_utc).toLocaleString()}${mismatchBadge}</div>
+    <div class="meta-text-sm">${new Date(row.detected_at_utc).toLocaleString()}${freshness ? ` � ${escapeHtml(freshness)}` : ""}${mismatchBadge}</div>
   </div>`;
 }
 

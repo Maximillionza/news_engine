@@ -40,6 +40,7 @@ from webapp import stats_service
 from webapp import reaction_service
 from webapp.metric_components import get_components
 from alerting import store as alerting_store
+from alerting import freshness as alerting_freshness
 
 app = Flask(__name__, static_folder="static")
 
@@ -376,20 +377,27 @@ def get_shock_alerts():
     conn = alerting_store.get_connection()
     since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)
     rows = alerting_store.list_recent_alerts(conn, since)
-    return jsonify({
-        "rows": [
-            {
-                "id": r.id, "headline": r.headline, "sources": r.sources,
-                "detected_at_utc": r.detected_at_utc.isoformat(),
-                "category": r.category, "severity": r.severity,
-                "classification_method": r.classification_method,
-                "rationale": r.rationale, "affected_symbols": r.affected_symbols,
-                "delivery_status": r.delivery_status,
-                "reality_mismatch": r.reality_mismatch,
-            }
-            for r in rows
-        ],
-    })
+    out = []
+    for r in rows:
+        # Pre-B2 rows have NULL new columns; first_published_utc is derived from sources[0]
+        # by the store, and is None when that is unavailable (age then stays null).
+        age = alerting_freshness.age_minutes(r.first_published_utc, r.detected_at_utc)
+        out.append({
+            "id": r.id, "headline": r.headline, "sources": r.sources,
+            "detected_at_utc": r.detected_at_utc.isoformat(),
+            "category": r.category, "severity": r.severity,
+            "classification_method": r.classification_method,
+            "rationale": r.rationale, "affected_symbols": r.affected_symbols,
+            "delivery_status": r.delivery_status,
+            "reality_mismatch": r.reality_mismatch,
+            "polarity": r.polarity, "country": r.country, "us_link": r.us_link,
+            "capped_no_us_link": r.capped_no_us_link,
+            "original_severity": r.original_severity,
+            "first_published_utc": r.first_published_utc.isoformat() if r.first_published_utc else None,
+            "age_minutes": age,
+            "freshness_band": alerting_freshness.freshness_band(age),
+        })
+    return jsonify({"rows": out})
 
 
 # ---------------------------------------------------------------------------
