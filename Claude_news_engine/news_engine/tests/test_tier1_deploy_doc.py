@@ -36,7 +36,7 @@ def test_new_skill_runs_only_the_cli_and_never_researches_cpi() -> None:
     for needle in ("python scripts/tier1_research.py plan", "tier1_research.py record-call",
                    "tier1_research.py record-late-check", "docs/tier1-methodology.md",
                    "NOT researched by this task (formula tier", "Do not modify any file.",
-                   "first run exactly cd Claude_news_engine/news_engine", "with the Read tool (do not run Python"):
+                   "first run exactly cd C:/Users/Masoodt/Documents/Claude/Projects/.worktrees/news-engine-live/Claude_news_engine/news_engine", "with the Read tool (do not run Python"):
         assert needle in new, needle
     # The old free-hand persistence path, the deleted Step 2 and the Mon/Thu cadence are gone; CPI left the
     # consolidation scope.
@@ -49,11 +49,11 @@ def test_preapproval_step_gives_exact_rules_location_and_verification() -> None:
     step = text.split("## 3. Switch the research task to the CLI\n", 1)[1].split("\n## 4. Rollback", 1)[0]
     assert ("OWNER APPROVAL REQUIRED — standing permission rules; the controller does not apply this "
             "without the owner's yes") in step
-    assert r"C:\Users\Masoodt\Documents\Claude\Projects\.worktrees\news-engine-live\.claude\settings.local.json" in step
+    assert r"C:\Users\Masoodt\Documents\Claude\Projects\Claude_news_engine\news_engine\.claude\settings.local.json" in step
     for sub in ("plan", "record-call", "record-late-check"):
         assert f'"Bash(python scripts/tier1_research.py {sub}:*)"' in step, sub
         assert f'"PowerShell(python scripts/tier1_research.py {sub}:*)"' in step, sub
-    for rule in ('"Bash(cd Claude_news_engine/news_engine)"', '"Read"', '"WebSearch"', '"WebFetch"'):
+    for rule in ('"Bash(cd C:/Users/Masoodt/Documents/Claude/Projects/.worktrees/news-engine-live/Claude_news_engine/news_engine)"', '"Read"', '"WebSearch"', '"WebFetch"'):
         assert rule in step, rule
     assert '"Bash(python:*)"' not in step          # named in the prose only as the rule NOT to add
     assert "STEP 5 report with no permission prompt" in step
