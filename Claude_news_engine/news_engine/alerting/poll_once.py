@@ -19,6 +19,7 @@ import datetime as dt
 import time
 
 from alerting import dedup, direction, llm_classify, notify_telegram, store
+from alerting.freshness import freshness_line
 from alerting.symbol_relevance import affected_symbols
 from alerting.us_link import cap_note, cap_severity, rule_country_us_link
 from alerting.triage import triage_article, TriageResult
@@ -149,6 +150,7 @@ def _process_matched(conn, webapp_conn, article: NewsArticle, result: TriageResu
     # B2 K3: an event with no direct US or global-supply link is held at Medium and carries no buy/sell lean.
     severity, capped = cap_severity(raw_severity, us_link)
 
+    detected_at = _utcnow()  # one instant for the stored detection time and the freshness line
     existing_id = dedup.find_existing_alert(article.title, category, conn)
     if existing_id is not None:
         store.append_source(conn, existing_id, article.source, article.url, article.published_utc)
@@ -166,7 +168,7 @@ def _process_matched(conn, webapp_conn, article: NewsArticle, result: TriageResu
 
     alert_id = store.record_alert(
         conn, headline=article.title, source=article.source, url=article.url,
-        published_utc=article.published_utc, detected_at_utc=_utcnow(),
+        published_utc=article.published_utc, detected_at_utc=detected_at,
         category=category, severity=severity, classification_method=method,
         rationale=rationale, affected_symbols=affected_dicts,
         polarity=polarity, country=country, us_link=us_link,
@@ -179,6 +181,7 @@ def _process_matched(conn, webapp_conn, article: NewsArticle, result: TriageResu
             [{"source": article.source, "url": article.url}],
             classification_failed=classification_failed,
             cap_note=cap_note(raw_severity, capped),
+            freshness_line=freshness_line(article.published_utc, detected_at),
         )
         store.set_delivery_status(conn, alert_id, "sent" if sent else "failed")
 
@@ -263,6 +266,8 @@ def _maybe_escalate(
         sent = notify_telegram.send_alert(
             existing.headline, new_category, new_severity, new_rationale,
             affected, existing.sources, is_escalation=True, cap_note=still_capped_note,
+            # Age of the ORIGINAL story at its first catch, not of this corroborating article.
+            freshness_line=freshness_line(existing.first_published_utc, existing.detected_at_utc),
         )
         store.set_delivery_status(conn, alert_id, "sent" if sent else "failed")
 

@@ -61,6 +61,7 @@ def send_alert(
     headline: str, category: str, severity: str, rationale: Optional[str],
     affected_symbols: list[dict], sources: list[dict], is_escalation: bool = False,
     classification_failed: bool = False, cap_note: Optional[str] = None,
+    freshness_line: Optional[str] = None,
 ) -> bool:
     """
     Returns True on a confirmed 200 from Telegram's API, False on any
@@ -84,6 +85,9 @@ def send_alert(
     it tells the reader why a story that would have read High was held at
     Medium / carries no buy-sell lean (no direct US or global-supply link).
 
+    freshness_line (B2 K7): when given, a line directly under the headline
+    ("Published 14:42 SAST · +2 min · Fresh") -- how old the story was when caught.
+
     Retry policy: see _post_text.
     """
     affects_block = _affects_block(affected_symbols)
@@ -97,7 +101,8 @@ def send_alert(
     text = (
         f"{prefix} -- {category}\n"
         f"{headline}\n"
-        f"{affects_block}\n"
+        + (f"{freshness_line}\n" if freshness_line else "")
+        + f"{affects_block}\n"
         + (f"{cap_note}\n" if cap_note else "")
         + f"{rationale or ''}\n"
         f"{source_line}"

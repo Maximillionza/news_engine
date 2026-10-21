@@ -589,3 +589,49 @@ def test_budget_spent_fallback_never_sends_an_outage_notice():
         _cycle(conn, _tracked_webapp(), "Oil story alpha", _triage_result("energy"), MagicMock(), notice=notice)
     assert len(store.list_recent_alerts(conn, _ALL_TIME)) == 1
     notice.assert_not_called()
+
+
+def _freshness_run(published_minutes_ago, now):
+    conn = store.get_connection(":memory:")
+    article = NewsArticle(
+        title="Strait of Hormuz closed", summary="", source="reuters_business", source_type="rss_reuters_business",
+        published_utc=now - dt.timedelta(minutes=published_minutes_ago), url="https://example.com/h")
+    send = MagicMock(return_value=True)
+    with patch("alerting.poll_once._utcnow", return_value=now), \
+         patch("alerting.poll_once.FREE_PREVIEW_FEEDS", {"feed_a": "u"}), \
+         patch("alerting.poll_once.RSSNewsSource") as source_cls, \
+         patch("alerting.poll_once.triage_article", return_value=_triage_result(rule_tier_hit=True)), \
+         patch("alerting.poll_once.notify_telegram.send_alert", send):
+        source_cls.return_value.fetch.return_value = [article]
+        run_poll_cycle(conn=conn, webapp_conn=_tracked_webapp())
+    return conn, send
+
+
+def test_pushed_alert_carries_its_freshness_line():
+    now = dt.datetime(2026, 10, 21, 12, 42, tzinfo=UTC)
+    _, send = _freshness_run(3, now)
+    assert send.call_args.kwargs["freshness_line"].endswith("+3 min · Fresh")
+
+
+def test_very_stale_story_is_still_pushed_with_its_band():
+    now = dt.datetime(2026, 10, 21, 12, 42, tzinfo=UTC)
+    _, send = _freshness_run(465, now)
+    send.assert_called_once()
+    assert send.call_args.kwargs["freshness_line"].endswith("Very stale")
+
+
+def test_escalation_push_shows_the_original_story_age():
+    conn = store.get_connection(":memory:")
+    published = dt.datetime(2026, 10, 21, 12, 0, tzinfo=UTC)
+    alert_id = store.record_alert(
+        conn, headline="Hormuz tension", source="cnbc_top_news", url="https://a",
+        published_utc=published, detected_at_utc=published + dt.timedelta(minutes=4),
+        category="energy", severity="Low", classification_method="llm_ollama", rationale="r",
+        affected_symbols=[])
+    triage = _triage_result("energy", rule_tier_hit=True)
+    triage.matched_keywords = ["strait of hormuz"]
+    # The corroborating article is detected much later; the line must still describe the ORIGINAL story.
+    with patch("alerting.poll_once._utcnow", return_value=published + dt.timedelta(hours=3)):
+        send, _ = _cycle(conn, _tracked_webapp(), "Strait of Hormuz closed", triage, None, existing_id=alert_id)
+    assert send.call_args.kwargs["is_escalation"] is True
+    assert send.call_args.kwargs["freshness_line"] == "Published 14:00 SAST · +4 min · Fresh"

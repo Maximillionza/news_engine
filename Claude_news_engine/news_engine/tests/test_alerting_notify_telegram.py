@@ -213,3 +213,14 @@ def test_send_notice_posts_plain_text_and_never_raises():
 
         post.side_effect = requests.RequestException("down")
         assert notify_telegram.send_notice("hello notice") is False
+
+
+def test_freshness_line_sits_under_the_headline():
+    lines = _sent_text("High", freshness_line="Published 14:42 SAST · +2 min · Fresh").split("\n")
+    assert lines[1] == "Oil prices jump"
+    assert "+2 min" in lines[2] and "SAST" in lines[2] and "Fresh" in lines[2]
+
+
+def test_no_freshness_line_leaves_the_message_unchanged():
+    lines = _sent_text("High").split("\n")
+    assert lines[1] == "Oil prices jump" and "SAST" not in lines[2]

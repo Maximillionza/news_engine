@@ -61,6 +61,13 @@ LLM_CYCLE_BUDGET_SECONDS = 90.0
 # UNCLASSIFIED) regardless of this threshold, since its severity is unknown.
 TELEGRAM_MIN_SEVERITY = "Low"
 
+# Freshness bands (B2 K7), owner decision 2026-10-21: minutes between a story's
+# first publication and our detection. <=5 Fresh, <=15 Delayed, <=60 Stale,
+# above that Very stale. Shown on every alert; nothing is suppressed for age.
+SHOCK_FRESH_MAX_MINUTES = 5
+SHOCK_DELAYED_MAX_MINUTES = 15
+SHOCK_STALE_MAX_MINUTES = 60
+
 # --- FRED (St. Louis Fed) month-lookahead calendar source — READ-ONLY,
 # comparison/logging use only, NOT wired into scoring or the live
 # dashboard/accumulator pipelines (see docs/calendar-lookahead-source-research-2026-08-15.md
