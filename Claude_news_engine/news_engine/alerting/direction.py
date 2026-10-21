@@ -11,15 +11,24 @@ dovish), so a static category -> direction table would often be wrong. The
 news's POLARITY is read per headline (hard-rule patterns carry theirs below;
 everything else comes from the classifier, see llm_classify.py) and a
 hand-written, auditable table turns (category, polarity, instrument class)
-into a lean. Where the evidence is genuinely contested the table says "mixed"
-rather than inventing a direction -- cells marked [Layer2] are backed by
-docs/News_Engine_Causation_Matrix_v2.xlsx's Layer2_Asset_Transmission sheet;
-the rest are conventional market reasoning, marked [convention].
+into a lean. That table lives in alerting/transmission.py (shared with
+symbol_relevance.py's channels), with its [Layer2] / [convention] provenance.
+
+Two story-level facts can override a cell, both from the classifier:
+- us_link == "none" (no direct US or global-supply link): every lean is
+  "mixed" -- a regional story has no reliable direction for USD-priced
+  instruments.
+- country: "us_only" cells (Fed-driven FX) state a direction only when the
+  story is about the US; for any other or unknown country they are "mixed".
+None for either means unknown and keeps the table's lean.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Optional
+
+# Lean lives in transmission.py now; re-exported so `from alerting.direction
+# import Lean` keeps working.
+from alerting.transmission import TRANSMISSION, Lean
 
 POLARITIES = ("escalation", "relief", "hawkish", "dovish", "unclear")
 
@@ -66,61 +75,37 @@ def rule_polarity(matched_keywords: Iterable[str]) -> str:
     return "unclear"
 
 
-@dataclass(frozen=True)
-class Lean:
-    lean: str  # "buy" | "sell" | "mixed"
-    why: str
-
+NO_US_LINK_WHY = "no direct US or global-supply link"
 
 _MIXED_UNKNOWN = Lean("mixed", "no established direction for this combination")
-
-_GOLD_RATES_CONTESTED = Lean(
-    "mixed", "gold's link to rate expectations has been unreliable since 2024 [Layer2]")
-_RELIEF_GOLD_MIXED = Lean(
-    "mixed", "safe-haven unwind and lower-inflation support pull gold opposite ways")
-
-# (category, polarity, symbol class) -> Lean. Only combinations that
-# symbol_relevance.py actually reports can ever be looked up.
-_LEAN_TABLE: dict[tuple[str, str, str], Lean] = {
-    # --- energy ---
-    ("energy", "escalation", "metal"): Lean("buy", "safe-haven bid and inflation hedge on an oil-supply shock [convention]"),
-    ("energy", "escalation", "index_risk"): Lean("sell", "oil-supply shock weighs on risk appetite [convention]"),
-    ("energy", "escalation", "oil_linked_fx"): Lean("sell", "higher oil strengthens CAD, so USDCAD falls [Layer2]"),
-    ("energy", "relief", "metal"): _RELIEF_GOLD_MIXED,
-    ("energy", "relief", "index_risk"): Lean("buy", "easing supply fears support risk appetite [convention]"),
-    ("energy", "relief", "oil_linked_fx"): Lean("buy", "lower oil weakens CAD, so USDCAD rises [Layer2]"),
-    # --- geopolitical conflict ---
-    ("geopolitical_conflict", "escalation", "metal"): Lean("buy", "safe-haven demand [convention]"),
-    ("geopolitical_conflict", "escalation", "index_risk"): Lean("sell", "risk-off [convention]"),
-    ("geopolitical_conflict", "relief", "metal"): _RELIEF_GOLD_MIXED,
-    ("geopolitical_conflict", "relief", "index_risk"): Lean("buy", "relief rally in risk appetite [convention]"),
-    # --- central bank (which central bank is not known, so FX and gold stay mixed) ---
-    ("central_bank", "hawkish", "metal"): _GOLD_RATES_CONTESTED,
-    ("central_bank", "hawkish", "index_risk"): Lean("sell", "tighter policy and higher yields weigh on equities [convention]"),
-    ("central_bank", "dovish", "metal"): _GOLD_RATES_CONTESTED,
-    ("central_bank", "dovish", "index_risk"): Lean(
-        "mixed", "rate cuts read bullish (soft landing) or bearish (recession fear) depending on framing [Layer2]"),
-    # --- sovereign / fiscal stress ---
-    ("sovereign_fiscal", "escalation", "metal"): Lean("buy", "safe-haven bid on sovereign stress [convention]"),
-    ("sovereign_fiscal", "escalation", "index_risk"): Lean("sell", "credit stress is risk-off [convention]"),
-    ("sovereign_fiscal", "relief", "metal"): _RELIEF_GOLD_MIXED,
-    ("sovereign_fiscal", "relief", "index_risk"): Lean("buy", "easing credit stress supports risk appetite [convention]"),
-    # --- trade policy ---
-    ("trade_policy", "escalation", "index_risk"): Lean("sell", "trade escalation weighs on risk appetite [convention]"),
-    ("trade_policy", "relief", "index_risk"): Lean("buy", "trade de-escalation supports risk appetite [convention]"),
-    # --- natural disaster / supply chain ---
-    ("natural_disaster_supply_chain", "escalation", "index_risk"): Lean("sell", "supply-chain disruption is risk-off [convention]"),
-    ("natural_disaster_supply_chain", "relief", "index_risk"): Lean("buy", "supply chains recovering supports risk appetite [convention]"),
-}
+_MIXED_UNCLEAR = Lean("mixed", "the direction of the news itself is unclear")
 
 
-def lean_for(category: str, polarity: str, symbol_class: str) -> Lean:
+def lean_for(
+    category: str, polarity: str, symbol_class: str,
+    country: Optional[str] = None, us_link: Optional[str] = None,
+) -> Lean:
+    """
+    Order matters: a story with no US link is "mixed" whatever its polarity;
+    an unclear polarity is "mixed" whatever the cell; a Fed-only cell needs
+    country == "US" before it states a direction.
+    """
+    if us_link == "none":
+        return Lean("mixed", NO_US_LINK_WHY)
     if polarity == "unclear":
-        return Lean("mixed", "the direction of the news itself is unclear")
-    return _LEAN_TABLE.get((category, polarity, symbol_class), _MIXED_UNKNOWN)
+        return _MIXED_UNCLEAR
+    transmission = TRANSMISSION.get((category, symbol_class))
+    if transmission is None:
+        return _MIXED_UNKNOWN
+    if transmission.us_only and country != "US":
+        return Lean("mixed", transmission.not_us_why)
+    return transmission.leans.get(polarity, _MIXED_UNKNOWN)
 
 
-def describe_impacts(impacts, category: str, polarity: str) -> list[dict]:
+def describe_impacts(
+    impacts, category: str, polarity: str,
+    country: Optional[str] = None, us_link: Optional[str] = None,
+) -> list[dict]:
     """
     SymbolImpact list (alerting/symbol_relevance.py) -> the dicts stored in
     shock_alerts.affected_symbols_json and rendered by Telegram / the Shock
@@ -128,7 +113,7 @@ def describe_impacts(impacts, category: str, polarity: str) -> list[dict]:
     """
     out = []
     for impact in impacts:
-        lean = lean_for(category, polarity, impact.symbol_class)
+        lean = lean_for(category, polarity, impact.symbol_class, country=country, us_link=us_link)
         out.append({
             "symbol": impact.symbol, "channel": impact.channel,
             "lean": lean.lean, "lean_why": lean.why,

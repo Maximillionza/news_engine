@@ -21,6 +21,14 @@ def test_energy_shock_affects_oil_linked_usdcad_directly():
     assert symbols["USDCAD"] == "oil_linkage"
 
 
+def test_usdcad_is_oil_linked_under_energy_and_usd_base_under_central_bank():
+    (energy,) = affected_symbols("energy", ["USDCAD"])
+    assert (energy.channel, energy.symbol_class) == ("oil_linkage", "oil_linked_fx")
+
+    (central_bank,) = affected_symbols("central_bank", ["USDCAD"])
+    assert (central_bank.channel, central_bank.symbol_class) == ("usd_relationship", "fx_usd_base")
+
+
 def test_no_tracked_symbols_returns_empty_list():
     assert affected_symbols("energy", []) == []
 

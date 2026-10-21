@@ -1,16 +1,16 @@
 """
 Maps a classified shock category to the user's currently-tracked symbols
 and the transmission channel, per the design spec's per-instrument-quirks
-section. Built as its own lightweight category -> symbol_class table
-(NOT a reuse of scoring/probability_engine.py's private _check_oil_shock,
-which takes a pre-computed MacroBackdropRead object, not a category
-label -- the wrong shape for this purpose) layered on top of
+section. The (category, symbol_class) -> channel table is
+alerting/transmission.py's TRANSMISSION (shared with direction.py's leans;
+its provenance notes live there), layered on top of
 webapp.symbols.classify_symbol()'s public usd_relationship baseline.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from alerting.transmission import OIL_LINKED_SYMBOLS, TRANSMISSION
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 
 
@@ -19,51 +19,11 @@ class SymbolImpact:
     symbol: str
     channel: str
     # webapp.symbols class ("metal", "index_risk", ...), or "oil_linked_fx" for
-    # the oil-linked pairs; alerting/direction.py keys its lean table on it.
+    # the oil-linked pairs; alerting/transmission.py keys its table on it.
     symbol_class: str = ""
 
 
-# category -> {symbol_class: channel} -- only combinations with a real,
-# documented transmission path are listed; anything absent here means
-# "no established relevance," an honest [] result, not a guess.
-_CATEGORY_SYMBOL_CLASS_CHANNELS: dict[str, dict[str, str]] = {
-    "energy": {
-        "metal": "safe_haven",
-        "index_risk": "risk_sentiment",
-    },
-    "geopolitical_conflict": {
-        "metal": "safe_haven",
-        "index_risk": "risk_sentiment",
-    },
-    "central_bank": {
-        "metal": "usd_relationship",
-        "index_risk": "risk_sentiment",
-        "fx_usd_base": "usd_relationship",
-        "fx_usd_quote": "usd_relationship",
-    },
-    "sovereign_fiscal": {
-        "metal": "usd_relationship",
-        "index_risk": "risk_sentiment",
-        "fx_usd_base": "usd_relationship",
-        "fx_usd_quote": "usd_relationship",
-    },
-    "trade_policy": {
-        "index_risk": "risk_sentiment",
-    },
-    "natural_disaster_supply_chain": {
-        "index_risk": "risk_sentiment",
-    },
-}
-
-# Oil-linked FX pairs (design spec: "USDCAD is oil-linked... independent
-# of and sometimes working against the pure USD-weakness direction") get
-# their own channel regardless of category, checked before the generic
-# symbol_class table above -- a real, specific transmission path, not
-# the plain usd_relationship mapping.
-_OIL_LINKED_SYMBOLS = {"USDCAD"}
-
-
-def affected_symbols(category: str, tracked_symbols: list[str]) -> list[SymbolImpact]:
+def affected_symbols(category: str, tracked_symbols: list[str], headline: str = "") -> list[SymbolImpact]:
     """
     tracked_symbols is expected to come from webapp.store.list_tracked_symbols()
     at call time -- live, not cached (poll_once.py's job to fetch it fresh
@@ -71,18 +31,27 @@ def affected_symbols(category: str, tracked_symbols: list[str]) -> list[SymbolIm
     classify_symbol() failure for one tracked symbol must never block
     relevance mapping for the others. Returns [] if no real relevance can
     be established for any currently-tracked symbol under this category.
+
+    headline is for channels gated on the headline's wording
+    (Transmission.headline_gate); no current table entry is gated, so it is
+    not read yet. The default "" keeps older callers valid.
     """
-    channels_by_class = _CATEGORY_SYMBOL_CLASS_CHANNELS.get(category, {})
     results: list[SymbolImpact] = []
     for symbol in tracked_symbols:
-        if category == "energy" and symbol in _OIL_LINKED_SYMBOLS:
-            results.append(SymbolImpact(symbol=symbol, channel="oil_linkage", symbol_class="oil_linked_fx"))
-            continue
+        # Oil-linked pairs (USDCAD) take their own row where the category has
+        # one (energy), checked before the generic symbol class -- a specific
+        # transmission path, not the plain usd_relationship mapping.
+        if symbol in OIL_LINKED_SYMBOLS:
+            oil_linked = TRANSMISSION.get((category, "oil_linked_fx"))
+            if oil_linked is not None:
+                results.append(SymbolImpact(symbol=symbol, channel=oil_linked.channel, symbol_class="oil_linked_fx"))
+                continue
         try:
             symbol_class = classify_symbol(symbol)
         except UnrecognizedSymbolError:
             continue
-        channel = channels_by_class.get(symbol_class.symbol_class)
-        if channel is not None:
-            results.append(SymbolImpact(symbol=symbol, channel=channel, symbol_class=symbol_class.symbol_class))
+        transmission = TRANSMISSION.get((category, symbol_class.symbol_class))
+        if transmission is not None:
+            results.append(SymbolImpact(
+                symbol=symbol, channel=transmission.channel, symbol_class=symbol_class.symbol_class))
     return results
