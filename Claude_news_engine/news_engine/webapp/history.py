@@ -50,6 +50,7 @@ from webapp.predictions_service import _tier1_prediction_dict
 from webapp.store import get_connection, get_resolved_event_history, get_text_only_resolved_events, list_tracked_symbols
 from webapp.symbols import classify_symbol
 from webapp.conflict import compute_tier1_sentiment_conflict
+from data_layer.tier1_events import tier1_row_tier
 
 DEFAULT_HISTORY_LIMIT = 50
 
@@ -204,8 +205,8 @@ class HistoryRow:
     outcome: Optional[str]          # 'Confirmed' | 'Missed' | None
     unjudged_reason: Optional[str]  # None when outcome is a real verdict; else 'shrug' | 'unknown_surprise' | 'pending'
     source: str                     # 'live' | 'seeded' | 'live_web_fallback' | 'fred' — for numeric rows, 'seeded' wins if either side of the join disagrees, else 'live_web_fallback' wins if either side is 'live_web_fallback', else 'fred' wins if either side is 'fred', else 'live'
-    tier1_conflict: Optional[dict] = None  # {"sentiment_direction": str, "tier1_direction": str} when Tier 1 and this occurrence's own sentiment call genuinely disagree; None otherwise — see build_print_call_history() for which row shapes this applies to
-    tier1_prediction: Optional[dict] = None  # the real Tier1PredictionRow, shaped via webapp.predictions_service._tier1_prediction_dict() (value/confidence/source/predicted_direction) -- None when no Tier1 row exists for this occurrence/instrument, or for a print-call-backed row (instrument=None, same reasoning as tier1_conflict above: no single instrument to attach a Tier1 call to)
+    tier1_conflict: Optional[dict] = None  # {"sentiment_direction": str, "tier1_direction": str, "tier1_tier": Optional[str]} when Tier 1 and this occurrence's own sentiment call genuinely disagree; None otherwise — see build_print_call_history() for which row shapes this applies to
+    tier1_prediction: Optional[dict] = None  # the real Tier1PredictionRow, shaped via webapp.predictions_service._tier1_prediction_dict() (value/confidence/source/predicted_direction/tier/late_check; late_check is always None here) -- None when no Tier1 row exists for this occurrence/instrument, or for a print-call-backed row (instrument=None, same reasoning as tier1_conflict above: no single instrument to attach a Tier1 call to)
 
 
 def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[dt.datetime] = None) -> list[HistoryRow]:
@@ -323,6 +324,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                     tier1_row = tier1_by_occurrence.get((event.event_title, instrument, event_time.isoformat()))
                     fallback_tier1_conflict = compute_tier1_sentiment_conflict(
                         prediction.direction, tier1_row.predicted_direction if tier1_row is not None else None,
+                        tier1_row_tier(tier1_row.source) if tier1_row is not None else None,
                     )
 
                     fallback_outcome: Optional[str] = None
@@ -457,6 +459,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                 tier1_row = tier1_by_occurrence.get((event.event_title, instrument, event_time.isoformat()))
                 text_tier1_conflict = compute_tier1_sentiment_conflict(
                     prediction.direction, tier1_row.predicted_direction if tier1_row is not None else None,
+                    tier1_row_tier(tier1_row.source) if tier1_row is not None else None,
                 )
 
                 text_outcome: Optional[str] = None

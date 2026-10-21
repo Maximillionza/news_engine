@@ -19,6 +19,7 @@ from typing import Optional
 
 def compute_tier1_sentiment_conflict(
     sentiment_direction: Optional[str], tier1_direction: Optional[str],
+    tier1_tier: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Shared by build_predictions_payload() (Dashboard card) and
@@ -30,9 +31,13 @@ def compute_tier1_sentiment_conflict(
     only a REAL, opposing directional call from both sides counts, same
     convention scoring/backtest.py's BacktestCase.evaluate() already uses
     for Tier 1's own accuracy metric.
+
+    tier1_tier ('formula' | 'judgment' | 'market_implied', B3 / T8) names
+    which kind of Tier 1 call the sentiment was compared against; the
+    caller passes the string so this module stays zero-import.
     """
     if sentiment_direction not in ("bullish", "bearish") or tier1_direction not in ("bullish", "bearish"):
         return None
     if sentiment_direction == tier1_direction:
         return None
-    return {"sentiment_direction": sentiment_direction, "tier1_direction": tier1_direction}
+    return {"sentiment_direction": sentiment_direction, "tier1_direction": tier1_direction, "tier1_tier": tier1_tier}

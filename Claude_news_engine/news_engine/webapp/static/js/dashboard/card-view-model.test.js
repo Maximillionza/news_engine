@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildArticlePredictionViewModel, buildTier1PredictionViewModel,
-  buildTier1ConfidenceDowngradeViewModel, buildEssenceArticleViewModel,
+  buildTier1SentimentConflictViewModel, buildTier1ConfidenceDowngradeViewModel, buildEssenceArticleViewModel,
   buildOtherEventsViewModel, buildOtherTrackedEventsViewModel, buildCardViewModel,
 } from "./card-view-model.js";
 
@@ -21,6 +21,31 @@ test("buildArticlePredictionViewModel computes dirClass/pct from a real predicti
 
 test("buildTier1PredictionViewModel returns null when no Tier1 row exists", () => {
   assert.equal(buildTier1PredictionViewModel(null, "XAUUSD"), null);
+});
+
+test("buildTier1PredictionViewModel maps the tier to a label, null when absent or unknown", () => {
+  const base = { confidence: "Likely", predicted_direction: "bullish", source: "src", value: "v" };
+  assert.equal(buildTier1PredictionViewModel({ ...base, tier: "formula" }, "XAUUSD").tierLabel, "formula");
+  assert.equal(buildTier1PredictionViewModel({ ...base, tier: "judgment" }, "XAUUSD").tierLabel, "judgment");
+  assert.equal(buildTier1PredictionViewModel({ ...base, tier: "market_implied" }, "XAUUSD").tierLabel, "market-implied");
+  assert.equal(buildTier1PredictionViewModel(base, "XAUUSD").tierLabel, null);
+  assert.equal(buildTier1PredictionViewModel({ ...base, tier: "other" }, "XAUUSD").tierLabel, null);
+});
+
+test("buildTier1PredictionViewModel: lateCheckChangedLabel only for a 'changed' late check", () => {
+  const base = { confidence: "Likely", predicted_direction: "bullish", source: "src", value: "v", tier: "judgment" };
+  const changed = { outcome: "changed", new_direction: "bearish", checked_at_utc: "2026-09-09T12:00:00+00:00" };
+  assert.equal(buildTier1PredictionViewModel({ ...base, late_check: changed }, "XAUUSD").lateCheckChangedLabel, "SELL");
+  assert.equal(buildTier1PredictionViewModel({ ...base, late_check: { ...changed, outcome: "same" } }, "XAUUSD").lateCheckChangedLabel, null);
+  assert.equal(buildTier1PredictionViewModel({ ...base, late_check: null }, "XAUUSD").lateCheckChangedLabel, null);
+  assert.equal(buildTier1PredictionViewModel(base, "XAUUSD").lateCheckChangedLabel, null);
+});
+
+test("buildTier1SentimentConflictViewModel carries the Tier 1 tier label", () => {
+  const conflict = { tier1_direction: "bullish", sentiment_direction: "bearish" };
+  assert.equal(buildTier1SentimentConflictViewModel({ ...conflict, tier1_tier: "judgment" }).tierLabel, "judgment");
+  assert.equal(buildTier1SentimentConflictViewModel({ ...conflict, tier1_tier: "formula" }).tierLabel, "formula");
+  assert.equal(buildTier1SentimentConflictViewModel(conflict).tierLabel, null);
 });
 
 test("buildTier1PredictionViewModel: a Guessing/neutral row reads NO CALL", () => {

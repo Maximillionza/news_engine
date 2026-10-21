@@ -65,16 +65,17 @@ export function articlePredictionConflictTemplate(vm) {
 export function tier1PredictionTemplate(vm) {
   if (!vm) return html``;
   return html`<div class="tier1-prediction ${vm.dirClass}">
-    🧮 Tier 1 (${vm.symbolForCard}): <b>${vm.directionLabel}</b>
+    🧮 Tier 1${vm.tierLabel ? html` [${vm.tierLabel}]` : ""} (${vm.symbolForCard}): <b>${vm.directionLabel}</b>
     <span class="meta-text">— ${vm.confidence}, ${vm.source}</span>
     <div class="meta-text-sm" style="color:#999">${vm.value}</div>
+    ${vm.lateCheckChangedLabel ? html`<div class="tier1-late-check meta-text-sm">late check: changed, now ${vm.lateCheckChangedLabel}</div>` : ""}
   </div>`;
 }
 
 export function tier1SentimentConflictTemplate(vm) {
   if (!vm) return html``;
   return html`<div class="tier1-sentiment-conflict">
-    ⚠ Tier 1 vs. sentiment disagree: <b>${vm.tier1DirectionLabel}</b> vs <b>${vm.sentimentDirectionLabel}</b>
+    ⚠ Tier 1${vm.tierLabel ? html` (${vm.tierLabel})` : ""} vs. sentiment disagree: <b>${vm.tier1DirectionLabel}</b> vs <b>${vm.sentimentDirectionLabel}</b>
   </div>`;
 }
 

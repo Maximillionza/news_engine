@@ -31,10 +31,20 @@ export function buildArticlePredictionConflictViewModel(conflict) {
   return { titles: conflict.titles };
 }
 
+// B3 / T2: the stored tier value -> the short label shown on the Tier 1 line.
+const TIER1_TIER_LABELS = { formula: "formula", judgment: "judgment", market_implied: "market-implied" };
+
+function tier1TierLabel(tier) {
+  return TIER1_TIER_LABELS[tier] ?? null;
+}
+
 export function buildTier1PredictionViewModel(tier1, symbolForCard) {
   if (!tier1) return null;
   return {
     symbolForCard,
+    tierLabel: tier1TierLabel(tier1.tier),
+    // B3 / T7: only a late check that changed the call is worth a line; "same" is silent.
+    lateCheckChangedLabel: tier1.late_check?.outcome === "changed" ? directionLabel(tier1.late_check.new_direction) : null,
     directionLabel: tier1DirectionLabel(tier1),
     dirClass: directionClass(tier1.predicted_direction),
     confidence: tier1.confidence,
@@ -47,6 +57,7 @@ export function buildTier1SentimentConflictViewModel(conflict) {
   if (!conflict) return null;
   return {
     tier1DirectionLabel: directionLabel(conflict.tier1_direction),
+    tierLabel: tier1TierLabel(conflict.tier1_tier),
     sentimentDirectionLabel: directionLabel(conflict.sentiment_direction),
   };
 }

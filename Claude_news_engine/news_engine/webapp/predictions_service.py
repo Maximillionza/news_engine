@@ -28,12 +28,13 @@ from webapp.trend import compute_trend_signal, MIN_CONFIRMED_ROWS_FOR_A_TREND
 from webapp.symbols import classify_symbol
 from scoring.backtest_store import (
     get_latest_two_predictions_bulk, get_latest_print_predictions_bulk,
-    get_latest_kalshi_reads_bulk, get_latest_tier1_predictions_bulk,
+    get_latest_kalshi_reads_bulk, get_latest_tier1_predictions_bulk, get_latest_tier1_late_checks_bulk,
     get_last_check_utc, get_exogenous_shock_for_date, Prediction,
 )
 from webapp.reconciliation import reconcile_group
 from webapp.conflict import compute_tier1_sentiment_conflict
 from data_layer.discovery_detector import DETECTOR_SERIES
+from data_layer.tier1_events import tier1_row_tier
 from data_layer.exposure import is_exposed
 from data_layer.event_title_mapping import resolve_methodology_label
 from data_layer.event_symbol_relevance import get_relevance, RelevanceStatus
@@ -160,13 +161,26 @@ def _print_prediction_dict(print_call) -> dict:
     return {"direction": print_call.predicted_vs_forecast, "confidence": print_call.confidence}
 
 
-def _tier1_prediction_dict(tier1_row) -> dict:
-    """The shared tier1_prediction shape built from a Tier1PredictionRow — same extraction reasoning as _print_prediction_dict() above."""
+def _tier1_prediction_dict(tier1_row, late_check_row=None) -> dict:
+    """
+    The shared tier1_prediction shape built from a Tier1PredictionRow — same extraction reasoning as _print_prediction_dict() above.
+    "tier" is derived from the row's source (B3 / T2); "late_check" is the newest late check
+    only when it was made on THIS row (a check on an older call of record is not shown).
+    """
+    late_check = None
+    if late_check_row is not None and late_check_row.call_of_record_id == tier1_row.id:
+        late_check = {
+            "outcome": late_check_row.outcome,
+            "new_direction": late_check_row.new_direction,
+            "checked_at_utc": late_check_row.checked_at_utc,
+        }
     return {
         "value": tier1_row.value,
         "confidence": tier1_row.confidence,
         "source": tier1_row.source,
         "predicted_direction": tier1_row.predicted_direction,
+        "tier": tier1_row_tier(tier1_row.source),
+        "late_check": late_check,
     }
 
 
@@ -324,6 +338,13 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
     except Exception:
         logger.warning("get_latest_tier1_predictions_bulk failed for this cycle", exc_info=True)
         tier1_by_occurrence = {}
+    # Late checks (B3 / T7) are display-only decoration on the Tier 1 line, so
+    # they fail open on their own: a broken lookup must not hide the Tier 1 call.
+    try:
+        tier1_late_checks_by_occurrence = get_latest_tier1_late_checks_bulk(backtest_conn, event_titles, symbols)
+    except Exception:
+        logger.warning("get_latest_tier1_late_checks_bulk failed for this cycle", exc_info=True)
+        tier1_late_checks_by_occurrence = {}
     # Same single-shot-per-request, fail-open shape as tier1_by_occurrence
     # above — computed once here, reused for every symbol/event pair below.
     todays_shocks = _get_todays_exogenous_shocks(backtest_conn)
@@ -448,7 +469,10 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
             # fail-open try/except around the whole batch) — a plain lookup
             # here, no per-occurrence try/except needed any more.
             tier1_row = tier1_by_occurrence.get((event["title"], ticker, event_time_key))
-            tier1_prediction = _tier1_prediction_dict(tier1_row) if tier1_row is not None else None
+            tier1_prediction = (
+                _tier1_prediction_dict(tier1_row, tier1_late_checks_by_occurrence.get((event["title"], ticker, event_time_key)))
+                if tier1_row is not None else None
+            )
 
             # Confidence-only downgrade (never predicted_direction, never
             # the stored Tier1Prediction row) applied fresh per request
@@ -581,7 +605,7 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
             if article_pred is None or tier1_pred is None:
                 continue
             ev["tier1_sentiment_conflict"] = compute_tier1_sentiment_conflict(
-                article_pred["direction"], tier1_pred["predicted_direction"],
+                article_pred["direction"], tier1_pred["predicted_direction"], tier1_pred["tier"],
             )
 
         # A FRESHLY resolved score outranks a still-pending one, regardless

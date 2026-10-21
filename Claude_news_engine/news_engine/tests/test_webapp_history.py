@@ -905,7 +905,7 @@ def test_fallback_row_flags_tier1_sentiment_conflict():
             rows = history.build_print_call_history()
 
         assert len(rows) == 1
-        assert rows[0].tier1_conflict == {"sentiment_direction": "bearish", "tier1_direction": "bullish"}
+        assert rows[0].tier1_conflict == {"sentiment_direction": "bearish", "tier1_direction": "bullish", "tier1_tier": "judgment"}
     print("PASS\n")
 
 
@@ -1016,6 +1016,7 @@ def test_fallback_row_carries_real_tier1_prediction():
         assert rows[0].tier1_prediction == {
             "value": "Muted, non-reaccelerating call", "confidence": "Certain",
             "source": "ISM Prices Paid", "predicted_direction": "bullish",
+            "tier": "judgment", "late_check": None,
         }
     print("PASS\n")
 
@@ -1086,6 +1087,7 @@ def test_text_only_row_carries_real_tier1_prediction():
         assert rows[0].tier1_prediction == {
             "value": "85.5% probability of a 25bp hike", "confidence": "Certain",
             "source": "CME FedWatch", "predicted_direction": "bearish",
+            "tier": "judgment", "late_check": None,
         }
     print("PASS\n")
 

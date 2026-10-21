@@ -11,7 +11,18 @@ from webapp.predictions_service import _relevance_magnitude_read
 def test_opposing_directional_calls_flagged_as_conflict():
     print("=== compute_tier1_sentiment_conflict: bullish vs bearish is a real conflict ===")
     result = compute_tier1_sentiment_conflict("bearish", "bullish")
-    assert result == {"sentiment_direction": "bearish", "tier1_direction": "bullish"}
+    assert result == {"sentiment_direction": "bearish", "tier1_direction": "bullish", "tier1_tier": None}
+    print("PASS\n")
+
+
+def test_conflict_names_its_tier1_tier_when_given():
+    print("=== compute_tier1_sentiment_conflict: tier1_tier is carried through, None when not passed ===")
+    assert compute_tier1_sentiment_conflict("bearish", "bullish", "formula") == {
+        "sentiment_direction": "bearish", "tier1_direction": "bullish", "tier1_tier": "formula",
+    }
+    assert compute_tier1_sentiment_conflict("bearish", "bullish") == {
+        "sentiment_direction": "bearish", "tier1_direction": "bullish", "tier1_tier": None,
+    }
     print("PASS\n")
 
 

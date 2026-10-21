@@ -9,13 +9,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { render } from "../../vendor/lit-html.js";
 import {
-  articlePredictionTemplate, tier1PredictionTemplate, tier1ConfidenceDowngradeTemplate,
+  articlePredictionTemplate, tier1PredictionTemplate, tier1SentimentConflictTemplate, tier1ConfidenceDowngradeTemplate,
   essenceArticleTemplate, otherEventsTemplate, cardTemplate,
   relevanceMagnitudeNoteTemplate, otherEventRelevanceMagnitudeMarkerTemplate,
 } from "./card.js";
 import {
   buildArticlePredictionViewModel, buildTier1PredictionViewModel,
-  buildTier1ConfidenceDowngradeViewModel, buildEssenceArticleViewModel, buildOtherEventsViewModel,
+  buildTier1SentimentConflictViewModel, buildTier1ConfidenceDowngradeViewModel, buildEssenceArticleViewModel, buildOtherEventsViewModel,
   buildCardViewModel, buildRelevanceMagnitudeNoteViewModel,
 } from "./card-view-model.js";
 
@@ -41,6 +41,40 @@ test("tier1PredictionTemplate's values include NO CALL for a Guessing/neutral ro
   const vm = buildTier1PredictionViewModel({ confidence: "Guessing", predicted_direction: "neutral", source: "src", value: "no call" }, "XAUUSD");
   const result = tier1PredictionTemplate(vm);
   assert.ok(result.values.includes("NO CALL"));
+});
+
+function renderText(template) {
+  const container = document.createElement("div");
+  render(template, container);
+  return container.textContent.replace(/\s+/g, " ");
+}
+
+test("tier1PredictionTemplate shows [formula] for a formula row and no brackets for a row without a tier", () => {
+  const row = { confidence: "Likely", predicted_direction: "bullish", source: "src", value: "v" };
+  const withTier = renderText(tier1PredictionTemplate(buildTier1PredictionViewModel({ ...row, tier: "formula" }, "XAUUSD")));
+  assert.ok(withTier.includes("Tier 1 [formula] (XAUUSD)"), withTier);
+  const noTier = renderText(tier1PredictionTemplate(buildTier1PredictionViewModel(row, "XAUUSD")));
+  assert.ok(noTier.includes("Tier 1 (XAUUSD)"), noTier);
+  assert.ok(!noTier.includes("["), noTier);
+});
+
+test("tier1PredictionTemplate shows the late check line only when it changed the call", () => {
+  const row = { confidence: "Likely", predicted_direction: "bullish", source: "src", value: "v", tier: "judgment" };
+  const changed = renderText(tier1PredictionTemplate(buildTier1PredictionViewModel(
+    { ...row, late_check: { outcome: "changed", new_direction: "bearish", checked_at_utc: "x" } }, "XAUUSD")));
+  assert.ok(changed.includes("late check: changed, now SELL"), changed);
+  const same = renderText(tier1PredictionTemplate(buildTier1PredictionViewModel(
+    { ...row, late_check: { outcome: "same", new_direction: "bullish", checked_at_utc: "x" } }, "XAUUSD")));
+  assert.ok(!same.includes("late check"), same);
+});
+
+test("tier1SentimentConflictTemplate names the Tier 1 tier, with no parentheses when unknown", () => {
+  const withTier = renderText(tier1SentimentConflictTemplate(buildTier1SentimentConflictViewModel(
+    { tier1_direction: "bullish", sentiment_direction: "bearish", tier1_tier: "judgment" })));
+  assert.ok(withTier.includes("Tier 1 (judgment) vs. sentiment disagree"), withTier);
+  const without = renderText(tier1SentimentConflictTemplate(buildTier1SentimentConflictViewModel(
+    { tier1_direction: "bullish", sentiment_direction: "bearish" })));
+  assert.ok(without.includes("Tier 1 vs. sentiment disagree"), without);
 });
 
 test("tier1ConfidenceDowngradeTemplate omits a reason clause's TemplateResult when reason is null", () => {

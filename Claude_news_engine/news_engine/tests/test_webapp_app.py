@@ -10,6 +10,7 @@ import os
 import tempfile
 import datetime as dt
 from pathlib import Path
+from typing import Optional
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -1226,7 +1227,7 @@ def test_history_endpoint_includes_tier1_conflict_key_when_conflict_exists():
             assert resp.status_code == 200
             data = resp.get_json()
             assert len(data["rows"]) == 1
-            assert data["rows"][0]["tier1_conflict"] == {"sentiment_direction": "bearish", "tier1_direction": "bullish"}
+            assert data["rows"][0]["tier1_conflict"] == {"sentiment_direction": "bearish", "tier1_direction": "bullish", "tier1_tier": "judgment"}
     print("PASS\n")
 
 
@@ -1269,6 +1270,7 @@ def test_history_endpoint_serves_the_real_tier1_prediction_not_just_the_conflict
             assert by_instrument["XAUUSD"]["tier1_prediction"] == {
                 "value": "Muted, non-reaccelerating call", "confidence": "Certain",
                 "source": "ISM Prices Paid", "predicted_direction": "bullish",
+                "tier": "judgment", "late_check": None,
             }
             assert by_instrument["US30"]["tier1_prediction"] is None
     print("PASS\n")
@@ -1874,6 +1876,8 @@ def test_predictions_route_includes_tier1_prediction_for_logged_occurrence():
                 "confidence": "Certain",
                 "source": "BLS July 2026 PPI release; ISM Manufacturing Prices Paid Aug 2026",
                 "predicted_direction": "bullish",
+                "tier": "judgment",
+                "late_check": None,
             }
             assert xauusd_events["CPI m/m"]["tier1_prediction"] is None
             assert us30_events["PPI m/m"]["tier1_prediction"]["predicted_direction"] == "bearish"
@@ -1916,6 +1920,7 @@ def test_predictions_flags_tier1_sentiment_conflict_when_directions_disagree():
             assert events["PPI m/m"]["tier1_sentiment_conflict"] == {
                 "sentiment_direction": "bearish",
                 "tier1_direction": "bullish",
+                "tier1_tier": "judgment",
             }
     print("PASS\n")
 
@@ -2541,3 +2546,84 @@ if __name__ == "__main__":
     test_predictions_no_tier1_confidence_downgrade_without_a_real_shock()
     test_predictions_no_tier1_confidence_downgrade_for_an_already_resolved_event()
     print("All webapp.app tests passed.")
+
+
+def _tier1_predictions_for_one_ppi(tmp: str, tier1_kwargs: dict, late_check_kwargs: Optional[dict] = None,
+                                   sentiment_direction: str = "bearish") -> dict:
+    """Seeds one PPI occurrence (sentiment call + Tier 1 row + optional late check) and returns the XAUUSD PPI event dict from /api/predictions."""
+    db_path = Path(tmp) / "test.db"
+    backtest_db_path = Path(tmp) / "backtest_log.db"
+    with patch.object(store, "DB_PATH", db_path), patch.object(backtest_store, "DB_PATH", backtest_db_path):
+        ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+        _seed_calendar(db_path, [
+            EconomicEvent(title="PPI m/m", country="USD", impact="High",
+                           event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual=None),
+        ])
+        conn = store.get_connection(db_path)
+        store.add_tracked_symbol(conn, "XAUUSD")
+        conn.close()
+        bconn = backtest_store.get_connection(backtest_db_path)
+        backtest_store.record_prediction(
+            bconn, "PPI m/m", "XAUUSD", ppi_time, 0.44, sentiment_direction, 0.33, 142, False,
+        )
+        backtest_store.record_tier1_prediction(bconn, "PPI m/m", "XAUUSD", ppi_time, **tier1_kwargs)
+        if late_check_kwargs is not None:
+            backtest_store.record_tier1_late_check(bconn, "PPI m/m", "XAUUSD", ppi_time, **late_check_kwargs)
+        bconn.close()
+        resp = webapp_app.app.test_client().get("/api/predictions")
+        return {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}["PPI m/m"]
+
+
+def test_predictions_tier1_prediction_key_set_is_exact():
+    print("=== app: /api/predictions tier1_prediction has exactly the six documented keys ===")
+    ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+    with tempfile.TemporaryDirectory() as tmp:
+        ev = _tier1_predictions_for_one_ppi(tmp, dict(
+            value="v", confidence="Likely", source="BLS", predicted_direction="bullish",
+            logged_at_utc=ppi_time - dt.timedelta(days=1)))
+        assert set(ev["tier1_prediction"]) == {"value", "confidence", "source", "predicted_direction", "tier", "late_check"}
+    print("PASS\n")
+
+
+def test_predictions_hides_a_tier1_row_logged_after_the_release():
+    print("=== app: a Tier 1 row stamped after the release is never shown, so no conflict either ===")
+    ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+    with tempfile.TemporaryDirectory() as tmp:
+        ev = _tier1_predictions_for_one_ppi(tmp, dict(
+            value="hindsight", confidence="Certain", source="BLS", predicted_direction="bullish",
+            logged_at_utc=ppi_time + dt.timedelta(hours=2)))
+        assert ev["tier1_prediction"] is None
+        assert ev["tier1_sentiment_conflict"] is None
+    print("PASS\n")
+
+
+def test_predictions_conflict_names_the_formula_tier():
+    print("=== app: a formula-source Tier 1 row shows tier 'formula' and the conflict names it ===")
+    ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+    with tempfile.TemporaryDirectory() as tmp:
+        ev = _tier1_predictions_for_one_ppi(tmp, dict(
+            value="Nowcast 0.4% vs forecast 0.2%: hotter", confidence="Likely",
+            source="Cleveland Fed nowcast (formula)", predicted_direction="bullish",
+            logged_at_utc=ppi_time - dt.timedelta(days=1)))
+        assert ev["tier1_prediction"]["tier"] == "formula"
+        assert ev["tier1_sentiment_conflict"]["tier1_tier"] == "formula"
+    print("PASS\n")
+
+
+def test_predictions_shows_a_changed_late_check_for_the_call_of_record():
+    print("=== app: a late check on the call of record rides on tier1_prediction.late_check ===")
+    ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+    with tempfile.TemporaryDirectory() as tmp:
+        ev = _tier1_predictions_for_one_ppi(
+            tmp,
+            dict(value="v", confidence="Likely", source="BLS", predicted_direction="bullish",
+                 logged_at_utc=ppi_time - dt.timedelta(days=6)),
+            dict(new_value="v2", new_confidence="Likely", new_direction="bearish", source="BLS",
+                 reason="stale_call", checked_at_utc=ppi_time - dt.timedelta(days=1)),
+        )
+        late = ev["tier1_prediction"]["late_check"]
+        assert set(late) == {"outcome", "new_direction", "checked_at_utc"}
+        assert late["outcome"] == "changed" and late["new_direction"] == "bearish"
+        # The call of record itself is untouched.
+        assert ev["tier1_prediction"]["predicted_direction"] == "bullish"
+    print("PASS\n")
