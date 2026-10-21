@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from data_layer.tier1_events import TIER1_FORMULA, TIER1_FORMULA_SOURCE, tier1_titles
 from scoring import backtest_store as bs
 from scripts import capture_nowcast_from_cleveland as cap
 from tests.test_cleveland_nowcast_to_csv import _chart
@@ -112,11 +113,11 @@ def test_a_non_list_json_document_is_rejected_loudly():
 
 # --- run() ---------------------------------------------------------------------------------------
 
-def _event(dash, title, when, country="USD"):
+def _event(dash, title, when, country="USD", forecast="0.3%"):
     dash.execute(
         "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, surprise_direction, "
         "recorded_at_utc, updated_at_utc, source, impact, country) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        (title, when.isoformat(), "0.3%", "0.2%", None, None, when.isoformat(), when.isoformat(), "t", "High", country))
+        (title, when.isoformat(), forecast, "0.2%", None, None, when.isoformat(), when.isoformat(), "t", "High", country))
     dash.commit()
 
 
@@ -418,3 +419,137 @@ def test_a_released_chart_reports_the_release_date_the_fed_marked():
     release = dt.datetime(2026, 10, 14, 12, 30, tzinfo=UTC)
     got = cap.latest_nowcasts([SEP], [("CPI m/m", release)])[0]
     assert got["value"] is None and "already" in got["reason"] and "2026-10-14" in got["reason"]
+
+
+# --- B3: dashboard Tier 1 formula rows and --window-hours ---------------------------------------------
+
+def _tier1(bt):
+    return bt.execute("SELECT * FROM tier1_predictions ORDER BY event_title, instrument, id").fetchall()
+
+
+def _track(dash, *symbols):
+    for symbol in symbols:
+        ws.add_tracked_symbol(dash, symbol)
+
+
+def test_formula_titles_equal_the_cleveland_series_map():
+    assert set(tier1_titles(TIER1_FORMULA)) == set(cap.SERIES_MAP)
+
+
+def test_run_writes_dashboard_rows_per_tracked_symbol(conns):
+    dash, bt = conns
+    _track(dash, "XAUUSD", "US30")
+    _event(dash, "CPI m/m", RELEASE)
+    _event(dash, "Core CPI m/m", RELEASE)
+    summary = cap.run(dash, bt, NOW, lambda: DATA)
+    # CPI 0.47 vs 0.3% is hotter (bearish gold and US30); Core 0.26 vs 0.3% is in line (neutral).
+    assert [(r["event_title"], r["instrument"], r["predicted_direction"]) for r in _tier1(bt)] == [
+        ("CPI m/m", "US30", "bearish"), ("CPI m/m", "XAUUSD", "bearish"),
+        ("Core CPI m/m", "US30", "neutral"), ("Core CPI m/m", "XAUUSD", "neutral")]
+    for row in _tier1(bt):
+        logged = dt.datetime.fromisoformat(row["logged_at_utc"])
+        assert logged == NOW and logged < RELEASE and row["source"] == TIER1_FORMULA_SOURCE
+    assert sorted(summary["tier1_rows"]) == sorted([
+        ("CPI m/m", RELEASE.isoformat(), "US30", "bearish", "written"),
+        ("CPI m/m", RELEASE.isoformat(), "XAUUSD", "bearish", "written"),
+        ("Core CPI m/m", RELEASE.isoformat(), "US30", "neutral", "written"),
+        ("Core CPI m/m", RELEASE.isoformat(), "XAUUSD", "neutral", "written")])
+    assert summary["tier1_pending"] == [] and summary["skipped"] == []
+
+
+def test_run_twice_with_the_same_nowcast_adds_snapshots_but_not_tier1_rows(conns):
+    dash, bt = conns
+    _track(dash, "XAUUSD", "US30")
+    _event(dash, "CPI m/m", RELEASE)
+    _event(dash, "Core CPI m/m", RELEASE)
+    cap.run(dash, bt, NOW, lambda: DATA)
+    second = cap.run(dash, bt, NOW + dt.timedelta(hours=1), lambda: DATA)
+    assert _count(bt) == 4 and len(_tier1(bt)) == 4
+    assert {r[4] for r in second["tier1_rows"]} == {"unchanged"} and len(second["tier1_rows"]) == 4
+    assert ("CPI m/m", RELEASE.isoformat(), "XAUUSD", "bearish", "unchanged") in second["tier1_rows"]
+
+
+def test_run_without_a_forecast_writes_no_tier1_row_and_reports_it(tmp_path, capsys):
+    # 31.5 h before the release: reported only (the next daily run retries). 7.5 h before: also a skip (exit 2).
+    for now, expected_code in ((NOW, 0), (RELEASE - dt.timedelta(hours=7, minutes=30), 2)):
+        case = tmp_path / str(expected_code)
+        case.mkdir()
+        dash_path, bt_path = case / "dash.db", case / "bt.db"
+        dash = ws.get_connection(str(dash_path))
+        _track(dash, "XAUUSD")
+        _event(dash, "CPI m/m", RELEASE, forecast=None)
+
+        summary = cap.run(dash, bs.get_connection(":memory:"), now, lambda: DATA)
+        assert [c[0] for c in summary["captured"]] == ["CPI m/m"]
+        assert summary["tier1_rows"] == []
+        assert summary["tier1_pending"] == [("CPI m/m", RELEASE.isoformat(), "no readable forecast yet")]
+        assert [s[0] for s in summary["skipped"]] == (["CPI m/m"] if expected_code == 2 else [])
+        dash.close()
+
+        code = cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda: DATA, now=now)
+        out = capsys.readouterr().out
+        assert code == expected_code and "TIER1 PENDING CPI m/m" in out and "no readable forecast" in out
+        bt = bs.get_connection(bt_path)
+        assert _count(bt) == 1 and _tier1(bt) == []
+        bt.close()
+
+
+def test_window_hours_192_includes_a_release_8_days_out_and_48_excludes_it(conns):
+    dash, bt = conns
+    far = NOW + dt.timedelta(hours=191)                                     # 2026-11-19 05:00Z
+    _event(dash, "CPI m/m", far)
+    fetch = MagicMock(return_value=DATA)
+    narrow = cap.run(dash, bt, NOW, fetch, window=dt.timedelta(hours=48))
+    fetch.assert_not_called()
+    assert narrow["captured"] == [] and "48 hours" in narrow["message"]
+    wide = cap.run(dash, bt, NOW, fetch, window=dt.timedelta(hours=192))
+    fetch.assert_called_once_with()
+    assert [c[:2] for c in wide["captured"]] == [("CPI m/m", far.isoformat())]
+
+
+def test_the_no_release_message_names_the_window(conns):
+    dash, bt = conns
+    summary = cap.run(dash, bt, NOW, lambda: DATA, window=dt.timedelta(hours=192))
+    assert summary["message"] == "No CPI-family release within 192 hours: nothing to capture."
+
+
+@pytest.mark.parametrize("bad", ["0", "-1", "240.5", "1000"])
+def test_cli_rejects_a_non_positive_window(tmp_path, capsys, bad):
+    dash_path, bt_path = _db_files(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        cap.main(["--window-hours", bad, "--dash-db", str(dash_path), "--bt-db", str(bt_path)],
+                 fetch=lambda: DATA, now=NOW)
+    assert exc.value.code == 2 and "--window-hours must be" in capsys.readouterr().err
+    assert not bt_path.exists()
+
+
+def test_cli_window_hours_reaches_run(tmp_path, capsys):
+    dash_path, bt_path = _db_files(tmp_path, with_event=False)
+    code = cap.main(["--window-hours", "192", "--dash-db", str(dash_path), "--bt-db", str(bt_path)],
+                    fetch=MagicMock(), now=NOW)
+    assert code == 0 and "within 192 hours" in capsys.readouterr().out
+
+
+def test_cli_dry_run_reports_tier1_rows_and_writes_nothing(tmp_path, capsys):
+    dash_path, bt_path = _db_files(tmp_path)
+    dash = ws.get_connection(str(dash_path))
+    _track(dash, "XAUUSD", "USDJPY")
+    dash.close()
+    code = cap.main(["--dry-run", "--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda: DATA, now=NOW)
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "TIER1 CPI m/m XAUUSD: bearish (would write)" in out
+    assert "TIER1 CPI m/m USDJPY: bullish (would write)" in out
+    assert not bt_path.exists()
+
+
+def test_cli_prints_written_and_unchanged_tier1_rows(tmp_path, capsys):
+    dash_path, bt_path = _db_files(tmp_path)
+    dash = ws.get_connection(str(dash_path))
+    _track(dash, "US30")
+    dash.close()
+    assert cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda: DATA, now=NOW) == 0
+    assert "TIER1 CPI m/m US30: bearish (written)" in capsys.readouterr().out
+    later = NOW + dt.timedelta(hours=1)
+    assert cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda: DATA, now=later) == 0
+    assert "TIER1 CPI m/m US30: bearish (unchanged)" in capsys.readouterr().out
