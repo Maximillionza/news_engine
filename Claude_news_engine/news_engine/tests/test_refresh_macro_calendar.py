@@ -158,3 +158,20 @@ if __name__ == "__main__":
     test_run_writes_macro_calendar_rows_with_history_derived_time()
     test_run_writes_unconfirmed_time_source_without_any_history()
     print("All refresh_macro_calendar tests passed.")
+
+
+def test_run_does_not_mark_refreshed_when_fred_returns_nothing(capsys):
+    print("=== refresh_macro_calendar: a run that writes zero rows does NOT mark itself done (retries) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dashboard.db"
+        fake_cooldown = Path(tmp) / ".last_macro_calendar_refresh_at"
+        with patch.object(refresh_macro_calendar, "_LAST_MACRO_REFRESH_FILE", fake_cooldown), \
+             patch.object(store, "DB_PATH", db_path), \
+             patch.object(refresh_macro_calendar, "FRED_API_KEY", "test-key"), \
+             patch.object(refresh_macro_calendar, "FRED_RELEASE_ID_BY_EVENT_TITLE", {"CPI m/m": 10}), \
+             patch.object(refresh_macro_calendar, "get_upcoming_release_dates", return_value=[]):
+            assert refresh_macro_calendar.run(force=True) == 0
+            assert not fake_cooldown.exists()
+            assert refresh_macro_calendar.is_due() is True
+    assert "not marking the refresh done" in capsys.readouterr().out
+    print("PASS\n")

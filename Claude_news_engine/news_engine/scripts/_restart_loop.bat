@@ -8,7 +8,14 @@ setlocal
 :loop
 echo [restart-loop] %DATE% %TIME% — starting: python %1
 python %1
-echo [restart-loop] %DATE% %TIME% — %1 exited (code %ERRORLEVEL%^). Restarting in 5s... (close this window or Ctrl-C to stop)
+set EXITCODE=%ERRORLEVEL%
+REM Exit code 3 = ops.single_instance found another copy already running
+REM (B4 O8). Restarting would just loop every 5s, so stop here.
+if "%EXITCODE%"=="3" (
+    echo [restart-loop] %DATE% %TIME% — %1 is already running in another window; not restarting. This window can be closed.
+    exit /b 3
+)
+echo [restart-loop] %DATE% %TIME% — %1 exited (code %EXITCODE%^). Restarting in 5s... (close this window or Ctrl-C to stop)
 REM ping-based delay, not `timeout /t` — timeout.exe refuses to run
 REM ("Input redirection is not supported") when stdin isn't a real
 REM console, which can happen depending on how this .bat gets launched.

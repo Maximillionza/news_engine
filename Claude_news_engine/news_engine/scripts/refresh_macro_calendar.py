@@ -14,6 +14,14 @@ cron/scheduled task, or by hand). Uses the same persisted, file-backed
 established (data_layer/.last_macro_calendar_refresh_at, gitignored) —
 survives process restarts, same reasoning as that file's own comment.
 
+Invoked by webapp/scheduler.py on every scheduler iteration (B4 O7).
+Root cause of the 2026-08-16 -> 2026-10 staleness: this script was
+self-gated and "safe to invoke on any schedule", but nothing ever invoked
+it - no Windows task, no Claude task, no caller in code. It ran once by
+hand on 2026-08-16 (35-day window), so the macro calendar ran out in
+September. The scheduler now calls it; a run that writes nothing does not
+mark itself done, so it retries (the scheduler waits 6h between retries).
+
 Usage:
     python scripts/refresh_macro_calendar.py            # runs only if due
     python scripts/refresh_macro_calendar.py --force     # runs regardless (e.g. the first, once-off run)
@@ -112,6 +120,13 @@ def run(days_ahead: int = 35, force: bool = False, now: Optional[dt.datetime] = 
                       f"(time={'estimated ' + estimated_time_utc if estimated_time_utc else 'unconfirmed'})")
     finally:
         conn.close()
+
+    if written == 0:
+        # Nothing written (FRED down / empty / key rejected): do NOT start a
+        # 29-day "done" window on a run that did nothing.
+        print("[refresh_macro_calendar] WARNING: FRED returned no release dates for any title - "
+              "not marking the refresh done; will retry.")
+        return 0
 
     _record_refresh(now)
     print(f"[refresh_macro_calendar] done — {written} macro-calendar row(s) written/refreshed.")

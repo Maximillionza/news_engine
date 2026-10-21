@@ -1255,3 +1255,21 @@ if __name__ == "__main__":
     test_read_kalshi_signal_resolves_fomc_via_month_ticker()
     test_read_kalshi_signal_resolves_date_ticketed_event()
     print("All backtest_accumulator tests passed.")
+
+
+def test_accumulator_iteration_heartbeats_only_on_a_completed_cycle():
+    print("=== accumulator: run_accumulator_iteration heartbeats only when a cycle completed ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(accumulator, "get_connection", lambda *a, **k: store.get_connection(db_path)), \
+             patch.object(accumulator, "touch_heartbeat") as hb:
+            with patch.object(accumulator, "run_accumulator_cycle", return_value=[]):
+                interval = accumulator.run_accumulator_iteration(["XAUUSD"])
+            hb.assert_called_once_with("article_accumulator")
+            assert interval > 0
+            hb.reset_mock()
+            with patch.object(accumulator, "run_accumulator_cycle", return_value=None):
+                interval = accumulator.run_accumulator_iteration(["XAUUSD"])
+            hb.assert_not_called()
+            assert interval == accumulator.ACCUMULATOR_FALLBACK_INTERVAL_SECONDS
+    print("PASS\n")

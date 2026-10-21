@@ -17,6 +17,7 @@ from typing import Callable, Optional
 from config.settings import EVENT_SURPRISE_DIRECTION
 from data_layer.calendar_feed import EconomicEvent, classify_surprise, fetch_calendar, filter_relevant_events
 from data_layer.fred_actuals import get_actual_from_fred
+from ops.state import touch_heartbeat
 from webapp.scoring_service import score_event_for_symbol
 from webapp.store import (
     get_connection, record_run, get_latest_two, save_calendar_snapshot_if_changed, upsert_event_history,
@@ -45,6 +46,12 @@ SENSE_CHECK_WINDOW_MINUTES = 15     # "a final sense check 15 min before" — on
 POST_RELEASE_GRACE_MINUTES = 30     # keep polling tightly briefly after the scheduled time, in case the release is delayed
 
 SCHEDULER_INTERVAL_SECONDS = RAMP_INTERVAL_SECONDS  # fallback used when a cycle's fetch fails and there's no fresh event list to reason from
+
+# After a macro-calendar refresh that wrote nothing (or raised), wait this
+# long before trying FRED again - the refresh script itself is self-gated
+# (29 days after a real run), so this only paces the retries of a failing one.
+MACRO_RETRY_AFTER_FAILURE = dt.timedelta(hours=6)
+_macro_retry_not_before: Optional[dt.datetime] = None
 
 
 def compute_adaptive_interval_seconds(
@@ -236,6 +243,60 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
     return scoring_events
 
 
+def maybe_refresh_macro_calendar(now: Optional[dt.datetime] = None) -> Optional[int]:
+    """
+    Calls scripts/refresh_macro_calendar.run() (self-gated: only does real
+    work every ~29 days). Root cause of the macro calendar going stale
+    (2026-08-16 manual run, never scheduled) - the scheduler is now its
+    caller. Returns run()'s result, or None while waiting out a retry delay
+    or after an exception. A result of 0 (nothing written) or an exception
+    delays the next attempt by MACRO_RETRY_AFTER_FAILURE; -1 (not due / no
+    key) leaves the gate alone.
+    """
+    global _macro_retry_not_before
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if _macro_retry_not_before is not None and now < _macro_retry_not_before:
+        return None
+    try:
+        import scripts.refresh_macro_calendar as refresh_macro_calendar  # lazy: pulls in FRED settings
+        result = refresh_macro_calendar.run()
+    except Exception as exc:  # noqa: BLE001 — display-only data must never stop the scheduler
+        print(f"[scheduler] WARNING: macro calendar refresh failed: {exc}")
+        _macro_retry_not_before = now + MACRO_RETRY_AFTER_FAILURE
+        return None
+    if result == 0:
+        _macro_retry_not_before = now + MACRO_RETRY_AFTER_FAILURE
+    return result
+
+
+def run_scheduler_iteration(
+    tracked_symbols_provider: Callable[[], list[str]],
+    previous_events: Optional[list[EconomicEvent]],
+) -> tuple[int, Optional[list[EconomicEvent]]]:
+    """One scheduler loop pass. Returns (seconds to sleep, previous_events for the next pass)."""
+    try:
+        events = run_scoring_cycle(tracked_symbols_provider())
+        if events is None:
+            # fetch failed — retry at the moderate default, not too
+            # aggressive against a possibly-down feed, not too sparse
+            # either. previous_events is deliberately left as-is (not
+            # cleared) so a reschedule detected before this failure
+            # is still comparable against once a fetch succeeds again.
+            interval = SCHEDULER_INTERVAL_SECONDS
+        else:
+            interval = compute_adaptive_interval_seconds(events, previous_events=previous_events)
+            previous_events = events
+            touch_heartbeat("calendar_refresh")  # ops health: a completed cycle, even if nothing changed
+    except Exception as exc:  # noqa: BLE001 — the loop must survive any unhandled error
+        print(f"[scheduler] ERROR: scoring cycle failed, will retry next interval: {exc}")
+        interval = SCHEDULER_INTERVAL_SECONDS
+    try:
+        maybe_refresh_macro_calendar()
+    except Exception as exc:  # noqa: BLE001 — never let the macro refresh break the loop
+        print(f"[scheduler] WARNING: macro calendar refresh step failed: {exc}")
+    return interval, previous_events
+
+
 def start_scheduler(tracked_symbols_provider: Callable[[], list[str]]) -> None:
     """
     tracked_symbols_provider: a zero-arg callable returning the current
@@ -245,21 +306,7 @@ def start_scheduler(tracked_symbols_provider: Callable[[], list[str]]) -> None:
     def _loop():
         previous_events: Optional[list[EconomicEvent]] = None
         while True:
-            try:
-                events = run_scoring_cycle(tracked_symbols_provider())
-                if events is None:
-                    # fetch failed — retry at the moderate default, not too
-                    # aggressive against a possibly-down feed, not too sparse
-                    # either. previous_events is deliberately left as-is (not
-                    # cleared) so a reschedule detected before this failure
-                    # is still comparable against once a fetch succeeds again.
-                    interval = SCHEDULER_INTERVAL_SECONDS
-                else:
-                    interval = compute_adaptive_interval_seconds(events, previous_events=previous_events)
-                    previous_events = events
-            except Exception as exc:  # noqa: BLE001 — the loop must survive any unhandled error
-                print(f"[scheduler] ERROR: scoring cycle failed, will retry next interval: {exc}")
-                interval = SCHEDULER_INTERVAL_SECONDS
+            interval, previous_events = run_scheduler_iteration(tracked_symbols_provider, previous_events)
             time.sleep(interval)
 
     thread = threading.Thread(target=_loop, daemon=True)

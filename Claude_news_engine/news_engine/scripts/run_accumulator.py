@@ -21,10 +21,14 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scoring.backtest_accumulator import start_accumulator
+from ops.single_instance import claim_or_exit
 import webapp.store as store
 
 
 def main():
+    # B4 O8: a second accumulator exits with code 3 (scripts/_restart_loop.bat
+    # stops on it). Held for the life of this never-returning frame.
+    instance_lock = claim_or_exit("accumulator")
     # Reads the dashboard's OWN live tracked-symbols list (2026-09-13) —
     # previously read config.settings.INSTRUMENTS.keys() instead, a
     # separate, hand-maintained 2-entry dict (XAUUSD, US30) that silently

@@ -14,6 +14,11 @@ REM crash (or the Unicode console crash fixed 2026-08-19 — belt-and-
 REM suspenders even though that's fixed at the source now) restarts it
 REM automatically instead of silently going down.
 REM
+REM A second launch while the engine is already running is harmless: each
+REM process takes a single-instance lock (ops/single_instance.py), the copy
+REM that finds it taken exits with code 3, and _restart_loop.bat stops
+REM instead of relaunching it. Close the leftover window.
+REM
 REM Usage: double-click this file, or run it from a terminal:
 REM     scripts\run_engine.bat
 REM To stop: close both spawned windows (or Ctrl-C in each).

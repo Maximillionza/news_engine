@@ -71,6 +71,7 @@ from data_layer.calendar_feed import (
 )
 from data_layer.event_context import build_event_news_bundle
 from data_layer.rss_sources import build_all_preview_sources
+from ops.state import touch_heartbeat
 from data_layer.kalshi_feed import KalshiRead, get_market_read, get_market_read_by_date
 from data_layer.macro_backdrop import get_macro_backdrop_read
 from data_layer.cot_positioning import get_cot_positioning_read
@@ -643,27 +644,33 @@ def run_accumulator_cycle(
         conn.close()
 
 
+def run_accumulator_iteration(instruments: list[str]) -> int:
+    """One accumulator loop pass. Returns the seconds to sleep before the next one."""
+    try:
+        events = run_accumulator_cycle(instruments)
+        if events is None:
+            interval = ACCUMULATOR_FALLBACK_INTERVAL_SECONDS
+        else:
+            touch_heartbeat("article_accumulator")  # ops health: a completed cycle (not a failed fetch)
+            now = dt.datetime.now(dt.timezone.utc)
+            conn = get_connection()
+            try:
+                recent_checks = count_recent_checks(conn, since=now - dt.timedelta(hours=24))
+            finally:
+                conn.close()
+            interval = compute_accumulator_interval_seconds(events, now=now, recent_check_count=recent_checks)
+            if interval >= BUDGET_FALLBACK_INTERVAL_SECONDS:
+                print(f"[backtest_accumulator] check budget: {recent_checks} in the last 24h — backing off to {interval}s")
+    except Exception as exc:  # noqa: BLE001 — the loop must survive any unhandled error
+        print(f"[backtest_accumulator] ERROR: cycle failed, will retry next interval: {exc}")
+        interval = ACCUMULATOR_FALLBACK_INTERVAL_SECONDS
+    return interval
+
+
 def start_accumulator(instruments: list[str]) -> None:
     def _loop():
         while True:
-            try:
-                events = run_accumulator_cycle(instruments)
-                if events is None:
-                    interval = ACCUMULATOR_FALLBACK_INTERVAL_SECONDS
-                else:
-                    now = dt.datetime.now(dt.timezone.utc)
-                    conn = get_connection()
-                    try:
-                        recent_checks = count_recent_checks(conn, since=now - dt.timedelta(hours=24))
-                    finally:
-                        conn.close()
-                    interval = compute_accumulator_interval_seconds(events, now=now, recent_check_count=recent_checks)
-                    if interval >= BUDGET_FALLBACK_INTERVAL_SECONDS:
-                        print(f"[backtest_accumulator] check budget: {recent_checks} in the last 24h — backing off to {interval}s")
-            except Exception as exc:  # noqa: BLE001 — the loop must survive any unhandled error
-                print(f"[backtest_accumulator] ERROR: cycle failed, will retry next interval: {exc}")
-                interval = ACCUMULATOR_FALLBACK_INTERVAL_SECONDS
-            time.sleep(interval)
+            time.sleep(run_accumulator_iteration(instruments))
 
     thread = threading.Thread(target=_loop, daemon=True)
     thread.start()

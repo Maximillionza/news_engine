@@ -529,3 +529,63 @@ if __name__ == "__main__":
     test_run_scoring_cycle_never_writes_history_for_a_non_usd_event()
     test_run_scoring_cycle_calendar_snapshot_includes_low_impact_but_scoring_stays_medium_plus()
     print("All scheduler tests passed.")
+
+
+# --- B4 Task 4: macro calendar refresh + heartbeat in the scheduler iteration ---
+
+def test_iteration_heartbeats_and_refreshes_macro_on_success():
+    with patch.object(scheduler, "run_scoring_cycle", return_value=[]), \
+         patch.object(scheduler, "touch_heartbeat") as hb, \
+         patch.object(scheduler, "maybe_refresh_macro_calendar") as macro:
+        interval, prev = scheduler.run_scheduler_iteration(lambda: ["XAUUSD"], None)
+    hb.assert_called_once_with("calendar_refresh")
+    macro.assert_called_once()
+    assert interval == scheduler.FAR_INTERVAL_SECONDS
+    assert prev == []
+
+
+def test_iteration_on_failed_fetch_refreshes_macro_but_does_not_heartbeat():
+    sentinel = [object()]
+    with patch.object(scheduler, "run_scoring_cycle", return_value=None), \
+         patch.object(scheduler, "touch_heartbeat") as hb, \
+         patch.object(scheduler, "maybe_refresh_macro_calendar") as macro:
+        interval, prev = scheduler.run_scheduler_iteration(lambda: ["XAUUSD"], sentinel)
+    assert interval == scheduler.SCHEDULER_INTERVAL_SECONDS
+    hb.assert_not_called()
+    macro.assert_called_once()
+    assert prev is sentinel  # previous_events kept across a failed fetch
+
+
+def test_macro_refresh_exception_never_breaks_the_iteration():
+    with patch.object(scheduler, "run_scoring_cycle", return_value=[]), \
+         patch.object(scheduler, "touch_heartbeat"), \
+         patch.object(scheduler, "maybe_refresh_macro_calendar", side_effect=RuntimeError("boom")):
+        interval, prev = scheduler.run_scheduler_iteration(lambda: ["XAUUSD"], None)
+    assert interval == scheduler.FAR_INTERVAL_SECONDS
+
+
+def test_macro_refresh_retries_after_6_hours_not_every_cycle():
+    import scripts.refresh_macro_calendar as refresh
+    t0 = dt.datetime(2026, 10, 21, 8, 0, tzinfo=UTC_TZ)
+    scheduler._macro_retry_not_before = None
+    with patch.object(refresh, "run", return_value=0) as run:
+        assert scheduler.maybe_refresh_macro_calendar(now=t0) == 0
+        assert scheduler.maybe_refresh_macro_calendar(now=t0 + dt.timedelta(hours=1)) is None
+        assert run.call_count == 1
+        assert scheduler.maybe_refresh_macro_calendar(now=t0 + dt.timedelta(hours=6)) == 0
+        assert run.call_count == 2
+    # a successful run (rows written) is called every iteration; run() self-gates on is_due
+    scheduler._macro_retry_not_before = None
+    with patch.object(refresh, "run", return_value=21) as run:
+        for i in range(3):
+            assert scheduler.maybe_refresh_macro_calendar(now=t0 + dt.timedelta(minutes=i)) == 21
+        assert run.call_count == 3
+    # not due / no key (-1) leaves the retry gate alone
+    with patch.object(refresh, "run", return_value=-1):
+        scheduler.maybe_refresh_macro_calendar(now=t0)
+    assert scheduler._macro_retry_not_before is None
+    # an exception sets the gate and returns None
+    with patch.object(refresh, "run", side_effect=RuntimeError("fred down")):
+        assert scheduler.maybe_refresh_macro_calendar(now=t0) is None
+    assert scheduler._macro_retry_not_before == t0 + dt.timedelta(hours=6)
+    scheduler._macro_retry_not_before = None

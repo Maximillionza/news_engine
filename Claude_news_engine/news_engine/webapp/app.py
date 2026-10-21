@@ -660,6 +660,12 @@ if __name__ == "__main__":
     # a placeholder instead of crashing the process outright.
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    # B4 O8: only one engine copy may run (a second one doubles the Forex
+    # Factory calls). Exits with code 3 BEFORE the scheduler starts;
+    # scripts/_restart_loop.bat treats 3 as "stop, don't relaunch". Module-level
+    # name so the lock lives as long as the process.
+    from ops.single_instance import claim_or_exit
+    _INSTANCE_LOCK = claim_or_exit("webapp", port=5001)
     _ensure_defaults()
     start_scheduler(_get_tracked_symbols)
     start_actuals_sync()
