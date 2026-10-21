@@ -38,6 +38,11 @@ export function fetchShockAlerts() {
   return fetchJson("/api/shock-alerts");
 }
 
+// B4 O6: every job, feed, classifier and Tier 1 capture graded ok/amber/red.
+export function fetchHealth() {
+  return fetchJson("/api/health");
+}
+
 export function fetchArticleHistory(symbol, eventTitle) {
   return fetchJson(`/api/predictions/${symbol}/article_history?event_title=${encodeURIComponent(eventTitle)}`);
 }

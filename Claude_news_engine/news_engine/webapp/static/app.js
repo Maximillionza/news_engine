@@ -3,6 +3,8 @@ import { refreshCalendar } from "./js/calendar/calendar-poll.js";
 import { loadHistoryIfNeeded } from "./js/history/table.js";
 import { loadShockAlertsIfNeeded } from "./js/shock-alerts/table.js";
 import { loadStatsIfNeeded } from "./js/stats/stats.js";
+import { fetchHealth } from "./js/api.js";
+import { renderHealthStrip, renderHealthUnavailable } from "./js/health/health-strip.js";
 // Side-effecting import (2026-09-13): registers the "+ Add symbol"
 // picker's own listeners at module load, same pattern calendar-poll.js's
 // close-button listener already uses. Replaces the old free-text
@@ -47,7 +49,19 @@ function showView(name) {
   document.getElementById("tab-stats").setAttribute("aria-selected", String(name === "stats"));
 }
 
+// B4 O6 health strip; never throws, so the dashboard/calendar refresh always runs.
+async function refreshHealth() {
+  const el = document.getElementById("health-strip");
+  if (el == null) return;
+  try {
+    renderHealthStrip(el, await fetchHealth());
+  } catch (err) {
+    renderHealthUnavailable(el);
+  }
+}
+
 async function refreshAll() {
+  await refreshHealth();
   await refreshDashboard();
   await refreshCalendar();
 }

@@ -42,6 +42,7 @@ from scoring.backtest_store import (
     get_connection, get_predictions_awaiting_outcome, record_outcome, record_dismissal,
 )
 from scoring.tier1_comparison import compute_and_record_tier1_comparison
+from ops.health import maybe_send_health_notice
 
 # B4 O3: a below-threshold row older than this is final "no reaction".
 FINAL_NO_REACTION_AFTER = dt.timedelta(days=3)
@@ -161,6 +162,9 @@ def main():
                 f"{summary['final_no_reaction']} final no-reaction, "
                 f"{summary['left_for_review']} left for review.\n"
             )
+            # B4 O6: the scheduled (--auto) run also triggers the once-per-UTC-day
+            # health notice, so a dead shock poll is still reported. Never raises.
+            maybe_send_health_notice()
 
         awaiting = get_predictions_awaiting_outcome(conn)
 

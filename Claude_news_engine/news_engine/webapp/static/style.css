@@ -227,6 +227,15 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
 .feed-staleness.aging { color: #ef6c00; }
 .feed-staleness.stale { color: #c62828; font-weight: bold; }
 
+/* B4 O6 health strip: same size as the staleness lines; chips carry their own colour. */
+.health-strip { font-size: 12px; color: #888; margin-bottom: 10px; }
+.health-strip.ok { color: #2e7d32; }
+.health-strip.amber { color: #ef6c00; }
+.health-strip.red { color: #c62828; }
+.health-chip { display: inline-block; margin: 0 12px 4px 0; }
+.health-chip.amber { color: #ef6c00; }
+.health-chip.red { color: #c62828; font-weight: bold; }
+
 #calendar-date-panel { position: relative; border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: #fff; margin-top: 8px; }
 #calendar-date-panel-close { position: absolute; top: 4px; right: 4px; border: none; background: none; font-size: 14px; cursor: pointer; color: #888; padding: 8px; }
 #calendar-date-panel-title { margin: 0 24px 10px 0; font-size: 16px; }

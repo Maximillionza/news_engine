@@ -208,6 +208,31 @@ def test_clear_move_is_still_auto_confirmed_regardless_of_age():
     print("PASS\n")
 
 
+# --- B4 O6: the outcome job also triggers the once-per-UTC-day health notice ---
+
+def _run_main(argv, db_path):
+    with patch.object(sys, "argv", argv), \
+         patch.object(confirm_cli, "get_connection", lambda: get_connection(db_path)), \
+         patch.object(confirm_cli, "maybe_send_health_notice", return_value=False) as notice:
+        confirm_cli.main()
+    return notice
+
+
+def test_auto_run_triggers_the_health_notice_even_with_nothing_awaiting(capsys):
+    with tempfile.TemporaryDirectory() as tmp:
+        notice = _run_main(["confirm_backtest_outcomes.py", "--auto", "--list"], Path(tmp) / "test.db")
+    assert notice.call_count == 1
+    out = capsys.readouterr().out
+    assert "Auto-confirm: 0 confirmed, 0 final no-reaction, 0 left for review." in out
+    assert "Nothing awaiting confirmation" in out
+
+
+def test_manual_run_does_not_send_the_health_notice():
+    with tempfile.TemporaryDirectory() as tmp:
+        notice = _run_main(["confirm_backtest_outcomes.py", "--list"], Path(tmp) / "test.db")
+    notice.assert_not_called()
+
+
 if __name__ == "__main__":
     test_auto_confirms_clear_classifications_and_leaves_ambiguous_ones()
     test_auto_confirm_skips_a_row_that_raises_and_continues()

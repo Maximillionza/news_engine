@@ -41,6 +41,7 @@ from webapp import reaction_service
 from webapp.metric_components import get_components
 from alerting import store as alerting_store
 from alerting import freshness as alerting_freshness
+from ops import health as ops_health
 
 app = Flask(__name__, static_folder="static")
 
@@ -616,6 +617,43 @@ def get_reaction_releases():
 def get_stats_components(metric):
     data = get_components(metric)
     return (jsonify(data), 200) if data else (jsonify({"error": "unknown metric"}), 404)
+
+
+# ---------------------------------------------------------------------------
+# Health check (B4 O6): every scheduled job, feed, classifier and Tier 1 capture
+# graded ok/amber/red against its expected interval. Read-only.
+# ---------------------------------------------------------------------------
+# Test seams: tests replace the factory with shared in-memory connections and fix the clock.
+_health_connections = ops_health.open_health_connections
+_health_clock = lambda: dt.datetime.now(dt.timezone.utc)  # noqa: E731
+
+
+@contextmanager
+def _health_conns():
+    """Yield (dashboard, backtest, alerts, ops) and close them afterwards, only if this module opened them."""
+    owned = _health_connections is ops_health.open_health_connections
+    conns = _health_connections()
+    try:
+        yield conns
+    finally:
+        if owned:
+            for conn in conns:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+
+@app.route("/api/health", methods=["GET"])
+def get_health():
+    now = _health_clock()
+    with _health_conns() as (dash, bt, alerts, ops):
+        items = ops_health.build_health(now, dash_conn=dash, bt_conn=bt, alerts_conn=alerts, ops_conn=ops)
+    return jsonify({
+        "generated_at_utc": now.isoformat(),
+        "overall": ops_health.overall_status(items),
+        "items": [ops_health.health_item_dict(item) for item in items],
+    })
 
 
 @app.route("/api/history/stats", methods=["GET"])

@@ -875,6 +875,25 @@ def test_near_miss_below_new_threshold_is_not_logged():
     assert count() == 1
 
 
+def test_poll_main_runs_the_cycle_then_the_health_notice():
+    from alerting import poll_once
+    calls = []
+    with patch("alerting.poll_once.run_poll_cycle", side_effect=lambda: calls.append("cycle")), \
+         patch("alerting.poll_once.maybe_send_health_notice", side_effect=lambda: calls.append("health") or False):
+        poll_once.main()
+    assert calls == ["cycle", "health"]
+
+
+def test_poll_main_still_sends_the_health_notice_when_the_cycle_raises():
+    import pytest
+    from alerting import poll_once
+    with patch("alerting.poll_once.run_poll_cycle", side_effect=RuntimeError("boom")), \
+         patch("alerting.poll_once.maybe_send_health_notice", return_value=False) as notice:
+        with pytest.raises(RuntimeError):
+            poll_once.main()
+    assert notice.call_count == 1
+
+
 def test_poll_cycle_prunes_old_near_misses():
     conn = store.get_connection(":memory:")
     webapp_conn = webapp_store.get_connection(":memory:")
