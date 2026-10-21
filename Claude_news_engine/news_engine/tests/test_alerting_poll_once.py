@@ -403,3 +403,189 @@ def test_unscheduled_rate_cut_is_dovish_so_gold_and_equities_stay_no_clear_lean(
     triage.matched_keywords = ["unscheduled rate cut"]
     stored, _ = _run_tracking_xau_us30("Central bank announces unscheduled rate cut", triage)
     assert {s["lean"] for s in stored.values()} == {"mixed"}
+
+
+# --- B2: no-US-link cap, new fields, escalation path, classifier-down notice ---
+
+import pytest  # noqa: E402
+
+from alerting.direction import NO_US_LINK_WHY  # noqa: E402
+
+_NO_LINK_HEADLINES = [
+    ("Russia's Yandex says data centre in Vladimir area shut down after drone attack", "geopolitical_conflict", "RU"),
+    ("Russia builds major new drone attack base", "geopolitical_conflict", "RU"),
+    ("Houthi attack on Yemeni government military camp", "energy", "YE"),
+    ("Unrest spreads across France as protesters clash with police", "geopolitical_conflict", "FR"),
+]
+
+
+def _classification(category, severity="High", polarity="escalation", country=None, us_link=None, **kw):
+    return ClassificationResult(
+        category=category, severity=severity, rationale="why", provider="ollama",
+        polarity=polarity, country=country, us_link=us_link, **kw)
+
+
+def _tracked_webapp(symbols=("XAUUSD", "US30")):
+    webapp_conn = webapp_store.get_connection(":memory:")
+    for symbol in symbols:
+        webapp_conn.execute("INSERT INTO tracked_symbols (symbol) VALUES (?)", (symbol,))
+    webapp_conn.commit()
+    return webapp_conn
+
+
+def _cycle(conn, webapp_conn, title, triage, classification, send=None, notice=None, existing_id=None):
+    """One poll cycle, one article; Telegram alert and notice sends are both mocked."""
+    send = send if send is not None else MagicMock(return_value=True)
+    notice = notice if notice is not None else MagicMock(return_value=True)
+    dedup_patch = patch("alerting.poll_once.dedup.find_existing_alert", return_value=existing_id)
+    with patch("alerting.poll_once.FREE_PREVIEW_FEEDS", {"feed_a": "u"}), \
+         patch("alerting.poll_once.RSSNewsSource") as source_cls, \
+         patch("alerting.poll_once.triage_article", return_value=triage), \
+         patch("alerting.poll_once.llm_classify.classify_candidate", MagicMock(return_value=classification)), \
+         patch("alerting.poll_once.notify_telegram.send_notice", notice), \
+         patch("alerting.poll_once.notify_telegram.send_alert", send), dedup_patch:
+        source_cls.return_value.fetch.return_value = [_article(title)]
+        run_poll_cycle(conn=conn, webapp_conn=webapp_conn)
+    return send, notice
+
+
+def _run_full(title, triage, classification, symbols=("XAUUSD", "US30")):
+    """Returns (stored alert row, send mock) for one fresh alert."""
+    conn = store.get_connection(":memory:")
+    send, _ = _cycle(conn, _tracked_webapp(symbols), title, triage, classification)
+    return store.list_recent_alerts(conn, _ALL_TIME)[0], send
+
+
+@pytest.mark.parametrize("headline,category,country", _NO_LINK_HEADLINES)
+def test_no_us_link_events_are_not_high_and_carry_no_lean(headline, category, country):
+    classification = _classification(category, country=country, us_link="none")
+    alert, send = _run_full(headline, _triage_result(category), classification)
+
+    assert alert.severity == "Medium"
+    assert alert.original_severity == "High"
+    assert alert.capped_no_us_link is True
+    assert alert.us_link == "none" and alert.country == country
+    assert alert.affected_symbols  # channels still shown, only the lean is withheld
+    assert all(s["lean"] == "mixed" and s["lean_why"] == NO_US_LINK_WHY for s in alert.affected_symbols)
+    assert send.call_args.args[2] == "Medium"
+    assert NO_US_LINK_WHY in send.call_args.kwargs["cap_note"]
+    assert not any(s["lean"] in ("buy", "sell") for s in send.call_args.args[4])
+
+
+def test_unknown_us_link_keeps_todays_high_and_leans():
+    classification = _classification("geopolitical_conflict", country="RU", us_link=None)
+    alert, send = _run_full(
+        "Russia's Yandex says data centre in Vladimir area shut down after drone attack",
+        _triage_result("geopolitical_conflict"), classification)
+    stored = {s["symbol"]: s["lean"] for s in alert.affected_symbols}
+    assert alert.severity == "High" and alert.capped_no_us_link is False
+    assert stored == {"XAUUSD": "buy", "US30": "sell"}
+    assert send.call_args.kwargs["cap_note"] is None
+
+
+def test_global_supply_high_keeps_its_leans():
+    classification = _classification("energy", country="XX", us_link="global_supply")
+    alert, _ = _run_full("Tanker struck in Gulf as Iran escalates attacks", _triage_result("energy"), classification)
+    assert alert.severity == "High" and alert.capped_no_us_link is False
+    assert {s["symbol"]: s["lean"] for s in alert.affected_symbols} == {"XAUUSD": "buy", "US30": "sell"}
+
+
+def test_rule_tier_hit_stores_its_mapped_country_and_us_link():
+    triage = _triage_result("energy", rule_tier_hit=True)
+    triage.matched_keywords = ["strait of hormuz closed"]
+    alert, _ = _run_full("Strait of Hormuz closed after naval clash", triage, None)
+    assert (alert.country, alert.us_link, alert.polarity) == ("XX", "global_supply", "escalation")
+    assert alert.severity == "High" and alert.capped_no_us_link is False
+
+
+def test_gold_bar_tariff_alert_reaches_xauusd_with_a_mixed_lean():
+    classification = _classification("trade_policy", country="US", us_link="direct")
+    alert, _ = _run_full("US slaps tariffs on imported gold bars", _triage_result("trade_policy"), classification)
+    stored = {s["symbol"]: s for s in alert.affected_symbols}
+    assert stored["XAUUSD"]["channel"] == "tariff_bullion" and stored["XAUUSD"]["lean"] == "mixed"
+    assert stored["US30"]["lean"] == "sell"
+
+
+def test_diesel_export_ban_alert_reaches_us30_only():
+    classification = _classification("trade_policy", country="RU", us_link=None)
+    alert, _ = _run_full("Russia extends diesel export ban to year-end", _triage_result("trade_policy"), classification)
+    assert [s["symbol"] for s in alert.affected_symbols] == ["US30"]
+
+
+def _capped_ru_alert(conn):
+    return store.record_alert(
+        conn, headline="Russia builds major new drone attack base", source="cnbc_top_news", url="https://a",
+        published_utc=dt.datetime.now(UTC), detected_at_utc=dt.datetime.now(UTC),
+        category="geopolitical_conflict", severity="Medium", classification_method="llm_ollama", rationale="r",
+        affected_symbols=[{"symbol": "XAUUSD", "channel": "safe_haven", "lean": "mixed", "lean_why": NO_US_LINK_WHY}],
+        polarity="escalation", country="RU", us_link="none", capped_no_us_link=True, original_severity="High",
+    )
+
+
+def test_capped_alert_is_not_escalated_past_medium_by_an_article_with_unknown_us_link():
+    conn = store.get_connection(":memory:")
+    alert_id = _capped_ru_alert(conn)
+    triage = _triage_result("geopolitical_conflict", rule_tier_hit=True)
+    triage.matched_keywords = ["declares war"]  # rule tier: High, link unknown
+    send, _ = _cycle(conn, _tracked_webapp(), "Russia declares war on neighbour again", triage, None,
+                     existing_id=alert_id)
+
+    row = store.get_alert(conn, alert_id)
+    assert row.severity == "Medium" and row.capped_no_us_link is True
+    send.assert_not_called()
+
+
+def test_global_supply_corroboration_lifts_the_cap_and_restores_leans():
+    conn = store.get_connection(":memory:")
+    alert_id = _capped_ru_alert(conn)
+    classification = _classification("geopolitical_conflict", country="XX", us_link="global_supply")
+    send, _ = _cycle(conn, _tracked_webapp(), "Russia drone base threatens Black Sea grain and oil exports",
+                     _triage_result("geopolitical_conflict"), classification, existing_id=alert_id)
+
+    row = store.get_alert(conn, alert_id)
+    assert row.severity == "High" and row.capped_no_us_link is False and row.us_link == "global_supply"
+    assert {s["symbol"]: s["lean"] for s in row.affected_symbols} == {"XAUUSD": "buy", "US30": "sell"}
+    assert send.call_args.kwargs["is_escalation"] is True
+    assert {s["symbol"]: s["lean"] for s in send.call_args.args[4]} == {"XAUUSD": "buy", "US30": "sell"}
+
+
+_FAILED = ClassificationResult(
+    category="energy", severity="Medium", rationale="all providers down: connection refused",
+    classification_failed=True, all_providers_failed=True)
+
+
+def test_outage_notice_sent_once_per_utc_day():
+    conn = store.get_connection(":memory:")
+    webapp_conn = _tracked_webapp()
+    notice = MagicMock(return_value=True)
+    day1 = dt.datetime(2026, 10, 21, 8, 0, tzinfo=UTC)
+    with patch("alerting.poll_once._utcnow", return_value=day1):
+        _cycle(conn, webapp_conn, "Oil story alpha", _triage_result("energy"), _FAILED, notice=notice)
+        _cycle(conn, webapp_conn, "Quarterly bakery wheat harvest bravo", _triage_result("energy"), _FAILED, notice=notice)
+    assert notice.call_count == 1
+    assert "Shock classifier down" in notice.call_args.args[0]
+    assert conn.execute("SELECT COUNT(*) FROM classifier_outage_notices").fetchone()[0] == 1
+
+    with patch("alerting.poll_once._utcnow", return_value=day1 + dt.timedelta(days=1)):
+        _cycle(conn, webapp_conn, "Gas pipeline charlie story", _triage_result("energy"), _FAILED, notice=notice)
+    assert notice.call_count == 2
+
+
+def test_failed_notice_send_is_retried_and_success_is_once_per_utc_day():
+    conn = store.get_connection(":memory:")
+    webapp_conn = _tracked_webapp()
+    notice = MagicMock(side_effect=[False, True, True])
+    day = dt.datetime(2026, 10, 21, 8, 0, tzinfo=UTC)
+    with patch("alerting.poll_once._utcnow", return_value=day):
+        for title in ("Oil story alpha", "Wheat harvest bravo", "Pipeline charlie story"):
+            _cycle(conn, webapp_conn, title, _triage_result("energy"), _FAILED, notice=notice)
+    assert notice.call_count == 2  # failed once, retried and succeeded, then done for the day
+
+
+def test_budget_spent_fallback_never_sends_an_outage_notice():
+    conn = store.get_connection(":memory:")
+    notice = MagicMock(return_value=True)
+    with patch("alerting.poll_once.LLM_CYCLE_BUDGET_SECONDS", 0):
+        _cycle(conn, _tracked_webapp(), "Oil story alpha", _triage_result("energy"), MagicMock(), notice=notice)
+    assert len(store.list_recent_alerts(conn, _ALL_TIME)) == 1
+    notice.assert_not_called()

@@ -60,7 +60,7 @@ def _sleep(seconds: float) -> None:
 def send_alert(
     headline: str, category: str, severity: str, rationale: Optional[str],
     affected_symbols: list[dict], sources: list[dict], is_escalation: bool = False,
-    classification_failed: bool = False,
+    classification_failed: bool = False, cap_note: Optional[str] = None,
 ) -> bool:
     """
     Returns True on a confirmed 200 from Telegram's API, False on any
@@ -80,16 +80,12 @@ def send_alert(
     provider failed, so `severity` is just the Medium fallback and the
     reader should judge the headline themselves rather than trust it.
 
-    Retries up to _MAX_ATTEMPTS total attempts, with a small exponential
-    backoff, on a `requests.RequestException` or a 5xx response -- both
-    plausibly transient. A non-5xx failure response (e.g. 401/400 -- a
-    client/auth error) is NOT retried since retrying can't help and would
-    just delay the caller for no benefit.
-    """
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("[notify_telegram] WARNING: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set -- skipping push")
-        return False
+    cap_note (B2): when given, it is its own line after the Affects block --
+    it tells the reader why a story that would have read High was held at
+    Medium / carries no buy-sell lean (no direct US or global-supply link).
 
+    Retry policy: see _post_text.
+    """
     affects_block = _affects_block(affected_symbols)
     source_line = sources[0]["url"] if sources else ""
     if is_escalation:
@@ -102,9 +98,34 @@ def send_alert(
         f"{prefix} -- {category}\n"
         f"{headline}\n"
         f"{affects_block}\n"
-        f"{rationale or ''}\n"
+        + (f"{cap_note}\n" if cap_note else "")
+        + f"{rationale or ''}\n"
         f"{source_line}"
     ).strip()
+    return _post_text(text)
+
+
+def send_notice(text: str) -> bool:
+    """
+    A plain operational notice (e.g. "classifier down"), not an alert.
+    Same delivery and retry behaviour as send_alert; True only on a
+    confirmed 200, False on anything else -- never raises.
+    """
+    return _post_text(text)
+
+
+def _post_text(text: str) -> bool:
+    """
+    The Telegram POST shared by alerts and notices. Retries up to
+    _MAX_ATTEMPTS total attempts, with a small exponential backoff, on a
+    `requests.RequestException` or a 5xx response -- both plausibly
+    transient. A non-5xx failure response (e.g. 401/400 -- a
+    client/auth error) is NOT retried since retrying can't help and would
+    just delay the caller for no benefit.
+    """
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("[notify_telegram] WARNING: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set -- skipping push")
+        return False
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     delay = _BASE_DELAY_SECONDS

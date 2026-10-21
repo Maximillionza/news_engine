@@ -20,6 +20,7 @@ import time
 
 from alerting import dedup, direction, llm_classify, notify_telegram, store
 from alerting.symbol_relevance import affected_symbols
+from alerting.us_link import cap_note, cap_severity, rule_country_us_link
 from alerting.triage import triage_article, TriageResult
 from alerting.taxonomy import NEAR_MISS_LOG_THRESHOLD
 from config.settings import LLM_CYCLE_BUDGET_SECONDS, TELEGRAM_MIN_SEVERITY
@@ -32,6 +33,11 @@ _DEFAULT_LOOKBACK = dt.timedelta(minutes=10)  # first-ever run for a source, or 
 _SEVERITY_RANK = {"Low": 0, "Medium": 1, "High": 2}
 
 _METHOD_BY_PROVIDER = {"claude": "llm", "ollama": "llm_ollama"}
+
+
+def _utcnow() -> dt.datetime:
+    """Isolated seam so tests can move the UTC clock (the outage notice is once per UTC day)."""
+    return dt.datetime.now(dt.timezone.utc)
 
 
 def _should_push(severity: str, classification_failed: bool) -> bool:
@@ -49,7 +55,7 @@ def _should_push(severity: str, classification_failed: bool) -> bool:
 def run_poll_cycle(conn=None, webapp_conn=None) -> None:
     conn = conn if conn is not None else store.get_connection()
     webapp_conn = webapp_conn if webapp_conn is not None else get_webapp_connection()
-    now = dt.datetime.now(dt.timezone.utc)
+    now = _utcnow()
 
     fetched: list[tuple[str, dt.datetime, list[NewsArticle]]] = []
     for name, url in FREE_PREVIEW_FEEDS.items():
@@ -122,33 +128,49 @@ def _classify(article: NewsArticle, result: TriageResult, conn, llm_deadline) ->
 
 def _process_matched(conn, webapp_conn, article: NewsArticle, result: TriageResult, llm_deadline=None) -> None:
     classification_failed = False
+    all_providers_failed = False
     if result.rule_tier_hit:
-        category, severity, method, rationale = result.category, "High", "rule_tier", None
+        category, raw_severity, method, rationale = result.category, "High", "rule_tier", None
         polarity = direction.rule_polarity(result.matched_keywords)
+        # A rule-tier phrase maps to a fixed (country, us_link) -- never "none", so a hard rule is never capped.
+        country, us_link = rule_country_us_link(result.matched_keywords)
     else:
         classification = _classify(article, result, conn, llm_deadline)
         category = classification.category
-        severity = classification.severity
+        raw_severity = classification.severity
         classification_failed = classification.classification_failed
+        # Only a real every-provider failure is an outage; the budget-spent fallback sets classification_failed alone.
+        all_providers_failed = classification.all_providers_failed
         method = "llm_failed_fallback" if classification_failed else _METHOD_BY_PROVIDER.get(classification.provider, "llm")
         rationale = classification.rationale
         polarity = classification.polarity
+        country, us_link = classification.country, classification.us_link
+
+    # B2 K3: an event with no direct US or global-supply link is held at Medium and carries no buy/sell lean.
+    severity, capped = cap_severity(raw_severity, us_link)
 
     existing_id = dedup.find_existing_alert(article.title, category, conn)
     if existing_id is not None:
         store.append_source(conn, existing_id, article.source, article.url, article.published_utc)
-        _maybe_escalate(conn, existing_id, category, severity, rationale, classification_failed)
+        _maybe_escalate(
+            conn, webapp_conn, existing_id, category, raw_severity, rationale, classification_failed,
+            polarity=polarity, country=country, us_link=us_link,
+        )
+        if all_providers_failed:
+            _maybe_notify_classifier_down(conn, rationale, _utcnow())
         return
 
     tracked_symbols = list_tracked_symbols(webapp_conn)
-    impacts = affected_symbols(category, tracked_symbols)
-    affected_dicts = direction.describe_impacts(impacts, category, polarity)
+    impacts = affected_symbols(category, tracked_symbols, headline=article.title)
+    affected_dicts = direction.describe_impacts(impacts, category, polarity, country=country, us_link=us_link)
 
     alert_id = store.record_alert(
         conn, headline=article.title, source=article.source, url=article.url,
-        published_utc=article.published_utc, detected_at_utc=dt.datetime.now(dt.timezone.utc),
+        published_utc=article.published_utc, detected_at_utc=_utcnow(),
         category=category, severity=severity, classification_method=method,
         rationale=rationale, affected_symbols=affected_dicts,
+        polarity=polarity, country=country, us_link=us_link,
+        capped_no_us_link=capped, original_severity=raw_severity,
     )
 
     if _should_push(severity, classification_failed):
@@ -156,13 +178,36 @@ def _process_matched(conn, webapp_conn, article: NewsArticle, result: TriageResu
             article.title, category, severity, rationale, affected_dicts,
             [{"source": article.source, "url": article.url}],
             classification_failed=classification_failed,
+            cap_note=cap_note(raw_severity, capped),
         )
         store.set_delivery_status(conn, alert_id, "sent" if sent else "failed")
 
+    if all_providers_failed:
+        _maybe_notify_classifier_down(conn, rationale, _utcnow())
+
+
+def _maybe_notify_classifier_down(conn, detail: str, now: dt.datetime) -> None:
+    """
+    Every provider failed, so alerts are going out UNCLASSIFIED -- tell the
+    owner once per UTC day (B2 K8) rather than once per alert. The day is
+    only marked done after Telegram confirmed the send: a failed send must
+    not use up the day's notice, so the next outage-affected alert retries.
+    """
+    if store.outage_notice_sent(conn, now.date()):
+        return
+    text = (
+        f"⚠️ Shock classifier down: every provider failed ({(detail or 'no detail')[:300]}). "
+        "Alerts keep going out as UNCLASSIFIED until it recovers. "
+        "This notice is sent at most once per UTC day."
+    )
+    if notify_telegram.send_notice(text):
+        store.record_outage_notice(conn, now.date(), now, (detail or "")[:300])
+
 
 def _maybe_escalate(
-    conn, alert_id: int, new_category: str, new_severity: str, new_rationale,
-    new_classification_failed: bool = False,
+    conn, webapp_conn, alert_id: int, new_category: str, raw_new_severity: str, new_rationale,
+    new_classification_failed: bool = False, *,
+    polarity=None, country=None, us_link=None,
 ) -> None:
     """
     A dedup match means this article is corroborating an ALREADY-KNOWN
@@ -176,20 +221,48 @@ def _maybe_escalate(
     routine corroboration. Never downgrades -- that judgment call stays
     manual. A severity that is only the fallback guess from a failed
     classification is not a real assessment and never escalates anything.
+
+    B2: a corroborating article whose US link is unknown inherits the
+    STORED alert's link ("effective"), and the no-US-link cap applies to
+    it. Otherwise a hard-rule corroboration (link unknown) would bring back
+    a High on a story already judged to have no US or global-supply link,
+    with its stale lean-less symbols. The cap is lifted only by an article
+    that positively reports a direct / global_supply link: that rewrites
+    severity, cap flag and leans together (store.update_alert_assessment).
     """
     if new_classification_failed:
         return
     existing = store.get_alert(conn, alert_id)
     if existing is None:
         return  # shouldn't happen (caller just appended to this id), but never crash on it
+    effective = us_link if us_link is not None else existing.us_link
+    new_severity, _ = cap_severity(raw_new_severity, effective)
     if _SEVERITY_RANK.get(new_severity, -1) <= _SEVERITY_RANK.get(existing.severity, -1):
         return
 
-    store.set_severity(conn, alert_id, new_severity)
+    affected = existing.affected_symbols
+    still_capped_note = None
+    if existing.capped_no_us_link and effective in ("direct", "global_supply"):
+        # The cap no longer applies: recompute leans for the stored headline under the new link.
+        new_polarity = polarity if polarity not in (None, "unclear") else (existing.polarity or "unclear")
+        new_country = country if country is not None else existing.country
+        impacts = affected_symbols(new_category, list_tracked_symbols(webapp_conn), headline=existing.headline)
+        affected = direction.describe_impacts(
+            impacts, new_category, new_polarity, country=new_country, us_link=effective)
+        store.update_alert_assessment(
+            conn, alert_id, severity=new_severity, polarity=new_polarity, country=new_country,
+            us_link=effective, capped_no_us_link=False, original_severity=raw_new_severity,
+            affected_symbols=affected,
+        )
+    else:
+        store.set_severity(conn, alert_id, new_severity)
+        if existing.capped_no_us_link:
+            still_capped_note = cap_note(existing.original_severity, True)
+
     if _should_push(new_severity, False):
         sent = notify_telegram.send_alert(
             existing.headline, new_category, new_severity, new_rationale,
-            existing.affected_symbols, existing.sources, is_escalation=True,
+            affected, existing.sources, is_escalation=True, cap_note=still_capped_note,
         )
         store.set_delivery_status(conn, alert_id, "sent" if sent else "failed")
 

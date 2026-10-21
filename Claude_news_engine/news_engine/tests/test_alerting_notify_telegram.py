@@ -183,3 +183,33 @@ def test_rows_stored_before_leans_existed_keep_the_compact_line():
 
 def test_no_tracked_instruments_still_says_so():
     assert "Affects: none currently tracked" in _sent_text_for([])
+
+
+# --- B2: cap note line and plain-text notices ---
+
+def test_cap_note_is_its_own_line():
+    with patch("alerting.notify_telegram.TELEGRAM_BOT_TOKEN", "tok"), \
+         patch("alerting.notify_telegram.TELEGRAM_CHAT_ID", "chat"), \
+         patch("alerting.notify_telegram.requests.post") as post:
+        post.return_value = MagicMock(status_code=200)
+        notify_telegram.send_alert(
+            "Headline", "energy", "Medium", "because", [], [{"source": "s", "url": "https://u"}],
+            cap_note="Capped High -> Medium: no direct US or global-supply link")
+    lines = post.call_args.kwargs["json"]["text"].split("\n")
+    assert "Capped High -> Medium: no direct US or global-supply link" in lines
+    assert lines.index("Affects: none currently tracked") + 1 == lines.index(
+        "Capped High -> Medium: no direct US or global-supply link")
+
+
+def test_send_notice_posts_plain_text_and_never_raises():
+    import requests
+    with patch("alerting.notify_telegram.TELEGRAM_BOT_TOKEN", "tok"), \
+         patch("alerting.notify_telegram.TELEGRAM_CHAT_ID", "chat"), \
+         patch("alerting.notify_telegram._sleep"), \
+         patch("alerting.notify_telegram.requests.post") as post:
+        post.return_value = MagicMock(status_code=200)
+        assert notify_telegram.send_notice("hello notice") is True
+        assert post.call_args.kwargs["json"]["text"] == "hello notice"
+
+        post.side_effect = requests.RequestException("down")
+        assert notify_telegram.send_notice("hello notice") is False
