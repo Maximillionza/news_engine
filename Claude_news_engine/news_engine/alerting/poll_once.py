@@ -232,6 +232,10 @@ def _maybe_escalate(
     with its stale lean-less symbols. The cap is lifted only by an article
     that positively reports a direct / global_supply link: that rewrites
     severity, cap flag and leans together (store.update_alert_assessment).
+    The same full rewrite runs whenever the effective link is "none": an
+    escalation of an alert stored with an unknown link (and real leans) by
+    an article judged no-US-link is capped and stripped of every lean, and
+    the push carries the cap note.
     """
     if new_classification_failed:
         return
@@ -244,28 +248,34 @@ def _maybe_escalate(
         return
 
     affected = existing.affected_symbols
-    still_capped_note = None
-    if existing.capped_no_us_link and effective in ("direct", "global_supply"):
-        # The cap no longer applies: recompute leans for the stored headline under the new link.
+    push_cap_note = None
+    lifts_cap = existing.capped_no_us_link and effective in ("direct", "global_supply")
+    if lifts_cap or effective == "none":
+        # Rewrite the whole assessment for the stored headline under the effective link, so the
+        # severity, cap flag and leans never disagree. Lifting the cap restores leans; "none"
+        # (whether this article first reports it or the alert already carried it) withholds every
+        # lean -- an escalation on a no-US-link judgement must never push a buy/sell lean (K3).
         new_polarity = polarity if polarity not in (None, "unclear") else (existing.polarity or "unclear")
         new_country = country if country is not None else existing.country
         impacts = affected_symbols(new_category, list_tracked_symbols(webapp_conn), headline=existing.headline)
         affected = direction.describe_impacts(
             impacts, new_category, new_polarity, country=new_country, us_link=effective)
+        capped = effective == "none"
         store.update_alert_assessment(
             conn, alert_id, severity=new_severity, polarity=new_polarity, country=new_country,
-            us_link=effective, capped_no_us_link=False, original_severity=raw_new_severity,
+            us_link=effective, capped_no_us_link=capped, original_severity=raw_new_severity,
             affected_symbols=affected,
         )
+        push_cap_note = cap_note(raw_new_severity, capped)
     else:
         store.set_severity(conn, alert_id, new_severity)
         if existing.capped_no_us_link:
-            still_capped_note = cap_note(existing.original_severity, True)
+            push_cap_note = cap_note(existing.original_severity, True)
 
     if _should_push(new_severity, False):
         sent = notify_telegram.send_alert(
             existing.headline, new_category, new_severity, new_rationale,
-            affected, existing.sources, is_escalation=True, cap_note=still_capped_note,
+            affected, existing.sources, is_escalation=True, cap_note=push_cap_note,
             # Age of the ORIGINAL story at its first catch, not of this corroborating article.
             freshness_line=freshness_line(existing.first_published_utc, existing.detected_at_utc),
         )

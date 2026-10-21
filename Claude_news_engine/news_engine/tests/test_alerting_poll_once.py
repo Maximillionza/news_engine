@@ -410,6 +410,7 @@ def test_unscheduled_rate_cut_is_dovish_so_gold_and_equities_stay_no_clear_lean(
 import pytest  # noqa: E402
 
 from alerting.direction import NO_US_LINK_WHY  # noqa: E402
+from alerting.us_link import cap_note  # noqa: E402
 
 _NO_LINK_HEADLINES = [
     ("Russia's Yandex says data centre in Vladimir area shut down after drone attack", "geopolitical_conflict", "RU"),
@@ -547,6 +548,51 @@ def test_global_supply_corroboration_lifts_the_cap_and_restores_leans():
     assert {s["symbol"]: s["lean"] for s in row.affected_symbols} == {"XAUUSD": "buy", "US30": "sell"}
     assert send.call_args.kwargs["is_escalation"] is True
     assert {s["symbol"]: s["lean"] for s in send.call_args.args[4]} == {"XAUUSD": "buy", "US30": "sell"}
+
+
+def test_no_us_link_corroboration_caps_an_unknown_link_alert_and_strips_its_leans():
+    # Stored at Low with an unknown link (e.g. the model omitted it), so it still carries a real lean.
+    conn = store.get_connection(":memory:")
+    alert_id = store.record_alert(
+        conn, headline="Russia builds major new drone attack base", source="cnbc_top_news", url="https://a",
+        published_utc=dt.datetime.now(UTC), detected_at_utc=dt.datetime.now(UTC),
+        category="geopolitical_conflict", severity="Low", classification_method="llm_ollama", rationale="r",
+        affected_symbols=[{"symbol": "XAUUSD", "channel": "safe_haven", "lean": "buy", "lean_why": "w"}],
+        polarity="escalation", country=None, us_link=None, capped_no_us_link=False, original_severity="Low",
+    )
+    classification = _classification("geopolitical_conflict", country="RU", us_link="none")
+    send, _ = _cycle(conn, _tracked_webapp(), "Russia's new drone base is a domestic build-up, analysts say",
+                     _triage_result("geopolitical_conflict"), classification, existing_id=alert_id)
+
+    row = store.get_alert(conn, alert_id)
+    assert row.severity == "Medium" and row.capped_no_us_link is True
+    assert row.us_link == "none" and row.country == "RU" and row.original_severity == "High"
+    assert row.affected_symbols
+    assert all(s["lean"] == "mixed" and s["lean_why"] == NO_US_LINK_WHY for s in row.affected_symbols)
+    assert send.call_args.args[2] == "Medium" and send.call_args.kwargs["is_escalation"] is True
+    assert all(s["lean"] == "mixed" for s in send.call_args.args[4])
+    assert send.call_args.kwargs["cap_note"] == cap_note("High", True)
+
+
+def test_capped_low_alert_escalated_to_medium_records_the_raw_high_behind_the_cap():
+    conn = store.get_connection(":memory:")
+    alert_id = store.record_alert(
+        conn, headline="Russia builds major new drone attack base", source="cnbc_top_news", url="https://a",
+        published_utc=dt.datetime.now(UTC), detected_at_utc=dt.datetime.now(UTC),
+        category="geopolitical_conflict", severity="Low", classification_method="llm_ollama", rationale="r",
+        affected_symbols=[{"symbol": "XAUUSD", "channel": "safe_haven", "lean": "mixed", "lean_why": NO_US_LINK_WHY}],
+        polarity="escalation", country="RU", us_link="none", capped_no_us_link=True, original_severity="Low",
+    )
+    triage = _triage_result("geopolitical_conflict", rule_tier_hit=True)
+    triage.matched_keywords = ["declares war"]  # rule tier: High, link unknown -> inherits the stored "none"
+    send, _ = _cycle(conn, _tracked_webapp(), "Russia declares war on neighbour", triage, None,
+                     existing_id=alert_id)
+
+    row = store.get_alert(conn, alert_id)
+    assert row.severity == "Medium" and row.capped_no_us_link is True and row.original_severity == "High"
+    assert all(s["lean"] == "mixed" for s in row.affected_symbols)
+    assert all(s["lean"] == "mixed" for s in send.call_args.args[4])
+    assert send.call_args.kwargs["cap_note"] == cap_note("High", True)
 
 
 _FAILED = ClassificationResult(
