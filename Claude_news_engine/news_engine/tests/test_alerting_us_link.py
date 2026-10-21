@@ -116,9 +116,19 @@ def test_global_supply_without_a_supply_term_is_rejected(text):
     "Suez traffic resumes",
     "Country imposes export ban on grain",
     "Global supply of copper tightens",
+    "Ukrainian drones hit two Russian refineries",
+    "Gas supplies cut to Europe",
+    "Gasoline shortage after strike on depot",
+    "Fire at Siberian oilfield",
+    "Diesel exports halted",
+    "Fuel depot ablaze after missile strike",
 ])
 def test_global_supply_with_a_supply_term_is_kept(text):
     assert check_global_supply("global_supply", "geopolitical_conflict", text) == ("global_supply", False)
+
+
+def test_tear_gas_is_not_a_supply_term():
+    assert check_global_supply("global_supply", "geopolitical_conflict", "Police fire tear gas at protesters in Paris") == ("none", True)
 
 
 def test_energy_category_keeps_global_supply_without_a_term():

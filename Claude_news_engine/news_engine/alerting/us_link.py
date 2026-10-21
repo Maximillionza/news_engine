@@ -128,6 +128,9 @@ _SUPPLY_TERM_RE = re.compile(
 )
 
 
+_TEAR_GAS_RE = re.compile(r"\btear[\s-]+gas\b", re.IGNORECASE)
+
+
 def check_global_supply(us_link: Optional[str], category: Optional[str], text: str) -> tuple[Optional[str], bool]:
     """
     (us_link, rejected). A classifier's "global_supply" stands only for an
@@ -139,7 +142,9 @@ def check_global_supply(us_link: Optional[str], category: Optional[str], text: s
     """
     if us_link != "global_supply":
         return us_link, False
-    if category == "energy" or _SUPPLY_TERM_RE.search(text or ""):
+    # "tear gas" is crowd control, not a gas supply story.
+    text = _TEAR_GAS_RE.sub(" ", text or "")
+    if category == "energy" or _SUPPLY_TERM_RE.search(text):
         return us_link, False
     return "none", True
 

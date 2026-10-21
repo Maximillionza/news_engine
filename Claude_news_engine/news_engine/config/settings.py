@@ -78,6 +78,8 @@ SHOCK_GLOBAL_SUPPLY_TERMS = (
     "oil", "crude", "brent", "wti", "gas", "lng", "opec", "pipeline", "refinery",
     "tanker", "shipping", "shipping lane", "strait", "hormuz", "bab el-mandeb",
     "red sea", "suez", "port", "chokepoint", "export ban", "embargo", "supply",
+    # B2 review: plurals the s/es rule misses, plus fuel words seen in strike headlines
+    "refineries", "supplies", "gasoline", "oilfield", "diesel", "fuel",
 )
 
 # --- FRED (St. Louis Fed) month-lookahead calendar source — READ-ONLY,
