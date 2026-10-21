@@ -30,3 +30,5 @@ def _no_real_network(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr("alerting.llm_classify.OLLAMA_BASE_URL", "http://127.0.0.1:9")
     monkeypatch.setattr("alerting.llm_classify.OLLAMA_EXECUTABLE", str(tmp_path / "no-ollama.exe"))
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    # B4: no test may write the real ops/ops_state.db.
+    monkeypatch.setattr("ops.state.DB_PATH", tmp_path / "ops_state.db")

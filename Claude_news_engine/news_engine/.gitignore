@@ -12,3 +12,6 @@ webapp/.actuals_sync/
 # Dated DB backups (e.g. backtest_log.db.pre_*) and runtime logs stay local (roadmap B1/S2)
 *.db.*
 *.log
+*.log.1
+ops/*.lock
+ops/*.pid

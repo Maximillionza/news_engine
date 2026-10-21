@@ -13,9 +13,9 @@
 ' movement). WScript.Shell.Run's window-style argument of 0 (hidden) is
 ' the same reliably-invisible mechanism already proven for
 ' NewsEngine_OutcomeConfirm (see scripts/confirm_outcomes_scheduled.vbs)
-' -- routed through cmd.exe here (not straight to python.exe) only
-' because cmd's own >> redirection is what actually writes the log file;
-' WScript.Shell.Run itself has no shell redirection of its own.
+' -- routed through cmd.exe here (for the cd) and, since B4 (2026-10-21),
+' through ops.run_job, which writes the log itself (SAST timestamps, 1 MB
+' rotation) and records each run's exit code for the health check.
 Set objShell = CreateObject("WScript.Shell")
 ' 2026-09-26: repointed to the dedicated news-engine worktree so this
 ' scheduled task no longer runs against whatever branch happens to be
@@ -23,6 +23,5 @@ Set objShell = CreateObject("WScript.Shell")
 ' incident where a fix landed on the wrong branch entirely).
 projectRoot = "C:\Users\Masoodt\Documents\Claude\Projects\.worktrees\news-engine-live\Claude_news_engine\news_engine"
 pythonPath = "C:\Python314\python.exe"
-logPath = projectRoot & "\alerting\poll_once.log"
-cmd = "cmd /c cd /d """ & projectRoot & """ && """ & pythonPath & """ -m alerting.poll_once >> """ & logPath & """ 2>&1"
+cmd = "cmd /c cd /d """ & projectRoot & """ && """ & pythonPath & """ -m ops.run_job --job shock_poll --log alerting\poll_once.log -- -m alerting.poll_once"
 objShell.Run cmd, 0, True

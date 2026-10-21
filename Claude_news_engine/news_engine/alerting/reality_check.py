@@ -34,10 +34,12 @@ SECONDARY_WINDOW_MINUTES = 30
 MIN_AGE_MINUTES = 60
 
 
-def run_reality_check(conn=None) -> None:
+def run_reality_check(conn=None) -> dict:
+    """Check every due alert; returns counts so the job log has a summary line."""
     conn = conn if conn is not None else store.get_connection()
     older_than = dt.datetime(2000, 1, 1, tzinfo=dt.timezone.utc)  # every unchecked alert, regardless of age
     now = dt.datetime.now(dt.timezone.utc)
+    counts = {"checked": 0, "mismatches": 0, "no_price_data": 0}
     min_age_cutoff = now - dt.timedelta(minutes=MIN_AGE_MINUTES)
     for alert in store.get_alerts_needing_reality_check(conn, older_than):
         if alert.detected_at_utc > min_age_cutoff:
@@ -45,15 +47,22 @@ def run_reality_check(conn=None) -> None:
             # checked, so a future run will pick it up once it's old
             # enough for real price data to exist.
             continue
-        _check_alert(conn, alert)
+        outcome = _check_alert(conn, alert)
+        counts["checked"] += 1
+        if outcome == "mismatch":
+            counts["mismatches"] += 1
+        elif outcome == "no_price_data":
+            counts["no_price_data"] += 1
+    return counts
 
 
-def _check_alert(conn, alert) -> None:
+def _check_alert(conn, alert) -> str:
+    """Returns "mismatch", "no_price_data" or "ok"."""
     if not alert.affected_symbols:
         # Nothing to price-check -- still mark it checked so it doesn't
         # get re-queried every week forever.
         store.record_reality_check(conn, alert.id, move_5min=None, move_secondary=None, mismatch=None)
-        return
+        return "ok"
 
     move_5min: dict[str, float] = {}
     move_secondary: dict[str, float] = {}
@@ -83,7 +92,7 @@ def _check_alert(conn, alert) -> None:
 
     if not any_price_data:
         store.record_reality_check(conn, alert.id, move_5min=None, move_secondary=None, mismatch=None)
-        return
+        return "no_price_data"
 
     # A High alert with no confirming move is a mismatch (over-alerted);
     # a Low alert WITH a confirming move is also a mismatch (under-alerted,
@@ -100,7 +109,10 @@ def _check_alert(conn, alert) -> None:
         conn, alert.id,
         move_5min=move_5min or None, move_secondary=move_secondary or None, mismatch=mismatch,
     )
+    return "mismatch" if mismatch else "ok"
 
 
 if __name__ == "__main__":
-    run_reality_check()
+    result = run_reality_check()
+    print(f"[reality_check] checked {result['checked']} alert(s): "
+          f"{result['mismatches']} mismatch(es), {result['no_price_data']} without price data")

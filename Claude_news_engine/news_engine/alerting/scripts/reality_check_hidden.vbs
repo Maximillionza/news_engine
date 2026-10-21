@@ -12,6 +12,6 @@ Set objShell = CreateObject("WScript.Shell")
 ' reasoning as poll_once_hidden.vbs's own 2026-09-26 comment.
 projectRoot = "C:\Users\Masoodt\Documents\Claude\Projects\.worktrees\news-engine-live\Claude_news_engine\news_engine"
 pythonPath = "C:\Python314\python.exe"
-logPath = projectRoot & "\alerting\reality_check.log"
-cmd = "cmd /c cd /d """ & projectRoot & """ && """ & pythonPath & """ -m alerting.reality_check >> """ & logPath & """ 2>&1"
+' B4 (2026-10-21): runs through ops.run_job (timestamped, rotated log; exit code recorded).
+cmd = "cmd /c cd /d """ & projectRoot & """ && """ & pythonPath & """ -m ops.run_job --job shock_reality_check --log alerting\reality_check.log -- -m alerting.reality_check"
 objShell.Run cmd, 0, True

@@ -141,3 +141,20 @@ def test_alert_with_no_affected_symbols_is_still_marked_checked():
     row = store.get_alert(conn, alert_id)
     assert row.reality_check_at_utc is not None
     assert row.reality_mismatch is None
+
+
+def test_run_returns_counts():
+    conn = store.get_connection(":memory:")
+    detected_at = dt.datetime.now(UTC) - dt.timedelta(days=1)
+    _seed_alert(conn, "High", "XAUUSD", detected_at)   # no move -> mismatch
+    _seed_alert(conn, "High", "US30", detected_at)     # no price data
+
+    def fake_price(symbol, when):
+        if symbol == "US30":
+            return None
+        return PricePoint(price=2800.0)
+
+    with patch("alerting.reality_check.get_price_at", side_effect=fake_price):
+        result = run_reality_check(conn=conn)
+
+    assert result == {"checked": 2, "mismatches": 1, "no_price_data": 1}
