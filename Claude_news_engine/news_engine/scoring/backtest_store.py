@@ -91,6 +91,23 @@ CREATE TABLE IF NOT EXISTS tier1_predictions (
     predicted_direction TEXT NOT NULL,
     logged_at_utc TEXT NOT NULL
 );
+-- Append-only log of re-checks on a judgment Tier 1 call that went stale or is inside 24h of release.
+-- Never changes the call of record (owner ruling 2026-10-21): the first pre-release call stands.
+CREATE TABLE IF NOT EXISTS tier1_late_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_title TEXT NOT NULL,
+    instrument TEXT NOT NULL,
+    event_time_utc TEXT NOT NULL,
+    call_of_record_id INTEGER NOT NULL,
+    call_direction TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('same', 'changed')),
+    new_value TEXT NOT NULL,
+    new_confidence TEXT NOT NULL,
+    new_direction TEXT NOT NULL,
+    source TEXT NOT NULL,
+    reason TEXT NOT NULL CHECK (reason IN ('stale_call', 'release_within_24h')),
+    checked_at_utc TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS tier1_comparisons (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_title TEXT NOT NULL,
@@ -297,6 +314,23 @@ class Tier1PredictionRow:
     source: str
     predicted_direction: str  # 'bullish' | 'bearish' | 'neutral' -- Direction enum's own string values
     logged_at_utc: str
+
+
+@dataclass
+class Tier1LateCheckRow:
+    id: int
+    event_title: str
+    instrument: str
+    event_time_utc: str
+    call_of_record_id: int
+    call_direction: str       # direction of the call of record when the check was made
+    outcome: str              # 'same' | 'changed' (new_direction vs call_direction)
+    new_value: str
+    new_confidence: str
+    new_direction: str
+    source: str
+    reason: str               # 'stale_call' | 'release_within_24h'
+    checked_at_utc: str
 
 
 @dataclass
@@ -639,6 +673,10 @@ def get_latest_tier1_predictions_bulk(
     failure must not take down the whole /api/predictions route, same
     "fail open" reasoning as the per-occurrence call this replaces
     (final whole-branch review, 2026-09-07 — Finding 2).
+
+    As-of guard (B3 / T1-03): a row stamped after its event_time_utc is
+    hindsight and never returned. Compared as instants with julianday(),
+    not as strings -- naive and "+00:00" stamps differ textually.
     """
     if not event_titles or not instruments:
         return {}
@@ -647,6 +685,7 @@ def get_latest_tier1_predictions_bulk(
     rows = conn.execute(
         f"SELECT * FROM tier1_predictions WHERE event_title IN ({title_placeholders}) "
         f"AND instrument IN ({instrument_placeholders}) "
+        "AND julianday(logged_at_utc) <= julianday(event_time_utc) "
         "ORDER BY event_title, instrument, event_time_utc, logged_at_utc DESC, id DESC",
         (*event_titles, *instruments),
     ).fetchall()
@@ -1076,6 +1115,7 @@ def record_tier1_prediction(
 
 def get_latest_tier1_prediction_for_occurrence(
     conn: sqlite3.Connection, event_title: str, instrument: str, event_time_utc: dt.datetime,
+    source: Optional[str] = None,
 ) -> Optional[Tier1PredictionRow]:
     """
     Most recent Tier 1 prediction logged for this EXACT (event_title,
@@ -1084,12 +1124,20 @@ def get_latest_tier1_prediction_for_occurrence(
     monthly with the SAME title but a DIFFERENT event_time_utc each time,
     so a title-only lookup would leak a prior occurrence's Tier 1 call
     onto an unrelated later one.
+
+    Same as-of guard as get_latest_tier1_predictions_bulk() (B3 / T1-03): a
+    row logged after the release is hindsight and is never returned. `source`,
+    when given, restricts to that source (e.g. the formula source).
     """
-    row = conn.execute(
+    sql = (
         "SELECT * FROM tier1_predictions WHERE event_title = ? AND instrument = ? AND event_time_utc = ? "
-        "ORDER BY logged_at_utc DESC, id DESC LIMIT 1",
-        (event_title, instrument, event_time_utc.isoformat()),
-    ).fetchone()
+        "AND julianday(logged_at_utc) <= julianday(event_time_utc) "
+    )
+    params: list = [event_title, instrument, event_time_utc.isoformat()]
+    if source is not None:
+        sql += "AND source = ? "
+        params.append(source)
+    row = conn.execute(sql + "ORDER BY logged_at_utc DESC, id DESC LIMIT 1", params).fetchone()
     if row is None:
         return None
     d = dict(row)
@@ -1099,6 +1147,112 @@ def get_latest_tier1_prediction_for_occurrence(
         source=d["source"], predicted_direction=d["predicted_direction"],
         logged_at_utc=d["logged_at_utc"],
     )
+
+
+_VALID_LATE_CHECK_REASONS = ("stale_call", "release_within_24h")
+
+
+def record_tier1_late_check(
+    conn: sqlite3.Connection,
+    event_title: str,
+    instrument: str,
+    event_time_utc: dt.datetime,
+    new_value: str,
+    new_confidence: str,
+    new_direction: str,
+    source: str,
+    reason: str,
+    checked_at_utc: Optional[dt.datetime] = None,
+) -> int:
+    """
+    Appends one late check for a judgment Tier 1 call (B3 / T7). The call of
+    record is whatever get_latest_tier1_prediction_for_occurrence() returns
+    (the row the dashboard shows); outcome is 'same' when new_direction
+    equals its predicted_direction, else 'changed'. Never touches
+    tier1_predictions -- the first pre-release call stands.
+
+    ValueError when there is no call of record, when checked_at is naive or
+    after event_time_utc (a check made after the release is hindsight), or
+    when confidence / direction / reason is invalid.
+    """
+    if new_confidence not in _VALID_TIER1_CONFIDENCE:
+        raise ValueError(
+            f"new_confidence={new_confidence!r} is not valid — must be one of: "
+            f"{', '.join(_VALID_TIER1_CONFIDENCE)}"
+        )
+    try:
+        Direction(new_direction)
+    except ValueError:
+        valid = ", ".join(d.value for d in Direction)
+        raise ValueError(f"new_direction={new_direction!r} is not valid — must be one of: {valid}")
+    if reason not in _VALID_LATE_CHECK_REASONS:
+        raise ValueError(
+            f"reason={reason!r} is not valid — must be one of: {', '.join(_VALID_LATE_CHECK_REASONS)}"
+        )
+    checked_at = checked_at_utc or dt.datetime.now(dt.timezone.utc)
+    if checked_at.tzinfo is None:
+        raise ValueError("checked_at_utc must be timezone-aware")
+    event_aware = event_time_utc if event_time_utc.tzinfo is not None else event_time_utc.replace(tzinfo=dt.timezone.utc)
+    if checked_at > event_aware:
+        raise ValueError("checked_at_utc is after event_time_utc -- a late check must be made before the release")
+    call = get_latest_tier1_prediction_for_occurrence(conn, event_title, instrument, event_time_utc)
+    if call is None:
+        raise ValueError(f"no pre-release Tier 1 call of record for {event_title!r} / {instrument!r} at {event_time_utc.isoformat()}")
+    outcome = "same" if new_direction == call.predicted_direction else "changed"
+    cursor = conn.execute(
+        "INSERT INTO tier1_late_checks (event_title, instrument, event_time_utc, call_of_record_id, "
+        "call_direction, outcome, new_value, new_confidence, new_direction, source, reason, checked_at_utc) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (event_title, instrument, event_time_utc.isoformat(), call.id, call.predicted_direction, outcome,
+         new_value, new_confidence, new_direction, source, reason, checked_at.isoformat()),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def _late_check_row(d: dict) -> Tier1LateCheckRow:
+    return Tier1LateCheckRow(
+        id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
+        event_time_utc=d["event_time_utc"], call_of_record_id=d["call_of_record_id"],
+        call_direction=d["call_direction"], outcome=d["outcome"], new_value=d["new_value"],
+        new_confidence=d["new_confidence"], new_direction=d["new_direction"], source=d["source"],
+        reason=d["reason"], checked_at_utc=d["checked_at_utc"],
+    )
+
+
+def get_tier1_late_checks_for_occurrence(
+    conn: sqlite3.Connection, event_title: str, instrument: str, event_time_utc: dt.datetime,
+) -> list[Tier1LateCheckRow]:
+    """Every late check for this occurrence, oldest first. Matched as instants (julianday), not strings."""
+    rows = conn.execute(
+        "SELECT * FROM tier1_late_checks WHERE event_title = ? AND instrument = ? "
+        "AND julianday(event_time_utc) = julianday(?) ORDER BY julianday(checked_at_utc), id",
+        (event_title, instrument, event_time_utc.isoformat()),
+    ).fetchall()
+    return [_late_check_row(dict(r)) for r in rows]
+
+
+def get_latest_tier1_late_checks_bulk(
+    conn: sqlite3.Connection, event_titles: list[str], instruments: list[str],
+) -> dict[tuple[str, str, str], Tier1LateCheckRow]:
+    """Newest late check per (event_title, instrument, event_time_utc); keys normalised like get_latest_tier1_predictions_bulk()."""
+    if not event_titles or not instruments:
+        return {}
+    title_placeholders = ",".join("?" for _ in event_titles)
+    instrument_placeholders = ",".join("?" for _ in instruments)
+    rows = conn.execute(
+        f"SELECT * FROM tier1_late_checks WHERE event_title IN ({title_placeholders}) "
+        f"AND instrument IN ({instrument_placeholders}) "
+        "ORDER BY event_title, instrument, event_time_utc, julianday(checked_at_utc) DESC, id DESC",
+        (*event_titles, *instruments),
+    ).fetchall()
+    latest: dict[tuple[str, str, str], Tier1LateCheckRow] = {}
+    for row in rows:
+        d = dict(row)
+        key = (d["event_title"], d["instrument"], dt.datetime.fromisoformat(d["event_time_utc"]).isoformat())
+        if key not in latest:
+            latest[key] = _late_check_row(d)
+    return latest
 
 
 def record_tier1_comparison(

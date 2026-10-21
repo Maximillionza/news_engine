@@ -22,6 +22,8 @@ from scoring.backtest_store import (
     record_tier1_prediction, get_latest_tier1_prediction_for_occurrence,
     record_tier1_comparison, get_tier1_comparison_for_occurrence,
     record_exogenous_shock, get_exogenous_shock_for_date, ExogenousShockRow,
+    get_latest_tier1_predictions_bulk, record_tier1_late_check, get_tier1_late_checks_for_occurrence,
+    get_latest_tier1_late_checks_bulk,
 )
 
 
@@ -754,6 +756,7 @@ def test_record_and_get_tier1_prediction_round_trip():
             value="Muted, non-reaccelerating call", confidence="Certain",
             source="BLS July 2026 PPI release; ISM Manufacturing Prices Paid Aug 2026",
             predicted_direction="bullish",
+            logged_at_utc=event_time - dt.timedelta(days=1),
         )
 
         row = get_latest_tier1_prediction_for_occurrence(conn, "PPI m/m", "XAUUSD", event_time)
@@ -825,10 +828,12 @@ def test_tier1_prediction_scoped_per_instrument():
         record_tier1_prediction(
             conn, "CPI m/m", "XAUUSD", event_time,
             value="v", confidence="Guessing", source="s", predicted_direction="neutral",
+            logged_at_utc=event_time - dt.timedelta(days=1),
         )
         record_tier1_prediction(
             conn, "CPI m/m", "US30", event_time,
             value="v", confidence="Guessing", source="s", predicted_direction="bearish",
+            logged_at_utc=event_time - dt.timedelta(days=1),
         )
 
         xauusd_row = get_latest_tier1_prediction_for_occurrence(conn, "CPI m/m", "XAUUSD", event_time)
@@ -1069,6 +1074,141 @@ def test_record_exogenous_shock_allows_none_taxonomy_category():
     print("PASS\n")
 
 
+def _tier1_conn(tmp: str):
+    return get_connection(Path(tmp) / "test.db")
+
+
+_RELEASE = dt.datetime(2026, 11, 12, 13, 30, tzinfo=dt.timezone.utc)
+
+
+def _log_tier1(conn, direction: str, logged_at: dt.datetime, event_time: dt.datetime = _RELEASE) -> int:
+    return record_tier1_prediction(
+        conn, "PPI m/m", "XAUUSD", event_time, value="v", confidence="Likely", source="BLS",
+        predicted_direction=direction, logged_at_utc=logged_at,
+    )
+
+
+def test_tier1_bulk_ignores_a_row_logged_after_the_release():
+    key = ("PPI m/m", "XAUUSD", _RELEASE.isoformat())
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = _tier1_conn(tmp)
+        _log_tier1(conn, "bullish", dt.datetime(2026, 11, 10, 8, 0, tzinfo=dt.timezone.utc))
+        _log_tier1(conn, "bearish", dt.datetime(2026, 11, 12, 14, 0, tzinfo=dt.timezone.utc))
+        assert get_latest_tier1_predictions_bulk(conn, ["PPI m/m"], ["XAUUSD"])[key].predicted_direction == "bullish"
+        conn.close()
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = _tier1_conn(tmp)
+        _log_tier1(conn, "bearish", dt.datetime(2026, 11, 12, 14, 0, tzinfo=dt.timezone.utc))
+        assert get_latest_tier1_predictions_bulk(conn, ["PPI m/m"], ["XAUUSD"]) == {}
+        _log_tier1(conn, "neutral", _RELEASE)   # exactly at the release is kept
+        assert get_latest_tier1_predictions_bulk(conn, ["PPI m/m"], ["XAUUSD"])[key].predicted_direction == "neutral"
+        conn.close()
+
+
+def test_tier1_bulk_compares_naive_and_offset_stamps_as_instants():
+    naive_event = dt.datetime(2026, 11, 12, 13, 30)
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = _tier1_conn(tmp)
+        _log_tier1(conn, "bearish", dt.datetime(2026, 11, 12, 13, 31, tzinfo=dt.timezone.utc), naive_event)
+        assert get_latest_tier1_predictions_bulk(conn, ["PPI m/m"], ["XAUUSD"]) == {}
+        _log_tier1(conn, "bullish",
+                   dt.datetime(2026, 11, 12, 15, 29, tzinfo=dt.timezone(dt.timedelta(hours=2))), naive_event)
+        rows = get_latest_tier1_predictions_bulk(conn, ["PPI m/m"], ["XAUUSD"])
+        assert [r.predicted_direction for r in rows.values()] == ["bullish"]
+        conn.close()
+
+
+def test_single_tier1_getter_has_the_same_as_of_guard_and_a_source_filter():
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = _tier1_conn(tmp)
+        before = dt.datetime(2026, 11, 10, 8, 0, tzinfo=dt.timezone.utc)
+        record_tier1_prediction(conn, "PPI m/m", "XAUUSD", _RELEASE, "v", "Likely", "src-a", "bullish", before)
+        record_tier1_prediction(conn, "PPI m/m", "XAUUSD", _RELEASE, "v", "Likely", "src-b", "bearish",
+                                before + dt.timedelta(hours=1))
+        record_tier1_prediction(conn, "PPI m/m", "XAUUSD", _RELEASE, "v", "Likely", "src-a", "neutral",
+                                _RELEASE + dt.timedelta(minutes=5))
+        got = get_latest_tier1_prediction_for_occurrence(conn, "PPI m/m", "XAUUSD", _RELEASE)
+        assert got.predicted_direction == "bearish"
+        got_a = get_latest_tier1_prediction_for_occurrence(conn, "PPI m/m", "XAUUSD", _RELEASE, source="src-a")
+        assert got_a.predicted_direction == "bullish"
+        assert get_latest_tier1_prediction_for_occurrence(conn, "PPI m/m", "XAUUSD", _RELEASE, source="nope") is None
+        conn.close()
+
+
+def test_record_late_check_outcome_same_and_changed():
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = _tier1_conn(tmp)
+        call_id = _log_tier1(conn, "bullish", dt.datetime(2026, 11, 2, 6, 0, tzinfo=dt.timezone.utc))
+        when = dt.datetime(2026, 11, 9, 6, 6, tzinfo=dt.timezone.utc)
+        record_tier1_late_check(conn, "PPI m/m", "XAUUSD", _RELEASE, "v", "Likely", "bullish", "BLS",
+                                "stale_call", when)
+        record_tier1_late_check(conn, "PPI m/m", "XAUUSD", _RELEASE, "v2", "Likely", "bearish", "BLS",
+                                "release_within_24h", when + dt.timedelta(days=2))
+        checks = get_tier1_late_checks_for_occurrence(conn, "PPI m/m", "XAUUSD", _RELEASE)
+        assert [c.outcome for c in checks] == ["same", "changed"]
+        assert [c.reason for c in checks] == ["stale_call", "release_within_24h"]
+        assert all(c.call_of_record_id == call_id and c.call_direction == "bullish" for c in checks)
+        conn.close()
+
+
+def test_record_late_check_never_writes_tier1_predictions():
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = _tier1_conn(tmp)
+        _log_tier1(conn, "bullish", dt.datetime(2026, 11, 2, 6, 0, tzinfo=dt.timezone.utc))
+        before = get_latest_tier1_predictions_bulk(conn, ["PPI m/m"], ["XAUUSD"])
+        for minute in (0, 5):
+            record_tier1_late_check(conn, "PPI m/m", "XAUUSD", _RELEASE, "v", "Likely", "bearish", "BLS",
+                                    "stale_call", dt.datetime(2026, 11, 9, 6, minute, tzinfo=dt.timezone.utc))
+        assert conn.execute("SELECT COUNT(*) FROM tier1_predictions").fetchone()[0] == 1
+        assert get_latest_tier1_predictions_bulk(conn, ["PPI m/m"], ["XAUUSD"]) == before
+        conn.close()
+
+
+def test_record_late_check_refuses_no_call_naive_or_post_release_time_and_bad_values():
+    import pytest
+    ok = dt.datetime(2026, 11, 9, 6, 6, tzinfo=dt.timezone.utc)
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = _tier1_conn(tmp)
+
+        def late(**kw):
+            args = dict(new_value="v", new_confidence="Likely", new_direction="bullish", source="BLS",
+                        reason="stale_call", checked_at_utc=ok)
+            args.update(kw)
+            return record_tier1_late_check(conn, "PPI m/m", "XAUUSD", _RELEASE, **args)
+
+        with pytest.raises(ValueError):
+            late()                                    # no call of record yet
+        _log_tier1(conn, "bullish", dt.datetime(2026, 11, 2, 6, 0, tzinfo=dt.timezone.utc))
+        with pytest.raises(ValueError):
+            late(checked_at_utc=dt.datetime(2026, 11, 9, 6, 6))             # naive
+        with pytest.raises(ValueError):
+            late(checked_at_utc=_RELEASE + dt.timedelta(minutes=1))         # after the release
+        with pytest.raises(ValueError):
+            late(new_confidence="Sure")
+        with pytest.raises(ValueError):
+            late(new_direction="sideways")
+        with pytest.raises(ValueError):
+            late(reason="boredom")
+        assert conn.execute("SELECT COUNT(*) FROM tier1_late_checks").fetchone()[0] == 0
+        conn.close()
+
+
+def test_latest_late_checks_bulk_newest_wins_per_occurrence():
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = _tier1_conn(tmp)
+        _log_tier1(conn, "bullish", dt.datetime(2026, 11, 2, 6, 0, tzinfo=dt.timezone.utc))
+        first = dt.datetime(2026, 11, 9, 6, 6, tzinfo=dt.timezone.utc)
+        record_tier1_late_check(conn, "PPI m/m", "XAUUSD", _RELEASE, "a", "Likely", "bullish", "BLS",
+                                "stale_call", first)
+        record_tier1_late_check(conn, "PPI m/m", "XAUUSD", _RELEASE, "b", "Likely", "bearish", "BLS",
+                                "release_within_24h", first + dt.timedelta(days=2))
+        got = get_latest_tier1_late_checks_bulk(conn, ["PPI m/m", "CPI m/m"], ["XAUUSD", "US30"])
+        assert list(got) == [("PPI m/m", "XAUUSD", _RELEASE.isoformat())]
+        assert got[("PPI m/m", "XAUUSD", _RELEASE.isoformat())].new_value == "b"
+        assert get_latest_tier1_late_checks_bulk(conn, [], ["XAUUSD"]) == {}
+        conn.close()
+
+
 if __name__ == "__main__":
     test_record_and_count_predictions()
     test_count_predictions_scoped_to_event_occurrence_not_just_title()
@@ -1127,4 +1267,11 @@ if __name__ == "__main__":
     test_get_exogenous_shock_returns_none_when_never_logged()
     test_record_exogenous_shock_rejects_invalid_taxonomy_category()
     test_record_exogenous_shock_allows_none_taxonomy_category()
+    test_tier1_bulk_ignores_a_row_logged_after_the_release()
+    test_tier1_bulk_compares_naive_and_offset_stamps_as_instants()
+    test_single_tier1_getter_has_the_same_as_of_guard_and_a_source_filter()
+    test_record_late_check_outcome_same_and_changed()
+    test_record_late_check_never_writes_tier1_predictions()
+    test_record_late_check_refuses_no_call_naive_or_post_release_time_and_bad_values()
+    test_latest_late_checks_bulk_newest_wins_per_occurrence()
     print("All backtest_store tests passed.")

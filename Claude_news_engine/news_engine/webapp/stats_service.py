@@ -22,6 +22,7 @@ from typing import Callable, Optional
 
 from config.settings import EVENT_SURPRISE_DIRECTION
 from data_layer import brent_feed
+from data_layer.tier1_events import TIER1_FORMULA, tier1_titles
 from scoring.backtest_store import get_scored_nowcast_snapshot
 from webapp.history import _implied_surprise_direction
 from webapp.reaction_rules import impact_info, title_tag_counts
@@ -32,7 +33,7 @@ from webapp.stats_rules import judge, miss_size, parse_number, side, tolerance
 
 logger = logging.getLogger(__name__)
 
-NOWCAST_EVENTS = frozenset({"CPI m/m", "Core CPI m/m"})
+NOWCAST_EVENTS = frozenset(tier1_titles(TIER1_FORMULA))
 NEWS_START_UTC = dt.datetime(2026, 8, 12, tzinfo=dt.timezone.utc)   # first article-based prediction day
 MIN_SCORED_FOR_PERCENT = 20                                          # below this, accuracy % is hidden
 TRACKED_SYMBOLS = ("XAUUSD", "US30")

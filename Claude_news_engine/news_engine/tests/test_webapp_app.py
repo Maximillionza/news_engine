@@ -1846,7 +1846,7 @@ def test_predictions_route_includes_tier1_prediction_for_logged_occurrence():
                 bconn, "PPI m/m", "XAUUSD", ppi_time,
                 value="Muted, non-reaccelerating call", confidence="Certain",
                 source="BLS July 2026 PPI release; ISM Manufacturing Prices Paid Aug 2026",
-                predicted_direction="bullish",
+                predicted_direction="bullish", logged_at_utc=ppi_time - dt.timedelta(days=1),
             )
             backtest_store.record_prediction(
                 bconn, "PPI m/m", "US30", ppi_time, 0.55, "bearish", 0.4, 60, False,
@@ -1855,7 +1855,7 @@ def test_predictions_route_includes_tier1_prediction_for_logged_occurrence():
                 bconn, "PPI m/m", "US30", ppi_time,
                 value="Muted, non-reaccelerating call", confidence="Certain",
                 source="BLS July 2026 PPI release; ISM Manufacturing Prices Paid Aug 2026",
-                predicted_direction="bearish",
+                predicted_direction="bearish", logged_at_utc=ppi_time - dt.timedelta(days=1),
             )
             backtest_store.record_prediction(
                 bconn, "CPI m/m", "XAUUSD", cpi_time, 0.51, "neutral", 0.05, 70, False,
@@ -1906,7 +1906,7 @@ def test_predictions_flags_tier1_sentiment_conflict_when_directions_disagree():
             backtest_store.record_tier1_prediction(
                 bconn, "PPI m/m", "XAUUSD", ppi_time,
                 value="Muted, non-reaccelerating call", confidence="Certain",
-                source="BLS/ISM", predicted_direction="bullish",
+                source="BLS/ISM", predicted_direction="bullish", logged_at_utc=ppi_time - dt.timedelta(days=1),
             )
             bconn.close()
 
@@ -2013,7 +2013,7 @@ def test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_tod
             )
             backtest_store.record_tier1_prediction(
                 bconn, "PPI m/m", "XAUUSD", ppi_time,
-                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish", logged_at_utc=ppi_time - dt.timedelta(days=1),
             )
             # A real shock logged on a DIFFERENT series (DXY) than this
             # instrument (XAUUSD) -- per the current implementation,
@@ -2074,7 +2074,7 @@ def test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_yes
             )
             backtest_store.record_tier1_prediction(
                 bconn, "PPI m/m", "XAUUSD", ppi_time,
-                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish", logged_at_utc=ppi_time - dt.timedelta(days=1),
             )
             # Recorded under YESTERDAY's date, not today's -- this is the
             # real shape Task 7's scheduled task writes in production.
@@ -2235,7 +2235,7 @@ def test_predictions_downgrades_when_a_default_exposed_category_shock_exists_alo
             )
             backtest_store.record_tier1_prediction(
                 bconn, "PPI m/m", "XAUUSD", ppi_time,
-                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish", logged_at_utc=ppi_time - dt.timedelta(days=1),
             )
             today = dt.datetime.now(dt.timezone.utc).date()
             # DETECTOR_SERIES order is ["DXY", "UST_BOND", "XAUUSD", "US30"] --
@@ -2288,7 +2288,7 @@ def test_predictions_downgrades_via_not_relevant_relevance_magnitude_pair():
             )
             backtest_store.record_tier1_prediction(
                 bconn, "CPI m/m", "XAUUSD", cpi_time,
-                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish", logged_at_utc=cpi_time - dt.timedelta(days=1),
             )
             bconn.close()
 
@@ -2335,7 +2335,7 @@ def test_predictions_downgrades_via_low_magnitude_relevance_magnitude_pair():
             )
             backtest_store.record_tier1_prediction(
                 bconn, "Retail Sales m/m", "USDJPY", rs_time,
-                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish", logged_at_utc=rs_time - dt.timedelta(days=1),
             )
             bconn.close()
 
@@ -2372,7 +2372,7 @@ def test_relevance_magnitude_trigger_does_not_compound_with_shock_trigger():
             )
             backtest_store.record_tier1_prediction(
                 bconn, "PPI m/m", "XAUUSD", ppi_time,
-                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish", logged_at_utc=ppi_time - dt.timedelta(days=1),
             )
             today = dt.datetime.now(dt.timezone.utc).date()
             backtest_store.record_exogenous_shock(

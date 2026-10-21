@@ -33,7 +33,7 @@ def test_compute_and_record_builds_and_persists_a_real_comparison():
         record_tier1_prediction(
             conn, "PPI m/m", "XAUUSD", event_time,
             value="muted, non-reaccelerating", confidence="Certain",
-            source="BLS/ISM", predicted_direction="bullish",
+            source="BLS/ISM", predicted_direction="bullish", logged_at_utc=event_time - dt.timedelta(days=1),
         )
 
         row_id = compute_and_record_tier1_comparison(
@@ -113,7 +113,7 @@ def test_compute_and_record_handles_a_no_call_tier1_prediction():
         record_tier1_prediction(
             conn, "CPI m/m", "XAUUSD", event_time,
             value="NO CONFIDENT DIRECTIONAL CALL", confidence="Guessing",
-            source="Cleveland Fed nowcast", predicted_direction="neutral",
+            source="Cleveland Fed nowcast", predicted_direction="neutral", logged_at_utc=event_time - dt.timedelta(days=1),
         )
 
         compute_and_record_tier1_comparison(
