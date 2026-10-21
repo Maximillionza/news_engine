@@ -125,3 +125,10 @@ def test_big_or_unquantified_earthquakes_still_alert(headline):
 def test_a_small_quake_near_a_real_supply_chain_phrase_is_not_suppressed():
     result = triage_article(_article("Magnitude 5.2 earthquake forces port closed at Kaohsiung"))
     assert result.matched is True
+
+
+def test_gold_bar_tariff_headline_triages_as_trade_policy_without_a_hard_rule():
+    result = triage_article(_article("US slaps tariffs on gold bars"))
+    assert result.matched is True
+    assert result.category == "trade_policy"
+    assert result.rule_tier_hit is False

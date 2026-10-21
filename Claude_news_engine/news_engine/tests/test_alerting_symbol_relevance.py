@@ -44,3 +44,27 @@ def test_category_with_no_real_relevance_for_a_symbol_omits_it():
     # trade_policy has no established transmission logic for a plain FX cross
     result = affected_symbols("trade_policy", ["GBPAUD"])
     assert result == []
+
+
+def test_gold_bar_tariff_headline_reaches_xauusd_via_tariff_bullion():
+    result = affected_symbols("trade_policy", ["XAUUSD", "US30"], headline="US slaps tariffs on imported gold bars")
+    assert {i.symbol: i.channel for i in result} == {"XAUUSD": "tariff_bullion", "US30": "risk_sentiment"}
+
+
+def test_diesel_export_ban_reaches_us30_only():
+    result = affected_symbols(
+        "trade_policy", ["XAUUSD", "US30"], headline="Russia extends diesel export ban to year-end")
+    assert [i.symbol for i in result] == ["US30"]
+
+
+def test_bullion_gate_is_a_word_match():
+    def reaches_gold(headline: str) -> bool:
+        return "XAUUSD" in [i.symbol for i in affected_symbols("trade_policy", ["XAUUSD"], headline=headline)]
+    assert not reaches_gold("Goldman Sachs warns on tariffs")
+    assert reaches_gold("Tariffs on Precious Metals widen")
+    assert reaches_gold("BULLION tariff talk")
+
+
+def test_no_headline_means_no_bullion_channel():
+    result = affected_symbols("trade_policy", ["XAUUSD", "US30"])
+    assert [i.symbol for i in result] == ["US30"]

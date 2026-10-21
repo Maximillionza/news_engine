@@ -96,6 +96,9 @@ CATEGORY_SIGNAL_KEYWORDS: dict[str, list[str]] = {
     "trade_policy": [
         "tariffs announced", "tariffs imposed", "trade war escalates", "export ban",
         "import ban", "trade deal collapses",
+        # Triage-only (not hard rules): a gold-bar tariff story matches nothing else here.
+        "tariffs on gold", "tariff on gold", "gold tariff", "tariffs on bullion", "tariff on bullion",
+        "bullion tariff",
     ],
     "natural_disaster_supply_chain": [
         "earthquake", "hurricane", "port closed", "supply chain disruption",

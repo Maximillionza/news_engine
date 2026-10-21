@@ -33,8 +33,9 @@ def affected_symbols(category: str, tracked_symbols: list[str], headline: str = 
     be established for any currently-tracked symbol under this category.
 
     headline is for channels gated on the headline's wording
-    (Transmission.headline_gate); no current table entry is gated, so it is
-    not read yet. The default "" keeps older callers valid.
+    (Transmission.headline_gate, e.g. tariff_bullion): a gated entry is
+    skipped unless the gate matches. The default "" means no gated channel
+    applies, and keeps older callers valid.
     """
     results: list[SymbolImpact] = []
     for symbol in tracked_symbols:
@@ -52,6 +53,8 @@ def affected_symbols(category: str, tracked_symbols: list[str], headline: str = 
             continue
         transmission = TRANSMISSION.get((category, symbol_class.symbol_class))
         if transmission is not None:
+            if transmission.headline_gate is not None and not transmission.headline_gate.search(headline):
+                continue
             results.append(SymbolImpact(
                 symbol=symbol, channel=transmission.channel, symbol_class=symbol_class.symbol_class))
     return results

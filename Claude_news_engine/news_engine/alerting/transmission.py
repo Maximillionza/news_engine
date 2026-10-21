@@ -47,6 +47,12 @@ class Transmission:
     headline_gate: Optional[re.Pattern[str]] = None
 
 
+# Tariff stories reach gold only when the headline is about bullion itself.
+BULLION_HEADLINE = re.compile(r"\b(?:gold|bullion|precious metals?)\b", re.IGNORECASE)
+
+_BULLION_TARIFF_MIXED = Lean(
+    "mixed", "tariffs on bullion can move gold either way via the COMEX-London premium [convention]")
+
 # Oil-linked FX pairs (design spec: "USDCAD is oil-linked... independent
 # of and sometimes working against the pure USD-weakness direction") get
 # their own "oil_linked_fx" class wherever the table has one for the
@@ -124,6 +130,10 @@ TRANSMISSION: dict[tuple[str, str], Transmission] = {
         "relief": _US_FISCAL_FX_MIXED,
     }, us_only=True, not_us_why=_NOT_THE_US_GOVERNMENT),
     # --- trade policy ---
+    ("trade_policy", "metal"): Transmission("tariff_bullion", {
+        "escalation": _BULLION_TARIFF_MIXED,
+        "relief": _BULLION_TARIFF_MIXED,
+    }, headline_gate=BULLION_HEADLINE),
     ("trade_policy", "index_risk"): Transmission("risk_sentiment", {
         "escalation": Lean("sell", "trade escalation weighs on risk appetite [convention]"),
         "relief": Lean("buy", "trade de-escalation supports risk appetite [convention]"),

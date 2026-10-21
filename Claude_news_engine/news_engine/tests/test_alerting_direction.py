@@ -61,7 +61,7 @@ _PRE_MERGE_LEANS: dict[tuple[str, str, str], tuple[str, str]] = {
 
 # Keys the merged table may hold beyond the pre-merge channel table: the
 # oil-linked USDCAD cell (previously a special case in symbol_relevance.py).
-_ALLOWED_EXTRA_KEYS = {("energy", "oil_linked_fx")}
+_ALLOWED_EXTRA_KEYS = {("energy", "oil_linked_fx"), ("trade_policy", "metal")}
 
 
 def _relevant_polarities(category: str) -> tuple[str, str]:
@@ -243,3 +243,10 @@ def test_describe_impacts_passes_country_and_us_link_through():
 
 def test_describe_impacts_with_no_tracked_relevance_is_empty():
     assert describe_impacts([], "energy", "escalation") == []
+
+
+def test_tariffs_on_bullion_lean_is_mixed_citing_comex_for_both_polarities():
+    for polarity in ("escalation", "relief"):
+        got = lean_for("trade_policy", polarity, "metal")
+        assert got.lean == "mixed"
+        assert "COMEX" in got.why
