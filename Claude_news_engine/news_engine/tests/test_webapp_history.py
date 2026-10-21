@@ -563,6 +563,79 @@ def test_text_only_event_confirmed_outcome_judged_correctly():
     print("PASS\n")
 
 
+def test_final_no_reaction_outcome_grades_a_directional_call_missed_and_a_neutral_call_confirmed():
+    print("=== build_print_call_history: a final 'no reaction' (neutral) outcome grades bullish Missed, neutral Confirmed (B4 O3) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 17, 18, 0, tzinfo=UTC_TZ)
+        now = event_time + dt.timedelta(days=4)
+        note = "Dukascopy: +0.05% in 30min, below 0.15% threshold; no reaction after 3 days, final (auto)"
+
+        dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
+        store.add_tracked_symbol(dash_conn, "US30")
+        store.upsert_event_history(
+            dash_conn, _resolved_event("FOMC Statement", event_time, None, None, None),
+            None, now=now,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, "FOMC Statement", "XAUUSD", event_time,
+            0.62, "bullish", 0.5, 40, False, scored_at_utc=event_time,
+        )
+        backtest_store.record_prediction(
+            bt_conn, "FOMC Statement", "US30", event_time,
+            0.5, "neutral", 0.5, 40, False, scored_at_utc=event_time,
+        )
+        backtest_store.record_outcome(bt_conn, "FOMC Statement", "XAUUSD", event_time, "neutral", note)
+        backtest_store.record_outcome(bt_conn, "FOMC Statement", "US30", event_time, "neutral", note)
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history(now=now)
+
+        by_instrument = {row.instrument: row for row in rows}
+        assert by_instrument["XAUUSD"].outcome == "Missed"  # called a move, the market did not move
+        assert by_instrument["US30"].outcome == "Confirmed"  # called no move, none came
+    print("PASS\n")
+
+
+def test_a_dismissal_leaves_history_pending():
+    print("=== build_print_call_history: a dismissal leaves the row pending (why O3 records a neutral outcome, not a dismissal) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 17, 18, 0, tzinfo=UTC_TZ)
+        now = event_time + dt.timedelta(days=4)
+
+        dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
+        store.upsert_event_history(
+            dash_conn, _resolved_event("FOMC Statement", event_time, None, None, None),
+            None, now=now,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, "FOMC Statement", "XAUUSD", event_time,
+            0.62, "bullish", 0.5, 40, False, scored_at_utc=event_time,
+        )
+        backtest_store.record_dismissal(bt_conn, "FOMC Statement", "XAUUSD", event_time, "rescheduled")
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            rows = history.build_print_call_history(now=now)
+
+        assert len(rows) == 1
+        assert rows[0].outcome is None
+        assert rows[0].unjudged_reason == "pending"
+    print("PASS\n")
+
+
 def test_text_only_event_missing_prediction_for_one_instrument_produces_no_row_for_it():
     print("=== build_print_call_history: an instrument with no prediction for a text-only occurrence gets no row ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -1270,6 +1343,8 @@ if __name__ == "__main__":
     test_unchanged_vs_previous_badge_does_not_affect_outcome()
     test_text_only_event_with_prediction_produces_fallback_row()
     test_text_only_event_confirmed_outcome_judged_correctly()
+    test_final_no_reaction_outcome_grades_a_directional_call_missed_and_a_neutral_call_confirmed()
+    test_a_dismissal_leaves_history_pending()
     test_text_only_event_missing_prediction_for_one_instrument_produces_no_row_for_it()
     test_future_text_only_event_excluded()
     test_partially_numeric_event_not_misclassified_as_text_only()

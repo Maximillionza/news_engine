@@ -14,6 +14,16 @@ ambiguous or fetch-failed is left exactly where it already was — the
 existing awaiting-outcome queue, unchanged — with its computed
 classification shown alongside the manual prompt as a suggestion.
 
+Final "no reaction" (B4 O3, 2026-10-21): a row whose event is more than
+3 days old (FINAL_NO_REACTION_AFTER) and whose move is still below the
+clear-move threshold is recorded as a final NEUTRAL outcome and leaves the
+queue for good, instead of being re-fetched on every run. It is an
+outcome, not a dismissal, because History grades only from outcomes (a
+dismissal leaves the row "pending" forever): a bullish/bearish call on it
+reads Missed, a neutral call reads Confirmed. A fetch failure (no price
+data) is never finalised: "no data" is not "no reaction", so it stays
+awaiting. Dismissals stay for rescheduled/canceled events (manual 'd').
+
 Usage:
     python scripts/confirm_backtest_outcomes.py          # interactive
     python scripts/confirm_backtest_outcomes.py --list   # list only, no prompts
@@ -24,6 +34,7 @@ import sys
 import os
 import datetime as dt
 from contextlib import closing
+from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -31,6 +42,11 @@ from scoring.backtest_store import (
     get_connection, get_predictions_awaiting_outcome, record_outcome, record_dismissal,
 )
 from scoring.tier1_comparison import compute_and_record_tier1_comparison
+
+# B4 O3: a below-threshold row older than this is final "no reaction".
+FINAL_NO_REACTION_AFTER = dt.timedelta(days=3)
+# Appended to the classifier's own note so the outcome says why it is final.
+FINAL_NO_REACTION_NOTE_SUFFIX = "; no reaction after 3 days, final (auto)"
 
 
 def _try_record_tier1_comparison(conn, event_title, instrument, event_time, direction, note) -> None:
@@ -49,14 +65,38 @@ def _try_record_tier1_comparison(conn, event_title, instrument, event_time, dire
         print(f"[confirm_backtest_outcomes] WARNING: tier1 comparison failed for {instrument}/{event_title}: {exc}")
 
 
-def run_auto_confirm_phase(conn) -> dict:
+def is_final_no_reaction(result, event_time_utc: dt.datetime, now: dt.datetime, threshold_pct: float) -> bool:
+    """
+    True when a classification is a measured below-threshold move (not a
+    clear move, not a fetch failure: move_pct is None only when the fetch
+    failed) and the event is MORE than FINAL_NO_REACTION_AFTER old. Exactly
+    3 days is still awaiting. A naive event time is read as UTC.
+    """
+    if event_time_utc.tzinfo is None:
+        event_time_utc = event_time_utc.replace(tzinfo=dt.timezone.utc)
+    return (
+        result.direction is None
+        and result.move_pct is not None
+        and abs(result.move_pct) < threshold_pct
+        and now - event_time_utc > FINAL_NO_REACTION_AFTER
+    )
+
+
+def run_auto_confirm_phase(conn, now: Optional[dt.datetime] = None) -> dict:
     """
     Runs the Dukascopy auto-confirm pass over everything currently awaiting
-    outcome. Returns {"auto_confirmed": int, "left_for_review": int,
-    "suggestions": dict} — suggestions maps (event_title, instrument,
-    event_time_utc) to the ClassificationResult computed for that row, so
-    the interactive loop can show a leftover row's already-computed
-    classification instead of re-fetching it.
+    outcome. Returns {"auto_confirmed": int, "final_no_reaction": int,
+    "left_for_review": int, "suggestions": dict} — suggestions maps
+    (event_title, instrument, event_time_utc) to the ClassificationResult
+    computed for that row, so the interactive loop can show a leftover row's
+    already-computed classification instead of re-fetching it.
+
+    A below-threshold row more than 3 days old is recorded as a final
+    neutral outcome ("no reaction", see is_final_no_reaction) and so never
+    fetched again; it is not a suggestion. Neutral outcome rather than a
+    dismissal because History grades only from outcomes. A fetch failure is
+    never finalised and stays left for review. `now` defaults to the real
+    UTC time (injectable for tests).
 
     Imports scoring.outcome_classifier lazily, here, not at module level —
     that import chain pulls in the optional dukascopy-python/pandas
@@ -64,15 +104,17 @@ def run_auto_confirm_phase(conn) -> dict:
     must stay fully manual with zero Dukascopy calls, per the design spec.
     """
     try:
-        from scoring.outcome_classifier import classify
+        from scoring.outcome_classifier import classify, CLEAR_MOVE_THRESHOLD_PCT
     except ImportError as exc:
         raise SystemExit(
             "--auto needs the optional Dukascopy dependency — install it with:\n"
             "  pip install -r requirements-dukascopy.txt"
         ) from exc
 
-    awaiting = get_predictions_awaiting_outcome(conn)
+    now = now or dt.datetime.now(dt.timezone.utc)
+    awaiting = get_predictions_awaiting_outcome(conn, now=now)
     auto_confirmed = 0
+    final_no_reaction = 0
     suggestions = {}
     for p in awaiting:
         event_time = dt.datetime.fromisoformat(p.event_time_utc)
@@ -86,10 +128,23 @@ def run_auto_confirm_phase(conn) -> dict:
             _try_record_tier1_comparison(conn, p.event_title, p.instrument, event_time, result.direction.value, result.note)
             auto_confirmed += 1
             print(f"  [auto] {p.instrument} / {p.event_title}: {result.note}")
+        elif is_final_no_reaction(result, event_time, now, CLEAR_MOVE_THRESHOLD_PCT):
+            note = result.note + FINAL_NO_REACTION_NOTE_SUFFIX
+            record_outcome(conn, p.event_title, p.instrument, event_time, "neutral", note)
+            # Same Tier 1 hook as an auto-confirmed outcome, so a directional
+            # Tier 1 call on a no-reaction release is graded there too.
+            _try_record_tier1_comparison(conn, p.event_title, p.instrument, event_time, "neutral", note)
+            final_no_reaction += 1
+            print(f"  [final] {p.instrument} / {p.event_title}: {note}")
         else:
             suggestions[(p.event_title, p.instrument, p.event_time_utc)] = result
-    left_for_review = len(awaiting) - auto_confirmed
-    return {"auto_confirmed": auto_confirmed, "left_for_review": left_for_review, "suggestions": suggestions}
+    left_for_review = len(awaiting) - auto_confirmed - final_no_reaction
+    return {
+        "auto_confirmed": auto_confirmed,
+        "final_no_reaction": final_no_reaction,
+        "left_for_review": left_for_review,
+        "suggestions": suggestions,
+    }
 
 
 def main():
@@ -101,7 +156,11 @@ def main():
         if auto:
             summary = run_auto_confirm_phase(conn)
             suggestions = summary["suggestions"]
-            print(f"\nAuto-confirm: {summary['auto_confirmed']} confirmed, {summary['left_for_review']} left for review.\n")
+            print(
+                f"\nAuto-confirm: {summary['auto_confirmed']} confirmed, "
+                f"{summary['final_no_reaction']} final no-reaction, "
+                f"{summary['left_for_review']} left for review.\n"
+            )
 
         awaiting = get_predictions_awaiting_outcome(conn)
 
