@@ -5,13 +5,20 @@ per-poll-cycle cost). Called only for candidates triage.py couldn't
 resolve with a hard rule (see
 docs/superpowers/specs/2026-09-14-realtime-news-shock-alerting-design.md).
 
-Providers are tried in order: Claude Haiku, then a local Ollama model.
+Providers are tried in config.settings.CLASSIFIER_PROVIDER_ORDER: a local
+Ollama model first, then Claude Haiku as the fallback (owner decision
+2026-10-21, B2 K8 -- Anthropic credits are exhausted; until then it was
+Claude first).
 2026-10 change: Anthropic credits ran out and every classification
 silently degraded to a Medium fallback that was never pushed to Telegram.
 Notification latency is the constraint, so each provider is bounded by a
 short timeout and, after any call failure, put on a persisted cooldown
 (alerting/store.py's provider_cooldown) so a dead provider costs one
 failed call per cooldown window instead of one per headline.
+
+Besides category/severity the model is asked for polarity, country and US
+link (alerting/us_link.py). Those three are best-effort: a missing or
+garbled answer reads as unknown and never fails the classification.
 """
 from __future__ import annotations
 
@@ -36,8 +43,9 @@ from alerting import store
 from alerting.direction import normalize_polarity
 from alerting.taxonomy import SHOCK_CATEGORIES
 from alerting.triage import TriageResult
+from alerting.us_link import normalize_country, normalize_us_link, reconcile
 from config.settings import (
-    CLAUDE_CLASSIFY_MODEL, CLAUDE_COOLDOWN_MINUTES, CLAUDE_TIMEOUT_SECONDS,
+    CLASSIFIER_PROVIDER_ORDER, CLAUDE_CLASSIFY_MODEL, CLAUDE_COOLDOWN_MINUTES, CLAUDE_TIMEOUT_SECONDS,
     OLLAMA_BASE_URL, OLLAMA_CLASSIFY_MODEL, OLLAMA_COOLDOWN_MINUTES, OLLAMA_EXECUTABLE,
     OLLAMA_KEEP_ALIVE, OLLAMA_NUM_CTX, OLLAMA_STARTUP_WAIT_SECONDS, OLLAMA_TIMEOUT_SECONDS,
 )
@@ -65,6 +73,9 @@ class ClassificationResult:
     classification_failed: bool = False
     provider: Optional[str] = None  # "claude" | "ollama" -- None when every provider failed
     polarity: str = "unclear"       # alerting/direction.py POLARITIES; "unclear" also when the model omitted/garbled it
+    country: Optional[str] = None   # ISO-2 or "XX" (global / several); None = unknown
+    us_link: Optional[str] = None   # alerting/us_link.py US_LINKS; None = unknown
+    all_providers_failed: bool = False  # every provider failed/was skipped -- the outage signal; NOT set by poll_once's budget-spent fallback
 
 
 def _build_prompt(article: NewsArticle, triage: TriageResult) -> str:
@@ -99,10 +110,31 @@ def _build_prompt(article: NewsArticle, triage: TriageResult) -> str:
         "- Gunmen attack oil terminal, exports halted -> escalation\n"
         "- Rival factions sign ceasefire, shipping lanes reopen -> relief\n"
         "- Central bank signals more rate hikes -> hawkish\n"
-        "- Analysts debate outlook for oil next year -> unclear\n\n"
+        "- Analysts debate outlook for oil next year -> unclear\n"
+        # Real-feed phrasings a small model got backwards (B2 K4): a price FALL on peace talk and a
+        # sanctions WAIVER are relief; a price spike on attacks is escalation.
+        "- Oil prices fall as traders watch ceasefire talks -> relief\n"
+        "- Trump waives broad new Russia sanctions -> relief\n"
+        "- Brent oil touches $110 as Iran escalates Hormuz attacks -> escalation\n\n"
+        'Country: the ISO 3166-1 alpha-2 code of where it happens or of the main actor (e.g. "US", "RU", '
+        '"FR"); "XX" if it is global or involves several countries.\n\n'
+        "US link guide -- how does this reach US prices?\n"
+        '- "direct": it happens in the US or a US actor does it (the Fed, the US government or Treasury, '
+        "US companies or markets).\n"
+        '- "global_supply": it happens elsewhere but changes a supply the whole world prices '
+        "(oil or gas output or exports, OPEC+ decisions, a shipping chokepoint such as Hormuz, "
+        "Bab el-Mandeb or Suez).\n"
+        '- "none": a local event outside the US with neither link (domestic unrest, a strike on a local site, '
+        "a local company's outage).\n"
+        'If us_link is "none", severity is at most "Medium".\n\n'
+        "US link examples (headline -> country, us_link):\n"
+        "- Fed chair signals emergency cut -> US, direct\n"
+        "- Tanker struck near Strait of Hormuz -> XX, global_supply\n"
+        "- Protesters clash with police in Lima -> PE, none\n\n"
         "Respond with ONLY a JSON object, no other text, in exactly this shape:\n"
         '{"category": "<one of the valid categories>", "severity": "High"|"Medium"|"Low", '
         '"polarity": "escalation"|"relief"|"hawkish"|"dovish"|"unclear", '
+        '"country": "<ISO-2 code or XX>", "us_link": "direct"|"global_supply"|"none", '
         '"rationale": "<one short sentence explaining why, specific to the headline above>"}'
     )
 
@@ -192,14 +224,16 @@ def _call_ollama(prompt: str) -> str:
 
 def _providers() -> list[tuple]:
     """
-    (name, call, is_usable, cooldown_minutes), in priority order. Built at
-    call time (not module scope) so tests can monkeypatch the call
-    functions and is_available().
+    (name, call, is_usable, cooldown_minutes), in CLASSIFIER_PROVIDER_ORDER
+    order; a name with no provider behind it is skipped. Built at call time
+    (not module scope) so tests can monkeypatch the call functions,
+    is_available() and the order.
     """
-    return [
-        ("claude", _call_claude, is_available, CLAUDE_COOLDOWN_MINUTES),
-        ("ollama", _call_ollama, lambda: True, OLLAMA_COOLDOWN_MINUTES),
-    ]
+    known = {
+        "claude": ("claude", _call_claude, is_available, CLAUDE_COOLDOWN_MINUTES),
+        "ollama": ("ollama", _call_ollama, lambda: True, OLLAMA_COOLDOWN_MINUTES),
+    }
+    return [known[name] for name in CLASSIFIER_PROVIDER_ORDER if name in known]
 
 
 def _parse_and_validate(text: str) -> tuple[str, str, str]:
@@ -227,6 +261,21 @@ def _extract_polarity(text: str) -> str:
         return normalize_polarity(json.loads(text).get("polarity"))
     except Exception:  # noqa: BLE001 -- _parse_and_validate already accepted this text; never let polarity break it
         return "unclear"
+
+
+def _extract_country_and_us_link(text: str) -> tuple[Optional[str], Optional[str]]:
+    """
+    Best-effort like _extract_polarity: an omitted or garbled country / US
+    link reads as unknown (None), which keeps today's behaviour (no cap),
+    and never fails the classification. reconcile() makes a US event
+    "direct" whatever the model said.
+    """
+    try:
+        data = json.loads(text)
+        country = normalize_country(data.get("country"))
+        return country, reconcile(country, normalize_us_link(data.get("us_link")))
+    except Exception:  # noqa: BLE001 -- _parse_and_validate already accepted this text; never let these break it
+        return None, None
 
 
 def classify_candidate(
@@ -273,9 +322,10 @@ def classify_candidate(
             print(f"[llm_classify] WARNING: {name} returned an unusable response for {article.title!r}: {exc}")
             problems.append(f"{name}: unusable response ({exc})")
             continue
+        country, us_link = _extract_country_and_us_link(text)
         return ClassificationResult(
             category=category, severity=severity, rationale=rationale, provider=name,
-            polarity=_extract_polarity(text),
+            polarity=_extract_polarity(text), country=country, us_link=us_link,
         )
 
     detail = "; ".join(problems)
@@ -285,4 +335,5 @@ def classify_candidate(
         severity="Medium",
         rationale=f"LLM classification failed ({detail}) -- falling back to rule-tier category at Medium for manual review.",
         classification_failed=True,
+        all_providers_failed=True,
     )

@@ -30,17 +30,22 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # --- Shock alerting (alerting/) LLM classification + notification policy ---
-# Classification tries Claude Haiku first, then a local Ollama model. Both
-# are bounded by short timeouts and a per-provider cooldown after a failure,
-# so a dead provider (e.g. exhausted Anthropic credits, a hung request)
-# never stalls the 2-minute poll cycle -- see alerting/llm_classify.py.
+# Classification tries the providers in CLASSIFIER_PROVIDER_ORDER: a local
+# Ollama model first, then Claude Haiku as the fallback. Both are bounded by
+# short timeouts and a per-provider cooldown after a failure, so a dead
+# provider (e.g. exhausted Anthropic credits, a hung request) never stalls
+# the 2-minute poll cycle -- see alerting/llm_classify.py.
+# Owner decision 2026-10-21 (B2 K8): Ollama first, Claude as fallback --
+# Anthropic credits are exhausted, so Claude-first cost a failed call (and a
+# cooldown wait) before every real classification. Unknown names are skipped.
+CLASSIFIER_PROVIDER_ORDER: tuple[str, ...] = ("ollama", "claude")
 CLAUDE_CLASSIFY_MODEL = "claude-haiku-4-5"
 CLAUDE_TIMEOUT_SECONDS = 8.0
 CLAUDE_COOLDOWN_MINUTES = 15       # skip Claude this long after any call failure
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_CLASSIFY_MODEL = "llama3.2:3b"
 OLLAMA_TIMEOUT_SECONDS = 45.0      # measured on this CPU-only box: warm ~4-5 s, cold load 17-40 s (slower while the disk is busy)
-OLLAMA_NUM_CTX = 4096              # the prompt is ~400 tokens. Ollama otherwise loads this model with a 131072-token context = an ~18 GB footprint (measured via `ollama ps`) -- unusable on a 16 GB machine, and it made cold loads far slower
+OLLAMA_NUM_CTX = 4096              # the prompt is ~1,200 tokens since B2 added country/US link (test_prompt_fits_the_ollama_context pins it). Ollama otherwise loads this model with a 131072-token context = an ~18 GB footprint (measured via `ollama ps`) -- unusable on a 16 GB machine, and it made cold loads far slower
 OLLAMA_KEEP_ALIVE = -1           # -1 = never unload. Shock candidates can be hours apart, so any finite value means a cold load (and a timeout risk) on most calls; the 3B model costs ~3 GB of RAM
 OLLAMA_COOLDOWN_MINUTES = 5
 EARTHQUAKE_MIN_MAGNITUDE = 6.5  # earthquake headlines stating a magnitude below this are not alerted (alert audit 2026-10-15: six M5-6 alerts, no measurable move in XAUUSD/US30); a headline with no stated magnitude is never filtered

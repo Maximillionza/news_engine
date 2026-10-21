@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -29,6 +30,40 @@ def _triage() -> TriageResult:
     return TriageResult(matched=True, category="energy", rule_tier_hit=False, matched_keywords=["opec+"], near_miss_score=None)
 
 
+@pytest.fixture
+def claude_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The live order is Ollama first (B2, 2026-10-21); these chain tests are about Claude's own behaviour."""
+    monkeypatch.setattr(llm_classify, "CLASSIFIER_PROVIDER_ORDER", ("claude", "ollama"))
+
+
+# --- provider order: Ollama first, Claude as fallback (owner decision 2026-10-21) ---
+
+def test_default_order_is_ollama_then_claude():
+    assert [p[0] for p in llm_classify._providers()] == ["ollama", "claude"]
+    with patch("alerting.llm_classify._call_ollama", return_value=_GOOD), \
+         patch("alerting.llm_classify._call_claude") as claude:
+        result = classify_candidate(_article(), _triage())
+    claude.assert_not_called()
+    assert result.provider == "ollama"
+    assert result.classification_failed is False
+
+
+def test_ollama_failure_falls_back_to_claude():
+    conn = store.get_connection(":memory:")
+    with patch("alerting.llm_classify._call_ollama", side_effect=requests.ConnectionError("refused")), \
+         patch("alerting.llm_classify._call_claude", return_value=_GOOD):
+        result = classify_candidate(_article(), _triage(), conn=conn, now=NOW)
+    assert result.provider == "claude"
+    assert result.classification_failed is False
+    assert store.get_provider_cooldown_until(conn, "ollama") > NOW
+
+
+def test_unknown_provider_name_in_order_is_skipped(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(llm_classify, "CLASSIFIER_PROVIDER_ORDER", ("gpt", "claude", "ollama"))
+    assert [p[0] for p in llm_classify._providers()] == ["claude", "ollama"]
+
+
+@pytest.mark.usefixtures("claude_first")
 def test_claude_success_is_used_and_ollama_never_called():
     with patch("alerting.llm_classify._call_claude", return_value=_GOOD), \
          patch("alerting.llm_classify._call_ollama") as ollama:
@@ -40,6 +75,7 @@ def test_claude_success_is_used_and_ollama_never_called():
     ollama.assert_not_called()
 
 
+@pytest.mark.usefixtures("claude_first")
 def test_claude_failure_falls_through_to_ollama():
     with patch("alerting.llm_classify._call_claude", side_effect=RuntimeError("credit balance is too low")), \
          patch("alerting.llm_classify._call_ollama", return_value=_GOOD):
@@ -49,6 +85,7 @@ def test_claude_failure_falls_through_to_ollama():
     assert result.severity == "Medium"
 
 
+@pytest.mark.usefixtures("claude_first")
 def test_unusable_claude_response_falls_through_to_ollama_without_cooldown():
     conn = store.get_connection(":memory:")
     with patch("alerting.llm_classify._call_claude", return_value="not json at all"), \
@@ -59,6 +96,7 @@ def test_unusable_claude_response_falls_through_to_ollama_without_cooldown():
     assert store.get_provider_cooldown_until(conn, "claude") is None
 
 
+@pytest.mark.usefixtures("claude_first")
 def test_claude_call_failure_sets_cooldown_and_next_call_skips_claude():
     conn = store.get_connection(":memory:")
     claude = MagicMock(side_effect=RuntimeError("credit balance is too low"))
@@ -75,6 +113,7 @@ def test_claude_call_failure_sets_cooldown_and_next_call_skips_claude():
     assert result.provider == "ollama"
 
 
+@pytest.mark.usefixtures("claude_first")
 def test_claude_is_retried_after_its_cooldown_expires():
     conn = store.get_connection(":memory:")
     claude = MagicMock(side_effect=[RuntimeError("down"), _GOOD])
@@ -87,6 +126,7 @@ def test_claude_is_retried_after_its_cooldown_expires():
     assert result.provider == "claude"
 
 
+@pytest.mark.usefixtures("claude_first")
 def test_all_providers_failing_falls_back_to_unclassified_medium():
     with patch("alerting.llm_classify._call_claude", side_effect=RuntimeError("claude down")), \
          patch("alerting.llm_classify._call_ollama", side_effect=RuntimeError("ollama down")):
@@ -98,6 +138,7 @@ def test_all_providers_failing_falls_back_to_unclassified_medium():
     assert "claude down" in result.rationale and "ollama down" in result.rationale
 
 
+@pytest.mark.usefixtures("claude_first")
 def test_invalid_category_from_every_provider_falls_back():
     bad = '{"category": "not_a_real_category", "severity": "High", "rationale": "x"}'
     with patch("alerting.llm_classify._call_claude", return_value=bad), \
@@ -107,6 +148,7 @@ def test_invalid_category_from_every_provider_falls_back():
     assert result.severity == "Medium"
 
 
+@pytest.mark.usefixtures("claude_first")
 def test_sdk_unavailable_skips_claude_and_uses_ollama():
     with patch("alerting.llm_classify.is_available", return_value=False), \
          patch("alerting.llm_classify._call_claude") as claude, \
@@ -117,6 +159,7 @@ def test_sdk_unavailable_skips_claude_and_uses_ollama():
     assert result.classification_failed is False
 
 
+@pytest.mark.usefixtures("claude_first")
 def test_sdk_unavailable_and_ollama_down_falls_back_without_calling_claude():
     with patch("alerting.llm_classify.is_available", return_value=False), \
          patch("alerting.llm_classify._call_claude") as claude, \
@@ -188,8 +231,12 @@ def test_claude_client_is_built_with_a_short_timeout_and_no_retries():
 # --- polarity: which way the headline pushes things (alerting/direction.py) ---
 
 def _classify_with(response: str):
-    with patch("alerting.llm_classify._call_claude", return_value=response):
-        return classify_candidate(_article(), _triage())
+    # Ollama answers first under the default order; Claude must never be reached.
+    with patch("alerting.llm_classify._call_ollama", return_value=response), \
+         patch("alerting.llm_classify._call_claude", side_effect=AssertionError("claude must not be called")) as claude:
+        result = classify_candidate(_article(), _triage())
+    claude.assert_not_called()
+    return result
 
 
 def test_polarity_is_parsed_and_normalized():
@@ -223,6 +270,79 @@ def test_failed_classification_has_unclear_polarity():
         result = classify_candidate(_article(), _triage())
     assert result.classification_failed is True
     assert result.polarity == "unclear"
+
+
+# --- country and US link (B2 K2): best-effort, like polarity ---
+
+def test_country_and_us_link_are_parsed():
+    result = _classify_with(
+        '{"category":"geopolitical_conflict","severity":"High","polarity":"escalation",'
+        '"country":"ru","us_link":"None","rationale":"x"}'
+    )
+    assert (result.country, result.us_link) == ("RU", "none")
+    assert result.classification_failed is False
+    assert result.all_providers_failed is False
+
+
+@pytest.mark.parametrize("raw_country,raw_link,expected", [
+    ("USA", "none", ("US", "direct")),             # a US event is direct by definition (reconcile)
+    ("United States", None, ("US", "direct")),
+    ("Russia", "none", (None, "none")),            # not an ISO-2 code -> unknown country
+    ("global", "global_supply", ("XX", "global_supply")),
+    ("XX", "global supply", ("XX", "global_supply")),
+])
+def test_country_is_normalized_best_effort(raw_country, raw_link, expected):
+    body = {"category": "energy", "severity": "High", "polarity": "escalation", "rationale": "x", "country": raw_country}
+    if raw_link is not None:
+        body["us_link"] = raw_link
+    result = _classify_with(json.dumps(body))
+    assert (result.country, result.us_link) == expected
+    assert result.classification_failed is False
+
+
+@pytest.mark.parametrize("body", [
+    '{"category": "energy", "severity": "Low", "rationale": "x"}',
+    '{"category": "energy", "severity": "Low", "country": null, "us_link": null, "rationale": "x"}',
+    '{"category": "energy", "severity": "Low", "country": ["RU"], "us_link": "sort of", "rationale": "x"}',
+])
+def test_missing_or_garbled_country_and_us_link_are_unknown_and_never_fail_classification(body):
+    result = _classify_with(body)
+    assert (result.country, result.us_link) == (None, None)
+    assert result.classification_failed is False
+    assert (result.category, result.severity) == ("energy", "Low")
+
+
+def test_extract_country_and_us_link_never_raises():
+    assert llm_classify._extract_country_and_us_link("not json") == (None, None)
+    assert llm_classify._extract_country_and_us_link("[1, 2]") == (None, None)
+
+
+def test_all_providers_failed_sets_the_outage_flag():
+    with patch("alerting.llm_classify._call_ollama", side_effect=RuntimeError("ollama down")), \
+         patch("alerting.llm_classify._call_claude", side_effect=RuntimeError("claude down")):
+        result = classify_candidate(_article(), _triage())
+    assert result.all_providers_failed is True
+    assert result.classification_failed is True
+    assert (result.country, result.us_link) == (None, None)
+
+
+def test_prompt_asks_for_country_and_us_link_and_caps_none_at_medium():
+    prompt = llm_classify._build_prompt(_article(), _triage())
+    for needle in ('"country"', '"us_link"', "global_supply", "XX", 'at most "Medium"'):
+        assert needle in prompt
+
+
+def test_prompt_carries_real_feed_polarity_examples():
+    prompt = llm_classify._build_prompt(_article(), _triage())
+    assert "Trump waives broad new Russia sanctions -> relief" in prompt
+    assert "Brent oil touches $110 as Iran escalates Hormuz attacks -> escalation" in prompt
+    assert "Oil prices fall as traders watch ceasefire talks -> relief" in prompt
+
+
+def test_prompt_fits_the_ollama_context():
+    prompt = llm_classify._build_prompt(_article(), _triage())
+    # ~3 chars per token is a conservative estimate; 200 tokens of headroom for the answer.
+    assert len(prompt) / 3 + 200 < llm_classify.OLLAMA_NUM_CTX
 
 
 # --- Ollama self-heal: the tray app is not a service and its auto-updater shuts it down ---
