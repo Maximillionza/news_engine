@@ -64,9 +64,8 @@ LIVE_ROOT = Path(r"C:\Users\Masoodt\Documents\Claude\Projects\.worktrees\news-en
 LIVE_DASH_DB = LIVE_ROOT / "webapp" / "dashboard.db"
 LIVE_BT_DB = LIVE_ROOT / "scoring" / "backtest_log.db"
 DEFAULT_OUT_DIR = Path(r"C:\Users\Masoodt\AppData\Local\Temp\news_engine_event_study")
-DEFAULT_NOWCAST_CSV = Path(
-    r"C:\Users\Masoodt\AppData\Local\Temp\claude\C--Users-Masoodt-Documents-Claude-Projects-Claude-news-engine-news-engine"
-    r"\1652784f-1d74-4be3-8ee5-c3ecae49ef30\scratchpad\nowcasts.csv")
+# Cleveland Fed daily nowcast history (CC BY 4.0), committed so E3 is reproducible after any scratchpad is cleaned.
+DEFAULT_NOWCAST_CSV = Path(__file__).resolve().parents[1] / "docs" / "data" / "cleveland_nowcasts_2026.csv"
 SYMBOLS = ("XAUUSD", "US30")
 SERIES = SYMBOLS + ("DXY",)
 START = dt.datetime(2026, 1, 1, tzinfo=UTC)
