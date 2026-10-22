@@ -72,7 +72,7 @@ from data_layer.news_feed import NewsArticle
 from scoring.finbert_sentiment import score_article_finbert
 from scoring.llm_sentiment import score_article_llm
 from scoring.sentiment import score_article_text
-from webapp.symbols import classify_symbol, UnrecognizedSymbolError
+from webapp.symbols import classify_symbol, usd_sign, UnrecognizedSymbolError
 
 
 class Direction(str, Enum):
@@ -910,10 +910,10 @@ def _map_to_instrument_score(usd_sentiment: float, instrument: str) -> float:
     this function ever runs.
     """
     relationship = classify_symbol(instrument).usd_relationship
-    if relationship == "inverse":
-        return -usd_sentiment
-    if relationship == "direct":
-        return usd_sentiment
+    sign = usd_sign(relationship)
+    if sign is None:
+        raise ValueError(f"Unknown usd_relationship for instrument {instrument!r}: {relationship}")
+    score = sign * usd_sentiment
     if relationship == "risk_sentiment":
         # Simplification for v1: treat USD-bearish (dovish/easing) as broadly
         # risk-on/supportive for equities, USD-bullish (hawkish/tightening)
@@ -921,8 +921,8 @@ def _map_to_instrument_score(usd_sentiment: float, instrument: str) -> float:
         # simplification — hawkish-because-strong-economy can also be
         # equity-positive — flagged here so it's the first thing to
         # re-examine if US30 backtest accuracy comes out weak.
-        return -usd_sentiment * RISK_SENTIMENT_DAMPENING  # dampened relative to gold's cleaner inverse relationship
-    raise ValueError(f"Unknown usd_relationship for instrument {instrument!r}: {relationship}")
+        score *= RISK_SENTIMENT_DAMPENING  # dampened relative to gold's cleaner inverse relationship
+    return score
 
 
 def _score_to_probability(instrument_score: float, k: float = 2.5) -> float:

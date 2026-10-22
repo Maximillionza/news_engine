@@ -25,7 +25,7 @@ from webapp.store import (
     get_latest_two_bulk, get_resolved_event_history, EventHistoryRow,
 )
 from webapp.trend import compute_trend_signal, MIN_CONFIRMED_ROWS_FOR_A_TREND
-from webapp.symbols import classify_symbol
+from webapp.symbols import classify_symbol, usd_sign
 from scoring.backtest_store import (
     get_latest_two_predictions_bulk, get_latest_print_predictions_bulk,
     get_latest_kalshi_reads_bulk, get_latest_tier1_predictions_bulk, get_latest_tier1_late_checks_bulk,
@@ -153,14 +153,11 @@ def _trend_instrument_lean(event_title: str, trend_direction: str, usd_relations
     higher_is_usd_bullish = surprise_mapping == "higher_bullish"
     usd_bullish = higher_is_usd_bullish if trend_direction == "higher" else not higher_is_usd_bullish
 
-    if usd_relationship == "inverse":
-        instrument_bullish = not usd_bullish
-    elif usd_relationship == "direct":
-        instrument_bullish = usd_bullish
-    elif usd_relationship == "risk_sentiment":
-        instrument_bullish = not usd_bullish  # dovish/USD-bearish -> risk-on -> equity-bullish, same simplification score_bundle() uses
-    else:
+    sign = usd_sign(usd_relationship)
+    if sign is None:
         return None
+    # risk_sentiment (-1): dovish/USD-bearish -> risk-on -> equity-bullish, same simplification score_bundle() uses
+    instrument_bullish = usd_bullish if sign > 0 else not usd_bullish
     return "bullish" if instrument_bullish else "bearish"
 
 

@@ -103,3 +103,13 @@ if __name__ == "__main__":
     test_resolve_dukascopy_instrument_returns_none_for_a_real_fx_cross_no_usd_leg()
     test_resolve_dukascopy_instrument_returns_none_for_a_genuinely_uncovered_pair()
     print("All dukascopy_feed tests passed.")
+
+
+def test_instrument_map_covers_symbols_metals_and_indices_exactly():
+    from webapp.symbols import METALS, INDICES
+    mapped = set(dukascopy_feed._INSTRUMENT_MAP)
+    expected = set(METALS) | set(INDICES)
+    assert mapped == expected, (
+        f"missing from map: {sorted(expected - mapped)}; "
+        f"not in METALS/INDICES: {sorted(mapped - expected)}"
+    )

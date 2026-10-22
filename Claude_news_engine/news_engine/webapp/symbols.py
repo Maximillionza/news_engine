@@ -22,6 +22,23 @@ _USD_QUOTE_PATTERN = re.compile(r"^([A-Z]{3})USD$")  # EURUSD, GBPUSD, AUDUSD, N
 _FX_PATTERN = re.compile(r"^[A-Z]{6}$")               # any 6 uppercase letters, e.g. GBPAUD
 
 
+def usd_sign(usd_relationship: Optional[str]) -> Optional[int]:
+    """
+    Single home of the USD-relationship sign rule: +1 for "direct", -1 for
+    "inverse" and "risk_sentiment", None for None (fx_cross: no USD leg).
+    Any other string raises ValueError. The risk_sentiment dampening
+    (RISK_SENTIMENT_DAMPENING) is NOT applied here: it is the caller's job
+    and only the two score sites apply it, never the lean/direction sites.
+    """
+    if usd_relationship is None:
+        return None
+    if usd_relationship == "direct":
+        return 1
+    if usd_relationship in ("inverse", "risk_sentiment"):
+        return -1
+    raise ValueError(f"Unknown usd_relationship {usd_relationship!r}")
+
+
 class UnrecognizedSymbolError(ValueError):
     """Raised when a ticker doesn't match any known symbol shape."""
 

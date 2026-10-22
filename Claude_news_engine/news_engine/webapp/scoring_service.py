@@ -14,7 +14,7 @@ from typing import Optional
 from config.settings import RISK_SENTIMENT_DAMPENING, SURPRISE_SENSITIVITY
 from data_layer.calendar_feed import EconomicEvent
 from scoring.probability_engine import Direction
-from webapp.symbols import SymbolClass
+from webapp.symbols import SymbolClass, usd_sign
 
 
 @dataclass
@@ -51,14 +51,9 @@ def score_event_for_symbol(event: EconomicEvent, symbol_class: SymbolClass) -> E
         )
 
     relationship = symbol_class.usd_relationship
-    if relationship == "inverse":
-        symbol_score = -usd_surprise
-    elif relationship == "direct":
-        symbol_score = usd_surprise
-    elif relationship == "risk_sentiment":
-        symbol_score = -usd_surprise * RISK_SENTIMENT_DAMPENING
-    else:
-        raise ValueError(f"Unknown usd_relationship {relationship!r} for {symbol_class.symbol!r}")
+    symbol_score = usd_sign(relationship) * usd_surprise
+    if relationship == "risk_sentiment":
+        symbol_score *= RISK_SENTIMENT_DAMPENING
 
     probability = 0.5 + 0.5 * math.tanh(SURPRISE_SENSITIVITY * symbol_score)
 

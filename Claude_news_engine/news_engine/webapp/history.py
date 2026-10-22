@@ -48,7 +48,7 @@ from config.settings import EVENT_SURPRISE_DIRECTION
 from scoring.print_direction import NO_HIT_CONFIDENCE
 from webapp.predictions_service import _tier1_prediction_dict
 from webapp.store import get_connection, get_resolved_event_history, get_text_only_resolved_events, list_tracked_symbols
-from webapp.symbols import classify_symbol
+from webapp.symbols import classify_symbol, usd_sign
 from webapp.conflict import compute_tier1_sentiment_conflict
 from data_layer.tier1_events import tier1_row_tier
 
@@ -173,7 +173,8 @@ def _implied_surprise_direction(event_title: str, instrument: str, direction: st
     # print call. classify_symbol() covers every symbol shape this
     # project already recognizes with zero per-instrument config.
     relationship = classify_symbol(instrument).usd_relationship
-    if relationship is None:
+    sign = usd_sign(relationship)
+    if sign is None:
         # fx_cross (no USD leg) — never fabricate a guess. In practice this
         # should not happen: score_bundle() (scoring/probability_engine.py)
         # already refuses to score an fx_cross instrument at all, so no
@@ -186,7 +187,7 @@ def _implied_surprise_direction(event_title: str, instrument: str, direction: st
     # sentiment (see _map_to_instrument_score()'s own comment on
     # risk_sentiment's simplification) — only 'direct' passes through
     # unflipped.
-    usd_direction = direction if relationship == "direct" else ("bearish" if direction == "bullish" else "bullish")
+    usd_direction = direction if sign > 0 else ("bearish" if direction == "bullish" else "bullish")
     higher_bullish = surprise_map == "higher_bullish"
     return "higher" if (usd_direction == "bullish") == higher_bullish else "lower"
 

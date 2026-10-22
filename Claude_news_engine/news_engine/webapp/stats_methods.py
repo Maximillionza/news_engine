@@ -10,7 +10,7 @@ from typing import Optional
 
 from config.settings import EVENT_SURPRISE_DIRECTION
 from webapp.history import _implied_surprise_direction
-from webapp.symbols import UnrecognizedSymbolError, classify_symbol
+from webapp.symbols import UnrecognizedSymbolError, classify_symbol, usd_sign
 
 TIER1_WEIGHT = 0.70
 NEWS_WEIGHT = 0.30
@@ -85,8 +85,8 @@ def market_lean(event_title: str, surprise_side: int, symbol: str) -> str:
         relationship = classify_symbol(symbol).usd_relationship
     except UnrecognizedSymbolError:
         return "mixed"
-    if relationship is None:
+    sign = usd_sign(relationship)
+    if sign is None:
         return "mixed"
-    if relationship == "direct":
-        return "buy" if usd_bullish else "sell"
-    return "sell" if usd_bullish else "buy"   # inverse and risk_sentiment flip against USD
+    # direct (+1) follows USD; inverse and risk_sentiment (-1) flip against it
+    return "buy" if usd_bullish == (sign > 0) else "sell"
