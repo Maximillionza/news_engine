@@ -29,13 +29,11 @@ from webapp.symbols import classify_symbol
 from scoring.backtest_store import (
     get_latest_two_predictions_bulk, get_latest_print_predictions_bulk,
     get_latest_kalshi_reads_bulk, get_latest_tier1_predictions_bulk, get_latest_tier1_late_checks_bulk,
-    get_last_check_utc, get_exogenous_shock_for_date, Prediction,
+    get_last_check_utc, Prediction,
 )
 from webapp.reconciliation import reconcile_group
 from webapp.conflict import compute_tier1_sentiment_conflict
-from data_layer.discovery_detector import DETECTOR_SERIES
 from data_layer.tier1_events import tier1_row_tier
-from data_layer.exposure import is_exposed
 from data_layer.event_title_mapping import resolve_methodology_label
 from data_layer.event_symbol_relevance import get_relevance, RelevanceStatus
 from data_layer.event_symbol_magnitude import get_magnitude, MagnitudeTier
@@ -51,54 +49,6 @@ def _downgrade_one_tier(confidence: str) -> str:
         return confidence  # unrecognized tag — leave untouched rather than guess
     idx = _CONFIDENCE_DOWNGRADE_ORDER.index(confidence)
     return _CONFIDENCE_DOWNGRADE_ORDER[min(idx + 1, len(_CONFIDENCE_DOWNGRADE_ORDER) - 1)]
-
-
-def _get_todays_exogenous_shocks(backtest_conn: sqlite3.Connection) -> list:
-    """
-    Every real unresolved shock found for today OR yesterday across
-    DETECTOR_SERIES — not just the first (that was Batch 6's behavior;
-    see docs/superpowers/specs/2026-09-12-layer1-layer2-exposure-design.md's
-    Architecture section for why "first found" became a real bug once
-    exposure is instrument-selective: a non-exposing shock checked first
-    could otherwise shadow a real exposing one checked later). Fail-open
-    (same pattern as build_predictions_payload()'s existing
-    get_latest_tier1_predictions_bulk() try/except) -- a broken lookup
-    must never take down /api/predictions.
-
-    Both today's AND yesterday's date are checked (today's results
-    first, in list order) for the same reason as Batch 6's original
-    function: the scheduled research task persists a shock under
-    YESTERDAY's date (detect_anomaly() runs against yesterday's
-    completed session), so checking only today would silently regress
-    that already-fixed write/read mismatch.
-    """
-    today = dt.datetime.now(dt.timezone.utc).date()
-    yesterday = today - dt.timedelta(days=1)
-    shocks = []
-    try:
-        for shock_date in (today, yesterday):
-            for series in DETECTOR_SERIES:
-                shock = get_exogenous_shock_for_date(backtest_conn, series, shock_date)
-                if shock is not None:
-                    shocks.append(shock)
-    except Exception:
-        logger.warning("exogenous shock lookup failed for this cycle", exc_info=True)
-    return shocks
-
-
-def _first_exposing_shock(shocks: list, symbol_class: str):
-    """
-    The first shock in `shocks` this symbol_class is actually exposed to
-    (per data_layer.exposure.is_exposed()), or None if today's real
-    shocks exist but none of them expose this instrument class. "First"
-    is a display-stability choice only -- the one-tier-never-compounds
-    rule means which specific exposing shock gets shown (its series/
-    headline_cause) is not load-bearing when multiple would qualify.
-    """
-    for shock in shocks:
-        if is_exposed(shock.taxonomy_category, symbol_class):
-            return shock
-    return None
 
 
 def _relevance_magnitude_read(calendar_title: str, symbol: str) -> Optional[str]:
@@ -345,9 +295,6 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
     except Exception:
         logger.warning("get_latest_tier1_late_checks_bulk failed for this cycle", exc_info=True)
         tier1_late_checks_by_occurrence = {}
-    # Same single-shot-per-request, fail-open shape as tier1_by_occurrence
-    # above — computed once here, reused for every symbol/event pair below.
-    todays_shocks = _get_todays_exogenous_shocks(backtest_conn)
 
     predictions = []
     for ticker in symbols:
@@ -475,45 +422,28 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
             )
 
             # Confidence-only downgrade (never predicted_direction, never
-            # the stored Tier1Prediction row) applied fresh per request
-            # when this SPECIFIC instrument (via its symbol_class) is
-            # exposed to at least one of today's real exogenous shocks —
-            # per docs/superpowers/specs/2026-09-12-layer1-layer2-exposure-design.md,
-            # replacing Batch 6's uniform "any shock downgrades every
-            # tracked instrument" rule with a real, cited, per-instrument
-            # exposure check. event["actual"] is None is unchanged from
-            # Batch 6 -- a settled result never gets today's speculative
-            # exogenous-shock context stamped onto it.
-            exposing_shock = _first_exposing_shock(todays_shocks, symbol_class.symbol_class)
-
-            # Phase 3 (docs/superpowers/specs/2026-09-17-live-wiring-design.md):
-            # a second, independent downgrade trigger reading the shipped
-            # event_symbol_relevance/event_symbol_magnitude reference
-            # tables. relevance_magnitude_note is computed unconditionally
-            # (an advisory fact about this event/symbol pair, not a
+            # the stored Tier1Prediction row) applied fresh per request,
+            # driven by the shipped event_symbol_relevance/
+            # event_symbol_magnitude reference tables
+            # (docs/superpowers/specs/2026-09-17-live-wiring-design.md).
+            # relevance_magnitude_note is computed unconditionally (an
+            # advisory fact about this event/symbol pair, not a
             # speculative-context stamp) so the dashboard badge can render
-            # even for a settled event; the downgrade itself stays gated
-            # on event["actual"] is None exactly like the shock trigger.
+            # even for a settled event; the downgrade itself only applies
+            # while event["actual"] is None -- a settled result never gets
+            # speculative context stamped onto it.
             relevance_magnitude_note = _relevance_magnitude_read(event["title"], ticker)
             relevance_magnitude_downgrades = relevance_magnitude_note in ("not_relevant", "low_magnitude")
 
             tier1_confidence_downgrade = None
-            if (tier1_prediction is not None and event["actual"] is None
-                    and (exposing_shock is not None or relevance_magnitude_downgrades)):
-                if exposing_shock is not None:
-                    reason = exposing_shock.headline_cause
-                    series = exposing_shock.series
-                else:
-                    reason = (
-                        "not confirmed relevant to this symbol" if relevance_magnitude_note == "not_relevant"
-                        else "low expected impact on this symbol"
-                    )
-                    series = None
+            if tier1_prediction is not None and event["actual"] is None and relevance_magnitude_downgrades:
                 tier1_confidence_downgrade = {
                     "original_confidence": tier1_prediction["confidence"],
                     "displayed_confidence": _downgrade_one_tier(tier1_prediction["confidence"]),
-                    "reason": reason,
-                    "series": series,
+                    "reason": (
+                        "not confirmed relevant to this symbol" if relevance_magnitude_note == "not_relevant"
+                        else "low expected impact on this symbol"
+                    ),
                 }
 
             # An event is only worth including in this symbol's list at

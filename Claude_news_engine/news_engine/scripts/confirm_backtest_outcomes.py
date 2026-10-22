@@ -41,28 +41,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scoring.backtest_store import (
     get_connection, get_predictions_awaiting_outcome, record_outcome, record_dismissal,
 )
-from scoring.tier1_comparison import compute_and_record_tier1_comparison
 
 # B4 O3: a below-threshold row older than this is final "no reaction".
 FINAL_NO_REACTION_AFTER = dt.timedelta(days=3)
 # Appended to the classifier's own note so the outcome says why it is final.
 FINAL_NO_REACTION_NOTE_SUFFIX = "; no reaction after 3 days, final (auto)"
-
-
-def _try_record_tier1_comparison(conn, event_title, instrument, event_time, direction, note) -> None:
-    """
-    Fail-open wrapper around compute_and_record_tier1_comparison() -- a
-    comparison failing to build must never block the outcome that was
-    just successfully recorded. No-op for the overwhelming majority of
-    occurrences (no Tier 1 prediction was ever logged for them).
-    """
-    try:
-        from scoring.probability_engine import Direction
-        compute_and_record_tier1_comparison(
-            conn, event_title, instrument, event_time, Direction(direction), note,
-        )
-    except Exception as exc:  # noqa: BLE001 — never let a comparison failure block outcome recording
-        print(f"[confirm_backtest_outcomes] WARNING: tier1 comparison failed for {instrument}/{event_title}: {exc}")
 
 
 def is_final_no_reaction(result, event_time_utc: dt.datetime, now: dt.datetime, threshold_pct: float) -> bool:
@@ -125,15 +108,11 @@ def run_auto_confirm_phase(conn, now: Optional[dt.datetime] = None) -> dict:
             continue
         if result.direction is not None:
             record_outcome(conn, p.event_title, p.instrument, event_time, result.direction.value, result.note)
-            _try_record_tier1_comparison(conn, p.event_title, p.instrument, event_time, result.direction.value, result.note)
             auto_confirmed += 1
             print(f"  [auto] {p.instrument} / {p.event_title}: {result.note}")
         elif is_final_no_reaction(result, event_time, now, CLEAR_MOVE_THRESHOLD_PCT):
             note = result.note + FINAL_NO_REACTION_NOTE_SUFFIX
             record_outcome(conn, p.event_title, p.instrument, event_time, "neutral", note)
-            # Same Tier 1 hook as an auto-confirmed outcome, so a directional
-            # Tier 1 call on a no-reaction release is graded there too.
-            _try_record_tier1_comparison(conn, p.event_title, p.instrument, event_time, "neutral", note)
             final_no_reaction += 1
             print(f"  [final] {p.instrument} / {p.event_title}: {note}")
         else:
@@ -217,7 +196,6 @@ def main():
                 continue
             note = input("    real outcome note (what actually happened, with source): ").strip()
             record_outcome(conn, p.event_title, p.instrument, event_time, direction, note)
-            _try_record_tier1_comparison(conn, p.event_title, p.instrument, event_time, direction, note)
             print("    recorded.\n")
 
 

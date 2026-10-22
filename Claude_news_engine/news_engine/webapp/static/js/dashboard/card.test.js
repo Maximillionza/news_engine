@@ -77,28 +77,9 @@ test("tier1SentimentConflictTemplate names the Tier 1 tier, with no parentheses 
   assert.ok(without.includes("Tier 1 vs. sentiment disagree"), without);
 });
 
-test("tier1ConfidenceDowngradeTemplate omits a reason clause's TemplateResult when reason is null", () => {
-  const vm = buildTier1ConfidenceDowngradeViewModel({ displayed_confidence: "Likely", original_confidence: "Certain", series: "DXY", reason: null });
-  const result = tier1ConfidenceDowngradeTemplate(vm);
-  assert.ok(result.values.includes("Likely"));
-  assert.ok(result.values.includes("Certain"));
-  assert.ok(result.values.includes("DXY"));
-});
-
-test("tier1ConfidenceDowngradeTemplate still renders 'unexplained {series} move' unchanged when series is present (exogenous-shock trigger, no regression)", () => {
+test("tier1ConfidenceDowngradeTemplate does not say 'unexplained' and shows the reason directly (relevance/magnitude-only trigger)", () => {
   const vm = buildTier1ConfidenceDowngradeViewModel({
-    displayed_confidence: "Likely", original_confidence: "Certain", series: "DXY", reason: "a real headline cause",
-  });
-  const result = tier1ConfidenceDowngradeTemplate(vm);
-  assert.ok(result.strings.join("").includes("unexplained"));
-  assert.ok(result.values.includes("DXY"));
-  const reasonPart = result.values.find((v) => v && v.strings);
-  assert.ok(reasonPart && reasonPart.values.includes("a real headline cause"));
-});
-
-test("tier1ConfidenceDowngradeTemplate does not say 'unexplained' and shows the reason directly when series is null (relevance/magnitude-only trigger)", () => {
-  const vm = buildTier1ConfidenceDowngradeViewModel({
-    displayed_confidence: "Likely", original_confidence: "Certain", series: null, reason: "not confirmed relevant to this symbol",
+    displayed_confidence: "Likely", original_confidence: "Certain", reason: "not confirmed relevant to this symbol",
   });
   const result = tier1ConfidenceDowngradeTemplate(vm);
   assert.ok(!result.strings.join("").includes("unexplained"));

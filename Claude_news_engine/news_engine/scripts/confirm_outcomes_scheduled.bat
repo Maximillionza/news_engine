@@ -2,10 +2,7 @@
 REM Runs confirm_backtest_outcomes.py --auto --list on a schedule (see
 REM scripts/register_outcome_confirm_task.ps1 for the Windows Scheduled
 REM Task that calls this). --list means no interactive prompts -- clear
-REM Dukascopy moves get auto-confirmed and, for any CPI/PPI occurrence
-REM with a Tier 1 prediction already logged, the tier1_comparisons row
-REM gets built automatically too (see confirm_backtest_outcomes.py's
-REM _try_record_tier1_comparison hook); anything ambiguous is left
+REM Dukascopy moves get auto-confirmed; anything ambiguous is left
 REM exactly where it was, for the next manual `python
 REM scripts\confirm_backtest_outcomes.py` (no --list) run to resolve.
 REM

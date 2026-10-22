@@ -20,8 +20,6 @@ from scoring.backtest_store import (
     record_dismissal, get_latest_prediction, get_latest_two_predictions,
     record_check, count_recent_checks, get_prediction_history, get_last_check_utc,
     record_tier1_prediction, get_latest_tier1_prediction_for_occurrence,
-    record_tier1_comparison, get_tier1_comparison_for_occurrence,
-    record_exogenous_shock, get_exogenous_shock_for_date, ExogenousShockRow,
     get_latest_tier1_predictions_bulk, record_tier1_late_check, get_tier1_late_checks_for_occurrence,
     get_latest_tier1_late_checks_bulk,
     record_prediction_article_contributions, get_prediction_article_contributions,
@@ -891,91 +889,6 @@ def test_latest_tier1_prediction_wins_on_multiple_logs():
     print("PASS\n")
 
 
-def test_record_and_get_tier1_comparison_round_trip():
-    print("=== backtest_store: record_tier1_comparison + get_tier1_comparison_for_occurrence round-trip, including None for a no-call side ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        conn = get_connection(db_path)
-        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=dt.timezone.utc)
-
-        record_tier1_comparison(
-            conn, "PPI m/m", "XAUUSD", event_time,
-            sentiment_direction="bearish", sentiment_correct=True,
-            tier1_direction="bullish", tier1_confidence="Certain", tier1_correct=False,
-            actual_direction="bearish", actual_move_note="Dukascopy: -0.54% in 30min (auto)",
-        )
-        row = get_tier1_comparison_for_occurrence(conn, "PPI m/m", "XAUUSD", event_time)
-        assert row.sentiment_direction == "bearish"
-        assert row.sentiment_correct is True
-        assert row.tier1_direction == "bullish"
-        assert row.tier1_correct is False
-        assert row.actual_direction == "bearish"
-        conn.close()
-    print("PASS\n")
-
-
-def test_tier1_comparison_none_correct_round_trips_as_none_not_false():
-    print("=== backtest_store: a None (no-call) correctness value round-trips as None, not as False — SQLite NULL must not be misread as a boolean ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        conn = get_connection(db_path)
-        event_time = dt.datetime(2026, 9, 11, 12, 30, tzinfo=dt.timezone.utc)
-
-        record_tier1_comparison(
-            conn, "CPI m/m", "XAUUSD", event_time,
-            sentiment_direction="neutral", sentiment_correct=None,
-            tier1_direction="neutral", tier1_confidence="Guessing", tier1_correct=None,
-            actual_direction="bearish", actual_move_note="Dukascopy: -0.20% in 30min (auto)",
-        )
-        row = get_tier1_comparison_for_occurrence(conn, "CPI m/m", "XAUUSD", event_time)
-        assert row.sentiment_correct is None
-        assert row.tier1_correct is None
-        conn.close()
-    print("PASS\n")
-
-
-def test_tier1_comparison_get_returns_none_when_never_computed():
-    print("=== backtest_store: get_tier1_comparison_for_occurrence returns None, never fabricated, when nothing was ever recorded ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        conn = get_connection(db_path)
-        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=dt.timezone.utc)
-        assert get_tier1_comparison_for_occurrence(conn, "PPI m/m", "XAUUSD", event_time) is None
-        conn.close()
-    print("PASS\n")
-
-
-def test_tier1_comparison_rerun_for_same_occurrence_replaces_not_duplicates():
-    print("=== backtest_store: recording a comparison twice for the same occurrence replaces the row (derived/recomputable), not accumulates duplicates ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        conn = get_connection(db_path)
-        event_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=dt.timezone.utc)
-
-        record_tier1_comparison(
-            conn, "PPI m/m", "XAUUSD", event_time,
-            sentiment_direction="bullish", sentiment_correct=False,
-            tier1_direction="bullish", tier1_confidence="Certain", tier1_correct=False,
-            actual_direction="bearish", actual_move_note="first pass, later corrected",
-        )
-        record_tier1_comparison(
-            conn, "PPI m/m", "XAUUSD", event_time,
-            sentiment_direction="bearish", sentiment_correct=True,
-            tier1_direction="bullish", tier1_confidence="Certain", tier1_correct=False,
-            actual_direction="bearish", actual_move_note="corrected outcome",
-        )
-        count = conn.execute(
-            "SELECT COUNT(*) AS n FROM tier1_comparisons WHERE event_title = ? AND instrument = ? AND event_time_utc = ?",
-            ("PPI m/m", "XAUUSD", event_time.isoformat()),
-        ).fetchone()["n"]
-        assert count == 1
-        row = get_tier1_comparison_for_occurrence(conn, "PPI m/m", "XAUUSD", event_time)
-        assert row.sentiment_direction == "bearish"
-        assert row.actual_move_note == "corrected outcome"
-        conn.close()
-    print("PASS\n")
-
-
 def test_get_connection_skips_migration_on_second_open_of_same_path():
     print("=== dashboard-review-2026-09-11.md: backtest_store.get_connection() only runs executescript+migrations ONCE per resolved path ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -1014,65 +927,6 @@ def test_get_connection_memory_path_never_cached_stays_isolated_per_call():
     conn2 = store.get_connection(":memory:")
     assert count_predictions(conn2, "CPI m/m", "XAUUSD", event_time) == 0
     conn2.close()
-    print("PASS\n")
-
-
-def test_record_and_get_exogenous_shock_round_trip():
-    print("=== backtest_store: record_exogenous_shock + get_exogenous_shock_for_date round-trip ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        conn = get_connection(db_path)
-        shock_date = dt.date(2026, 9, 10)
-        record_exogenous_shock(
-            conn, "XAUUSD", shock_date, move_pct=8.5, stdev_move=3.2,
-            taxonomy_category="Geopolitical war-driven oil supply shock",
-            headline_cause="Real headline describing the event",
-            source="Reuters, 2026-09-10",
-        )
-        row = get_exogenous_shock_for_date(conn, "XAUUSD", shock_date)
-        assert row is not None
-        assert row.move_pct == 8.5
-        assert row.taxonomy_category == "Geopolitical war-driven oil supply shock"
-        conn.close()
-    print("PASS\n")
-
-
-def test_get_exogenous_shock_returns_none_when_never_logged():
-    print("=== backtest_store: get_exogenous_shock_for_date returns None (never fabricated) when nothing was ever recorded ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        conn = get_connection(db_path)
-        assert get_exogenous_shock_for_date(conn, "XAUUSD", dt.date(2026, 9, 10)) is None
-        conn.close()
-    print("PASS\n")
-
-
-def test_record_exogenous_shock_rejects_invalid_taxonomy_category():
-    print("=== backtest_store: record_exogenous_shock rejects a taxonomy_category that isn't one of AdHoc_Category_Taxonomy's 8 real categories ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        conn = get_connection(db_path)
-        try:
-            record_exogenous_shock(
-                conn, "XAUUSD", dt.date(2026, 9, 10), move_pct=8.5, stdev_move=3.2,
-                taxonomy_category="Not A Real Category",
-            )
-            assert False, "expected ValueError"
-        except ValueError as exc:
-            assert "Not A Real Category" in str(exc)
-        conn.close()
-    print("PASS\n")
-
-
-def test_record_exogenous_shock_allows_none_taxonomy_category():
-    print("=== backtest_store: record_exogenous_shock allows taxonomy_category=None -- a real anomaly with no fitting category is a real, honest outcome, not an error ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        conn = get_connection(db_path)
-        record_exogenous_shock(conn, "XAUUSD", dt.date(2026, 9, 10), move_pct=8.5, stdev_move=3.2)
-        row = get_exogenous_shock_for_date(conn, "XAUUSD", dt.date(2026, 9, 10))
-        assert row.taxonomy_category is None
-        conn.close()
     print("PASS\n")
 
 
@@ -1364,16 +1218,8 @@ if __name__ == "__main__":
     test_tier1_prediction_scoped_per_instrument()
     test_tier1_prediction_scoped_per_occurrence_not_just_title()
     test_latest_tier1_prediction_wins_on_multiple_logs()
-    test_record_and_get_tier1_comparison_round_trip()
-    test_tier1_comparison_none_correct_round_trips_as_none_not_false()
-    test_tier1_comparison_get_returns_none_when_never_computed()
-    test_tier1_comparison_rerun_for_same_occurrence_replaces_not_duplicates()
     test_get_connection_skips_migration_on_second_open_of_same_path()
     test_get_connection_memory_path_never_cached_stays_isolated_per_call()
-    test_record_and_get_exogenous_shock_round_trip()
-    test_get_exogenous_shock_returns_none_when_never_logged()
-    test_record_exogenous_shock_rejects_invalid_taxonomy_category()
-    test_record_exogenous_shock_allows_none_taxonomy_category()
     test_tier1_bulk_ignores_a_row_logged_after_the_release()
     test_tier1_bulk_compares_naive_and_offset_stamps_as_instants()
     test_single_tier1_getter_has_the_same_as_of_guard_and_a_source_filter()

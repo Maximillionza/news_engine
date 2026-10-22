@@ -1996,118 +1996,8 @@ def test_predictions_no_tier1_sentiment_conflict_when_tier1_made_no_call():
     print("PASS\n")
 
 
-def test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_today():
-    print("=== app: /api/predictions downgrades a Tier 1 row's DISPLAYED confidence (never the stored row) when an exogenous_shocks row exists for TODAY, across ANY detector series (the unrealistic same-day case -- see the sibling YESTERDAY test below for the actual production case) ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        backtest_db_path = Path(tmp) / "backtest_log.db"
-        with patch.object(store, "DB_PATH", db_path), \
-             patch.object(backtest_store, "DB_PATH", backtest_db_path):
-            ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
-            _seed_calendar(db_path, [
-                EconomicEvent(title="PPI m/m", country="USD", impact="High",
-                               event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual=None),
-            ])
-            conn = store.get_connection(db_path)
-            store.add_tracked_symbol(conn, "XAUUSD")
-            conn.close()
-
-            bconn = backtest_store.get_connection(backtest_db_path)
-            backtest_store.record_prediction(
-                bconn, "PPI m/m", "XAUUSD", ppi_time, 0.60, "bearish", 0.5, 100, False,
-            )
-            backtest_store.record_tier1_prediction(
-                bconn, "PPI m/m", "XAUUSD", ppi_time,
-                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish", logged_at_utc=ppi_time - dt.timedelta(days=1),
-            )
-            # A real shock logged on a DIFFERENT series (DXY) than this
-            # instrument (XAUUSD) -- per the current implementation,
-            # instrument-selective downgrade applies: _get_todays_exogenous_shocks()
-            # (plural, called via _first_exposing_shock()) finds ALL unresolved
-            # shocks, then filters to those this instrument is exposed to.
-            # These tests rely on taxonomy_category defaulting to None (always-exposed),
-            # so they pass even though they don't set a real category. See the newer
-            # test_predictions_no_downgrade_when_the_only_shock_is_a_category_this_instrument_is_not_exposed_to
-            # and test_predictions_downgrades_when_a_default_exposed_category_shock_exists_alongside_a_non_exposing_one
-            # for actual exposure-selective behavior with real categories.
-            # Dated to the real wall-clock "today" (not ppi_time's own date) --
-            # _get_todays_exogenous_shocks() keys off actual today, matching
-            # production semantics (a shock detected today downgrades what's
-            # on today's dashboard), not the historical occurrence's own release date.
-            today = dt.datetime.now(dt.timezone.utc).date()
-            backtest_store.record_exogenous_shock(
-                bconn, "DXY", today, move_pct=5.0, stdev_move=3.0,
-                headline_cause="Real researched cause", source="Reuters",
-            )
-            bconn.close()
-
-            client = webapp_app.app.test_client()
-            resp = client.get("/api/predictions")
-            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
-            downgrade = events["PPI m/m"]["tier1_confidence_downgrade"]
-            assert downgrade is not None
-            assert downgrade["original_confidence"] == "Certain"
-            assert downgrade["displayed_confidence"] == "Likely"
-            assert downgrade["series"] == "DXY"
-            # The stored row itself is untouched.
-            bconn = backtest_store.get_connection(backtest_db_path)
-            stored = backtest_store.get_latest_tier1_prediction_for_occurrence(bconn, "PPI m/m", "XAUUSD", ppi_time)
-            assert stored.confidence == "Certain"
-            bconn.close()
-    print("PASS\n")
-
-
-def test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_yesterday():
-    print("=== app: /api/predictions downgrades a Tier 1 row's DISPLAYED confidence when an exogenous_shocks row exists for YESTERDAY -- the actual production case: Task 7's scheduled research task records shock_date = yesterday (it runs detect_anomaly() for yesterday's completed session), so a shock detected this morning is always logged under yesterday's date, never today's. Uses instrument-selective exposure via _get_todays_exogenous_shocks()/_first_exposing_shock(); this test relies on taxonomy_category defaulting to None (always-exposed) since no real category is set. ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        backtest_db_path = Path(tmp) / "backtest_log.db"
-        with patch.object(store, "DB_PATH", db_path), \
-             patch.object(backtest_store, "DB_PATH", backtest_db_path):
-            ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
-            _seed_calendar(db_path, [
-                EconomicEvent(title="PPI m/m", country="USD", impact="High",
-                               event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual=None),
-            ])
-            conn = store.get_connection(db_path)
-            store.add_tracked_symbol(conn, "XAUUSD")
-            conn.close()
-
-            bconn = backtest_store.get_connection(backtest_db_path)
-            backtest_store.record_prediction(
-                bconn, "PPI m/m", "XAUUSD", ppi_time, 0.60, "bearish", 0.5, 100, False,
-            )
-            backtest_store.record_tier1_prediction(
-                bconn, "PPI m/m", "XAUUSD", ppi_time,
-                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish", logged_at_utc=ppi_time - dt.timedelta(days=1),
-            )
-            # Recorded under YESTERDAY's date, not today's -- this is the
-            # real shape Task 7's scheduled task writes in production.
-            yesterday = dt.datetime.now(dt.timezone.utc).date() - dt.timedelta(days=1)
-            backtest_store.record_exogenous_shock(
-                bconn, "DXY", yesterday, move_pct=5.0, stdev_move=3.0,
-                headline_cause="Real researched cause", source="Reuters",
-            )
-            bconn.close()
-
-            client = webapp_app.app.test_client()
-            resp = client.get("/api/predictions")
-            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
-            downgrade = events["PPI m/m"]["tier1_confidence_downgrade"]
-            assert downgrade is not None
-            assert downgrade["original_confidence"] == "Certain"
-            assert downgrade["displayed_confidence"] == "Likely"
-            assert downgrade["series"] == "DXY"
-            # The stored row itself is untouched.
-            bconn = backtest_store.get_connection(backtest_db_path)
-            stored = backtest_store.get_latest_tier1_prediction_for_occurrence(bconn, "PPI m/m", "XAUUSD", ppi_time)
-            assert stored.confidence == "Certain"
-            bconn.close()
-    print("PASS\n")
-
-
-def test_predictions_no_tier1_confidence_downgrade_without_a_real_shock():
-    print("=== app: /api/predictions: tier1_confidence_downgrade is null when no exogenous_shocks row exists for today ===")
+def test_predictions_no_tier1_confidence_downgrade_without_a_trigger():
+    print("=== app: /api/predictions: tier1_confidence_downgrade is null when no downgrade trigger applies ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         backtest_db_path = Path(tmp) / "backtest_log.db"
@@ -2136,138 +2026,6 @@ def test_predictions_no_tier1_confidence_downgrade_without_a_real_shock():
             resp = client.get("/api/predictions")
             events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
             assert events["PPI m/m"]["tier1_confidence_downgrade"] is None
-    print("PASS\n")
-
-
-def test_predictions_no_tier1_confidence_downgrade_for_an_already_resolved_event():
-    print("=== app: /api/predictions: tier1_confidence_downgrade is null for an event whose actual has already printed, even when a real shock is logged today -- a settled result must never get today's speculative exogenous context stamped on it. Also relies on taxonomy_category=None (always-exposed); see test_predictions_no_downgrade_when_the_only_shock_is_a_category_this_instrument_is_not_exposed_to and test_predictions_downgrades_when_a_default_exposed_category_shock_exists_alongside_a_non_exposing_one for exposure-selective tests with real categories. ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        backtest_db_path = Path(tmp) / "backtest_log.db"
-        with patch.object(store, "DB_PATH", db_path), \
-             patch.object(backtest_store, "DB_PATH", backtest_db_path):
-            ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
-            # actual is set -- this event has already resolved.
-            _seed_calendar(db_path, [
-                EconomicEvent(title="PPI m/m", country="USD", impact="High",
-                               event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual="0.4%"),
-            ])
-            conn = store.get_connection(db_path)
-            store.add_tracked_symbol(conn, "XAUUSD")
-            conn.close()
-
-            bconn = backtest_store.get_connection(backtest_db_path)
-            backtest_store.record_prediction(
-                bconn, "PPI m/m", "XAUUSD", ppi_time, 0.60, "bearish", 0.5, 100, False,
-            )
-            backtest_store.record_tier1_prediction(
-                bconn, "PPI m/m", "XAUUSD", ppi_time,
-                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
-            )
-            today = dt.datetime.now(dt.timezone.utc).date()
-            backtest_store.record_exogenous_shock(
-                bconn, "DXY", today, move_pct=5.0, stdev_move=3.0,
-                headline_cause="Real researched cause", source="Reuters",
-            )
-            bconn.close()
-
-            client = webapp_app.app.test_client()
-            resp = client.get("/api/predictions")
-            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
-            assert events["PPI m/m"]["tier1_confidence_downgrade"] is None
-    print("PASS\n")
-
-
-def test_predictions_no_downgrade_when_the_only_shock_is_a_category_this_instrument_is_not_exposed_to():
-    print("=== app: /api/predictions does NOT downgrade XAUUSD's Tier 1 confidence when today's only real shock is an OPEC+ supply decision (real, cited non-exposure for the 'metal' symbol_class) ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        backtest_db_path = Path(tmp) / "backtest_log.db"
-        with patch.object(store, "DB_PATH", db_path), \
-             patch.object(backtest_store, "DB_PATH", backtest_db_path):
-            ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
-            _seed_calendar(db_path, [
-                EconomicEvent(title="PPI m/m", country="USD", impact="High",
-                               event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual=None),
-            ])
-            conn = store.get_connection(db_path)
-            store.add_tracked_symbol(conn, "XAUUSD")
-            conn.close()
-
-            bconn = backtest_store.get_connection(backtest_db_path)
-            backtest_store.record_prediction(
-                bconn, "PPI m/m", "XAUUSD", ppi_time, 0.60, "bearish", 0.5, 100, False,
-            )
-            backtest_store.record_tier1_prediction(
-                bconn, "PPI m/m", "XAUUSD", ppi_time,
-                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
-            )
-            today = dt.datetime.now(dt.timezone.utc).date()
-            backtest_store.record_exogenous_shock(
-                bconn, "DXY", today, move_pct=3.0, stdev_move=2.5,
-                taxonomy_category="OPEC+ supply decision",
-                headline_cause="Real OPEC+ supply-increase headline", source="Reuters",
-            )
-            bconn.close()
-
-            client = webapp_app.app.test_client()
-            resp = client.get("/api/predictions")
-            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
-            assert events["PPI m/m"]["tier1_confidence_downgrade"] is None, \
-                "XAUUSD (symbol_class='metal') is not exposed to an OPEC+ supply decision per the real exposure table — no downgrade expected"
-    print("PASS\n")
-
-
-def test_predictions_downgrades_when_a_default_exposed_category_shock_exists_alongside_a_non_exposing_one():
-    print("=== app: two real shocks exist today — one non-exposing category (OPEC+), one default-exposed category (Treasury buyback, no exposure-table entry) — XAUUSD must still be downgraded via the SECOND shock, not silently shadowed by the first ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        backtest_db_path = Path(tmp) / "backtest_log.db"
-        with patch.object(store, "DB_PATH", db_path), \
-             patch.object(backtest_store, "DB_PATH", backtest_db_path):
-            ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
-            _seed_calendar(db_path, [
-                EconomicEvent(title="PPI m/m", country="USD", impact="High",
-                               event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual=None),
-            ])
-            conn = store.get_connection(db_path)
-            store.add_tracked_symbol(conn, "XAUUSD")
-            conn.close()
-
-            bconn = backtest_store.get_connection(backtest_db_path)
-            backtest_store.record_prediction(
-                bconn, "PPI m/m", "XAUUSD", ppi_time, 0.60, "bearish", 0.5, 100, False,
-            )
-            backtest_store.record_tier1_prediction(
-                bconn, "PPI m/m", "XAUUSD", ppi_time,
-                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish", logged_at_utc=ppi_time - dt.timedelta(days=1),
-            )
-            today = dt.datetime.now(dt.timezone.utc).date()
-            # DETECTOR_SERIES order is ["DXY", "UST_BOND", "XAUUSD", "US30"] --
-            # DXY's shock (non-exposing OPEC+ category) is checked before
-            # UST_BOND's (default-exposed Treasury buyback category), so
-            # this exercises the exact "first shock found" shadowing bug
-            # the plan's data-flow fix exists to prevent.
-            backtest_store.record_exogenous_shock(
-                bconn, "DXY", today, move_pct=3.0, stdev_move=2.5,
-                taxonomy_category="OPEC+ supply decision",
-                headline_cause="Real OPEC+ supply-increase headline", source="Reuters",
-            )
-            backtest_store.record_exogenous_shock(
-                bconn, "UST_BOND", today, move_pct=1.2, stdev_move=2.8,
-                taxonomy_category="Treasury buyback size/schedule change",
-                headline_cause="Real Treasury buyback cap change headline", source="Bloomberg",
-            )
-            bconn.close()
-
-            client = webapp_app.app.test_client()
-            resp = client.get("/api/predictions")
-            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
-            downgrade = events["PPI m/m"]["tier1_confidence_downgrade"]
-            assert downgrade is not None, \
-                "the Treasury-buyback shock (default exposed, no exposure-table entry) must still downgrade XAUUSD, even though the OPEC+ shock (checked first, per DETECTOR_SERIES order) does not expose it"
-            assert downgrade["series"] == "UST_BOND", \
-                "the downgrade's shown reason/series must come from the EXPOSING shock (UST_BOND/Treasury buyback), not the non-exposing one (DXY/OPEC+) that happened to be found first"
     print("PASS\n")
 
 
@@ -2355,53 +2113,75 @@ def test_predictions_downgrades_via_low_magnitude_relevance_magnitude_pair():
     print("PASS\n")
 
 
-def test_relevance_magnitude_trigger_does_not_compound_with_shock_trigger():
-    print("=== app: when BOTH the exogenous-shock trigger AND the relevance/magnitude trigger fire for the same event/symbol, the displayed confidence drops exactly ONE tier, never two ===")
+def _seed_cpi_xauusd_pending_tier1(tmp: str) -> Path:
+    """Seeds one pending CPI m/m / XAUUSD occurrence (RELEVANT + MEDIUM pair, Certain Tier 1 call); returns the backtest DB path."""
+    db_path = Path(tmp) / "test.db"
+    backtest_db_path = Path(tmp) / "backtest_log.db"
+    cpi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
+    _seed_calendar(db_path, [
+        EconomicEvent(title="CPI m/m", country="USD", impact="High",
+                       event_time_utc=cpi_time, forecast="0.2%", previous="0.0%", actual=None),
+    ])
+    conn = store.get_connection(db_path)
+    store.add_tracked_symbol(conn, "XAUUSD")
+    conn.close()
+    bconn = backtest_store.get_connection(backtest_db_path)
+    backtest_store.record_prediction(
+        bconn, "CPI m/m", "XAUUSD", cpi_time, 0.60, "bearish", 0.5, 100, False,
+    )
+    backtest_store.record_tier1_prediction(
+        bconn, "CPI m/m", "XAUUSD", cpi_time,
+        value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish",
+        logged_at_utc=cpi_time - dt.timedelta(days=1),
+    )
+    bconn.close()
+    return backtest_db_path
+
+
+def test_tier1_confidence_downgrade_key_set_is_exact():
+    print("=== app: tier1_confidence_downgrade carries exactly original_confidence / displayed_confidence / reason -- the dead 'series' key is gone ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         backtest_db_path = Path(tmp) / "backtest_log.db"
         with patch.object(store, "DB_PATH", db_path), \
              patch.object(backtest_store, "DB_PATH", backtest_db_path):
-            ppi_time = dt.datetime(2026, 9, 10, 12, 30, tzinfo=UTC_TZ)
-            _seed_calendar(db_path, [
-                EconomicEvent(title="PPI m/m", country="USD", impact="High",
-                               event_time_utc=ppi_time, forecast="0.2%", previous="0.0%", actual=None),
-            ])
-            conn = store.get_connection(db_path)
-            store.add_tracked_symbol(conn, "XAUUSD")
-            conn.close()
-
-            bconn = backtest_store.get_connection(backtest_db_path)
-            backtest_store.record_prediction(
-                bconn, "PPI m/m", "XAUUSD", ppi_time, 0.60, "bearish", 0.5, 100, False,
-            )
-            backtest_store.record_tier1_prediction(
-                bconn, "PPI m/m", "XAUUSD", ppi_time,
-                value="Some call", confidence="Certain", source="BLS/ISM", predicted_direction="bearish", logged_at_utc=ppi_time - dt.timedelta(days=1),
-            )
-            today = dt.datetime.now(dt.timezone.utc).date()
-            backtest_store.record_exogenous_shock(
-                bconn, "DXY", today, move_pct=5.0, stdev_move=3.0,
-                headline_cause="Real researched cause", source="Reuters",
-            )
-            bconn.close()
+            _seed_cpi_xauusd_pending_tier1(tmp)
 
             from data_layer.event_symbol_relevance import RelevanceJudgment, RelevanceStatus
             import webapp.predictions_service as svc
 
             def fake_get_relevance(event_type, symbol):
-                assert event_type == "PPI m/m"
-                assert symbol == "XAUUSD"
                 return RelevanceJudgment(RelevanceStatus.NOT_RELEVANT, "synthetic test fixture")
 
             with patch.object(svc, "get_relevance", fake_get_relevance):
-                client = webapp_app.app.test_client()
-                resp = client.get("/api/predictions")
+                resp = webapp_app.app.test_client().get("/api/predictions")
                 events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
-                downgrade = events["PPI m/m"]["tier1_confidence_downgrade"]
-                assert downgrade is not None
-                assert downgrade["displayed_confidence"] == "Likely", \
-                    "both triggers fired -- must still be exactly one tier down, never 'Guessing'"
+                downgrade = events["CPI m/m"]["tier1_confidence_downgrade"]
+                assert set(downgrade) == {"original_confidence", "displayed_confidence", "reason"}, set(downgrade)
+    print("PASS\n")
+
+
+def test_exogenous_shocks_rows_no_longer_downgrade():
+    print("=== app: a raw exogenous_shocks row for today no longer downgrades a RELEVANT+MEDIUM pair -- the shock path is removed (table kept, never read) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            _seed_cpi_xauusd_pending_tier1(tmp)
+            now = dt.datetime.now(dt.timezone.utc)
+            bconn = backtest_store.get_connection(backtest_db_path)
+            bconn.execute(
+                "INSERT INTO exogenous_shocks (series, shock_date, move_pct, stdev_move, logged_at_utc) "
+                "VALUES ('DXY', ?, 1.0, 0.4, ?)",
+                (now.date().isoformat(), now.isoformat()),
+            )
+            bconn.commit()
+            bconn.close()
+
+            resp = webapp_app.app.test_client().get("/api/predictions")
+            events = {e["event_title"]: e for e in resp.get_json()["predictions"][0]["events"]}
+            assert events["CPI m/m"]["tier1_confidence_downgrade"] is None
     print("PASS\n")
 
 
@@ -2541,10 +2321,9 @@ if __name__ == "__main__":
     test_recently_resolved_backfill_still_includes_medium_impact_event()
     test_predictions_excludes_low_impact_event_from_the_live_snapshot()
     test_predictions_route_includes_tier1_prediction_for_logged_occurrence()
-    test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_today()
-    test_predictions_downgrades_tier1_confidence_when_a_real_shock_is_logged_yesterday()
-    test_predictions_no_tier1_confidence_downgrade_without_a_real_shock()
-    test_predictions_no_tier1_confidence_downgrade_for_an_already_resolved_event()
+    test_predictions_no_tier1_confidence_downgrade_without_a_trigger()
+    test_tier1_confidence_downgrade_key_set_is_exact()
+    test_exogenous_shocks_rows_no_longer_downgrade()
     print("All webapp.app tests passed.")
 
 

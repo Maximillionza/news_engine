@@ -3,7 +3,7 @@ Phase 1 of a two-phase plan (see docs/superpowers/specs/2026-09-13-event-
 symbol-relevance-grid-design.md): a static, hand-curated reference table
 answering "does this Tier 1 event genuinely reach this specific symbol" --
 Relevant, Not relevant, or honestly Unverified where no real evidence
-exists yet. Same discipline as data_layer/exposure.py -- a real Python
+exists yet. Same discipline as the (removed, B11) exposure table -- a real Python
 constant, never a database table or a live fetch, extended by hand only
 on real, cited evidence.
 

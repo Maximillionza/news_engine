@@ -149,8 +149,8 @@ def baseline_for(baselines: dict[int, float], t: dt.datetime) -> Optional[float]
 def dukascopy_instrument(series: str) -> str:
     """Dukascopy instrument id for XAUUSD / US30 / DXY."""
     if series == "DXY":
-        from data_layer.discovery_detector import _DETECTOR_INSTRUMENT_MAP
-        return _DETECTOR_INSTRUMENT_MAP["DXY"]
+        from dukascopy_python.instruments import INSTRUMENT_IDX_AMERICA_DOLLAR_IDX_USD
+        return INSTRUMENT_IDX_AMERICA_DOLLAR_IDX_USD
     from data_layer.dukascopy_feed import _resolve_dukascopy_instrument
     instrument = _resolve_dukascopy_instrument(series)
     if instrument is None:

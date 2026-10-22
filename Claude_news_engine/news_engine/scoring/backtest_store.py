@@ -356,22 +356,6 @@ class Tier1LateCheckRow:
     checked_at_utc: str
 
 
-@dataclass
-class Tier1ComparisonRow:
-    id: int
-    event_title: str
-    instrument: str
-    event_time_utc: str
-    sentiment_direction: str
-    sentiment_correct: Optional[bool]
-    tier1_direction: str
-    tier1_confidence: str
-    tier1_correct: Optional[bool]
-    actual_direction: str
-    actual_move_note: str
-    compared_at_utc: str
-
-
 def _migrate_add_source_columns(conn: sqlite3.Connection) -> None:
     """
     Same reasoning as webapp/store.py's _migrate_add_source_column() —
@@ -1182,31 +1166,6 @@ def record_kalshi_read_if_changed(
 _VALID_TIER1_CONFIDENCE = ("Certain", "Likely", "Guessing")
 
 
-_VALID_TAXONOMY_CATEGORIES = (
-    "Treasury buyback size/schedule change",
-    "US sovereign credit-rating action",
-    "Government shutdown / funding lapse",
-    "Fed-independence shock",
-    "Fed Chair transition",
-    "Tariff/trade policy executive action",
-    "OPEC+ supply decision",
-    "Geopolitical war-driven oil supply shock",
-)
-
-
-@dataclass
-class ExogenousShockRow:
-    id: int
-    series: str
-    shock_date: str
-    move_pct: float
-    stdev_move: float
-    taxonomy_category: Optional[str]
-    headline_cause: Optional[str]
-    source: Optional[str]
-    logged_at_utc: str
-
-
 def record_tier1_prediction(
     conn: sqlite3.Connection,
     event_title: str,
@@ -1398,74 +1357,6 @@ def get_latest_tier1_late_checks_bulk(
         if key not in latest:
             latest[key] = _late_check_row(d)
     return latest
-
-
-def record_tier1_comparison(
-    conn: sqlite3.Connection,
-    event_title: str,
-    instrument: str,
-    event_time_utc: dt.datetime,
-    sentiment_direction: str,
-    sentiment_correct: Optional[bool],
-    tier1_direction: str,
-    tier1_confidence: str,
-    tier1_correct: Optional[bool],
-    actual_direction: str,
-    actual_move_note: str,
-    compared_at_utc: Optional[dt.datetime] = None,
-) -> int:
-    """
-    Persists the result of comparing a real, already-recorded sentiment
-    prediction against a real, already-logged Tier 1 prediction for one
-    occurrence, once a real outcome exists -- the durable version of what
-    tests/run_causation_matrix_option_a_*.py's one-off scripts print to a
-    console. sentiment_correct/tier1_correct are None when that side made
-    no directional call (neutral) -- same "no call, not wrong" convention
-    scoring/backtest.py's BacktestCase.evaluate() already uses; SQLite
-    stores a Python None as NULL automatically, no extra handling needed.
-
-    UNIQUE(event_title, instrument, event_time_utc) means a re-run for the
-    same occurrence replaces the prior row (INSERT OR REPLACE) rather than
-    accumulating duplicates -- this is a derived, recomputable result, not
-    an append-only log like predictions/outcomes/tier1_predictions.
-    """
-    compared_at = compared_at_utc or dt.datetime.now(dt.timezone.utc)
-    conn.execute(
-        "INSERT OR REPLACE INTO tier1_comparisons (event_title, instrument, event_time_utc, "
-        "sentiment_direction, sentiment_correct, tier1_direction, tier1_confidence, tier1_correct, "
-        "actual_direction, actual_move_note, compared_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (event_title, instrument, event_time_utc.isoformat(), sentiment_direction,
-         sentiment_correct, tier1_direction, tier1_confidence, tier1_correct,
-         actual_direction, actual_move_note, compared_at.isoformat()),
-    )
-    conn.commit()
-    row = conn.execute(
-        "SELECT id FROM tier1_comparisons WHERE event_title = ? AND instrument = ? AND event_time_utc = ?",
-        (event_title, instrument, event_time_utc.isoformat()),
-    ).fetchone()
-    return row["id"]
-
-
-def get_tier1_comparison_for_occurrence(
-    conn: sqlite3.Connection, event_title: str, instrument: str, event_time_utc: dt.datetime,
-) -> Optional[Tier1ComparisonRow]:
-    """The recorded comparison for this exact occurrence, or None if never computed."""
-    row = conn.execute(
-        "SELECT * FROM tier1_comparisons WHERE event_title = ? AND instrument = ? AND event_time_utc = ?",
-        (event_title, instrument, event_time_utc.isoformat()),
-    ).fetchone()
-    if row is None:
-        return None
-    d = dict(row)
-    return Tier1ComparisonRow(
-        id=d["id"], event_title=d["event_title"], instrument=d["instrument"],
-        event_time_utc=d["event_time_utc"], sentiment_direction=d["sentiment_direction"],
-        sentiment_correct=None if d["sentiment_correct"] is None else bool(d["sentiment_correct"]),
-        tier1_direction=d["tier1_direction"], tier1_confidence=d["tier1_confidence"],
-        tier1_correct=None if d["tier1_correct"] is None else bool(d["tier1_correct"]),
-        actual_direction=d["actual_direction"], actual_move_note=d["actual_move_note"],
-        compared_at_utc=d["compared_at_utc"],
-    )
 
 
 _SNAPSHOT_KINDS = ("live", "reconstructed")
@@ -1669,60 +1560,3 @@ def get_latest_reaction_baselines(conn: sqlite3.Connection, instrument: str, qua
         if current is None or end > current[0]:
             best[r["utc_hour"]] = (end, r["baseline_abs_move"])
     return {hour: value for hour, (_, value) in best.items()}
-
-
-def record_exogenous_shock(
-    conn: sqlite3.Connection,
-    series: str,
-    shock_date: dt.date,
-    move_pct: float,
-    stdev_move: float,
-    taxonomy_category: Optional[str] = None,
-    headline_cause: Optional[str] = None,
-    source: Optional[str] = None,
-    logged_at_utc: Optional[dt.datetime] = None,
-) -> int:
-    """
-    Persists a real detected anomaly (data_layer.discovery_detector.AnomalyResult)
-    plus its real, human/LLM-researched cause. taxonomy_category is
-    validated against AdHoc_Category_Taxonomy's exact 8 real category
-    names when set -- same rejection-on-typo discipline
-    record_tier1_prediction()'s confidence-tag validation already uses.
-    None is a fully valid, honest value for taxonomy_category (a real
-    anomaly with no fitting known category) and for headline_cause/source
-    (the research step hasn't run yet, or found nothing real to attach) --
-    never forced to a fabricated fit.
-    """
-    if taxonomy_category is not None and taxonomy_category not in _VALID_TAXONOMY_CATEGORIES:
-        raise ValueError(
-            f"taxonomy_category={taxonomy_category!r} is not valid — must be one of: "
-            f"{', '.join(_VALID_TAXONOMY_CATEGORIES)}, or None"
-        )
-    logged_at = logged_at_utc or dt.datetime.now(dt.timezone.utc)
-    cursor = conn.execute(
-        "INSERT INTO exogenous_shocks (series, shock_date, move_pct, stdev_move, "
-        "taxonomy_category, headline_cause, source, logged_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (series, shock_date.isoformat(), move_pct, stdev_move,
-         taxonomy_category, headline_cause, source, logged_at.isoformat()),
-    )
-    conn.commit()
-    return cursor.lastrowid
-
-
-def get_exogenous_shock_for_date(
-    conn: sqlite3.Connection, series: str, shock_date: dt.date,
-) -> Optional[ExogenousShockRow]:
-    """The recorded shock for this exact (series, shock_date), or None if never logged — never fabricated."""
-    row = conn.execute(
-        "SELECT * FROM exogenous_shocks WHERE series = ? AND shock_date = ?",
-        (series, shock_date.isoformat()),
-    ).fetchone()
-    if row is None:
-        return None
-    d = dict(row)
-    return ExogenousShockRow(
-        id=d["id"], series=d["series"], shock_date=d["shock_date"],
-        move_pct=d["move_pct"], stdev_move=d["stdev_move"],
-        taxonomy_category=d["taxonomy_category"], headline_cause=d["headline_cause"],
-        source=d["source"], logged_at_utc=d["logged_at_utc"],
-    )

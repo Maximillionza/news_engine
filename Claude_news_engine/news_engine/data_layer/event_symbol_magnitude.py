@@ -4,7 +4,7 @@ event-symbol-magnitude-grid-design.md): a static, hand-curated
 magnitude tier for each of Phase 1's 94 RELEVANT (event_type, symbol)
 cells -- LOW/MEDIUM/HIGH (cited) or honestly UNVERIFIED where no real
 evidence pins down a typical move size. Same discipline as
-data_layer/exposure.py and data_layer/event_symbol_relevance.py -- a
+data_layer/event_symbol_relevance.py -- a
 real Python constant, never a database table or a live fetch.
 
 This is a REFERENCE TABLE ONLY. Nothing here is wired into live

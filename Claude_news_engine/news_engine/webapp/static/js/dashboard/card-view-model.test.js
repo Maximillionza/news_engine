@@ -62,8 +62,8 @@ test("buildTier1ConfidenceDowngradeViewModel returns null with no downgrade", ()
 });
 
 test("buildTier1ConfidenceDowngradeViewModel passes through reason=null honestly, never fabricated text", () => {
-  const vm = buildTier1ConfidenceDowngradeViewModel({ displayed_confidence: "Likely", original_confidence: "Certain", series: "DXY", reason: null });
-  assert.equal(vm.reason, null);
+  const vm = buildTier1ConfidenceDowngradeViewModel({ displayed_confidence: "Likely", original_confidence: "Certain", reason: null });
+  assert.deepEqual(vm, { displayedConfidence: "Likely", originalConfidence: "Certain", reason: null });
 });
 
 test("buildEssenceArticleViewModel: pending essence with no article prediction", () => {

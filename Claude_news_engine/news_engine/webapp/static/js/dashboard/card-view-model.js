@@ -67,7 +67,6 @@ export function buildTier1ConfidenceDowngradeViewModel(downgrade) {
   return {
     displayedConfidence: downgrade.displayed_confidence,
     originalConfidence: downgrade.original_confidence,
-    series: downgrade.series,
     reason: downgrade.reason || null,
   };
 }
@@ -185,8 +184,7 @@ const OTHER_TRACKED_EVENTS_LIMIT = 3;
 // A resolved event belongs in the History tab, not this card's live/
 // upcoming-context list. `now` is an explicit parameter (defaulting to
 // the real clock) so this stays testable against a fixed point in time,
-// same reasoning data_layer/discovery_detector.py's own testable "now"
-// parameters already use.
+// same reasoning as other testable "now" parameters in this codebase.
 export function buildOtherTrackedEventsViewModel(allEvents, symbolForCard, now = new Date()) {
   if (!allEvents || allEvents.length === 0) return null;
   const featuredTime = allEvents[0].event_time_utc;
