@@ -154,6 +154,27 @@ _US_INFLATION_PATTERN = re.compile(
 _BLS_PATTERN = re.compile(r"\b(?:bls|bureau of labor statistics)\b", re.IGNORECASE)
 _BARE_CPI_PATTERN = re.compile(r"\b(?:cpi|consumer price index)\b", re.IGNORECASE)
 
+# Bare-CPI guard only: foreign headlines often lead with a currency nickname
+# or a city instead of a country ("Aussie dollar eyes ... on hot CPI", live;
+# "Tokyo CPI accelerates"). Kept out of _FOREIGN_PLACES so foreign_cb_match's
+# "<place> central bank" rule is unchanged. Ambiguous English words ("pound",
+# "won", "rand", bare "euro") are left out.
+_FOREIGN_CPI_MARKERS: tuple[str, ...] = (
+    "aussie", "kiwi", "loonie", "swissie", "sterling", "yen", "yuan", "renminbi",
+    "rupee", "rupiah", "ringgit", "peso", "lira", "zloty", "forint", "krona", "krone",
+    "tokyo", "beijing", "shanghai", "london", "ottawa", "sydney", "wellington",
+    "mumbai", "seoul", "berlin", "paris", "frankfurt",
+)
+_FOREIGN_CPI_GUARD_PATTERN = re.compile(
+    r"(?<![a-z])(?:"
+    + "|".join(
+        re.escape(marker)
+        for marker in sorted(_FOREIGN_PLACES + _FOREIGN_CPI_MARKERS, key=len, reverse=True)
+    )
+    + r")(?![a-z])",
+    re.IGNORECASE,
+)
+
 
 def _normalise(text: str) -> str:
     # Curly apostrophes ("ECB’s") would otherwise dodge the "'s" handling.
@@ -198,7 +219,7 @@ def _fomc_subject(title: str) -> bool:
 def _cpi_subject(title: str) -> bool:
     if _fomc_subject(title) or _US_INFLATION_PATTERN.search(title) or _BLS_PATTERN.search(title):
         return True
-    return bool(_BARE_CPI_PATTERN.search(title)) and not _FOREIGN_PLACE_PATTERN.search(title)
+    return bool(_BARE_CPI_PATTERN.search(title)) and not _FOREIGN_CPI_GUARD_PATTERN.search(title)
 
 
 def passes_subject_rule(title: str, family: str) -> bool:

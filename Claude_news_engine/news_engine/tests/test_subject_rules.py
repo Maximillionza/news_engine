@@ -144,6 +144,28 @@ def test_subject_rule_rejects_off_subject():
         assert not passes_subject_rule(title, "cpi"), title
 
 
+def test_bare_cpi_rejects_foreign_currency_and_city_leads():
+    # Live title from scoring/backtest_log.db, plus nickname/city variants.
+    for title in (
+        "Aussie dollar eyes longest weekly winning streak since 2021 on hot CPI",
+        "Tokyo CPI accelerates in October",
+        "Loonie firms as CPI beats",
+        "Yen slips after CPI miss",
+        "Sterling jumps on CPI surprise",
+        "Rupee steady ahead of CPI data",
+    ):
+        assert b6_exclusion_reason(title, "", "CPI m/m") == "off_subject", title
+    # The US-marker and dollar paths still win over a foreign currency mention.
+    assert b6_exclusion_reason("Yen slides as US CPI runs hot", "", "CPI m/m") is None
+    assert b6_exclusion_reason("Dollar firms vs yen after CPI beat", "", "CPI m/m") is None
+    assert b6_exclusion_reason("CPI preview: core seen at 0.3%", "", "CPI m/m") is None
+
+
+def test_currency_nicknames_do_not_change_foreign_cb():
+    # The CPI guard markers are not foreign places for the central-bank rule.
+    assert b6_exclusion_reason("Yen traders eye central bank minutes", "", "Retail Sales m/m") is None
+
+
 def test_us_marker_is_case_sensitive():
     assert names_us_marker("tells us nothing") is False
     for text in ("US", "U.S.", "USA", "American"):
