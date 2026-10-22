@@ -232,6 +232,25 @@ def test_impact_rank_constant_matches_filter_relevant_events_ranking():
     print("PASS\n")
 
 
+def test_non_usd_row_has_no_surprise():
+    print("=== B6: a foreign print under a US-looking title is not a USD surprise ===")
+    t = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+    jpy = EconomicEvent("CPI m/m", "JPY", "High", t, forecast="0.2%", actual="0.4%")
+    usd = EconomicEvent("CPI m/m", "USD", "High", t, forecast="0.2%", actual="0.4%")
+    assert jpy.usd_surprise_score() is None
+    assert usd.usd_surprise_score() > 0
+    print("PASS\n")
+
+
+def test_audit_probe3_handles_no_surprise():
+    print("=== B6: audit Probe 3 formats a None surprise instead of crashing ===")
+    from scripts.audit_fa_probes import probe_surprise_scale
+    lines = probe_surprise_scale()
+    jpy_lines = [l for l in lines if l.startswith("JPY")]
+    assert jpy_lines and jpy_lines[0].endswith("usd_surprise_score=None")
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_lastweek_rejected_with_informative_error()
     test_nextweek_rejected_with_informative_error()
@@ -251,4 +270,6 @@ if __name__ == "__main__":
     test_events_in_pre_window_excludes_an_event_still_far_out()
     test_events_in_pre_window_includes_an_event_within_the_post_release_grace_period()
     test_events_in_pre_window_excludes_an_event_past_the_post_release_grace_period()
+    test_non_usd_row_has_no_surprise()
+    test_audit_probe3_handles_no_surprise()
     print("All calendar_feed tests passed.")

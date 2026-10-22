@@ -37,11 +37,14 @@ def score_event_for_symbol(event: EconomicEvent, symbol_class: SymbolClass) -> E
 
     usd_surprise = event.usd_surprise_score()
     if usd_surprise is None:
-        # NOTE: pending=True conflates two distinct cases:
+        # NOTE: pending=True conflates distinct cases:
         # (1) Event has no 'actual' value yet (genuinely pending, will resolve when actual prints)
         # (2) Event title is not in config.settings.EVENT_SURPRISE_DIRECTION (untracked indicator,
         #     will NEVER resolve). Distinguishing these would require EssenceScore to carry
         #     an additional field explaining the reason, which is out of scope for this task.
+        # (3) Event is a non-USD row (B6, 2026-10-22: usd_surprise_score() is None for any
+        #     country != "USD"). Unreachable today since scoring_events is USD-only, but
+        #     it too reads as pending rather than a fabricated score.
         return EssenceScore(
             symbol=symbol_class.symbol, event_title=event.title,
             applicable=True, pending=True,

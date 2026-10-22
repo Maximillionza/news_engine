@@ -172,7 +172,12 @@ class EconomicEvent:
         missing/unparseable, or if this event's title isn't in
         EVENT_SURPRISE_DIRECTION. "No data" and "no surprise" are
         different things; only the latter should ever score as neutral.
+
+        B6 (2026-10-22): None for any non-USD row too -- a foreign print
+        under a US title is not a USD surprise.
         """
+        if self.country != "USD":
+            return None
         direction = EVENT_SURPRISE_DIRECTION.get(self.title)
         if direction is None:
             return None

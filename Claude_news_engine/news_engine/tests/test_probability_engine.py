@@ -1092,7 +1092,12 @@ def test_score_bundle_flags_chain_conflict_when_linked_precursors_disagree():
     conflict_result = score_bundle(bundle, "XAUUSD", precursor_events=[ppi_beat, import_miss])
     assert conflict_result.chain_conflict_flag is True
     assert conflict_result.chain_conflict_note is not None
-    assert conflict_result.confidence < no_conflict_result.confidence * 1.01, "a chain conflict must dampen confidence, never raise it"
+    # B6: with authored link weights (PPI 0.90 vs Import Prices 0.40) the second precursor adds sample size
+    # and the weaker dissenter barely lowers agreement, so comparing against the one-precursor run no longer
+    # isolates the conflict. Compare against the same two precursors with the conflict multiplier neutralised.
+    with patch.object(probability_engine, "PRECURSOR_CHAIN_CONFLICT_CONFIDENCE_MULTIPLIER", 1.0):
+        undampened = score_bundle(bundle, "XAUUSD", precursor_events=[ppi_beat, import_miss])
+    assert conflict_result.confidence < undampened.confidence, "a chain conflict must dampen confidence, never raise it"
     print("PASS\n")
 
 
@@ -1136,14 +1141,57 @@ def test_migrated_links_produce_identical_score_bundle_result_old_vs_new_path():
     print("PASS\n")
 
 
-def test_event_influence_links_weight_is_stored_but_not_consumed_by_scoring():
-    print("=== EVENT_INFLUENCE_LINKS: the per-link float weight has no effect on _build_precursor_contributions()'s trust_weight ===")
-    from config.settings import PRECURSOR_TRUST_WEIGHT
-    event = EconomicEvent(title="Challenger Job Cuts y/y", country="USD", impact="Low", event_time_utc=EVENT_TIME, forecast="20K", actual="35K")  # linked to NFP at weight 0.35, NOT 0.9
+def test_precursor_trust_uses_authored_link_weight():
+    print("=== B6: _build_precursor_contributions() uses the EVENT_INFLUENCE_LINKS weight as the precursor's trust_weight ===")
     from scoring.probability_engine import _build_precursor_contributions
-    contributions = _build_precursor_contributions([event], EVENT_TIME)
+    event = EconomicEvent(title="Challenger Job Cuts y/y", country="USD", impact="Low", event_time_utc=EVENT_TIME, forecast="20K", actual="35K")  # linked to NFP at weight 0.35
+    contributions = _build_precursor_contributions([event], EVENT_TIME, target_title="Non-Farm Employment Change")
     assert len(contributions) == 1
-    assert contributions[0].trust_weight == PRECURSOR_TRUST_WEIGHT, "trust_weight must still come from the single global constant, not the link's own 0.35 weight"
+    assert contributions[0].trust_weight == 0.35
+    assert contributions[0].combined_weight == 0.35 * contributions[0].time_weight
+    print("PASS\n")
+
+
+def test_jolts_to_nfp_uses_0_40():
+    print("=== B6: JOLTS -> NFP link weight is 0.40 (JOLTS is dormant today: no EVENT_SURPRISE_DIRECTION entry, patched in here) ===")
+    from scoring.probability_engine import _build_precursor_contributions, _precursor_link_weight
+    from config.settings import EVENT_SURPRISE_DIRECTION
+    assert _precursor_link_weight("Non-Farm Employment Change", "JOLTS Job Openings") == 0.40
+    event = EconomicEvent(title="JOLTS Job Openings", country="USD", impact="Medium", event_time_utc=EVENT_TIME, forecast="7.2M", actual="7.6M")
+    with patch.dict(EVENT_SURPRISE_DIRECTION, {"JOLTS Job Openings": "higher_bullish"}):
+        contributions = _build_precursor_contributions([event], EVENT_TIME, target_title="Non-Farm Employment Change")
+    assert len(contributions) == 1
+    assert contributions[0].trust_weight == 0.40
+    print("PASS\n")
+
+
+def test_adp_and_ppi_links_stay_0_90():
+    print("=== B6: ADP -> NFP and PPI m/m -> CPI m/m keep 0.90 (behaviour-preserving); PPI m/m -> CPI y/y is 0.80 ===")
+    from scoring.probability_engine import _precursor_link_weight
+    assert _precursor_link_weight("Non-Farm Employment Change", "ADP Non-Farm Employment Change") == 0.90
+    assert _precursor_link_weight("CPI m/m", "PPI m/m") == 0.90
+    assert _precursor_link_weight("CPI y/y", "PPI m/m") == 0.80
+    print("PASS\n")
+
+
+def test_unlinked_precursor_falls_back_to_global_weight():
+    print("=== B6: no target, a target with no links, or an unlisted precursor all fall back to PRECURSOR_TRUST_WEIGHT ===")
+    from config.settings import PRECURSOR_TRUST_WEIGHT
+    from scoring.probability_engine import _precursor_link_weight
+    assert _precursor_link_weight(None, "PPI m/m") == PRECURSOR_TRUST_WEIGHT
+    assert _precursor_link_weight("Retail Sales m/m", "PPI m/m") == PRECURSOR_TRUST_WEIGHT
+    assert _precursor_link_weight("CPI m/m", "Some Unlisted Indicator") == PRECURSOR_TRUST_WEIGHT
+    print("PASS\n")
+
+
+def test_score_bundle_passes_target_title_to_precursors():
+    print("=== B6: score_bundle() hands bundle.event.title to the precursor builder (CPI y/y + PPI m/m -> trust 0.80) ===")
+    event = EconomicEvent(title="CPI y/y", country="USD", impact="High", event_time_utc=EVENT_TIME, forecast="2.9%", previous="2.9%")
+    ppi = EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=EVENT_TIME, forecast="0.2%", actual="0.4%")
+    bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
+    result = score_bundle(bundle, "XAUUSD", precursor_events=[ppi])
+    assert len(result.precursor_contributions) == 1
+    assert result.precursor_contributions[0].trust_weight == 0.80
     print("PASS\n")
 
 
@@ -1252,5 +1300,9 @@ if __name__ == "__main__":
     test_check_precursor_chain_conflict_three_with_one_outlier_flags()
     test_score_bundle_flags_chain_conflict_when_linked_precursors_disagree()
     test_migrated_links_produce_identical_score_bundle_result_old_vs_new_path()
-    test_event_influence_links_weight_is_stored_but_not_consumed_by_scoring()
+    test_precursor_trust_uses_authored_link_weight()
+    test_jolts_to_nfp_uses_0_40()
+    test_adp_and_ppi_links_stay_0_90()
+    test_unlinked_precursor_falls_back_to_global_weight()
+    test_score_bundle_passes_target_title_to_precursors()
     print("All probability_engine tests passed.")

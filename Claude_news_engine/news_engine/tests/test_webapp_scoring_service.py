@@ -76,9 +76,23 @@ def test_adp_miss_flips_usdjpy_bearish():
     print("PASS\n")
 
 
+def test_non_usd_event_gets_no_fabricated_score():
+    print("=== B6: a non-USD row never yields a probability or raw score ===")
+    event = EconomicEvent(
+        title="CPI m/m", country="JPY", impact="High",
+        event_time_utc=dt.datetime(2026, 8, 5, 13, 0, tzinfo=UTC_TZ),
+        forecast="0.2%", actual="0.4%",
+    )
+    result = score_event_for_symbol(event, classify_symbol("XAUUSD"))
+    assert result.probability is None
+    assert result.raw_score is None
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_fx_cross_not_applicable()
     test_pending_event_has_no_score_yet()
     test_adp_miss_flips_gold_bullish()
     test_adp_miss_flips_usdjpy_bearish()
+    test_non_usd_event_gets_no_fabricated_score()
     print("All scoring_service tests passed.")

@@ -349,9 +349,26 @@ def _apply_redundancy_discounts(contributions: list[ArticleContribution]) -> tup
     return kept, discounted_count
 
 
+def _precursor_link_weight(target_title: str | None, precursor_title: str) -> float:
+    """
+    B6 (2026-10-22): the authored EVENT_INFLUENCE_LINKS weight for
+    precursor_title feeding target_title, used as that precursor's trust
+    weight. Falls back to the global PRECURSOR_TRUST_WEIGHT only when there
+    is no target, the target has no links, or it doesn't list this
+    precursor.
+    """
+    if target_title is None:
+        return PRECURSOR_TRUST_WEIGHT
+    for linked_title, weight in EVENT_INFLUENCE_LINKS.get(target_title, []):
+        if linked_title == precursor_title:
+            return weight
+    return PRECURSOR_TRUST_WEIGHT
+
+
 def _build_precursor_contributions(
     precursor_events: list[EconomicEvent],
     as_of: dt.datetime,
+    target_title: str | None = None,
 ) -> list[PrecursorContribution]:
     """
     Age-decayed like article contributions, but using
@@ -370,13 +387,14 @@ def _build_precursor_contributions(
             continue
         age_minutes = max(0.0, (as_of - event.event_time_utc).total_seconds() / 60.0)
         time_w = 0.5 ** (age_minutes / PRECURSOR_TIME_DECAY_HALF_LIFE_MINUTES)
+        trust_w = _precursor_link_weight(target_title, event.title)
         contributions.append(
             PrecursorContribution(
                 event=event,
                 usd_sentiment=usd_surprise,
-                trust_weight=PRECURSOR_TRUST_WEIGHT,
+                trust_weight=trust_w,
                 time_weight=time_w,
-                combined_weight=PRECURSOR_TRUST_WEIGHT * time_w,
+                combined_weight=trust_w * time_w,
             )
         )
     return contributions
@@ -1051,7 +1069,7 @@ def score_bundle(
     # story as independent confirmation. See _apply_redundancy_discounts()'s
     # docstring.
     article_contributions, redundant_contributions_discounted = _apply_redundancy_discounts(article_contributions)
-    precursor_contributions = _build_precursor_contributions(precursor_events or [], as_of)
+    precursor_contributions = _build_precursor_contributions(precursor_events or [], as_of, target_title=bundle.event.title)
     print_call_contribution = _build_print_call_contribution(print_call, bundle.event, as_of)
     trend_streak_contribution = _build_trend_streak_contribution(trend_signal, bundle.event)
     kalshi_surprise_value = kalshi_direction_override if kalshi_direction_override is not None else EVENT_SURPRISE_DIRECTION.get(bundle.event.title)

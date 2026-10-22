@@ -431,13 +431,11 @@ EVENT_REGISTRY: dict[str, dict] = {
 # migration is behavior-preserving (see tests/test_probability_engine.py's
 # regression test).
 #
-# The float weight is EXPLICITLY NOT consumed by any scoring math yet —
-# it's authored metadata for a future refinement once real backtest data
-# justifies weighting one precursor's disagreement more than another's
-# (see docs/superpowers/specs/2026-09-02-event-registry-influence-graph-design.md's
-# "confluence as an explicit boost" deferral). Every value here is an
-# untuned starting estimate, same honesty as every other confidence
-# constant in this codebase.
+# Since B6 (2026-10-22) the float weight IS the precursor's trust weight
+# (scoring.probability_engine._precursor_link_weight); PRECURSOR_TRUST_WEIGHT
+# is only the fallback for unlinked pairs. Every value here is an untuned
+# starting estimate, same honesty as every other confidence constant in
+# this codebase.
 EVENT_INFLUENCE_LINKS: dict[str, list[tuple[str, float]]] = {
     "Non-Farm Employment Change": [
         ("ADP Non-Farm Employment Change", 0.90),  # migrated from the old hardcoded precursor-lookup link
@@ -814,7 +812,9 @@ FED_OFFICIAL_SURNAMES: tuple[str, ...] = (
     "schmid", "logan", "paulson", "kugler",
 )
 
-# Trust weight for a precursor's structured surprise contribution — high,
+# Fallback trust weight for a precursor with no authored EVENT_INFLUENCE_LINKS
+# weight toward its target (B6, 2026-10-22: linked pairs use their own weight).
+# Kept high for a precursor's structured surprise contribution,
 # since it's a real released number rather than lexicon-guessed text, but
 # not 1.0: the higher_bullish/higher_bearish direction mapping above is
 # itself a simplification (e.g. a beat that's already fully priced in
@@ -1071,7 +1071,7 @@ PRECURSOR_CHAIN_CONFLICT_CONFIDENCE_MULTIPLIER = 0.75
 # say "inflation") isn't enough either. Untuned starting values, same
 # honesty as every other threshold constant in this file.
 REDUNDANCY_TIME_PROXIMITY_MINUTES = 90     # articles further apart than this are never compared for redundancy
-REDUNDANCY_TERM_OVERLAP_THRESHOLD = 0.6    # fraction of matched lexicon terms that must overlap (Jaccard) to count as the same underlying story
+REDUNDANCY_TERM_OVERLAP_THRESHOLD = 0.6    # Jaccard overlap of significant title+summary words needed to count as the same underlying story
 REDUNDANCY_DISCOUNT_MULTIPLIER = 0.3       # a redundant contribution is still WEAK corroborating evidence, not zero — discounted, not dropped
 
 # --- Predictions display retention (2026-08-16) ---

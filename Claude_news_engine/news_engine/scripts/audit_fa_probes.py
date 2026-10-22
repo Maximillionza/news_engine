@@ -54,7 +54,7 @@ SURPRISE_CASES: list[tuple[str, str, str, str]] = [
     ("USD", "Unemployment Rate", "4.2%", "4.3%"),
     ("USD", "Non-Farm Employment Change", "150K", "200K"),
     ("USD", "ISM Manufacturing PMI", "49.0", "51.0"),
-    ("JPY", "CPI m/m", "0.2%", "0.4%"),  # a JAPANESE print -- country is ignored by the function
+    ("JPY", "CPI m/m", "0.2%", "0.4%"),  # a JAPANESE print -- since B6 the function returns None for non-USD rows
 ]
 
 
@@ -93,7 +93,9 @@ def probe_surprise_scale() -> list[str]:
     for country, title, forecast, actual in SURPRISE_CASES:
         event = EconomicEvent(title=title, country=country, impact="High", event_time_utc=_NOW,
                               forecast=forecast, actual=actual)
-        lines.append(f"{country} {title:28s} f={forecast:>5s} a={actual:>5s} -> usd_surprise_score={event.usd_surprise_score():+.3f}")
+        score = event.usd_surprise_score()
+        score_text = "None" if score is None else f"{score:+.3f}"  # None: non-USD row (B6) or no computable surprise
+        lines.append(f"{country} {title:28s} f={forecast:>5s} a={actual:>5s} -> usd_surprise_score={score_text}")
     return lines
 
 
