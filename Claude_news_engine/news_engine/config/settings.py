@@ -49,6 +49,8 @@ OLLAMA_NUM_CTX = 4096              # the prompt is ~1,200 tokens since B2 added 
 OLLAMA_KEEP_ALIVE = -1           # -1 = never unload. Shock candidates can be hours apart, so any finite value means a cold load (and a timeout risk) on most calls; the 3B model costs ~3 GB of RAM
 OLLAMA_COOLDOWN_MINUTES = 5
 EARTHQUAKE_MIN_MAGNITUDE = 6.5  # earthquake headlines stating a magnitude below this are not alerted (alert audit 2026-10-15: six M5-6 alerts, no measurable move in XAUUSD/US30); a headline with no stated magnitude is never filtered
+INCIDENT_URL_WINDOW_HOURS = 72.0  # B7 K9 (2026-10-22): URL memory -- a URL attached to an alert this recently marks a follow-up candidate and keeps its first age; also the seen_urls retention
+INCIDENT_ENTITY_WINDOW_HOURS = 24.0  # B7 K10 (2026-10-22): same family + shared named place/actor links only this recently (owner range 24-48 h, tighter end)
 TOPIC_DEDUP_WINDOW_HOURS = 72.0  # trade_policy / named-storm repeats merge into the earlier alert for this long; other categories keep the 24 h similarity-only window
 OLLAMA_EXECUTABLE = r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"  # started with `serve` when a call is refused (the tray app is not a service; its auto-updater stops it, 2026-10-11)
 OLLAMA_STARTUP_WAIT_SECONDS = 20.0  # how long one classification waits for a freshly started server to answer

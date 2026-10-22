@@ -14,6 +14,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from config.settings import INCIDENT_URL_WINDOW_HOURS
+from data_layer.news_feed import normalize_url
+
 DB_PATH = Path(__file__).parent / "shock_alerts.db"
 
 _SCHEMA = """
@@ -37,7 +40,10 @@ CREATE TABLE IF NOT EXISTS shock_alerts (
     us_link TEXT,
     capped_no_us_link INTEGER,
     original_severity TEXT,
-    first_published_utc TEXT
+    first_published_utc TEXT,
+    incident_id INTEGER,
+    incident_role TEXT,
+    incident_rule TEXT
 );
 
 CREATE TABLE IF NOT EXISTS shock_near_misses (
@@ -76,6 +82,16 @@ CREATE TABLE IF NOT EXISTS classifier_outage_notices (
     sent_at_utc TEXT NOT NULL,
     detail TEXT
 );
+
+CREATE TABLE IF NOT EXISTS seen_urls (
+    url TEXT NOT NULL,
+    alert_id INTEGER NOT NULL,
+    first_seen_utc TEXT NOT NULL,
+    first_published_utc TEXT,
+    PRIMARY KEY (url, alert_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_seen_urls_first_seen ON seen_urls(first_seen_utc);
 """
 # No index on the B2 shock_alerts columns may live in _SCHEMA: it runs
 # before _migrate_shock_alert_columns() on an old DB, where those columns
@@ -90,7 +106,18 @@ _SHOCK_ALERT_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("capped_no_us_link", "INTEGER"),
     ("original_severity", "TEXT"),
     ("first_published_utc", "TEXT"),
+    # B7 (2026-10-22): incident linking. NULL incident_id = the alert is its own incident
+    # (every pre-B7 row); NULL incident_role = the incident's first alert.
+    ("incident_id", "INTEGER"),
+    ("incident_role", "TEXT"),
+    ("incident_rule", "TEXT"),
 )
+
+# B7: roles of a non-first alert on an incident -- "follow_up" is stored and labelled with no push,
+# "update" is pushed once (severity rise or direction flip).
+INCIDENT_ROLES: tuple[str, ...] = ("follow_up", "update")
+SEEN_URL_RETENTION = dt.timedelta(hours=INCIDENT_URL_WINDOW_HOURS)
+SEEN_URL_PRUNE_BATCH = 500  # rows deleted per call, same bound as the near-miss prune
 
 _schema_ready_paths: set[str] = set()
 
@@ -117,6 +144,18 @@ class ShockAlertRow:
     capped_no_us_link: Optional[bool] = None
     original_severity: Optional[str] = None
     first_published_utc: Optional[dt.datetime] = None
+    incident_id: Optional[int] = None  # B7: the reader fills the row's own id when the column is NULL
+    incident_role: Optional[str] = None  # None = first alert of its incident, else one of INCIDENT_ROLES
+    incident_rule: Optional[str] = None  # "url" | "entity:<a,b>" -- why the alert was linked
+
+
+@dataclass
+class SeenUrl:
+    """B7 K9: one sighting of a normalized URL on an alert; first_published_utc is that alert's first publication time."""
+    url: str
+    alert_id: int
+    first_seen_utc: dt.datetime
+    first_published_utc: Optional[dt.datetime]
 
 
 def _migrate_shock_alert_columns(conn: sqlite3.Connection) -> None:
@@ -158,8 +197,13 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
         return conn
     path_key = str(Path(path).resolve())
     if path_key not in _schema_ready_paths:
+        # B7: backfill URL memory exactly once, when seen_urls is first created. Two processes racing
+        # here both backfill; INSERT OR IGNORE makes that harmless.
+        had_seen_urls = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'seen_urls'").fetchone() is not None
         conn.executescript(_SCHEMA)
         _migrate_shock_alert_columns(conn)
+        if not had_seen_urls:
+            _backfill_seen_urls(conn, dt.datetime.now(dt.timezone.utc))
         _schema_ready_paths.add(path_key)
     return conn
 
@@ -212,6 +256,9 @@ def _row_to_shock_alert(d: dict) -> ShockAlertRow:
         capped_no_us_link=bool(d["capped_no_us_link"]) if d["capped_no_us_link"] is not None else None,
         original_severity=d["original_severity"],
         first_published_utc=first_published_utc,
+        incident_id=d["incident_id"] if d["incident_id"] is not None else d["id"],
+        incident_role=d["incident_role"],
+        incident_rule=d["incident_rule"],
     )
 
 
@@ -233,23 +280,32 @@ def record_alert(
     us_link: Optional[str] = None,
     capped_no_us_link: Optional[bool] = None,
     original_severity: Optional[str] = None,
+    incident_id: Optional[int] = None,
+    incident_role: Optional[str] = None,
+    incident_rule: Optional[str] = None,
+    first_published_utc: Optional[dt.datetime] = None,
 ) -> int:
     """
     Inserts a new shock_alerts row with one initial source; returns the new row's id.
-    first_published_utc is always the detection source's published time --
+    first_published_utc defaults to the detection source's published time --
     at detection the alert has exactly one source, so it is the earliest.
+    B7 (2026-10-22): a caller may pass the URL-memory first publication of a re-stamped URL
+    (the source entry keeps the article's own time). incident_id None makes the new row its
+    own incident (id set in the same transaction); a follow-up passes its incident root's id.
     """
     sources = [{"source": source, "url": url, "published_utc": published_utc.isoformat()}]
     cur = conn.execute(
         "INSERT INTO shock_alerts (headline, sources_json, detected_at_utc, category, severity, "
         "classification_method, rationale, affected_symbols_json, polarity, country, us_link, "
-        "capped_no_us_link, original_severity, first_published_utc) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "capped_no_us_link, original_severity, first_published_utc, incident_id, incident_role, incident_rule) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (headline, json.dumps(sources), detected_at_utc.isoformat(), category, severity,
          classification_method, rationale, json.dumps(affected_symbols), polarity, country, us_link,
          None if capped_no_us_link is None else int(capped_no_us_link), original_severity,
-         published_utc.isoformat()),
+         (first_published_utc or published_utc).isoformat(), incident_id, incident_role, incident_rule),
     )
+    if incident_id is None:
+        conn.execute("UPDATE shock_alerts SET incident_id = id WHERE id = ?", (cur.lastrowid,))
     conn.commit()
     return cur.lastrowid
 
@@ -297,6 +353,19 @@ def get_alert(conn: sqlite3.Connection, alert_id: int) -> Optional[ShockAlertRow
     if row is None:
         return None
     return _row_to_shock_alert(dict(row))
+
+
+def list_incident_alerts(conn: sqlite3.Connection, incident_id: int) -> list[ShockAlertRow]:
+    """
+    B7: every alert on an incident in detection order. A legacy row with a NULL incident_id is
+    its own incident, so asking for its id returns just that row.
+    """
+    rows = conn.execute(
+        "SELECT * FROM shock_alerts WHERE incident_id = ? OR (incident_id IS NULL AND id = ?) "
+        "ORDER BY detected_at_utc",
+        (incident_id, incident_id),
+    ).fetchall()
+    return [_row_to_shock_alert(dict(r)) for r in rows]
 
 
 def get_cursor(conn: sqlite3.Connection, source: str) -> Optional[dt.datetime]:
@@ -473,7 +542,7 @@ def prune_near_misses(
     """
     Deletes at most `max_rows` of the oldest near-misses past retention and returns the count.
     Bounded on purpose (runs inside the 2-minute poll); a backlog drains over a few cycles.
-    The only DELETE in the alerting store.
+    One of two DELETEs in the alerting store (the other is prune_seen_urls).
     """
     cutoff = (now - retention).isoformat()
     cur = conn.execute(
@@ -484,6 +553,95 @@ def prune_near_misses(
     )
     conn.commit()
     return cur.rowcount
+
+
+def remember_url(
+    conn: sqlite3.Connection, url: str, alert_id: int, seen_at_utc: dt.datetime,
+    published_utc: Optional[dt.datetime],
+) -> None:
+    """
+    B7 K9: records that `url` is attached to alert `alert_id`. The key is the B6 normalized URL;
+    a blank URL is a no-op. INSERT OR IGNORE keeps the FIRST sighting per (url, alert), so a feed
+    re-stamping the same URL never moves its first-seen or first-published time.
+    """
+    key = normalize_url(url)
+    if not key:
+        return
+    conn.execute(
+        "INSERT OR IGNORE INTO seen_urls (url, alert_id, first_seen_utc, first_published_utc) VALUES (?, ?, ?, ?)",
+        (key, alert_id, seen_at_utc.isoformat(), published_utc.isoformat() if published_utc else None),
+    )
+    conn.commit()
+
+
+def lookup_seen_url(conn: sqlite3.Connection, url: str, since_utc: dt.datetime) -> list[SeenUrl]:
+    """B7 K9: sightings of `url` first seen at or after `since_utc`, newest first-seen first."""
+    key = normalize_url(url)
+    if not key:
+        return []
+    rows = conn.execute(
+        "SELECT * FROM seen_urls WHERE url = ? AND julianday(first_seen_utc) >= julianday(?) "
+        "ORDER BY julianday(first_seen_utc) DESC",
+        (key, since_utc.isoformat()),
+    ).fetchall()
+    return [
+        SeenUrl(
+            url=r["url"], alert_id=r["alert_id"], first_seen_utc=_parse_utc(r["first_seen_utc"]),
+            first_published_utc=_parse_utc(r["first_published_utc"]) if r["first_published_utc"] else None,
+        )
+        for r in rows
+    ]
+
+
+def prune_seen_urls(
+    conn: sqlite3.Connection, now: dt.datetime, retention: dt.timedelta = SEEN_URL_RETENTION,
+    max_rows: int = SEEN_URL_PRUNE_BATCH,
+) -> int:
+    """
+    B7: deletes at most `max_rows` of the oldest sightings past retention and returns the count.
+    Bounded like prune_near_misses (runs inside the 2-minute poll); a backlog drains over a few cycles.
+    """
+    cutoff = (now - retention).isoformat()
+    cur = conn.execute(
+        "DELETE FROM seen_urls WHERE rowid IN ("
+        "SELECT rowid FROM seen_urls WHERE julianday(first_seen_utc) < julianday(?) "
+        "ORDER BY first_seen_utc LIMIT ?)",
+        (cutoff, max_rows),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def _backfill_seen_urls(conn: sqlite3.Connection, now: dt.datetime) -> int:
+    """
+    B7: one-time URL memory for alerts already stored when seen_urls is first created, so the first
+    poll after deploy can already recognise a re-stamped URL. Covers alerts detected in the last 72 h:
+    sources[0] was seen at detection; later sources were appended after their own publication, so
+    their published time is the best available first-seen. Returns rows inserted.
+    """
+    cutoff = (now - SEEN_URL_RETENTION).isoformat()
+    inserted = 0
+    rows = conn.execute(
+        "SELECT id, sources_json, detected_at_utc FROM shock_alerts WHERE julianday(detected_at_utc) >= julianday(?)", (cutoff,),
+    ).fetchall()
+    for row in rows:
+        try:
+            sources = json.loads(row["sources_json"])
+        except (TypeError, ValueError):
+            continue
+        for index, source in enumerate(sources):
+            key = normalize_url(source.get("url") or "") if isinstance(source, dict) else ""
+            if not key:
+                continue
+            published = source.get("published_utc")
+            first_seen = row["detected_at_utc"] if index == 0 else (published or row["detected_at_utc"])
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO seen_urls (url, alert_id, first_seen_utc, first_published_utc) VALUES (?, ?, ?, ?)",
+                (key, row["id"], first_seen, published),
+            )
+            inserted += cur.rowcount
+    conn.commit()
+    return inserted
 
 
 def list_recent_alerts_in_category(conn: sqlite3.Connection, category: str, since_utc: dt.datetime) -> list[ShockAlertRow]:
