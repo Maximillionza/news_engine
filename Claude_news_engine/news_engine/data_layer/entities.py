@@ -123,3 +123,12 @@ def _normalize(text: str) -> str:
 def incident_entities(text: str) -> frozenset[str]:
     """Canonical gazetteer names found in `text` (a headline, or title + summary); empty when none."""
     return frozenset(_ALIAS_TO_CANONICAL[m.group(0)] for m in _ALIAS_PATTERN.finditer(_normalize(text)))
+
+
+def strip_entities(text: str) -> str:
+    """
+    `text` normalized (as incident_entities sees it) with every gazetteer name replaced by a space,
+    so "Strait of Hormuz" leaves no "strait" behind. alerting/incident.py's entity rule uses it to
+    find the words two headlines share BESIDES their place or actor (B7 final-review fix).
+    """
+    return _ALIAS_PATTERN.sub(" ", _normalize(text))

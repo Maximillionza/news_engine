@@ -14,11 +14,12 @@ can never delay a clear-cut alert, and can never push a cycle past the
 2-minute scheduler cadence.
 
 Incidents (B7, 2026-10-22): follow-up coverage of an event already alerted (same URL re-stamped,
-or the same named place/actor in the same category family, see alerting/incident.py) is LINKED
-and LABELLED, never suppressed: it is stored on its incident (visible on the Shock Alerts tab)
-with no new lean, and pushed once as "Update to incident #N" only when its severity rises above
-the incident's highest or its direction flips. A follow-up of equal severity and direction is
-stored silently.
+or, against an incident's root headline of the last 24 h, the same named place/actor AND the same
+event words, see alerting/incident.py) is LINKED and LABELLED, never suppressed: it is stored on
+its incident (visible on the Shock Alerts tab) with no new lean, and pushed once as "Update to
+incident #N" only when its severity rises above the incident's highest or its direction flips. A
+follow-up of equal severity and direction is stored silently. A failed classification is linked
+only by URL, never by the entity rule, so it keeps its UNCLASSIFIED push.
 """
 from __future__ import annotations
 
@@ -234,10 +235,12 @@ def _process_matched(conn, webapp_conn, article: NewsArticle, result: TriageResu
         classification_failed=classification_failed,
     )
     # B7 (2026-10-22): a re-stamped URL keeps its first publication time, and a follow-up of an
-    # already-alerted incident is stored on it instead of alerting again.
+    # already-alerted incident is stored on it instead of alerting again. A failed classification
+    # is never linked by the entity rule (it keeps its UNCLASSIFIED push); only the URL rule applies.
     cand = incident.IncidentCandidate(
         headline=article.title, category=category, polarity=polarity, url=article.url,
         published_utc=article.published_utc, detected_at_utc=detected_at,
+        classification_failed=classification_failed,
     )
     first_published = incident.effective_first_published(conn, cand)
     link = incident.find_incident(conn, cand)

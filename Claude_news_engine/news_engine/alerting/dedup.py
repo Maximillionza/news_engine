@@ -31,6 +31,11 @@ def _significant_words(headline: str) -> list[str]:
     return [re.sub(r"'s$", "", w)[:6] for w in text.split() if w not in _STOPWORDS and len(w) > 1]
 
 
+def significant_words(text: str) -> list[str]:
+    """Public form of _significant_words (stopwords dropped, 6-char stems); used by alerting/incident.py's entity rule."""
+    return _significant_words(text)
+
+
 def _trigrams(headline: str) -> set[tuple[str, ...]]:
     words = _significant_words(headline)
     return {tuple(words[i:i + 3]) for i in range(len(words) - 2)}

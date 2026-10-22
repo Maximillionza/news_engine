@@ -24,7 +24,12 @@ from alerting.incident import (
 
 UTC = dt.timezone.utc
 _MODULE_PATH = Path(__file__).resolve().parent.parent / "alerting" / "incident.py"
-_LIVE = json.loads((Path(__file__).resolve().parent / "fixtures" / "b7_live_alert_pairs.json").read_text(encoding="utf-8"))
+_FIXTURES = Path(__file__).resolve().parent / "fixtures"
+# Every live alert (read-only copy, final-review fix) overlaid with the original pair fixture (identical rows).
+_LIVE = {
+    **{str(a["id"]): a for a in json.loads((_FIXTURES / "b7_live_alerts_all.json").read_text(encoding="utf-8"))["alerts"]},
+    **json.loads((_FIXTURES / "b7_live_alert_pairs.json").read_text(encoding="utf-8")),
+}
 
 
 def _ts(value: str) -> dt.datetime:
@@ -32,7 +37,7 @@ def _ts(value: str) -> dt.datetime:
 
 
 def _seed(conn, n: int, polarity: Optional[str] = None, severity: Optional[str] = None,
-          incident_id: Optional[int] = None) -> int:
+          incident_id: Optional[int] = None, role: Optional[str] = None) -> int:
     """Stores live alert #n as it was: sources[0] at detection, later sources appended, every URL remembered."""
     alert = _LIVE[str(n)]
     detected = _ts(alert["detected_at_utc"])
@@ -42,6 +47,7 @@ def _seed(conn, n: int, polarity: Optional[str] = None, severity: Optional[str] 
         published_utc=_ts(first["published_utc"]), detected_at_utc=detected, category=alert["category"],
         severity=severity or "Medium", classification_method="llm_ollama", rationale=None, affected_symbols=[],
         polarity=polarity, incident_id=incident_id,
+        incident_role=role or (None if incident_id is None else "follow_up"),
     )
     for source in alert["sources"][1:]:
         store.append_source(conn, alert_id, source["source"], source["url"], _ts(source["published_utc"]))
@@ -51,18 +57,20 @@ def _seed(conn, n: int, polarity: Optional[str] = None, severity: Optional[str] 
     return alert_id
 
 
-def _cand(n: int, polarity: Optional[str] = None) -> IncidentCandidate:
+def _cand(n: int, polarity: Optional[str] = None, failed: bool = False, url: Optional[str] = None) -> IncidentCandidate:
     alert = _LIVE[str(n)]
     first = alert["sources"][0]
     return IncidentCandidate(
-        headline=alert["headline"], category=alert["category"], polarity=polarity, url=first["url"],
+        headline=alert["headline"], category=alert["category"], polarity=polarity, url=url or first["url"],
         published_utc=_ts(first["published_utc"]), detected_at_utc=_ts(alert["detected_at_utc"]),
+        classification_failed=failed,
     )
 
 
-def _other(headline: str, category: str, at: dt.datetime, url: str = "https://example.com/other-story") -> IncidentCandidate:
+def _other(headline: str, category: str, at: dt.datetime, url: str = "https://example.com/other-story",
+           failed: bool = False) -> IncidentCandidate:
     return IncidentCandidate(headline=headline, category=category, polarity=None, url=url,
-                             published_utc=at, detected_at_utc=at)
+                             published_utc=at, detected_at_utc=at, classification_failed=failed)
 
 
 @pytest.mark.parametrize("first,second", [(12, 13), (54, 55), (71, 72), (33, 39)],
@@ -97,7 +105,7 @@ def test_entity_rule_window_is_24h():
     conn = store.get_connection(":memory:")
     id54 = _seed(conn, 54)
     detected54 = _ts(_LIVE["54"]["detected_at_utc"])
-    headline = "Explosion reported near Riyadh oil facility"
+    headline = "Second blast reported at Riyadh airport terminal"
     link = find_incident(conn, _other(headline, "geopolitical_conflict", detected54 + dt.timedelta(hours=23)))
     assert link is not None
     assert link.incident_id == id54
@@ -109,7 +117,7 @@ def test_family_is_respected():
     conn = store.get_connection(":memory:")
     id54 = _seed(conn, 54)
     at = _ts(_LIVE["54"]["detected_at_utc"]) + dt.timedelta(hours=2)
-    headline = "Saudi oil exports disrupted after Riyadh attack"
+    headline = "Riyadh airport blast halts Saudi jet fuel deliveries"
     link = find_incident(conn, _other(headline, "energy", at))
     assert link is not None and link.incident_id == id54
     assert find_incident(conn, _other(headline, "central_bank", at)) is None
@@ -222,6 +230,115 @@ def test_update_reason_cases():
     rows = _rows(conn, [("High", "escalation", "Strait closed"), ("Medium", "escalation", "Strait still closed")])
     assert incident.incident_max_severity(rows) == "High"
     assert update_reason(rows, "High", "escalation", h, False) is None
+
+
+# --- Final-review fixes (2026-10-22): incident-scoped entity rule, push guarantee, one same-story test ---
+
+
+def test_entity_rule_links_54_55_without_the_shared_url():
+    conn = store.get_connection(":memory:")
+    id54 = _seed(conn, 54)
+    link = find_incident(conn, _cand(55, url="https://example.com/riyadh-airport-eyewitnesses"))
+    assert link is not None
+    assert link.incident_id == id54
+    assert link.rule == "entity:saudi arabia"  # shares "blast" + "airport" as well as Riyadh
+
+
+@pytest.mark.parametrize("root,cand", [(78, 79), (56, 60), (64, 65), (68, 69), (6, 7), (48, 50)],
+                         ids=["78-79", "56-60", "64-65", "68-69", "6-7", "48-50"])
+def test_shared_theatre_name_alone_does_not_link(root, cand):
+    """Classified on purpose (failed=False): the review's wrong links must fail on the rule itself, not on 2d."""
+    conn = store.get_connection(":memory:")
+    _seed(conn, root)
+    assert find_incident(conn, _cand(cand)) is None
+    assert incident.entity_rule_links(_LIVE[str(cand)]["headline"], _LIVE[str(root)]["headline"]) is None
+
+
+def test_new_attack_is_not_a_follow_up_of_talk():
+    """#36 "More tankers struck ... as Iran reiterates conditions" vs #35 "Iran says Hormuz will not reopen until conditions"."""
+    h35, h36 = _LIVE["35"]["headline"], _LIVE["36"]["headline"]
+    shared_words = (incident.event_words(h35) & incident.event_words(h36)) - incident._GENERIC_EVENT_WORDS
+    assert len(shared_words) >= incident.ENTITY_RULE_MIN_EVENT_WORDS  # only the new-attack veto keeps them apart
+    conn = store.get_connection(":memory:")
+    _seed(conn, 35)
+    assert find_incident(conn, _cand(36)) is None
+
+
+def test_entity_rule_compares_incident_roots_only():
+    """#69 (an update on Hormuz incident #68) names Russian refineries; a Russia story must not chain onto #68 through it."""
+    conn = store.get_connection(":memory:")
+    id68 = _seed(conn, 68)
+    _seed(conn, 69, incident_id=id68, role="update")
+    at = _ts(_LIVE["69"]["detected_at_utc"]) + dt.timedelta(hours=1)
+    headline = "Ukraine vows to hit more Russian refineries after drone raid"
+    assert incident.entity_rule_links(headline, _LIVE["69"]["headline"])  # would link to the update row itself
+    assert find_incident(conn, _other(headline, "geopolitical_conflict", at)) is None
+
+
+def test_entity_window_runs_from_the_root_not_the_latest_follow_up():
+    conn = store.get_connection(":memory:")
+    id54 = _seed(conn, 54)
+    detected54 = _ts(_LIVE["54"]["detected_at_utc"])
+    store.record_alert(
+        conn, headline="Second blast at Riyadh airport", source="s", url="https://example.com/second-blast",
+        published_utc=detected54 + dt.timedelta(hours=20), detected_at_utc=detected54 + dt.timedelta(hours=20),
+        category="geopolitical_conflict", severity="High", classification_method="llm_ollama", rationale=None,
+        affected_symbols=[], incident_id=id54, incident_role="follow_up", incident_rule="entity:saudi arabia",
+    )
+    late = _other("Third blast at Riyadh airport", "geopolitical_conflict", detected54 + dt.timedelta(hours=25))
+    assert find_incident(conn, late) is None
+
+
+def test_failed_classification_is_never_linked_by_the_entity_rule():
+    conn = store.get_connection(":memory:")
+    id54 = _seed(conn, 54)
+    at = _ts(_LIVE["54"]["detected_at_utc"]) + dt.timedelta(hours=1)
+    headline = "Second blast reported at Riyadh airport terminal"
+    assert find_incident(conn, _other(headline, "geopolitical_conflict", at, failed=True)) is None
+    classified = find_incident(conn, _other(headline, "geopolitical_conflict", at))
+    assert classified is not None and classified.incident_id == id54  # the rule itself would link it
+
+
+def test_failed_classification_still_links_by_url():
+    conn = store.get_connection(":memory:")
+    id54 = _seed(conn, 54)
+    link = find_incident(conn, _cand(55, failed=True))
+    assert link is not None and link.incident_id == id54 and link.rule == "url"
+
+
+def test_live_blog_new_story_keeps_its_own_age():
+    """#77 is 2 min fresh on the CNBC 10/21 live-blog URL #76 absorbed; no shared entity, low similarity."""
+    conn = store.get_connection(":memory:")
+    _seed(conn, 76)
+    cand = _cand(77, polarity="escalation")
+    assert store.lookup_seen_url(conn, cand.url, cand.detected_at_utc - dt.timedelta(hours=72))
+    assert find_incident(conn, cand) is None
+    assert effective_first_published(conn, cand) == dt.datetime(2026, 10, 21, 12, 48, 55, tzinfo=UTC)
+
+
+def test_inherited_age_uses_the_url_rule_test():
+    """A URL sighting with no shared entity and no similar headline neither links nor ages the candidate."""
+    conn = store.get_connection(":memory:")
+    _seed(conn, 12)
+    at = _ts(_LIVE["12"]["detected_at_utc"]) + dt.timedelta(hours=2)
+    cand = _other("Crude traders brace for volatile week", "energy", at, url=_LIVE["12"]["sources"][0]["url"])
+    assert find_incident(conn, cand) is None
+    assert effective_first_published(conn, cand) == at
+
+
+def test_event_words_drop_entities_publisher_and_generic_words():
+    words = incident.event_words("Loud blast at Riyadh airport as travellers evacuated - Reuters")
+    assert "blast" in words and "airpor" in words
+    assert not {"riyadh", "reuters"} & words
+    assert incident.event_words("Strait of Hormuz") == frozenset()  # no leftover "strait"
+    assert incident.event_words("Russia's drones") == frozenset({"drones"})  # no bare "'s" token
+    assert incident.entity_rule_links("Drone attack on Russia", "Russia says drone attack hit depot") is None
+
+
+def test_deploy_runbook_states_verify_condition_and_backfill_rerun():
+    runbook = (_MODULE_PATH.parent.parent / "docs" / "b7-deploy.md").read_text(encoding="utf-8")
+    assert "if any alert was detected in the last 72 h" in runbook
+    assert "DROP TABLE seen_urls" in runbook
 
 
 def test_source_has_no_backspace_bytes():

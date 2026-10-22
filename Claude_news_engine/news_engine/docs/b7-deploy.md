@@ -49,7 +49,7 @@ Record the restart time in UTC and SAST in the feature inventory B7 row (the "Ch
 ## 6. Verify
 
 - `PRAGMA table_info(shock_alerts)` (in `alerting\shock_alerts.db`) lists `incident_id`, `incident_role`, `incident_rule`.
-- `SELECT COUNT(*) FROM seen_urls` is greater than 0 after the next poll tick.
+- `SELECT COUNT(*) FROM seen_urls` is greater than 0 after the next poll tick if any alert was detected in the last 72 h (the one-time backfill); otherwise it becomes greater than 0 after the next new alert.
 - The poll log shows `incident #<n> follow_up (...) -- stored, no push` the next time a story is re-covered.
 - `/api/shock-alerts` rows carry `incident_id`.
 - After the next recorded prediction, `SELECT reason, COUNT(*) FROM prediction_article_contributions WHERE recorded_at_utc >= '<restart UTC>' GROUP BY 1` (in `scoring\backtest_log.db`) may show `same_incident`; the accumulator's `recorded` log line carries `same_incident excluded: <n>` when n > 0.
@@ -57,3 +57,5 @@ Record the restart time in UTC and SAST in the feature inventory B7 row (the "Ch
 ## 7. Rollback
 
 Stop as in step 3, revert the merge, restart one copy. The new columns and table stay (nothing reads them after the revert); restore the `pre_b7` backups only if needed.
+
+Before any later redeploy of B7, run `DROP TABLE seen_urls` (in `alerting\shock_alerts.db`, with the engine stopped) so the one-time 72 h backfill runs again when the table is recreated; otherwise alerts detected during the rollback window have no URL memory (accept that 72 h gap only knowingly).

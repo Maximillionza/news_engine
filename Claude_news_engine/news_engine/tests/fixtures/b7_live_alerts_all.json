@@ -1,0 +1,2156 @@
+{
+ "copied_from": "live shock_alerts.db, read-only (mode=ro), 2026-10-22",
+ "alerts": [
+  {
+   "id": 1,
+   "headline": "U.S. oil falls below $100 as Saudi Arabia reportedly offers more crude via Hormuz after pipeline attack",
+   "category": "energy",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "rule_tier",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-09-17T12:46:23.492481+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/17/oil-prices-today-wti-brent-hormuz-iran-war.html",
+     "published_utc": "2026-09-17T12:44:10+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/17/oil-prices-today-wti-brent-hormuz-iran-war.html",
+     "published_utc": "2026-09-17T12:48:27+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/17/oil-prices-today-wti-brent-hormuz-iran-war.html",
+     "published_utc": "2026-09-17T13:12:22+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/17/oil-prices-today-wti-brent-hormuz-iran-war.html",
+     "published_utc": "2026-09-17T13:41:56+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/17/oil-prices-today-wti-brent-hormuz-iran-war.html",
+     "published_utc": "2026-09-17T14:23:54+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/17/oil-prices-today-wti-brent-hormuz-iran-war.html",
+     "published_utc": "2026-09-17T14:26:11+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/17/oil-prices-today-wti-brent-hormuz-iran-war.html",
+     "published_utc": "2026-09-17T14:51:16+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/17/oil-prices-today-wti-brent-hormuz-iran-war.html",
+     "published_utc": "2026-09-17T14:57:03+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/17/oil-prices-today-wti-brent-hormuz-iran-war.html",
+     "published_utc": "2026-09-17T14:59:37+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/17/oil-prices-today-wti-brent-hormuz-iran-war.html",
+     "published_utc": "2026-09-17T15:13:50+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/17/oil-prices-today-wti-brent-hormuz-iran-war.html",
+     "published_utc": "2026-09-17T16:45:03+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/17/oil-prices-today-wti-brent-hormuz-iran-war.html",
+     "published_utc": "2026-09-17T16:47:26+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/17/oil-prices-today-wti-brent-hormuz-iran-war.html",
+     "published_utc": "2026-09-17T16:53:14+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/17/oil-prices-today-wti-brent-hormuz-iran-war.html",
+     "published_utc": "2026-09-17T18:52:00+00:00"
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "headline": "UN mission finds evidence signaling U.S. war crimes in Iran; Washington rejects report",
+   "category": "geopolitical_conflict",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-18T03:00:25.010310+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/18/us-iran-war-trump-hormuz.html",
+     "published_utc": "2026-09-18T02:59:38+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/18/us-iran-war-trump-hormuz.html",
+     "published_utc": "2026-09-18T03:09:22+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/18/us-iran-war-trump-hormuz.html",
+     "published_utc": "2026-09-18T11:59:14+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/18/us-iran-war-trump-hormuz.html",
+     "published_utc": "2026-09-18T12:03:01+00:00"
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "headline": "Trump administration advances $24.3 billion fighter jet deal to Saudi Arabia as Houthis escalate attacks",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-18T08:04:25.479529+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/18/trump-saudi-arabia-f-35-houthis-iran-war.html",
+     "published_utc": "2026-09-18T08:02:20+00:00"
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "headline": "Aramco halts October crude deliveries to some European refiners after pipeline attack, Bloomberg reports - reuters.com",
+   "category": "energy",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "rule_tier",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-09-18T16:04:23.124473+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMixgFBVV95cUxPLXZOci1kaFhqMWtjVXZMN1BDS0Q0LUF0UjNEVUlIMHlJR2x0bkNvZlhnX3FSQXg1T0lyRlVHSDlIV09xOFBOdUFSWU4yMmpMOUE5aXpJYjdJaGNZVTdwVmdxWlZuNmd1OU5hUXh5clNDbHh0dFNTQVJRaUdJdGNfdk4ySE1NVXZtODQ1UENyczdUMGpTTzNBaG82bjBvSm94WGxLZFNIOXFBQy1xb0Zqb0d6cVRISG52UkNSOXc0aGJROUgzLUE?oc=5",
+     "published_utc": "2026-09-18T15:13:44+00:00"
+    }
+   ]
+  },
+  {
+   "id": 6,
+   "headline": "Iran and US trade threats after Houthi attacks escalate regional conflict - Reuters",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-20T18:44:24.632155+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiowFBVV95cUxOdWJkS01sRHBUcXZGZVVoTy1zVU04amJ0VUc3WnZ4UkVZd25TTTR6RGY1ZkV5OUtGZzFULVNDcEo4MzlZMmNkamt0VjR5VHg3YzRDaWhEOFAtZklDbFpGSXpCeE9BeGR3UWp3aFN1MVp2aUMyZE93ZnFUN0VTdzdkZGJnMDdrOFNtc1lhZC1UQlNDWFl3dGRWdjZwYkc2SHJGelBn?oc=5",
+     "published_utc": "2026-09-20T17:46:57+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMimwFBVV95cUxOdEljbFotbFNVU2Nyb1oyaElIUXJJc1ltUmF5a1FrMl9xbEwyNG9LOWwyZ3F2dUZIUl9QYnd6OXU1cU10UGx0QzkxaVp6QkoxY3ZYSm1qc3FvbFprT29VcldJZ3V1Y1YtZ1A3MjEtTUo2dk9laHFBaWZBMFNOMmZDVC16aDBhYUdmdmZFdUJ4d0hoMW5hZTgxRk1ETQ?oc=5",
+     "published_utc": "2026-09-20T22:11:00+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMimwFBVV95cUxOdEljbFotbFNVU2Nyb1oyaElIUXJJc1ltUmF5a1FrMl9xbEwyNG9LOWwyZ3F2dUZIUl9QYnd6OXU1cU10UGx0QzkxaVp6QkoxY3ZYSm1qc3FvbFprT29VcldJZ3V1Y1YtZ1A3MjEtTUo2dk9laHFBaWZBMFNOMmZDVC16aDBhYUdmdmZFdUJ4d0hoMW5hZTgxRk1ETQ?oc=5",
+     "published_utc": "2026-09-20T22:12:27+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMimwFBVV95cUxOdEljbFotbFNVU2Nyb1oyaElIUXJJc1ltUmF5a1FrMl9xbEwyNG9LOWwyZ3F2dUZIUl9QYnd6OXU1cU10UGx0QzkxaVp6QkoxY3ZYSm1qc3FvbFprT29VcldJZ3V1Y1YtZ1A3MjEtTUo2dk9laHFBaWZBMFNOMmZDVC16aDBhYUdmdmZFdUJ4d0hoMW5hZTgxRk1ETQ?oc=5",
+     "published_utc": "2026-09-20T23:19:46+00:00"
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "headline": "U.S. urges Americans to reconsider Middle East travel as Iran tensions rise",
+   "category": "energy",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "rule_tier",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-09-20T18:44:25.235775+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/20/us-middle-east-travel-warning-iran-war-hormuz.html",
+     "published_utc": "2026-09-20T14:23:53+00:00"
+    }
+   ]
+  },
+  {
+   "id": 8,
+   "headline": "At least three killed in Pakistani airstrikes on Afghanistan, officials say - reuters.com",
+   "category": "geopolitical_conflict",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-21T08:16:24.047402+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiwAFBVV95cUxPUnNNQ0pjRUhkOVRfZ2EwNWN1WDBXWmgxNXlweDlWRzVqMTBfemRWT2x0NG5hRVdtSFowS0QwVld3MkdqZ2RLSWVuWE5KNjRxWVFlMXR1emZyTTZ4UFlkS2tQWmF0T0xlRExmQktSN2xha3hIZ0JPWTFJUUNORjc5LXloMWV6QS1SeE5oR2tzU01jNExMdXVTYVBDb1l6NzM3bF9SVWplQW1aZ1ZYcXdBMTdLdEhTNW5WV2g4U2hUQnA?oc=5",
+     "published_utc": "2026-09-21T08:06:09+00:00"
+    }
+   ]
+  },
+  {
+   "id": 9,
+   "headline": "Iran reportedly says it can reopen Strait of Hormuz within 7 days if U.S. eases military pressure",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-22T10:30:23.745821+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/us-iran-war-trump-hormuz.html",
+     "published_utc": "2026-09-22T10:28:17+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/us-iran-war-trump-hormuz.html",
+     "published_utc": "2026-09-22T12:56:37+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/us-iran-war-trump-hormuz.html",
+     "published_utc": "2026-09-22T13:27:53+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/us-iran-war-trump-hormuz.html",
+     "published_utc": "2026-09-22T14:05:04+00:00"
+    }
+   ]
+  },
+  {
+   "id": 10,
+   "headline": "Saudi Arabia restarts East-West oil pipeline, to resume exports from Yanbu, sources say - Reuters",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-22T10:50:24.787157+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiyAFBVV95cUxPNmJidHFzNHlscWlnT2hsWFdKc1hNRFMxOWRnTTRQRHVHbV9tRTJySFJoOGFoZXdNdTIwMngxZlczRmY3dWJxWkNiWTRYclVyT0JoWXQyUHJpNThicmpUNDMwWjNqREdrYmw3Ty1peU9oaEtRdC1GWXE1S0o1eGlrWDZONDhqS0FDbWotZXV1LXBvTEhUWHdlT1BzYU5udjNKTTFXdk1hX0wwVk1yczRTdV94R0p4UUQ1bEViTXJ2S2pEaTVLTFlvdw?oc=5",
+     "published_utc": "2026-09-22T10:17:46+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiyAFBVV95cUxPNmJidHFzNHlscWlnT2hsWFdKc1hNRFMxOWRnTTRQRHVHbV9tRTJySFJoOGFoZXdNdTIwMngxZlczRmY3dWJxWkNiWTRYclVyT0JoWXQyUHJpNThicmpUNDMwWjNqREdrYmw3Ty1peU9oaEtRdC1GWXE1S0o1eGlrWDZONDhqS0FDbWotZXV1LXBvTEhUWHdlT1BzYU5udjNKTTFXdk1hX0wwVk1yczRTdV94R0p4UUQ1bEViTXJ2S2pEaTVLTFlvdw?oc=5",
+     "published_utc": "2026-09-22T11:41:47+00:00"
+    }
+   ]
+  },
+  {
+   "id": 11,
+   "headline": "Trump administration is examining whether a diesel export ban is feasible, Treasury Secretary says",
+   "category": "trade_policy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-22T18:18:31.178192+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/trump-diesel-export-ban-urkaine-russia-iran.html",
+     "published_utc": "2026-09-22T18:16:19+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/trump-diesel-export-ban-urkaine-russia-iran.html",
+     "published_utc": "2026-09-22T18:21:24+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/trump-diesel-export-ban-urkaine-russia-iran.html",
+     "published_utc": "2026-09-22T18:25:45+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/trump-diesel-export-ban-urkaine-russia-iran.html",
+     "published_utc": "2026-09-22T18:31:22+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/trump-diesel-export-ban-urkaine-russia-iran.html",
+     "published_utc": "2026-09-22T18:37:31+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/trump-diesel-export-ban-urkaine-russia-iran.html",
+     "published_utc": "2026-09-22T19:01:45+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/trump-diesel-export-ban-urkaine-russia-iran.html",
+     "published_utc": "2026-09-22T19:03:49+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/trump-diesel-export-ban-urkaine-russia-iran.html",
+     "published_utc": "2026-09-22T19:40:11+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/trump-diesel-export-ban-urkaine-russia-iran.html",
+     "published_utc": "2026-09-22T19:59:05+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/trump-diesel-export-ban-urkaine-russia-iran.html",
+     "published_utc": "2026-09-22T23:43:48+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/22/trump-diesel-export-ban-urkaine-russia-iran.html",
+     "published_utc": "2026-09-23T11:49:49+00:00"
+    }
+   ]
+  },
+  {
+   "id": 12,
+   "headline": "Iran floats conditions for Hormuz reopening as Trump says deal could come after midterms",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-23T05:52:24.099711+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/23/us-iran-war-trump-hormuz.html",
+     "published_utc": "2026-09-23T05:37:48+00:00"
+    }
+   ]
+  },
+  {
+   "id": 13,
+   "headline": "Iran says Trump\u2019s threats a sign of \u2018strategic desperation,\u2019 floats conditions for Hormuz reopening",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-23T09:06:24.153499+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/23/us-iran-war-trump-hormuz.html",
+     "published_utc": "2026-09-23T09:05:23+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/23/us-iran-war-trump-hormuz.html",
+     "published_utc": "2026-09-23T11:56:04+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/23/us-iran-war-trump-hormuz.html",
+     "published_utc": "2026-09-23T14:06:40+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/23/us-iran-war-trump-hormuz.html",
+     "published_utc": "2026-09-23T14:47:28+00:00"
+    }
+   ]
+  },
+  {
+   "id": 14,
+   "headline": "Oil industry warns a diesel export ban will raise fuel prices as Trump weighs restrictions",
+   "category": "trade_policy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-23T19:20:26.119432+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/23/trump-diesel-export-ban-gas-prices.html",
+     "published_utc": "2026-09-23T19:18:35+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/23/trump-diesel-export-ban-gas-prices.html",
+     "published_utc": "2026-09-23T19:30:54+00:00"
+    }
+   ]
+  },
+  {
+   "id": 15,
+   "headline": "Heavy rains hit Mexico as Hurricane Polo tracks offshore, expected to make landfall on Sunday night - reuters.com",
+   "category": "natural_disaster_supply_chain",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-24T18:14:25.469466+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxOVU95VGViSGRjU1RCWGRXWXllUGFFZlVxams2bTQ5U2RjZHFJcEQ3TXA0M1ZjTkJDMWdOSkhwdlVteHVqb1JzNkwwVnoyODN4aXFVS0JLUWNRUm9oWVFweV9uOTlUR2N2eV92aFp3UnFTVjhFUTNhdzF4bmdvRE1Zd3BVZkx1Y3dHTTdkQzZLZjRxa0JZam0tdHdrNHhfQ1RpeTlRTF85dWJEaXdDdTJiYUpqZEh3QnM1dmU2eTN3MUZQNXc?oc=5",
+     "published_utc": "2026-09-24T18:00:52+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxOVU95VGViSGRjU1RCWGRXWXllUGFFZlVxams2bTQ5U2RjZHFJcEQ3TXA0M1ZjTkJDMWdOSkhwdlVteHVqb1JzNkwwVnoyODN4aXFVS0JLUWNRUm9oWVFweV9uOTlUR2N2eV92aFp3UnFTVjhFUTNhdzF4bmdvRE1Zd3BVZkx1Y3dHTTdkQzZLZjRxa0JZam0tdHdrNHhfQ1RpeTlRTF85dWJEaXdDdTJiYUpqZEh3QnM1dmU2eTN3MUZQNXc?oc=5",
+     "published_utc": "2026-09-24T18:23:29+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxOVU95VGViSGRjU1RCWGRXWXllUGFFZlVxams2bTQ5U2RjZHFJcEQ3TXA0M1ZjTkJDMWdOSkhwdlVteHVqb1JzNkwwVnoyODN4aXFVS0JLUWNRUm9oWVFweV9uOTlUR2N2eV92aFp3UnFTVjhFUTNhdzF4bmdvRE1Zd3BVZkx1Y3dHTTdkQzZLZjRxa0JZam0tdHdrNHhfQ1RpeTlRTF85dWJEaXdDdTJiYUpqZEh3QnM1dmU2eTN3MUZQNXc?oc=5",
+     "published_utc": "2026-09-24T19:13:40+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxOVU95VGViSGRjU1RCWGRXWXllUGFFZlVxams2bTQ5U2RjZHFJcEQ3TXA0M1ZjTkJDMWdOSkhwdlVteHVqb1JzNkwwVnoyODN4aXFVS0JLUWNRUm9oWVFweV9uOTlUR2N2eV92aFp3UnFTVjhFUTNhdzF4bmdvRE1Zd3BVZkx1Y3dHTTdkQzZLZjRxa0JZam0tdHdrNHhfQ1RpeTlRTF85dWJEaXdDdTJiYUpqZEh3QnM1dmU2eTN3MUZQNXc?oc=5",
+     "published_utc": "2026-09-24T20:55:06+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxOVU95VGViSGRjU1RCWGRXWXllUGFFZlVxams2bTQ5U2RjZHFJcEQ3TXA0M1ZjTkJDMWdOSkhwdlVteHVqb1JzNkwwVnoyODN4aXFVS0JLUWNRUm9oWVFweV9uOTlUR2N2eV92aFp3UnFTVjhFUTNhdzF4bmdvRE1Zd3BVZkx1Y3dHTTdkQzZLZjRxa0JZam0tdHdrNHhfQ1RpeTlRTF85dWJEaXdDdTJiYUpqZEh3QnM1dmU2eTN3MUZQNXc?oc=5",
+     "published_utc": "2026-09-24T22:04:10+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxOVU95VGViSGRjU1RCWGRXWXllUGFFZlVxams2bTQ5U2RjZHFJcEQ3TXA0M1ZjTkJDMWdOSkhwdlVteHVqb1JzNkwwVnoyODN4aXFVS0JLUWNRUm9oWVFweV9uOTlUR2N2eV92aFp3UnFTVjhFUTNhdzF4bmdvRE1Zd3BVZkx1Y3dHTTdkQzZLZjRxa0JZam0tdHdrNHhfQ1RpeTlRTF85dWJEaXdDdTJiYUpqZEh3QnM1dmU2eTN3MUZQNXc?oc=5",
+     "published_utc": "2026-09-24T23:48:33+00:00"
+    }
+   ]
+  },
+  {
+   "id": 16,
+   "headline": "Iran offers to reopen Strait of Hormuz within 7 days and restart nuclear talks",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-25T08:58:25.514190+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/25/us-iran-trump-hormuz-.html",
+     "published_utc": "2026-09-25T08:56:17+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/25/us-iran-trump-hormuz-.html",
+     "published_utc": "2026-09-25T09:03:01+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/25/us-iran-trump-hormuz-.html",
+     "published_utc": "2026-09-25T11:14:24+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/25/us-iran-trump-hormuz-.html",
+     "published_utc": "2026-09-25T12:39:00+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/25/us-iran-trump-hormuz-.html",
+     "published_utc": "2026-09-25T13:31:26+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/25/us-iran-trump-hormuz-.html",
+     "published_utc": "2026-09-25T13:45:18+00:00"
+    }
+   ]
+  },
+  {
+   "id": 17,
+   "headline": "Talk of US export ban on diesel deepens US crude futures' discount to global benchmark - Reuters",
+   "category": "trade_policy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-25T13:08:27.210603+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMixwFBVV95cUxOakktX2lMSTlPSnViWHdvbUxHTm14WGIwOGR5dzk2LThBRGJoMklPZXFIRlc2YlUzYWRLaGJMd21hREl5QnVsQXFnYVFhSDFsdnJhcy1wWGtaemRiS3RveDNxWHd0QUNnS1lmcjhEcFhXMTNSUjZySkhMZmxzU3ZVT2l6UnduUnUzT0JlQVdPUFN2cmhjNDdUT2JqU21zXy0tN1BFM2NNMUJmQTdVSFJjQnduaXA4dWl6MlMycm90U3UyUXQ3WVBj?oc=5",
+     "published_utc": "2026-09-25T12:43:59+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMixwFBVV95cUxOakktX2lMSTlPSnViWHdvbUxHTm14WGIwOGR5dzk2LThBRGJoMklPZXFIRlc2YlUzYWRLaGJMd21hREl5QnVsQXFnYVFhSDFsdnJhcy1wWGtaemRiS3RveDNxWHd0QUNnS1lmcjhEcFhXMTNSUjZySkhMZmxzU3ZVT2l6UnduUnUzT0JlQVdPUFN2cmhjNDdUT2JqU21zXy0tN1BFM2NNMUJmQTdVSFJjQnduaXA4dWl6MlMycm90U3UyUXQ3WVBj?oc=5",
+     "published_utc": "2026-09-25T22:49:11+00:00"
+    }
+   ]
+  },
+  {
+   "id": 18,
+   "headline": "Category 4 Hurricane Polo threatens Mexico\u2019s coast, landfall expected Monday - Reuters",
+   "category": "natural_disaster_supply_chain",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-26T18:56:24.604219+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiywFBVV95cUxPX3FKRlF5WEJudldBNU5uNWpXOTJ6NWQxaFFkNDRZUFZyR2V6bWYzQmJJUlZDN015RlRPTUxOUHFDQ2VKN1lVeHRhc0dFV2t5RnB6S205U0NHbHFicUZfUjhGcTJhdjhsWkVGY29Yc2ZUM2dfeVJOc0poVXctLXRLNGVjaHBIZkRMTWl2bkpGbkFpODNCYlY3M0xMbjVScmFHWnhUbk5yeVVlNC1wM0RmeDZZdktsMmxHYWdTR3VDYVlZc0dIVTFoZVdfSQ?oc=5",
+     "published_utc": "2026-09-26T18:35:37+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiywFBVV95cUxPX3FKRlF5WEJudldBNU5uNWpXOTJ6NWQxaFFkNDRZUFZyR2V6bWYzQmJJUlZDN015RlRPTUxOUHFDQ2VKN1lVeHRhc0dFV2t5RnB6S205U0NHbHFicUZfUjhGcTJhdjhsWkVGY29Yc2ZUM2dfeVJOc0poVXctLXRLNGVjaHBIZkRMTWl2bkpGbkFpODNCYlY3M0xMbjVScmFHWnhUbk5yeVVlNC1wM0RmeDZZdktsMmxHYWdTR3VDYVlZc0dIVTFoZVdfSQ?oc=5",
+     "published_utc": "2026-09-26T22:49:43+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMi3AFBVV95cUxQTTJwbVNURHJ4dzloOEZrN2FSME1abGhkcHdzbEZnMG1HSHdqUjhhVWU2OEgtZi1SR2NZWU1aZTlpU0Q3WXVCWWNwUzhweld0Uld2U1llbWF2LURVblFpeE1ncllHLW1UbVhjOWJBb292Ujl4b0dJM3R1SHdoQmdtbVllaUxmWkNqRzdSSWctZC1KRVpoNDRHdlNySFhnaEozdE1qY2Q5eVBYeldhdmtRTVNrN0Rpemh0N21DSjNLN3ZqYmN0bGtwYTZMQkg4TWRPclBhbjdNTDEyUER1?oc=5",
+     "published_utc": "2026-09-26T22:49:43+00:00"
+    }
+   ]
+  },
+  {
+   "id": 19,
+   "headline": "Meta's Muse agent is attacking one of the economy's most profitable weak spots",
+   "category": "geopolitical_conflict",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-27T14:46:24.498474+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/27/meta-muse-ai-personal-agent.html",
+     "published_utc": "2026-09-27T14:33:22+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/27/meta-muse-ai-personal-agent.html",
+     "published_utc": "2026-09-28T14:03:43+00:00"
+    }
+   ]
+  },
+  {
+   "id": 20,
+   "headline": "Trump \u2018very seriously\u2019 considering diesel export ban as global supply crunch worsens",
+   "category": "trade_policy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-28T08:28:26.250027+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/28/diesel-oil-trump-export-ban-fuel-prices.html",
+     "published_utc": "2026-09-28T08:24:19+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/28/diesel-oil-trump-export-ban-fuel-prices.html",
+     "published_utc": "2026-09-28T12:41:13+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/28/diesel-oil-trump-export-ban-fuel-prices.html",
+     "published_utc": "2026-09-28T13:09:26+00:00"
+    }
+   ]
+  },
+  {
+   "id": 21,
+   "headline": "Oil prices jump over 4% as Trump rejects Iranian proposal to reopen Strait of Hormuz",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-28T10:30:25.600121+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/28/oil-price-today-wti-brent-trump-iran.html",
+     "published_utc": "2026-09-28T10:29:56+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/28/oil-price-today-wti-brent-trump-iran.html",
+     "published_utc": "2026-09-28T10:39:22+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/28/oil-price-today-wti-brent-trump-iran.html",
+     "published_utc": "2026-09-28T12:39:49+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/28/oil-price-today-wti-brent-trump-iran.html",
+     "published_utc": "2026-09-28T14:34:23+00:00"
+    }
+   ]
+  },
+  {
+   "id": 22,
+   "headline": "Mexico's Pacific coast braces for Hurricane Polo's life-threatening landfall - Reuters",
+   "category": "natural_disaster_supply_chain",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-28T14:30:25.752182+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMixgFBVV95cUxPUGJZek5MU1FpT2NBbjZZWGd5dkNVd0tqZUVacWxsNi1sUUJuTUJKNy1aUmNxeUd1UEt4WWtnTzFUOU1rdzJxRDljeDFOQWw5YXo4Yk1CaEU3dlh1RUc1czZ5WWctTE0tTmNnbFVUZGsycDhkdTVYTEZKZ3JyS0VGTjkwS1JlUFRLaU1pZHZvaE5pRkFNeG9Mb0FocmVucWdHMkFqVEdYTU56a1dRZ2lqcHRiXzJ5NS1rX2R6eEcxeUxuMEZaWXc?oc=5",
+     "published_utc": "2026-09-28T14:22:02+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMixgFBVV95cUxPUGJZek5MU1FpT2NBbjZZWGd5dkNVd0tqZUVacWxsNi1sUUJuTUJKNy1aUmNxeUd1UEt4WWtnTzFUOU1rdzJxRDljeDFOQWw5YXo4Yk1CaEU3dlh1RUc1czZ5WWctTE0tTmNnbFVUZGsycDhkdTVYTEZKZ3JyS0VGTjkwS1JlUFRLaU1pZHZvaE5pRkFNeG9Mb0FocmVucWdHMkFqVEdYTU56a1dRZ2lqcHRiXzJ5NS1rX2R6eEcxeUxuMEZaWXc?oc=5",
+     "published_utc": "2026-09-28T16:32:00+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMixgFBVV95cUxPUGJZek5MU1FpT2NBbjZZWGd5dkNVd0tqZUVacWxsNi1sUUJuTUJKNy1aUmNxeUd1UEt4WWtnTzFUOU1rdzJxRDljeDFOQWw5YXo4Yk1CaEU3dlh1RUc1czZ5WWctTE0tTmNnbFVUZGsycDhkdTVYTEZKZ3JyS0VGTjkwS1JlUFRLaU1pZHZvaE5pRkFNeG9Mb0FocmVucWdHMkFqVEdYTU56a1dRZ2lqcHRiXzJ5NS1rX2R6eEcxeUxuMEZaWXc?oc=5",
+     "published_utc": "2026-09-28T21:56:35+00:00"
+    }
+   ]
+  },
+  {
+   "id": 23,
+   "headline": "Hurricane Polo hits northwest Mexico's Sonora state, after drenching Baja California Sur - reuters.com",
+   "category": "natural_disaster_supply_chain",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-29T18:50:24.572860+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiygFBVV95cUxObXU5d0ptMnNUNUg1Mm5PM0ViZkxoMlZtbDlEQWtfdDFHejFITklCOU5OczdXNVZQMXYtSmlaRXlqdXhibF9rb0FMRjBrWWNSRTRoZ3BnSTVJcGZkTFUyR3ZxR05sTGhFa2dzSU1CdnRRc25SQTY5S19DbkluMXJ3QmhaUk5PdGpfU2RXZ3o0Ui1lVnUzWHk2X0dfMmdjMDlIMlNCSXM5U1F4NnJjZG40OGprblZncW9hMW1YS0ZIb194UHE4UllteG1n?oc=5",
+     "published_utc": "2026-09-29T18:41:29+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiygFBVV95cUxObXU5d0ptMnNUNUg1Mm5PM0ViZkxoMlZtbDlEQWtfdDFHejFITklCOU5OczdXNVZQMXYtSmlaRXlqdXhibF9rb0FMRjBrWWNSRTRoZ3BnSTVJcGZkTFUyR3ZxR05sTGhFa2dzSU1CdnRRc25SQTY5S19DbkluMXJ3QmhaUk5PdGpfU2RXZ3o0Ui1lVnUzWHk2X0dfMmdjMDlIMlNCSXM5U1F4NnJjZG40OGprblZncW9hMW1YS0ZIb194UHE4UllteG1n?oc=5",
+     "published_utc": "2026-09-29T19:15:49+00:00"
+    }
+   ]
+  },
+  {
+   "id": 24,
+   "headline": "Russia extends diesel export ban until end of October - Reuters",
+   "category": "trade_policy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-30T09:00:25.547304+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMipAFBVV95cUxOUlRENUlLb2UyalJZcUdJdjZaZzBUalBVZUdGRFFpNk50Wm1VTTMyQ1RMUkk3RmtfOUtGdlRqcExmSU5MSG5GYVdUbjBBdENwa0RWeU5aYm9xNmZRM05oZktzd1VaMWVodGE5SURGaFBmMTJxQlNaOWdLMVk3dERsV0RGcTJtSTNvRGlqTmQyNGdFT1hRLW1EVzRpcmFPMEcteHNocg?oc=5",
+     "published_utc": "2026-09-30T07:49:47+00:00"
+    }
+   ]
+  },
+  {
+   "id": 25,
+   "headline": "OPEC+ oil producers set to keep output targets steady at Sunday meeting, sources say - Reuters",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-30T10:20:24.807548+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMixwFBVV95cUxPaE14NjRXSUlvdDN4Q3cwYlBXYkd4dWhaN0hqNlVObWNKXy1Nd2gzUEgyUlNoS3hiSkxBN0JiLXIxX0xaMVJlRUd2MzBRaHVSSzJuNXBMLXRCSzBjUFI3b2FnVV82VDVnZ1ZPZ0c1UGNDY2xTYktBUkhfXy1VbGxJbldiU0Job0lmN1hQX2JONUFMMTZ4TVg2VS1rbldPNFpSQWdmOEdMMTlQQ2lWaDljQ2lnYzBLS1lOb21nTElYLUh3ZngyTjVz?oc=5",
+     "published_utc": "2026-09-30T08:55:52+00:00"
+    }
+   ]
+  },
+  {
+   "id": 26,
+   "headline": "Crude oil exports through the Strait of Hormuz hit prewar levels, but fuel shipments remain constrained",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-30T18:10:25.132006+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/30/iran-war-strait-hormuz-gulf-oil-fuel.html",
+     "published_utc": "2026-09-30T18:08:51+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/30/iran-war-strait-hormuz-gulf-oil-fuel.html",
+     "published_utc": "2026-09-30T18:11:29+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/30/iran-war-strait-hormuz-gulf-oil-fuel.html",
+     "published_utc": "2026-09-30T18:14:51+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/30/iran-war-strait-hormuz-gulf-oil-fuel.html",
+     "published_utc": "2026-09-30T18:17:24+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/30/iran-war-strait-hormuz-gulf-oil-fuel.html",
+     "published_utc": "2026-09-30T18:48:59+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/30/iran-war-strait-hormuz-gulf-oil-fuel.html",
+     "published_utc": "2026-09-30T19:42:40+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/30/iran-war-strait-hormuz-gulf-oil-fuel.html",
+     "published_utc": "2026-09-30T19:44:47+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/30/iran-war-strait-hormuz-gulf-oil-fuel.html",
+     "published_utc": "2026-09-30T20:16:17+00:00"
+    }
+   ]
+  },
+  {
+   "id": 27,
+   "headline": "Trump 'thinking about' diesel export ban, but says it could have 'negative impact' on gasoline",
+   "category": "trade_policy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-09-30T22:48:25.314897+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/09/30/trump-diesel-export-ban-gas.html",
+     "published_utc": "2026-09-30T22:43:53+00:00"
+    }
+   ]
+  },
+  {
+   "id": 28,
+   "headline": "EXCLUSIVE: US tells France and Germany to release diesel stocks or face US export ban, sources say - Reuters",
+   "category": "trade_policy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-10-01T10:12:24.138726+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiywFBVV95cUxNOGxXWEZnTW1hNUtCOXY4NTJTWHQ0ZkZoUEZsYkt3c3lQTVU1NDFVbHJnSkNJbXRTdzZCSlBWY2tsc0stTk5CSGk1Ymhpb0NwaG1WUEg5Ni1pVlFxQnRMc093VGllN0c5ektIdWYyN191ZW5ZX1lrUjhVODk2TUpsRXFQT3hQdGhVUzdjdklkSENrWm8yWmgwVkE1bEd6TTB2RHBsUHpZVExmTUhkbjhINTVrZ3ZpQnNsQW9wc0FBMWk4XzF0WEI1aXZBQQ?oc=5",
+     "published_utc": "2026-10-01T09:20:10+00:00"
+    }
+   ]
+  },
+  {
+   "id": 29,
+   "headline": "Canada to fast track oil pipeline designed to diversify economy away from US - Reuters",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-10-01T16:58:25.515087+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxQNWtEU1lqY1h5V3phT1R1RG5tQkNJeVJYS2xPYzh4Mkh4WTNZY0F2MHVwMzVGaUpfMWFvMmVXR3RYaC11WkZkV0xpOGVZWXRVbUZPOFRubE0zSWxiX3g5Mk5IajJpQ3d0Rlc1aFRlWHZLeGJaR3ctWlR6NGIyLW56TXBvd29lNHEyWWxyVThKZEFnT05LTDBwRTRZQlQ2c2VweFpqNjZEYWU0UXJFdTZmdk8zVEtnY2pu?oc=5",
+     "published_utc": "2026-10-01T16:45:42+00:00"
+    }
+   ]
+  },
+  {
+   "id": 30,
+   "headline": "EXCLUSIVE: OPEC+ delays oil capacity review after Iran war disrupts expansion plans, sources say - Reuters",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-10-02T11:54:24.549399+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiywFBVV95cUxQT2J4Zm9OdTE5aTNUN1dqemFJaWxyamJKSXQ2WGpLeWhLMkgxbkVPU01vS2hVbXd5WEFhMDh5a21lcVNacXUyV0M5cEljbkJfRUdkcHJ0YTNBQVpHRENNRVVfZzQ3S3lwT3F0eUJNUmF5OGpXN1BKbG9Jc28tRGdZM0xVZFhMcFhTTktYbnVWQThvSXRjZ250enQ0Y1N2RHBSTTFZRkY5U2RJQ3Q0Zmk1X19yRDlrQ0phaUlkSDg2V3dTSXg2VzBqc2tacw?oc=5",
+     "published_utc": "2026-10-02T11:21:16+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiywFBVV95cUxQT2J4Zm9OdTE5aTNUN1dqemFJaWxyamJKSXQ2WGpLeWhLMkgxbkVPU01vS2hVbXd5WEFhMDh5a21lcVNacXUyV0M5cEljbkJfRUdkcHJ0YTNBQVpHRENNRVVfZzQ3S3lwT3F0eUJNUmF5OGpXN1BKbG9Jc28tRGdZM0xVZFhMcFhTTktYbnVWQThvSXRjZ250enQ0Y1N2RHBSTTFZRkY5U2RJQ3Q0Zmk1X19yRDlrQ0phaUlkSDg2V3dTSXg2VzBqc2tacw?oc=5",
+     "published_utc": "2026-10-02T11:58:10+00:00"
+    }
+   ]
+  },
+  {
+   "id": 31,
+   "headline": "Trump says Europe will release diesel stocks as wars in Europe and Middle East constrain fuel supplies",
+   "category": "trade_policy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-10-02T14:24:26.105949+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T14:16:29+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T14:49:34+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T15:19:25+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T15:20:24+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T15:22:55+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T15:37:54+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T15:40:45+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T15:49:08+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T15:56:52+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T16:01:20+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T16:02:14+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T16:13:37+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T18:21:13+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T18:46:20+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T18:55:01+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T19:11:23+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T19:15:38+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/02/diesel-oil-trump-europe-export-ban.html",
+     "published_utc": "2026-10-02T19:25:36+00:00"
+    }
+   ]
+  },
+  {
+   "id": 32,
+   "headline": "Trump: not going to be doing diesel export ban - Reuters",
+   "category": "trade_policy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-10-02T23:00:24.737314+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMimgFBVV95cUxPNFpjaVZQbDFyTVpod0ZuUDM2djZsT1RmNzZ5TVpZRFpRbHlFbzFIeFNuaGlPeHNWem1Kc2hZN2FEVGY0eVpqemJhTjQzMzBjcUlHWXpIbTE4ZUM0N05Mc3plQXA4VjNmdXVYc0lWZ242NlJJYVNLS2w4ZGpKdjljTnJpd0dNSUhXR3UzRVpsWlMxNkRUbWNXQTJR?oc=5",
+     "published_utc": "2026-10-02T22:19:16+00:00"
+    }
+   ]
+  },
+  {
+   "id": 33,
+   "headline": "EXCLUSIVE: Ukraine will hit Russian refineries in response to Moscow's 'new doctrine' of airstrikes - Reuters",
+   "category": "geopolitical_conflict",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-10-03T20:20:25.793469+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMi1gFBVV95cUxOQ0JETXJlUlJGblZwbTljbXFFb0JkS2REVzBWUVdPUE5uN0xSRGpVZVBpS3B3Qnh1VkFWQjdYUzdOWnFFZkd4aVRFQmViaEJkVkVzTUxUMDJKdWh5UWJfaExXMi1UbTlLd1AxVnJ2UF9BUUZFc2g0ZEFTOWJGTi1WS3h0YlNtYzFRY0FTam5WbllJVXdGbUp1S0tQcGgtdmppSHpIMGg5dUtuLVN3SjJFME9MYTNSci1maHptc3RVVVk5d3k4NmgwS0oxZUZ5alpUNmYzR09R?oc=5",
+     "published_utc": "2026-10-03T20:17:10+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMi1gFBVV95cUxOQ0JETXJlUlJGblZwbTljbXFFb0JkS2REVzBWUVdPUE5uN0xSRGpVZVBpS3B3Qnh1VkFWQjdYUzdOWnFFZkd4aVRFQmViaEJkVkVzTUxUMDJKdWh5UWJfaExXMi1UbTlLd1AxVnJ2UF9BUUZFc2g0ZEFTOWJGTi1WS3h0YlNtYzFRY0FTam5WbllJVXdGbUp1S0tQcGgtdmppSHpIMGg5dUtuLVN3SjJFME9MYTNSci1maHptc3RVVVk5d3k4NmgwS0oxZUZ5alpUNmYzR09R?oc=5",
+     "published_utc": "2026-10-03T20:25:53+00:00"
+    }
+   ]
+  },
+  {
+   "id": 34,
+   "headline": "OPEC+ agrees in principle to keep November oil output targets steady, sources say - Reuters",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-10-04T10:34:24.857380+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxObkpnNDluR1haTkdBX3RldWlkX2pySlFJWlFIdmZhaGt1NTFuYlVJS3Nkc2VNQlJ4bXN2LTc1VTF1SWViaVloM1Y4U1JndkpESXNfb2IxazBFS3RTVjRpUUhVeWNURVNtd2dKcWxRMjdoTEFiRTdwd1FrWEw2OUx4NUY5U1hkNFBqVjUxZlJyVVlQNFBEUmVPVTBYejluWWhMZF9xZlNrQmFqU0R4ZlJGc0N5QzJ0ckNfN0dYdkFQalpkVkk?oc=5",
+     "published_utc": "2026-10-04T10:25:43+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxObkpnNDluR1haTkdBX3RldWlkX2pySlFJWlFIdmZhaGt1NTFuYlVJS3Nkc2VNQlJ4bXN2LTc1VTF1SWViaVloM1Y4U1JndkpESXNfb2IxazBFS3RTVjRpUUhVeWNURVNtd2dKcWxRMjdoTEFiRTdwd1FrWEw2OUx4NUY5U1hkNFBqVjUxZlJyVVlQNFBEUmVPVTBYejluWWhMZF9xZlNrQmFqU0R4ZlJGc0N5QzJ0ckNfN0dYdkFQalpkVkk?oc=5",
+     "published_utc": "2026-10-04T12:09:48+00:00"
+    }
+   ]
+  },
+  {
+   "id": 35,
+   "headline": "Iran says Strait of Hormuz will not reopen until conditions are met - Reuters",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-10-04T12:02:25.077796+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxNUEhSM2E2MkI0TDU0LXVLZl9GLWY5d3FoTU1PdS1ON0xUV1NNQ3FnUlZGRFhOYkVHTVp5RDFaN3pxZ1pVeVNJdTdhemxsNkdRaHJBTWNtRDEwWjg2cnlKb3F5VmpEN25tTHNmV2hLTnFkc1IxSEhLVGplNTJJSnBXMDFmOUN1V3NpRmxoVnJkcmRxd1hmbzBRTHZjd05rWlhUbDBfQmFCZWRkS0pHUTJNa041QlRtSkd5YUE?oc=5",
+     "published_utc": "2026-10-04T11:55:09+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxNUEhSM2E2MkI0TDU0LXVLZl9GLWY5d3FoTU1PdS1ON0xUV1NNQ3FnUlZGRFhOYkVHTVp5RDFaN3pxZ1pVeVNJdTdhemxsNkdRaHJBTWNtRDEwWjg2cnlKb3F5VmpEN25tTHNmV2hLTnFkc1IxSEhLVGplNTJJSnBXMDFmOUN1V3NpRmxoVnJkcmRxd1hmbzBRTHZjd05rWlhUbDBfQmFCZWRkS0pHUTJNa041QlRtSkd5YUE?oc=5",
+     "published_utc": "2026-10-04T12:59:41+00:00"
+    }
+   ]
+  },
+  {
+   "id": 36,
+   "headline": "More tankers struck in the Middle East as Iran reiterates conditions for reopening the Strait of Hormuz",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-10-04T12:04:24.190708+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/04/more-tankers-struck-in-gulf-waters-as-iran-reiterates-conditions.html",
+     "published_utc": "2026-10-04T12:03:09+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/04/more-tankers-struck-in-gulf-waters-as-iran-reiterates-conditions.html",
+     "published_utc": "2026-10-04T12:27:10+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/04/more-tankers-struck-in-gulf-waters-as-iran-reiterates-conditions.html",
+     "published_utc": "2026-10-04T12:35:35+00:00"
+    }
+   ]
+  },
+  {
+   "id": 37,
+   "headline": "Apache workers back strike that could disrupt North Sea Forties oil pipeline, union says - Reuters",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-10-04T23:10:24.222682+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMixwFBVV95cUxNV3NmVDJ2ZjZRdVItaXBoaVRVVEllRXhLLWV3cjVKTVFDLVhYRmMyTVZUMjlCNDVHZXVHZHNUdzlBczdBcTM1WjZtM0dISGQ4bUpreXZmUTFWblJiTldMYWd6WU5oNmlkS2RfeGlhU1hDYU5sVmwwSzdQaFozelFTWWNYTVYyREs5dWJWUkRfbld1VlExMTFJSDlWaDRxaG9xc2ttc1ZCNTYwT2I0S2xwRjczUUk3TF9aNjBEb3VRcXBXclNyVHZB?oc=5",
+     "published_utc": "2026-10-04T23:03:30+00:00"
+    }
+   ]
+  },
+  {
+   "id": 38,
+   "headline": "More Qatari LNG cargoes transit Strait of Hormuz despite ongoing risks - Reuters",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": null,
+   "detected_at_utc": "2026-10-05T08:26:24.515248+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiuwFBVV95cUxNb3hMc1FqVmtCcnNvYmFpNFc3YUxldTJrWURfZTJVMVdkZ2pkcnp5aGo1NlFJQ2s5RGU4WF9kdmpDaVlSYWJ5cjBPR3FmeFFFQWtXRUNsM29EQzV5WlFFWGl2R1dPeFlmZFdFa1ZqWG9vc01lOFJSQTdkNFhYRXoyTWFJUFhiNmdPZDdadDhuOVJheDlvYU5fWXoxRHI0ZTBrVHhpcUd0VDBVeXlJdVBaY25MVl9UcWxyMlkw?oc=5",
+     "published_utc": "2026-10-05T08:15:43+00:00"
+    }
+   ]
+  },
+  {
+   "id": 39,
+   "headline": "EXCLUSIVE: Ukraine will hit Russian refineries in response to Moscow's 'new doctrine' of airstrikes, Zelenskiy says - Reuters",
+   "category": "geopolitical_conflict",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-06T10:12:31.334461+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMi1gFBVV95cUxOQ0JETXJlUlJGblZwbTljbXFFb0JkS2REVzBWUVdPUE5uN0xSRGpVZVBpS3B3Qnh1VkFWQjdYUzdOWnFFZkd4aVRFQmViaEJkVkVzTUxUMDJKdWh5UWJfaExXMi1UbTlLd1AxVnJ2UF9BUUZFc2g0ZEFTOWJGTi1WS3h0YlNtYzFRY0FTam5WbllJVXdGbUp1S0tQcGgtdmppSHpIMGg5dUtuLVN3SjJFME9MYTNSci1maHptc3RVVVk5d3k4NmgwS0oxZUZ5alpUNmYzR09R?oc=5",
+     "published_utc": "2026-10-06T10:07:41+00:00"
+    }
+   ]
+  },
+  {
+   "id": 40,
+   "headline": "Rebounding oil exports through Strait of Hormuz are vulnerable to stepped-up Iranian tanker attacks",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-06T12:48:28.077478+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/06/crude-oil-tanker-strait-hormuz-iran-attack.html",
+     "published_utc": "2026-10-06T12:46:04+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/06/crude-oil-tanker-strait-hormuz-iran-attack.html",
+     "published_utc": "2026-10-06T12:53:21+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/06/crude-oil-tanker-strait-hormuz-iran-attack.html",
+     "published_utc": "2026-10-06T13:00:34+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/06/crude-oil-tanker-strait-hormuz-iran-attack.html",
+     "published_utc": "2026-10-06T13:15:17+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/06/crude-oil-tanker-strait-hormuz-iran-attack.html",
+     "published_utc": "2026-10-06T13:17:17+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/06/crude-oil-tanker-strait-hormuz-iran-attack.html",
+     "published_utc": "2026-10-06T16:17:42+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/06/crude-oil-tanker-strait-hormuz-iran-attack.html",
+     "published_utc": "2026-10-06T16:19:10+00:00"
+    }
+   ]
+  },
+  {
+   "id": 41,
+   "headline": "Oil rises as concerns over Houthi attacks on Saudi Arabia eclipse supply recovery",
+   "category": "energy",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-07T02:12:29.103337+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/07/oil-prices-today-brent-wti-hormuz.html",
+     "published_utc": "2026-10-07T02:09:50+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/07/oil-prices-today-brent-wti-hormuz.html",
+     "published_utc": "2026-10-07T04:24:10+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/07/oil-prices-today-brent-wti-hormuz.html",
+     "published_utc": "2026-10-07T05:29:30+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/07/oil-prices-today-brent-wti-hormuz.html",
+     "published_utc": "2026-10-07T08:59:59+00:00"
+    }
+   ]
+  },
+  {
+   "id": 42,
+   "headline": "Chevron CEO warns against 'unwise' diesel export ban, saying it could make things worse",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-07T08:28:29.069362+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/07/chevron-ceo-diesel-export-ban-trump-supply.html",
+     "published_utc": "2026-10-07T08:25:37+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/07/chevron-ceo-diesel-export-ban-trump-supply.html",
+     "published_utc": "2026-10-07T08:29:21+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/07/chevron-ceo-diesel-export-ban-trump-supply.html",
+     "published_utc": "2026-10-07T08:36:54+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/07/chevron-ceo-diesel-export-ban-trump-supply.html",
+     "published_utc": "2026-10-07T08:38:29+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/07/chevron-ceo-diesel-export-ban-trump-supply.html",
+     "published_utc": "2026-10-07T08:42:29+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/07/chevron-ceo-diesel-export-ban-trump-supply.html",
+     "published_utc": "2026-10-07T08:46:11+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/07/chevron-ceo-diesel-export-ban-trump-supply.html",
+     "published_utc": "2026-10-07T09:16:19+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/07/chevron-ceo-diesel-export-ban-trump-supply.html",
+     "published_utc": "2026-10-07T12:25:52+00:00"
+    }
+   ]
+  },
+  {
+   "id": 43,
+   "headline": "Oil prices fall as IEA members agree to prioritize release of diesel stocks",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-07T18:20:29.368020+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/07/oil-prices-today-brent-wti-hormuz.html",
+     "published_utc": "2026-10-07T18:18:47+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/07/oil-prices-today-brent-wti-hormuz.html",
+     "published_utc": "2026-10-07T19:17:01+00:00"
+    }
+   ]
+  },
+  {
+   "id": 44,
+   "headline": "Magnitude 5.7 earthquake strikes Mindanao, Philippines, GFZ says - Reuters",
+   "category": "natural_disaster_supply_chain",
+   "severity": "Low",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-08T10:02:29.449414+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxQUXJLSk03MERhU2RPNzhhazlDa1A1WmtQWW81RVQ3ZEQ0ekdLc1Q0VUNTRDc0djF0azRDYk9jN0RhbTU5UTJxVkpqREkzdWhkUFB0ZDgyZmM2cGpacXZldEkzcXlJa0s0ZUlNODJWeUNIa1lxN3l5dWRrcDVTUDNCLTFxRVlKbnlacE5XYzBwRWFrell5aExzXzZ1X2ZHcU93dzl1RE9ONVNUTDJ2ZVpWcS12aHE5WWZUaHc?oc=5",
+     "published_utc": "2026-10-08T08:22:42+00:00"
+    }
+   ]
+  },
+  {
+   "id": 45,
+   "headline": "Oil prices jump 4% as Iran steps up tanker attacks, hurricane threatens U.S. Gulf production",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-08T15:10:28.244413+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/08/oil-prices-today-brent-wti-hormuz.html",
+     "published_utc": "2026-10-08T14:58:57+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/08/oil-prices-today-brent-wti-hormuz.html",
+     "published_utc": "2026-10-08T15:22:39+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/08/oil-prices-today-brent-wti-hormuz.html",
+     "published_utc": "2026-10-08T16:43:42+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/08/oil-prices-today-brent-wti-hormuz.html",
+     "published_utc": "2026-10-08T16:45:54+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/08/oil-prices-today-brent-wti-hormuz.html",
+     "published_utc": "2026-10-08T16:50:30+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/08/oil-prices-today-brent-wti-hormuz.html",
+     "published_utc": "2026-10-08T19:00:49+00:00"
+    }
+   ]
+  },
+  {
+   "id": 46,
+   "headline": "Hurricane Isaias strengthens as US Gulf Coast prepares for landfall - Reuters",
+   "category": "natural_disaster_supply_chain",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-08T21:32:31.967560+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxQTkVvX05DT3UzVHJzUExmeUdGVEpBMHozdUcyd191dGQ5YmFCcGV4X2FlTjIwTWNNSndDTEtRdWpRY1I5UEZ2eVRfVHJaVFR4YkNwWjR2clF3Nkh4QkQ1YkcyRy1JQ3hJYVljZHNmYmtCbEp6N3F6bG5yVF9BdWFNczRzUklVb0RBYzRZSmpfXzlrdHctNzVLVWV6bEFEVlZUTWpvMzQ2T2NXZ3liWkJBbGpDcjBtMVpP?oc=5",
+     "published_utc": "2026-10-08T21:27:39+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxNN1lrVWNzOXo2NzdsUVRRelhFV28yR0FRT044TUlIRlg0T2hvYmhSSktWSm5TUUhiaEkzYUtYTmJWTVVfTjNsMGlrZmpkLWhmUzYwUzUwSGI3djVDT2xJT241M2g0T1lBcVpQUTlZSFdUazVCd2JTcEc3R3RNUHlNbnpDdTRUYUVjcjdXNE1qaDBYN2ZqQkpjSHVPalBtRnRzcThWZVF0bmdCblRwWlBreTVOTnBHMVptZGc?oc=5",
+     "published_utc": "2026-10-09T15:51:42+00:00"
+    }
+   ]
+  },
+  {
+   "id": 47,
+   "headline": "US sued over plan to blast Utah canyon inscribed by 19th century 'Buffalo Soldiers,' European pioneers - Reuters",
+   "category": "geopolitical_conflict",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-09T06:16:37.518954+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMi0AFBVV95cUxPVUQwTTltOVUxOGxxOG9QT3FvNEJlYWFISEdYQTgtRmlEazBYOW9EZXY3cWNXYzhKaklqWkdON3cyRVF2RzFOcGd5WXBrWVRkajlqQkZIYlR3d3N5SXBpNG1BZENTTG8wdTNibkV5MkxlS0JrTF9iXzdQT1lzUmUzb3c3b193TlZ1WEM0X2E4SUdITkYzWVRKdTN5dDBZUHhRWlpRRUttV0lkX0xQMmdUMGUyYjg1YVpxT2piR05vZHZvajVzWEtuVDlZdV9hMTM3?oc=5",
+     "published_utc": "2026-10-09T00:12:00+00:00"
+    }
+   ]
+  },
+  {
+   "id": 48,
+   "headline": "Trump envoy kept financial ties to firm behind $15 billion Hormuz-bypass oil pipeline plan - Reuters",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-09T12:02:35.733648+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxNdFAxYTlxLTNCZ3c2bHMya2hWU2VvRUNTQ1I3YllKaGtoRERCSGFwaGFsRDlpQUVsdENqMnloSVpIQlFLZzk0N0VLNEdRSDExR2ZDaU5YOFQ1ekl4Y0tHb2VyUEVGOHVvam9KeTFHU1ZabmxQVjJMRC1jVmZFOVdtdWFuM3p6VHhjU2VqOFl3MXdBUG12OXU4RlMzV0ZNZ3RaSGpidld3cDBzR2VIcjNQOUNRbHdObV9K?oc=5",
+     "published_utc": "2026-10-09T11:40:04+00:00"
+    }
+   ]
+  },
+  {
+   "id": 49,
+   "headline": "Hurricane Isaias disrupts U.S. oil production in Gulf of Mexico, threatens refineries",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-09T13:26:28.617163+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/09/hurricane-isaias-gulf-mexico-oil-refinery.html",
+     "published_utc": "2026-10-09T13:18:07+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/09/hurricane-isaias-gulf-mexico-oil-refinery.html",
+     "published_utc": "2026-10-09T13:52:46+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/09/hurricane-isaias-gulf-mexico-oil-refinery.html",
+     "published_utc": "2026-10-09T14:10:14+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/09/hurricane-isaias-gulf-mexico-oil-refinery.html",
+     "published_utc": "2026-10-09T14:13:40+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/09/hurricane-isaias-gulf-mexico-oil-refinery.html",
+     "published_utc": "2026-10-09T17:07:18+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/09/hurricane-isaias-gulf-mexico-oil-refinery.html",
+     "published_utc": "2026-10-09T17:12:17+00:00"
+    }
+   ]
+  },
+  {
+   "id": 50,
+   "headline": "Tanker attacks in Strait of Hormuz surge to wartime high as Iran tries to choke off oil exports",
+   "category": "energy",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-09T18:22:28.761699+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/09/iran-war-strait-hormuz-tanker-attack-oil.html",
+     "published_utc": "2026-10-09T18:02:01+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/09/iran-war-strait-hormuz-tanker-attack-oil.html",
+     "published_utc": "2026-10-09T18:52:00+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/09/iran-war-strait-hormuz-tanker-attack-oil.html",
+     "published_utc": "2026-10-09T18:52:49+00:00"
+    }
+   ]
+  },
+  {
+   "id": 51,
+   "headline": "Trump created a committee to dig into the Fed's Lisa Cook. What is it and what comes next?",
+   "category": "central_bank",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-09T18:24:28.889256+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/09/trump-lisa-cook-fed-firing-committee-explained.html",
+     "published_utc": "2026-10-09T18:20:57+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/09/trump-lisa-cook-fed-firing-committee-explained.html",
+     "published_utc": "2026-10-09T19:19:00+00:00"
+    }
+   ]
+  },
+  {
+   "id": 52,
+   "headline": "Hurricane Simon rapidly strengths off Mexico's Pacific coast, threatens tourist region - Reuters",
+   "category": "natural_disaster_supply_chain",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-09T22:08:28.283037+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxNN1lrVWNzOXo2NzdsUVRRelhFV28yR0FRT044TUlIRlg0T2hvYmhSSktWSm5TUUhiaEkzYUtYTmJWTVVfTjNsMGlrZmpkLWhmUzYwUzUwSGI3djVDT2xJT241M2g0T1lBcVpQUTlZSFdUazVCd2JTcEc3R3RNUHlNbnpDdTRUYUVjcjdXNE1qaDBYN2ZqQkpjSHVPalBtRnRzcThWZVF0bmdCblRwWlBreTVOTnBHMVptZGc?oc=5",
+     "published_utc": "2026-10-09T21:49:43+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxNN1lrVWNzOXo2NzdsUVRRelhFV28yR0FRT044TUlIRlg0T2hvYmhSSktWSm5TUUhiaEkzYUtYTmJWTVVfTjNsMGlrZmpkLWhmUzYwUzUwSGI3djVDT2xJT241M2g0T1lBcVpQUTlZSFdUazVCd2JTcEc3R3RNUHlNbnpDdTRUYUVjcjdXNE1qaDBYN2ZqQkpjSHVPalBtRnRzcThWZVF0bmdCblRwWlBreTVOTnBHMVptZGc?oc=5",
+     "published_utc": "2026-10-09T22:12:14+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMisgFBVV95cUxQQ1gzcTFLZkZiN21jcFllb2VoN2VGRU90SEdFUTFrZmY5anpHbU11dUR3NWF5VGlOUkZYZjVORUJYaTBGZkRwcDFvN2dzVHdpU2xLRnJlZGNRSWpUYmlHTlQ3TlJoRk9WVGRYb2pzTFdUMVFtRVo4c0dMeXZZamNtVzZrWTBZRXdZb3ZLeHBaeldRN240LWxVckd1NWJRbUc5d2JmLXdKX0RVZnZaR3dnbGFn?oc=5",
+     "published_utc": "2026-10-10T17:27:44+00:00"
+    }
+   ]
+  },
+  {
+   "id": 53,
+   "headline": "Isaias weakens to Category 1 hurricane after Florida landfall, NHC says - Reuters",
+   "category": "natural_disaster_supply_chain",
+   "severity": "Low",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-10T05:54:29.020238+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMixwFBVV95cUxNUXd4cU9kTnZkUXpiWnZCSUFrVXVqRDVVRWNsakotTU1aMTNkZjBra3lkaktVMGtUcnpORW40N1JMemk4WkREeFJGNnFibFBBRTdQMi10dDNlX2hua2pSZVVSWnNpRDZOblhrMW9CbS1vZTd3S0ktU2pSNGtfNWZyVGduR3YzNU52dEpMQkx3UXZYUmxPaGFoZVhSZ2lzNml0bFlZX3gzSTRrWEthTHZrd1lNaEcxRW8yeEVweTNIcVhKYUJTc2Qw?oc=5",
+     "published_utc": "2026-10-10T01:49:00+00:00"
+    }
+   ]
+  },
+  {
+   "id": 54,
+   "headline": "Loud blast at Riyadh airport as travellers evacuated and airlines cancel flights - Reuters",
+   "category": "geopolitical_conflict",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-10T14:54:30.436541+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMitAFBVV95cUxQbV9hVGtMSXpTVDJ3c05vRW9SQ2lRLTg3cUlOeWxDc2w4amF5V2N2Ul9YazdxcHJGNDRwd3hlQi15a2ZGWWZoZnc1dlA5UkY3cU9PclVCNkh6SVkzQ25waEVRRlN2TVdES3lKV1VuVXN6QnJycWxtdkNOdUIwMTdTRE9fbko3Umt5d0huNVY1dW9ZcFpLSF9yczRGRHJfSWZhM1AtTkVzbVR4TlRUdzhIb19JN3o?oc=5",
+     "published_utc": "2026-10-10T14:29:39+00:00"
+    }
+   ]
+  },
+  {
+   "id": 55,
+   "headline": "Multiple people wounded in blast at Riyadh airport, say eyewitnesses - Reuters",
+   "category": "geopolitical_conflict",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-10T15:48:30.618471+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMitAFBVV95cUxQbV9hVGtMSXpTVDJ3c05vRW9SQ2lRLTg3cUlOeWxDc2w4amF5V2N2Ul9YazdxcHJGNDRwd3hlQi15a2ZGWWZoZnc1dlA5UkY3cU9PclVCNkh6SVkzQ25waEVRRlN2TVdES3lKV1VuVXN6QnJycWxtdkNOdUIwMTdTRE9fbko3Umt5d0huNVY1dW9ZcFpLSF9yczRGRHJfSWZhM1AtTkVzbVR4TlRUdzhIb19JN3o?oc=5",
+     "published_utc": "2026-10-10T15:30:21+00:00"
+    }
+   ]
+  },
+  {
+   "id": 56,
+   "headline": "Russia's Yandex says data centre in Vladimir area shut down after drone attack - Reuters",
+   "category": "geopolitical_conflict",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-11T15:24:35.023410+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiwAFBVV95cUxQaEVGTzhxN05TYWgtUkQySl9UR3lQVGpkSDlobUNfX1drYzdjQ2p1SlZ0SmFnT2U0NW05UlpDdVVpaFR4OFpXRnJMUjdiMDBxeEc3R2Q1Y19PRGpKRkpmRkhfQUwyQUVnSEpYNVBRT1lSX2J1UlREeTJDdWVmcVZpckhzcmJZRUo2X2IwT0tXd3l3YUVTUWpNbzNEOU02WUxXazZwUnF2YVVESFJWSTkyakU1R3ktd2tVTF9CN0xvUmk?oc=5",
+     "published_utc": "2026-10-11T07:39:43+00:00"
+    }
+   ]
+  },
+  {
+   "id": 57,
+   "headline": "Mexico's Sheinbaum urges coastal residents to remain indoors as Hurricane Simon nears coast - Reuters",
+   "category": "natural_disaster_supply_chain",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-11T17:48:29.990126+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMi0AFBVV95cUxPQTVIZ3E1QmFPdVhfeHhERWNMSHMzckVTck8za2p1b1A5ajNIT1VCa1dBUVhNTVhadXhKZV9CclF4aEswTGRxanNxa1FzSnVDd0kxSWlGZF9EakUybFhISzJhRmtCeDV4VExwcC12Q1dkVDhDV1B2eENwODdtM0F0MUJQVGtEbDNYN3pZU1UzeUo5NnNlVlE1TTgwTlFjUGMyb2hNOXFGc09EdFZBbTctTlRCM19ZbDczelFhZ0xIdmVwT014cURLcnFFcjBfeE9J?oc=5",
+     "published_utc": "2026-10-11T17:45:43+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMi0AFBVV95cUxPQTVIZ3E1QmFPdVhfeHhERWNMSHMzckVTck8za2p1b1A5ajNIT1VCa1dBUVhNTVhadXhKZV9CclF4aEswTGRxanNxa1FzSnVDd0kxSWlGZF9EakUybFhISzJhRmtCeDV4VExwcC12Q1dkVDhDV1B2eENwODdtM0F0MUJQVGtEbDNYN3pZU1UzeUo5NnNlVlE1TTgwTlFjUGMyb2hNOXFGc09EdFZBbTctTlRCM19ZbDczelFhZ0xIdmVwT014cURLcnFFcjBfeE9J?oc=5",
+     "published_utc": "2026-10-11T17:51:54+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMi0AFBVV95cUxPQTVIZ3E1QmFPdVhfeHhERWNMSHMzckVTck8za2p1b1A5ajNIT1VCa1dBUVhNTVhadXhKZV9CclF4aEswTGRxanNxa1FzSnVDd0kxSWlGZF9EakUybFhISzJhRmtCeDV4VExwcC12Q1dkVDhDV1B2eENwODdtM0F0MUJQVGtEbDNYN3pZU1UzeUo5NnNlVlE1TTgwTlFjUGMyb2hNOXFGc09EdFZBbTctTlRCM19ZbDczelFhZ0xIdmVwT014cURLcnFFcjBfeE9J?oc=5",
+     "published_utc": "2026-10-11T19:08:29+00:00"
+    }
+   ]
+  },
+  {
+   "id": 58,
+   "headline": "Panama suffers over 200 aftershocks after Friday's 7.7-magnitude earthquake - Reuters",
+   "category": "natural_disaster_supply_chain",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-11T22:34:30.155324+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiygFBVV95cUxPYmFscG9BNDlCQjE3NWR6ejJORWRuTjhOX0hrRF9aaDc4T21aNVliZEdFU1UyV0JqS0hZMmh1YTh0TkdpYlB0VDNscUlUbkF6alYtT0hnY1BwSUhsamlMTGI2UDFPbmRzclF4VHRmNDdFMFRTRFZIWTBIaThxMW1fRjEwazMzd1M4Q05GS2hiaGVUOUQ1a1RHeTYwbmptZ21LUTFuQlVPYlJKQ1ZYc3BkYm1uc21EMnNjSXNVUEhnV3lMS2tGeEw2SVlR?oc=5",
+     "published_utc": "2026-10-11T22:29:43+00:00"
+    }
+   ]
+  },
+  {
+   "id": 59,
+   "headline": "Magnitude 5.3 earthquake hits Indonesia's Minahasa, EMSC says - Reuters",
+   "category": "natural_disaster_supply_chain",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-12T03:22:29.364954+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMitgFBVV95cUxQdGVLSTFhT0F5alBKb3FqYWNWamRqT0VXYThOT3k3czBJckgwQWgxbEpZal96LXRyRG10cjE3RExuc2h2NHR5T1oxV0x2Um5UNlRnQW43eEszdVJ6RjM0TVhjcTBFOXEwS0doLVNmTFF4cDMyV2Q5elpETk50empfdUdGaWhlekM1TmtTc3NnblVjcmJlVW1SQ1NZNUVpdVlabXBkSnVaUG45RXgtRkdlYl9mQjlTdw?oc=5",
+     "published_utc": "2026-10-12T02:39:00+00:00"
+    }
+   ]
+  },
+  {
+   "id": 60,
+   "headline": "Zelenskyy accuses Russia of violating Trump\u2019s energy ceasefire as drone attacks continue",
+   "category": "geopolitical_conflict",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-12T14:22:31.121542+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/12/russia-ukraine-energy-ceasefire-trump.html",
+     "published_utc": "2026-10-12T14:21:08+00:00"
+    }
+   ]
+  },
+  {
+   "id": 61,
+   "headline": "Rep. Ilhan Omar blasts federal criminal raid on home: 'I will not be silenced'",
+   "category": "geopolitical_conflict",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-12T17:20:29.264395+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/12/ilhan-omar-home-raided-dhs-immigration-investigation.html",
+     "published_utc": "2026-10-12T17:18:18+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/12/ilhan-omar-home-raided-dhs-immigration-investigation.html",
+     "published_utc": "2026-10-12T17:39:38+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/12/ilhan-omar-home-raided-dhs-immigration-investigation.html",
+     "published_utc": "2026-10-12T18:20:10+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/12/ilhan-omar-home-raided-dhs-immigration-investigation.html",
+     "published_utc": "2026-10-12T18:29:28+00:00"
+    }
+   ]
+  },
+  {
+   "id": 62,
+   "headline": "Hurricane Simon crawls along Mexico's Pacific coast, bringing floods and evacuations - Reuters",
+   "category": "natural_disaster_supply_chain",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-12T18:38:31.081255+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMi0AFBVV95cUxNaElqa3NPZERzOHYyU3NVZmRTSkpYY1U4SzM5ZTZzQzlGbFBhTlhhWHNUN014M3JVWV80c19kRVFWaFRXRWRUVnFOLUV4eVlVWVdlbUVReWFRY1RsUVhvQjhET0dtN2I4ZmRuT1hmU01GY1JmS2hQUG0ycXN6ZWRRUjZpR3VvRTBLYXJxVEx1QUluN001Wjd5Yi1LMFpHQ1RQb0pMbGgtekJvaEpBVzJEOWxMZEtUUVVTQUUxamk3SzNlQlJvb1pXeHJkT1dCSUZG?oc=5",
+     "published_utc": "2026-10-12T18:03:16+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMi0AFBVV95cUxNaElqa3NPZERzOHYyU3NVZmRTSkpYY1U4SzM5ZTZzQzlGbFBhTlhhWHNUN014M3JVWV80c19kRVFWaFRXRWRUVnFOLUV4eVlVWVdlbUVReWFRY1RsUVhvQjhET0dtN2I4ZmRuT1hmU01GY1JmS2hQUG0ycXN6ZWRRUjZpR3VvRTBLYXJxVEx1QUluN001Wjd5Yi1LMFpHQ1RQb0pMbGgtekJvaEpBVzJEOWxMZEtUUVVTQUUxamk3SzNlQlJvb1pXeHJkT1dCSUZG?oc=5",
+     "published_utc": "2026-10-12T19:54:23+00:00"
+    }
+   ]
+  },
+  {
+   "id": 63,
+   "headline": "Allies gave Ukraine no warning of impending missile attack, Zelenskiy says - Reuters",
+   "category": "geopolitical_conflict",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-13T18:24:29.576404+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiuwFBVV95cUxNRVA2WjlXNVNqR1RhTzFnOFd4bGstWUFZMDhCbXBNUEsxNzU4b2N2Tktwck9tMlFvSERMbFVwcnNkMUFTSVBxMjlia2VhMlQwZVllRlo5ZFpaUnl6aWFxSWJGaXhIeFJFcVA1ZUUxRHJqWjNqalNrU1UwMUtfX1hKTXhtN3pNVHdOSW93WGh5NlRuZW5KdVJPOGtsWWVHbG9UMy1tUjZrcWxEWGZkUldicFVURDFjdmdza3Q0?oc=5",
+     "published_utc": "2026-10-13T18:15:22+00:00"
+    }
+   ]
+  },
+  {
+   "id": 64,
+   "headline": "Iran says it\u2019s \u2018counting the moments\u2019 until it can attack American warships; Saudi Aramco facilities attacked as Houthi attacks escalate",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-14T12:20:30.025046+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/14/us-iran-war-trump-hormuz-saudi.html",
+     "published_utc": "2026-10-14T12:20:05+00:00"
+    }
+   ]
+  },
+  {
+   "id": 65,
+   "headline": "Container ship sinks in Strait of Hormuz as Iran steps up attacks",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_failed_fallback",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-14T15:50:30.132888+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/14/container-ship-sinks-strait-hormuz-as-iran-war-attacks.html",
+     "published_utc": "2026-10-14T15:47:29+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/14/container-ship-sinks-strait-hormuz-as-iran-war-attacks.html",
+     "published_utc": "2026-10-14T16:46:08+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/14/container-ship-sinks-strait-hormuz-as-iran-war-attacks.html",
+     "published_utc": "2026-10-14T18:03:56+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/14/container-ship-sinks-strait-hormuz-as-iran-war-attacks.html",
+     "published_utc": "2026-10-14T18:05:40+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/14/container-ship-sinks-strait-hormuz-as-iran-war-attacks.html",
+     "published_utc": "2026-10-14T18:18:43+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/14/container-ship-sinks-strait-hormuz-as-iran-war-attacks.html",
+     "published_utc": "2026-10-14T19:16:04+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/14/container-ship-sinks-strait-hormuz-as-iran-war-attacks.html",
+     "published_utc": "2026-10-14T19:18:00+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/14/container-ship-sinks-strait-hormuz-as-iran-war-attacks.html",
+     "published_utc": "2026-10-14T19:22:00+00:00"
+    }
+   ]
+  },
+  {
+   "id": 66,
+   "headline": "Russia builds major new drone attack base in six weeks, satellite images show - Reuters",
+   "category": "geopolitical_conflict",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-15T10:12:39.895942+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMi0gFBVV95cUxQb3JQWGJXcF9uMHI4aGVoT3Z3SnBZTEhxSjFRZm9hMDJJVFZMV2YxTkZiVEZhNUItR3Y3VWlDdmxIbktLbnVvNVVGclN1bjBLUmZjdmpoRklxWmcyZFY0N0EzWlRmMW1oMVFNSDBDTFhTZ3BBYUxZSUxGSERqZVZWdDBIanhfN0xoZEhDby1COGxoaHBIRXZkYzZ1UWlZRnc5N1BDRFZIV3JSYzJIemw2Uk9sZHVmLXFibDhSd0JTT195QlNuTTN6cFNCeEZYa1hzREE?oc=5",
+     "published_utc": "2026-10-15T08:59:58+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMi0gFBVV95cUxQb3JQWGJXcF9uMHI4aGVoT3Z3SnBZTEhxSjFRZm9hMDJJVFZMV2YxTkZiVEZhNUItR3Y3VWlDdmxIbktLbnVvNVVGclN1bjBLUmZjdmpoRklxWmcyZFY0N0EzWlRmMW1oMVFNSDBDTFhTZ3BBYUxZSUxGSERqZVZWdDBIanhfN0xoZEhDby1COGxoaHBIRXZkYzZ1UWlZRnc5N1BDRFZIV3JSYzJIemw2Uk9sZHVmLXFibDhSd0JTT195QlNuTTN6cFNCeEZYa1hzREE?oc=5",
+     "published_utc": "2026-10-15T12:55:34+00:00"
+    }
+   ]
+  },
+  {
+   "id": 67,
+   "headline": "Earthquake of magnitude 7 strikes Russia's Kamchatka Peninsula, EMSC says - Reuters",
+   "category": "natural_disaster_supply_chain",
+   "severity": "Low",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-16T04:20:33.244094+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxPQzJGRXBGQV9tSWo1S3NWenFNRG5MbVZ5dUhUeXE5TjN0NjFqVEZLN1FNVkdzMV9FUi1TRjNIU1lLOGhBR3kyRzJjb1p2dG9ucnUzX2dZM3djWFRqcmlzODFsNjluRWQxR3RvWGdhN2hTNHoxUDVRTjk4azVzQVJ2QTB1S1ZCLTI5dDA3TkJ4Z0V4c0o5RnRVWmM3Y0dIem4zbWdnaF8waU1Ecng4Y3VTa0h2a1JSTlY0X19WMG9WU21NU2c?oc=5",
+     "published_utc": "2026-10-16T03:50:00+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxPQzJGRXBGQV9tSWo1S3NWenFNRG5MbVZ5dUhUeXE5TjN0NjFqVEZLN1FNVkdzMV9FUi1TRjNIU1lLOGhBR3kyRzJjb1p2dG9ucnUzX2dZM3djWFRqcmlzODFsNjluRWQxR3RvWGdhN2hTNHoxUDVRTjk4azVzQVJ2QTB1S1ZCLTI5dDA3TkJ4Z0V4c0o5RnRVWmM3Y0dIem4zbWdnaF8waU1Ecng4Y3VTa0h2a1JSTlY0X19WMG9WU21NU2c?oc=5",
+     "published_utc": "2026-10-16T10:50:59+00:00"
+    }
+   ]
+  },
+  {
+   "id": 68,
+   "headline": "One Singapore ship was sunk, but here's why others are still transiting the Strait of Hormuz",
+   "category": "geopolitical_conflict",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-16T04:32:28.958129+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/16/strait-hormuz-singapore-ships-attacked.html",
+     "published_utc": "2026-10-16T04:29:27+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/16/strait-hormuz-singapore-ships-attacked.html",
+     "published_utc": "2026-10-16T05:56:28+00:00"
+    }
+   ]
+  },
+  {
+   "id": 69,
+   "headline": "Brent oil touches $110 as Iran escalates Hormuz attacks, Ukraine vows to hit Russian refineries",
+   "category": "energy",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-16T19:32:29.537718+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/16/oil-price-today-iran-strait-hormuz-ukraine-russia.html",
+     "published_utc": "2026-10-16T19:30:30+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/16/oil-price-today-iran-strait-hormuz-ukraine-russia.html",
+     "published_utc": "2026-10-16T19:33:21+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/16/oil-price-today-iran-strait-hormuz-ukraine-russia.html",
+     "published_utc": "2026-10-16T19:43:23+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/16/oil-price-today-iran-strait-hormuz-ukraine-russia.html",
+     "published_utc": "2026-10-16T19:45:41+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/16/oil-price-today-iran-strait-hormuz-ukraine-russia.html",
+     "published_utc": "2026-10-16T19:53:15+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/16/oil-price-today-iran-strait-hormuz-ukraine-russia.html",
+     "published_utc": "2026-10-16T20:02:09+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/16/oil-price-today-iran-strait-hormuz-ukraine-russia.html",
+     "published_utc": "2026-10-16T20:02:21+00:00"
+    }
+   ]
+  },
+  {
+   "id": 70,
+   "headline": "Hurricane Trudy weakens but may regain strength off Mexican coast - Reuters",
+   "category": "natural_disaster_supply_chain",
+   "severity": "Low",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-16T23:26:30.543704+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiyAFBVV95cUxPeEE2eWszelJJRDBCMUQ4Z0lUWi15OWVxcklqY2RGM0dCYUl4MlBPNHowSTcwVGhpcWp5MHdSWktQbTdKTHNCRWNDVnRiNjFIVUR2S2FmRWlSYUt0akxFNmVoRDFORzBDQTB5Yk4wN3U2akxVeGpTZ3o0SXFDaGFUOERvcXNpR1lqQlQ1TzlVZjFwMWU0QzBlcGxqSXBTRDI3X0kwUnJTU0hsM0hDa2hJSDdQdU5FZ0hIWEtZdzNZaDg5akp3Yjdodw?oc=5",
+     "published_utc": "2026-10-16T23:01:44+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMiygFBVV95cUxQQUdGblRuOW5ZdjFTRUR1WkFYdEZKeDAxbjVscWNybm1RS3ZwelZlT084SVFHOFFRcDY5U1dlNUYtNkJKdHJUZEJITmZBeFBCSEZsR1RfNzdwcTY4ejNON0JycmgxN21xSTRPUjRFM2Uyd1ViNkdaZWdPQUJrUTRZd1dUVWIxOGI0Z1UxYjVkaDlZYUVzN3psc3g0bzF3OGo4MkF0NU9ZTmkzZC1zM0g4SUhRWTRqYUI0NWNaYmljYTFVSHM1eHU3d2pR?oc=5",
+     "published_utc": "2026-10-17T23:33:43+00:00"
+    },
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMi0gFBVV95cUxQUjFHMUpreHB6elk1Yi14YVBJMUp5RVdXTzVtYzBpZldpcHBSZ2Q3WmFXaXFxMUNlUGVRN0pWVEZlU0duYWxXaVhHM2pMeUFmbmpZVHNkMy13Q1JxaDhkUWNheElFS1lRVVMxcEVaSzdMZEJuMDY5TmxsRk9RUXZGRElXZG1IcWd3ZkVxSFBmRGk2ZkxjWl8zS1lRcXoyWjhxa3plWlNpQ2NpdVN1aTVzZjNGMGlPLVJUQi1KVHg2YTlQdHlFMDNObTJlbEE5bjREZXc?oc=5",
+     "published_utc": "2026-10-18T13:55:43+00:00"
+    }
+   ]
+  },
+  {
+   "id": 71,
+   "headline": "Trump waives broad new Russia sanctions and tariffs under Graham Act, citing national interest",
+   "category": "geopolitical_conflict",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-17T10:32:30.319524+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/17/trump-waives-russia-related-sanctions-tariffs-before-they-take-effect-.html",
+     "published_utc": "2026-10-17T10:20:44+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/17/trump-waives-russia-related-sanctions-tariffs-before-they-take-effect-.html",
+     "published_utc": "2026-10-17T19:28:01+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/17/trump-waives-russia-related-sanctions-tariffs-before-they-take-effect-.html",
+     "published_utc": "2026-10-17T19:35:18+00:00"
+    }
+   ]
+  },
+  {
+   "id": 72,
+   "headline": "Trump waives broad new Russia sanctions, Zelenskyy condemns it as 'wrong'",
+   "category": "geopolitical_conflict",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-18T12:52:45.430801+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/17/trump-waives-russia-related-sanctions-tariffs-before-they-take-effect-.html",
+     "published_utc": "2026-10-18T12:50:33+00:00"
+    }
+   ]
+  },
+  {
+   "id": 73,
+   "headline": "Brent crude hovers near $109 a barrel as Ukraine resumes energy strikes, tankers attacked in Middle East",
+   "category": "geopolitical_conflict",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-18T22:20:29.341129+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/18/oil-price-today-ukraine-russia-iran-strait-hormuz.html",
+     "published_utc": "2026-10-18T22:16:19+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/18/oil-price-today-ukraine-russia-iran-strait-hormuz.html",
+     "published_utc": "2026-10-18T22:22:20+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/18/oil-price-today-ukraine-russia-iran-strait-hormuz.html",
+     "published_utc": "2026-10-18T23:10:45+00:00"
+    }
+   ]
+  },
+  {
+   "id": 74,
+   "headline": "At least 18 killed in Houthi attack on Yemeni government military camp in Shabwa, sources say - Reuters",
+   "category": "geopolitical_conflict",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-19T11:12:36.254930+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMivwFBVV95cUxOSXFqMTJmVlRrSjR1NmNocW1VRWFpV1pSMjlNZDh1YXBsS2gyRkE0c19uRXJCQXN4Nklqajh6Tk4yeHhlRWRpWG81WXJMRVJmWXREaXZ2UkJfT3FNOFJndW9PNHBTZFRvVGJnbmFkeU10ZDlWdWY2N0kzVkFDVTh5NG0zZlZiM0N3bWthZmF2LUJjUXlEd29WOVRLZFdodFA0YlcwRl9fX0ptQ2dyN2I5RjVfRWJxRW1vYmF6VURGWQ?oc=5",
+     "published_utc": "2026-10-19T11:02:23+00:00"
+    }
+   ]
+  },
+  {
+   "id": 75,
+   "headline": "UK to deploy fighter jets to defend Saudi cities from Houthi attacks",
+   "category": "geopolitical_conflict",
+   "severity": "High",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-20T12:28:30.035128+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/20/uk-fighter-jets-saudi-houthi-attacks-iran.html",
+     "published_utc": "2026-10-20T12:23:29+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/20/uk-fighter-jets-saudi-houthi-attacks-iran.html",
+     "published_utc": "2026-10-20T12:58:24+00:00"
+    }
+   ]
+  },
+  {
+   "id": 76,
+   "headline": "Oil prices fall as traders monitor conflict in the Middle East",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": null,
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-20T14:44:28.535310+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/20/oil-price-wti-brent-crude.html",
+     "published_utc": "2026-10-20T14:42:39+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/20/oil-price-wti-brent-crude.html",
+     "published_utc": "2026-10-20T14:50:00+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/20/oil-price-wti-brent-crude.html",
+     "published_utc": "2026-10-20T15:01:37+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/20/oil-price-wti-brent-crude.html",
+     "published_utc": "2026-10-20T15:22:00+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/20/oil-price-wti-brent-crude.html",
+     "published_utc": "2026-10-20T15:31:48+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/20/oil-price-wti-brent-crude.html",
+     "published_utc": "2026-10-20T15:32:49+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/20/oil-price-wti-brent-crude.html",
+     "published_utc": "2026-10-20T15:46:16+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/20/oil-price-wti-brent-crude.html",
+     "published_utc": "2026-10-20T16:09:15+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/20/oil-price-wti-brent-crude.html",
+     "published_utc": "2026-10-20T16:19:38+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/20/oil-price-wti-brent-crude.html",
+     "published_utc": "2026-10-20T19:40:51+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/21/oil-price-today-wti-brent-rise-on-middle-east-worries.html",
+     "published_utc": "2026-10-21T05:27:19+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/21/oil-price-today-wti-brent-rise-on-middle-east-worries.html",
+     "published_utc": "2026-10-21T07:54:59+00:00"
+    }
+   ]
+  },
+  {
+   "id": 77,
+   "headline": "Oil prices little changed as traders assess Middle East developments",
+   "category": "energy",
+   "severity": "Medium",
+   "polarity": "escalation",
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-21T12:50:30.261875+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/21/oil-price-today-wti-brent-rise-on-middle-east-worries.html",
+     "published_utc": "2026-10-21T12:48:55+00:00"
+    }
+   ]
+  },
+  {
+   "id": 78,
+   "headline": "How Ukraine\u2019s drone strikes on Russia crippled the world\u2019s second largest diesel supplier",
+   "category": "geopolitical_conflict",
+   "severity": "Medium",
+   "polarity": "escalation",
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-21T15:36:44.529135+00:00",
+   "sources": [
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/21/ukraine-russia-drone-diesel-refinery-trump-putin-zelenskyy.html",
+     "published_utc": "2026-10-21T15:35:53+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/21/ukraine-russia-drone-diesel-refinery-trump-putin-zelenskyy.html",
+     "published_utc": "2026-10-21T16:02:13+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/21/ukraine-russia-drone-diesel-refinery-trump-putin-zelenskyy.html",
+     "published_utc": "2026-10-21T16:18:27+00:00"
+    },
+    {
+     "source": "cnbc_top_news",
+     "url": "https://www.cnbc.com/2026/10/21/ukraine-russia-drone-diesel-refinery-trump-putin-zelenskyy.html",
+     "published_utc": "2026-10-21T17:27:34+00:00"
+    }
+   ]
+  },
+  {
+   "id": 79,
+   "headline": "Six injured in Russian missile attack on Ukrainian capital - Reuters",
+   "category": "geopolitical_conflict",
+   "severity": "Medium",
+   "polarity": "escalation",
+   "classification_method": "llm_ollama",
+   "delivery_status": "sent",
+   "detected_at_utc": "2026-10-21T21:46:40.137486+00:00",
+   "sources": [
+    {
+     "source": "reuters_business",
+     "url": "https://news.google.com/rss/articles/CBMivwFBVV95cUxPZGRlYThKZW5JNEE0N2pYaVZRaVozOGRaTjhpeHRaVWFEQVZXLWcxc2hNY0VqT0JlcW5ZQUVZLTgyenltX1h0NXR5cmcxN1VjSjNkcm9vbk1DTkR6bVVKNmljX0xMOWRncVY4UEc2VUNhRmw0eHJnTklSZGlzYzdDSi1RRkhZTVhVSVIzeFRJRW1tTmhmM194QkZPeFppQzliNDVQQ3Y5SEJsdHdOQmtVeVNFWm91bWhvOXRHMzhrQQ?oc=5",
+     "published_utc": "2026-10-21T21:41:23+00:00"
+    }
+   ]
+  }
+ ]
+}

@@ -1086,6 +1086,67 @@ def test_failed_classification_follow_up_is_silent():
     assert second.incident_id == first.id and second.incident_role == "follow_up"
 
 
+def test_failed_classification_entity_only_match_keeps_its_unclassified_push():
+    """B7 final review: a failed classification sharing only the entity rule with an incident is a NEW alert, pushed UNCLASSIFIED."""
+    conn, webapp = store.get_connection(":memory:"), _tracked_webapp()
+    send = _live_cycle(conn, webapp, 54, "High", "escalation")
+    detected = _parse(_B7_FIXTURE["54"]["detected_at_utc"]) + dt.timedelta(hours=2)
+    article = NewsArticle(
+        title="Second blast reported at Riyadh airport terminal", summary="", source="reuters_business",
+        source_type="rss", published_utc=detected - dt.timedelta(minutes=3), url="https://example.com/second-riyadh-blast")
+    _run_article(conn, webapp, article, "geopolitical_conflict", "Medium", None, detected, send, failed=True)
+    first, second = _alerts_by_detection(conn)
+
+    assert send.call_count == 2
+    assert send.call_args_list[1].kwargs["classification_failed"] is True
+    assert send.call_args_list[1].kwargs.get("update_of_incident") is None
+    assert second.incident_id == second.id != first.id
+    assert second.incident_role is None and second.delivery_status == "sent"
+
+
+def test_classified_entity_match_is_a_silent_follow_up():
+    """The contrast to the test above: the same article classified (Medium, under a High incident) links and stays silent."""
+    conn, webapp = store.get_connection(":memory:"), _tracked_webapp()
+    send = _live_cycle(conn, webapp, 54, "High", "escalation")
+    detected = _parse(_B7_FIXTURE["54"]["detected_at_utc"]) + dt.timedelta(hours=2)
+    article = NewsArticle(
+        title="Second blast reported at Riyadh airport terminal", summary="", source="reuters_business",
+        source_type="rss", published_utc=detected - dt.timedelta(minutes=3), url="https://example.com/second-riyadh-blast")
+    _run_article(conn, webapp, article, "geopolitical_conflict", "Medium", "escalation", detected, send)
+    first, second = _alerts_by_detection(conn)
+
+    assert send.call_count == 1
+    assert second.incident_id == first.id and second.incident_rule == "entity:saudi arabia"
+
+
+def test_new_story_on_an_absorbed_live_blog_url_is_pushed_fresh():
+    """B7 final review, live #76/#77: #76 absorbed CNBC's 10/21 live-blog URL; #77 on it 2 min old must not read as +440 min."""
+    all_alerts = json.loads((__import__("pathlib").Path(__file__).parent / "fixtures" / "b7_live_alerts_all.json")
+                            .read_text(encoding="utf-8"))["alerts"]
+    fx76, fx77 = (next(a for a in all_alerts if a["id"] == n) for n in (76, 77))
+    conn, webapp = store.get_connection(":memory:"), _tracked_webapp()
+    detected76 = _parse(fx76["detected_at_utc"])
+    first_src = fx76["sources"][0]
+    id76 = store.record_alert(
+        conn, headline=fx76["headline"], source=first_src["source"], url=first_src["url"],
+        published_utc=_parse(first_src["published_utc"]), detected_at_utc=detected76, category="energy",
+        severity="Medium", classification_method="llm_ollama", rationale=None, affected_symbols=[])
+    for src in fx76["sources"]:
+        store.remember_url(conn, src["url"], id76, max(detected76, _parse(src["published_utc"])), _parse(src["published_utc"]))
+
+    src77 = fx77["sources"][0]
+    article = NewsArticle(title=fx77["headline"], summary="", source=src77["source"], source_type="rss",
+                          published_utc=_parse(src77["published_utc"]), url=src77["url"])
+    send = MagicMock(return_value=True)
+    _run_article(conn, webapp, article, "energy", "Medium", "escalation", _parse(fx77["detected_at_utc"]), send)
+
+    row77 = _alerts_by_detection(conn)[1]
+    assert row77.incident_id == row77.id  # its own incident
+    assert row77.first_published_utc == dt.datetime(2026, 10, 21, 12, 48, 55, tzinfo=UTC)
+    assert send.call_count == 1
+    assert "+1 min" in send.call_args.kwargs["freshness_line"]
+
+
 def test_dedup_escalation_is_measured_against_the_incident_max():
     conn = store.get_connection(":memory:")
     now = dt.datetime.now(UTC)
