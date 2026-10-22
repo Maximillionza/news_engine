@@ -224,3 +224,48 @@ def test_freshness_line_sits_under_the_headline():
 def test_no_freshness_line_leaves_the_message_unchanged():
     lines = _sent_text("High").split("\n")
     assert lines[1] == "Oil prices jump" and "SAST" not in lines[2]
+
+
+# --- B7 (2026-10-22): "Update to incident #N" pushes ---
+
+def _posted_text(**kwargs) -> str:
+    mock_response = MagicMock(status_code=200)
+    with patch.object(notify_telegram, "TELEGRAM_BOT_TOKEN", "fake-token"), \
+         patch.object(notify_telegram, "TELEGRAM_CHAT_ID", "12345"), \
+         patch("alerting.notify_telegram.requests.post", return_value=mock_response) as mock_post:
+        assert notify_telegram.send_alert(
+            "EXCLUSIVE: Ukraine will hit Russian refineries in response to Moscow's 'new doctrine' of airstrikes, Zelenskiy says - Reuters",
+            "geopolitical_conflict", "High", "why it matters",
+            [{"symbol": "XAUUSD", "channel": "safe_haven", "lean": "buy", "lean_why": "x"}],
+            [{"source": "reuters", "url": "https://x"}], **kwargs,
+        ) is True
+    return mock_post.call_args.kwargs["json"]["text"]
+
+
+def test_update_push_names_the_incident_and_why():
+    freshness = "Published 3 Oct 22:17 SAST · +3715 min · Very stale"
+    text = _posted_text(
+        is_escalation=True, freshness_line=freshness,
+        update_of_incident=33, update_reason="severity rose: Medium -> High")
+    lines = text.split("\n")
+    assert lines[0].startswith("\U0001F6A8 HIGH")
+    assert lines[1] == (
+        "Update to incident #33: EXCLUSIVE: Ukraine will hit Russian refineries in response to "
+        "Moscow's 'new doctrine' of airstrikes, Zelenskiy says - Reuters")
+    assert lines[2] == freshness
+    assert "Why pushed: severity rose: Medium -> High" in lines
+    assert "ESCALATION" not in text
+
+
+def test_update_push_without_a_reason_has_no_why_line():
+    text = _posted_text(update_of_incident=7)
+    assert "Update to incident #7:" in text
+    assert "Why pushed" not in text
+
+
+def test_plain_alert_text_is_unchanged():
+    text = _posted_text()
+    lines = text.split("\n")
+    assert lines[0] == "\U0001F6A8 HIGH -- geopolitical_conflict"
+    assert lines[1].startswith("EXCLUSIVE: Ukraine will hit")
+    assert "Update to incident" not in text and "Why pushed" not in text

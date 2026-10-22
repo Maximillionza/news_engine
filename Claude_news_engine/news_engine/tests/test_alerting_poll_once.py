@@ -15,10 +15,13 @@ from webapp import store as webapp_store
 UTC = dt.timezone.utc
 
 
-def _article(title: str) -> NewsArticle:
+def _article(title: str, url: str | None = None) -> NewsArticle:
+    # B7 (2026-10-22): alerts sharing a URL can be linked as one incident, so distinct test
+    # stories need distinct URLs; the default is derived from the title.
+    slug = "-".join("".join(c for c in title.lower() if c.isalnum() or c == " ").split())
     return NewsArticle(
         title=title, summary="", source="reuters_business", source_type="rss_reuters_business",
-        published_utc=dt.datetime.now(UTC), url="https://example.com/a",
+        published_utc=dt.datetime.now(UTC), url=url or "https://example.com/" + slug,
     )
 
 
@@ -910,3 +913,224 @@ def test_poll_main_survives_a_broken_health_module(capsys):
          patch.dict("sys.modules", {"ops.health": None}):  # import raises ImportError
         poll_once.main()
     assert "health notice skipped" in capsys.readouterr().out
+
+
+# --- B7 (2026-10-22): follow-ups are stored on their incident; push once on a severity rise or direction flip ---
+# Fixtures are verbatim live alerts (tests/fixtures/b7_live_alert_pairs.json); the cycle clock is moved to the
+# alert's real detection time, the dedup is the real one (it sees real "now", so old alerts are outside its window).
+
+_B7_FIXTURE = json.loads(
+    (__import__("pathlib").Path(__file__).parent / "fixtures" / "b7_live_alert_pairs.json").read_text(encoding="utf-8"))
+
+
+def _parse(value: str) -> dt.datetime:
+    return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _fixture_article(n: int) -> NewsArticle:
+    src = _B7_FIXTURE[str(n)]["sources"][0]
+    return NewsArticle(
+        title=_B7_FIXTURE[str(n)]["headline"], summary="", source=src["source"], source_type="rss",
+        published_utc=_parse(src["published_utc"]), url=src["url"])
+
+
+def _run_article(conn, webapp_conn, article, category, severity, polarity, at, send, failed=False):
+    """One cycle for one article at clock `at`; LLM path via _triage_result + _classification."""
+    if failed:
+        classification = ClassificationResult(
+            category=category, severity="Medium", rationale="providers down", classification_failed=True)
+    else:
+        classification = _classification(category, severity=severity, polarity=polarity)
+    with patch("alerting.poll_once._utcnow", return_value=at), \
+         patch("alerting.poll_once.FREE_PREVIEW_FEEDS", {"feed_a": "u"}), \
+         patch("alerting.poll_once.RSSNewsSource") as source_cls, \
+         patch("alerting.poll_once.triage_article", return_value=_triage_result(category)), \
+         patch("alerting.poll_once.llm_classify.classify_candidate", MagicMock(return_value=classification)), \
+         patch("alerting.poll_once.notify_telegram.send_notice", MagicMock(return_value=True)), \
+         patch("alerting.poll_once.notify_telegram.send_alert", send):
+        source_cls.return_value.fetch.return_value = [article]
+        run_poll_cycle(conn=conn, webapp_conn=webapp_conn)
+
+
+def _live_cycle(conn, webapp_conn, n, severity, polarity, category=None, send=None, at=None, failed=False):
+    send = send if send is not None else MagicMock(return_value=True)
+    _run_article(
+        conn, webapp_conn, _fixture_article(n), category or _B7_FIXTURE[str(n)]["category"], severity, polarity,
+        at or _parse(_B7_FIXTURE[str(n)]["detected_at_utc"]), send, failed=failed)
+    return send
+
+
+def _alerts_by_detection(conn):
+    return sorted(store.list_recent_alerts(conn, _ALL_TIME), key=lambda r: r.id)
+
+
+def test_riyadh_follow_up_is_stored_not_pushed():
+    conn, webapp = store.get_connection(":memory:"), _tracked_webapp()
+    send = _live_cycle(conn, webapp, 54, "High", "escalation")
+    _live_cycle(conn, webapp, 55, "High", "escalation", send=send)
+
+    first, second = _alerts_by_detection(conn)
+    assert send.call_count == 1
+    assert second.incident_id == first.id
+    assert second.incident_role == "follow_up"
+    assert second.incident_rule == "url"
+    assert second.delivery_status == "follow_up"
+    assert second.affected_symbols
+    for sym in second.affected_symbols:
+        assert sym["lean"] == "mixed"
+        assert sym["lean_why"] == f"follow-up of incident #{first.id}: no new lean"
+    assert second.first_published_utc == dt.datetime(2026, 10, 10, 14, 29, 39, tzinfo=UTC)
+    assert second.sources[0]["published_utc"].startswith("2026-10-10T15:30:21")
+
+
+@pytest.mark.parametrize("first,second", [(12, 13), (71, 72)])
+def test_same_severity_follow_ups_send_no_push(first, second):
+    conn, webapp = store.get_connection(":memory:"), _tracked_webapp()
+    send = _live_cycle(conn, webapp, first, "Medium", "escalation")
+    _live_cycle(conn, webapp, second, "Medium", "escalation", send=send)
+    rows = _alerts_by_detection(conn)
+    assert send.call_count == 1 and len(rows) == 2
+    assert rows[1].incident_id == rows[0].id
+
+
+def test_severity_rise_pushes_exactly_one_update():
+    conn, webapp = store.get_connection(":memory:"), _tracked_webapp()
+    send = _live_cycle(conn, webapp, 33, "Medium", "escalation")
+    _live_cycle(conn, webapp, 39, "High", "escalation", send=send)
+    first, second = _alerts_by_detection(conn)
+
+    assert send.call_count == 2
+    kwargs = send.call_args_list[1].kwargs
+    assert kwargs["update_of_incident"] == first.id
+    assert kwargs["update_reason"] == "severity rose: Medium -> High"
+    assert kwargs["freshness_line"] == "Published 3 Oct 22:17 SAST · +3715 min · Very stale"
+    assert second.incident_role == "update"
+    assert second.delivery_status == "sent"
+    assert any(sym["lean"] != "mixed" for sym in second.affected_symbols)
+
+    # The same story again an hour later at the same High: stored, not pushed.
+    _live_cycle(conn, webapp, 39, "High", "escalation", send=send,
+                at=_parse(_B7_FIXTURE["39"]["detected_at_utc"]) + dt.timedelta(hours=1))
+    assert send.call_count == 2
+
+
+def test_follow_up_row_stores_original_first_published():
+    conn, webapp = store.get_connection(":memory:"), _tracked_webapp()
+    _live_cycle(conn, webapp, 33, "Medium", "escalation")
+    _live_cycle(conn, webapp, 39, "High", "escalation")
+    row = _alerts_by_detection(conn)[1]
+    assert row.first_published_utc == dt.datetime(2026, 10, 3, 20, 17, 10, tzinfo=UTC)
+    from alerting import freshness
+    age = freshness.age_minutes(row.first_published_utc, row.detected_at_utc)
+    assert freshness.freshness_band(age) == "Very stale"
+
+
+def test_direction_flip_pushes_an_update():
+    conn, webapp = store.get_connection(":memory:"), _tracked_webapp()
+    send = _live_cycle(conn, webapp, 54, "High", "escalation")
+    detected = _parse(_B7_FIXTURE["54"]["detected_at_utc"]) + dt.timedelta(hours=3)
+    article = NewsArticle(
+        title="Riyadh airport reopens as Saudi authorities say blast contained", summary="",
+        source="reuters_business", source_type="rss", published_utc=detected - dt.timedelta(minutes=5),
+        url="https://example.com/riyadh-airport-reopens")
+    _run_article(conn, webapp, article, "geopolitical_conflict", "High", "relief", detected, send)
+    first, second = _alerts_by_detection(conn)
+
+    assert send.call_count == 2
+    assert send.call_args_list[1].kwargs["update_reason"] == "direction changed: escalation -> relief"
+    assert second.incident_id == first.id
+    assert second.incident_rule == "entity:saudi arabia"
+    assert second.incident_role == "update"
+
+
+def test_live_blog_pair_alerts_twice():
+    conn, webapp = store.get_connection(":memory:"), _tracked_webapp()
+    send = _live_cycle(conn, webapp, 41, "High", "escalation")
+    _live_cycle(conn, webapp, 43, "Medium", "relief", send=send)
+    first, second = _alerts_by_detection(conn)
+
+    assert send.call_count == 2
+    assert all("update_of_incident" not in c.kwargs or c.kwargs["update_of_incident"] is None
+               for c in send.call_args_list)
+    assert second.incident_id == second.id != first.id
+    assert second.first_published_utc == dt.datetime(2026, 10, 7, 18, 18, 47, tzinfo=UTC)
+
+
+def test_storm_pair_alerts_twice():
+    conn, webapp = store.get_connection(":memory:"), _tracked_webapp()
+    fx = _B7_FIXTURE["46"]
+    published = _parse(fx["sources"][0]["published_utc"])
+    isaias = store.record_alert(
+        conn, headline=fx["headline"], source=fx["sources"][0]["source"], url=fx["sources"][0]["url"],
+        published_utc=published, detected_at_utc=_parse(fx["detected_at_utc"]),
+        category="natural_disaster_supply_chain", severity="High", classification_method="llm",
+        rationale="r", affected_symbols=[])
+    for src in fx["sources"]:
+        store.remember_url(conn, src["url"], isaias, _parse(fx["detected_at_utc"]), _parse(src["published_utc"]))
+    send = MagicMock(return_value=True)
+    _live_cycle(conn, webapp, 52, "High", "escalation", send=send)
+
+    rows = _alerts_by_detection(conn)
+    assert send.call_count == 1
+    assert send.call_args.kwargs.get("update_of_incident") is None
+    assert rows[1].incident_id == rows[1].id != isaias
+    assert rows[1].first_published_utc == dt.datetime(2026, 10, 9, 21, 49, 43, tzinfo=UTC)
+
+
+def test_failed_classification_follow_up_is_silent():
+    conn, webapp = store.get_connection(":memory:"), _tracked_webapp()
+    send = _live_cycle(conn, webapp, 54, "High", "escalation")
+    _live_cycle(conn, webapp, 55, "High", "escalation", send=send, failed=True)
+    first, second = _alerts_by_detection(conn)
+    assert send.call_count == 1
+    assert second.incident_id == first.id and second.incident_role == "follow_up"
+
+
+def test_dedup_escalation_is_measured_against_the_incident_max():
+    conn = store.get_connection(":memory:")
+    now = dt.datetime.now(UTC)
+    root = store.record_alert(
+        conn, headline="Oil drifts on OPEC+ remarks", source="cnbc_top_news", url="https://a",
+        published_utc=now, detected_at_utc=now, category="energy", severity="High",
+        classification_method="llm", rationale=None, affected_symbols=[])
+    follow_up = store.record_alert(
+        conn, headline="Oil drifts further on OPEC+ remarks", source="cnbc_top_news", url="https://b",
+        published_utc=now, detected_at_utc=now + dt.timedelta(minutes=5), category="energy", severity="Medium",
+        classification_method="llm", rationale=None, affected_symbols=[],
+        incident_id=root, incident_role="follow_up", incident_rule="url")
+    send, _ = _cycle(conn, _tracked_webapp(), "Oil drifts again on OPEC+ remarks",
+                     _triage_result("energy"), _classification("energy", severity="High"), existing_id=follow_up)
+    send.assert_not_called()
+    assert store.get_alert(conn, follow_up).severity == "Medium"
+
+
+def test_dedup_match_remembers_the_url():
+    conn = store.get_connection(":memory:")
+    existing_id = _existing_low_alert(conn)
+    article_url = "https://example.com/corroborating-story"
+    with patch("alerting.poll_once.FREE_PREVIEW_FEEDS", {"feed_a": "u"}), \
+         patch("alerting.poll_once.RSSNewsSource") as source_cls, \
+         patch("alerting.poll_once.triage_article", return_value=_triage_result()), \
+         patch("alerting.poll_once.llm_classify.classify_candidate", MagicMock(return_value=_classification("energy", severity="Low"))), \
+         patch("alerting.poll_once.dedup.find_existing_alert", return_value=existing_id), \
+         patch("alerting.poll_once.notify_telegram.send_alert", MagicMock(return_value=True)):
+        source_cls.return_value.fetch.return_value = [_article("Oil drifts on OPEC+ remarks again", url=article_url)]
+        run_poll_cycle(conn=conn, webapp_conn=_tracked_webapp())
+    seen = store.lookup_seen_url(conn, article_url, dt.datetime.now(UTC) - dt.timedelta(hours=1))
+    assert [s.alert_id for s in seen] == [existing_id]
+
+
+def test_new_alert_remembers_its_url():
+    conn, webapp = store.get_connection(":memory:"), _tracked_webapp()
+    _live_cycle(conn, webapp, 54, "High", "escalation")
+    at = _parse(_B7_FIXTURE["54"]["detected_at_utc"])
+    seen = store.lookup_seen_url(conn, _B7_FIXTURE["54"]["sources"][0]["url"], at - dt.timedelta(hours=1))
+    assert len(seen) == 1 and seen[0].first_seen_utc == at
+
+
+def test_cycle_prunes_seen_urls():
+    conn = store.get_connection(":memory:")
+    with patch("alerting.poll_once.FREE_PREVIEW_FEEDS", {}), \
+         patch("alerting.poll_once.store.prune_seen_urls", return_value=0) as spy:
+        run_poll_cycle(conn=conn, webapp_conn=_tracked_webapp())
+    assert spy.call_count == 1

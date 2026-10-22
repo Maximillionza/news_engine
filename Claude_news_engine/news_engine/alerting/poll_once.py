@@ -12,14 +12,22 @@ pushed BEFORE any ambiguous candidate waits on an LLM, and the LLM gets a
 bounded total time budget per cycle. A slow or dead classifier therefore
 can never delay a clear-cut alert, and can never push a cycle past the
 2-minute scheduler cadence.
+
+Incidents (B7, 2026-10-22): follow-up coverage of an event already alerted (same URL re-stamped,
+or the same named place/actor in the same category family, see alerting/incident.py) is LINKED
+and LABELLED, never suppressed: it is stored on its incident (visible on the Shock Alerts tab)
+with no new lean, and pushed once as "Update to incident #N" only when its severity rises above
+the incident's highest or its direction flips. A follow-up of equal severity and direction is
+stored silently.
 """
 from __future__ import annotations
 
 import datetime as dt
 import time
+from dataclasses import dataclass
 from typing import Optional
 
-from alerting import dedup, direction, llm_classify, notify_telegram, store
+from alerting import dedup, direction, incident, llm_classify, notify_telegram, store
 from alerting.source_backoff import FEED_BACKOFF_AFTER_FAILURES, backoff_delay, in_backoff
 from alerting.freshness import freshness_line
 from alerting.symbol_relevance import affected_symbols
@@ -36,6 +44,23 @@ _DEFAULT_LOOKBACK = dt.timedelta(minutes=10)  # first-ever run for a source, or 
 _SEVERITY_RANK = {"Low": 0, "Medium": 1, "High": 2}
 
 _METHOD_BY_PROVIDER = {"claude": "llm", "ollama": "llm_ollama"}
+
+FOLLOW_UP_LEAN_WHY = "follow-up of incident #{n}: no new lean"  # B7: a silent follow-up adds no lean
+
+
+@dataclass(frozen=True)
+class _Assessment:
+    """One article's classification outcome, as the new-alert and follow-up paths both store it."""
+    category: str
+    severity: str       # after the no-US-link cap
+    raw_severity: str   # before the cap
+    method: str
+    rationale: Optional[str]
+    polarity: str
+    country: Optional[str]
+    us_link: Optional[str]
+    capped: bool
+    classification_failed: bool
 
 
 def _utcnow() -> dt.datetime:
@@ -103,6 +128,7 @@ def run_poll_cycle(conn=None, webapp_conn=None) -> None:
         _advance_cursor(conn, name, since, articles)
 
     store.prune_near_misses(conn, now)  # K15: 30-day retention, bounded per cycle
+    store.prune_seen_urls(conn, now)  # B7 K9: 72 h URL memory, bounded per cycle
 
 
 def _sast(when: Optional[dt.datetime]) -> str:
@@ -193,6 +219,7 @@ def _process_matched(conn, webapp_conn, article: NewsArticle, result: TriageResu
     existing_id = dedup.find_existing_alert(article.title, category, conn)
     if existing_id is not None:
         store.append_source(conn, existing_id, article.source, article.url, article.published_utc)
+        store.remember_url(conn, article.url, existing_id, detected_at, article.published_utc)  # B7 K9
         _maybe_escalate(
             conn, webapp_conn, existing_id, category, raw_severity, rationale, classification_failed,
             polarity=polarity, country=country, us_link=us_link,
@@ -201,31 +228,100 @@ def _process_matched(conn, webapp_conn, article: NewsArticle, result: TriageResu
             _maybe_notify_classifier_down(conn, rationale, _utcnow())
         return
 
-    tracked_symbols = list_tracked_symbols(webapp_conn)
-    impacts = affected_symbols(category, tracked_symbols, headline=article.title)
-    affected_dicts = direction.describe_impacts(impacts, category, polarity, country=country, us_link=us_link)
+    assessment = _Assessment(
+        category=category, severity=severity, raw_severity=raw_severity, method=method, rationale=rationale,
+        polarity=polarity, country=country, us_link=us_link, capped=capped,
+        classification_failed=classification_failed,
+    )
+    # B7 (2026-10-22): a re-stamped URL keeps its first publication time, and a follow-up of an
+    # already-alerted incident is stored on it instead of alerting again.
+    cand = incident.IncidentCandidate(
+        headline=article.title, category=category, polarity=polarity, url=article.url,
+        published_utc=article.published_utc, detected_at_utc=detected_at,
+    )
+    first_published = incident.effective_first_published(conn, cand)
+    link = incident.find_incident(conn, cand)
+    if link is not None:
+        _record_follow_up(conn, webapp_conn, article, link, assessment, first_published, detected_at)
+    else:
+        tracked_symbols = list_tracked_symbols(webapp_conn)
+        impacts = affected_symbols(category, tracked_symbols, headline=article.title)
+        affected_dicts = direction.describe_impacts(impacts, category, polarity, country=country, us_link=us_link)
+
+        alert_id = store.record_alert(
+            conn, headline=article.title, source=article.source, url=article.url,
+            published_utc=article.published_utc, detected_at_utc=detected_at,
+            category=category, severity=severity, classification_method=method,
+            rationale=rationale, affected_symbols=affected_dicts,
+            polarity=polarity, country=country, us_link=us_link,
+            capped_no_us_link=capped, original_severity=raw_severity,
+            first_published_utc=first_published,
+        )
+        store.remember_url(conn, article.url, alert_id, detected_at, first_published)
+
+        if _should_push(severity, classification_failed):
+            sent = notify_telegram.send_alert(
+                article.title, category, severity, rationale, affected_dicts,
+                [{"source": article.source, "url": article.url}],
+                classification_failed=classification_failed,
+                cap_note=cap_note(raw_severity, capped),
+                freshness_line=freshness_line(first_published, detected_at),
+            )
+            store.set_delivery_status(conn, alert_id, "sent" if sent else "failed")
+
+    if all_providers_failed:
+        _maybe_notify_classifier_down(conn, rationale, _utcnow())
+
+
+def _record_follow_up(
+    conn, webapp_conn, article: NewsArticle, link: incident.IncidentLink, a: _Assessment,
+    first_published: dt.datetime, detected_at: dt.datetime,
+) -> int:
+    """
+    B7: stores the article as a follow-up row on its incident and returns the new row's id.
+    Pushed once as "Update to incident #N" only when update_reason() finds the severity above
+    the incident's highest or the direction flipped (never for a failed classification);
+    otherwise it is stored silently (delivery_status "follow_up") and every affected symbol
+    reads "mixed": a follow-up adds no new lean. An update row keeps its real leans.
+    """
+    rows = store.list_incident_alerts(conn, link.incident_id)
+    reason = incident.update_reason(rows, a.severity, a.polarity, article.title, a.classification_failed)
+    role = "update" if reason else "follow_up"
+
+    impacts = affected_symbols(a.category, list_tracked_symbols(webapp_conn), headline=article.title)
+    affected_dicts = direction.describe_impacts(impacts, a.category, a.polarity, country=a.country, us_link=a.us_link)
+    if not reason:
+        affected_dicts = [
+            {**d, "lean": "mixed", "lean_why": FOLLOW_UP_LEAN_WHY.format(n=link.incident_id)} for d in affected_dicts
+        ]
 
     alert_id = store.record_alert(
         conn, headline=article.title, source=article.source, url=article.url,
         published_utc=article.published_utc, detected_at_utc=detected_at,
-        category=category, severity=severity, classification_method=method,
-        rationale=rationale, affected_symbols=affected_dicts,
-        polarity=polarity, country=country, us_link=us_link,
-        capped_no_us_link=capped, original_severity=raw_severity,
+        category=a.category, severity=a.severity, classification_method=a.method,
+        rationale=a.rationale, affected_symbols=affected_dicts,
+        polarity=a.polarity, country=a.country, us_link=a.us_link,
+        capped_no_us_link=a.capped, original_severity=a.raw_severity,
+        incident_id=link.incident_id, incident_role=role, incident_rule=link.rule,
+        first_published_utc=first_published,
     )
+    store.remember_url(conn, article.url, alert_id, detected_at, first_published)
 
-    if _should_push(severity, classification_failed):
+    if reason and _should_push(a.severity, False):
         sent = notify_telegram.send_alert(
-            article.title, category, severity, rationale, affected_dicts,
+            article.title, a.category, a.severity, a.rationale, affected_dicts,
             [{"source": article.source, "url": article.url}],
-            classification_failed=classification_failed,
-            cap_note=cap_note(raw_severity, capped),
-            freshness_line=freshness_line(article.published_utc, detected_at),
+            cap_note=cap_note(a.raw_severity, a.capped),
+            freshness_line=freshness_line(first_published, detected_at),
+            update_of_incident=link.incident_id, update_reason=reason,
         )
         store.set_delivery_status(conn, alert_id, "sent" if sent else "failed")
+    elif not reason:
+        store.set_delivery_status(conn, alert_id, "follow_up")
 
-    if all_providers_failed:
-        _maybe_notify_classifier_down(conn, rationale, _utcnow())
+    outcome = f"update pushed ({reason})" if reason else "stored, no push"
+    print(f"[poll_once] incident #{link.incident_id} {role} ({link.rule}): {article.title!r} -- {outcome}")
+    return alert_id
 
 
 def _maybe_notify_classifier_down(conn, detail: str, now: dt.datetime) -> None:
@@ -261,7 +357,10 @@ def _maybe_escalate(
     clears the Telegram threshold, send a fresh push labeled as an
     escalation rather than silently treating a genuine escalation as
     routine corroboration. Never downgrades -- that judgment call stays
-    manual. A severity that is only the fallback guess from a failed
+    manual. B7 (2026-10-22): "more severe" is measured against the
+    incident's HIGHEST stored severity, not the matched row's, so a Medium
+    follow-up row can never be "escalated" back to the High its incident
+    already pushed. A severity that is only the fallback guess from a failed
     classification is not a real assessment and never escalates anything.
 
     B2: a corroborating article whose US link is unknown inherits the
@@ -283,7 +382,8 @@ def _maybe_escalate(
         return  # shouldn't happen (caller just appended to this id), but never crash on it
     effective = us_link if us_link is not None else existing.us_link
     new_severity, _ = cap_severity(raw_new_severity, effective)
-    if _SEVERITY_RANK.get(new_severity, -1) <= _SEVERITY_RANK.get(existing.severity, -1):
+    incident_high = incident.incident_max_severity(store.list_incident_alerts(conn, existing.incident_id))
+    if _SEVERITY_RANK.get(new_severity, -1) <= _SEVERITY_RANK.get(incident_high, -1):
         return
 
     affected = existing.affected_symbols

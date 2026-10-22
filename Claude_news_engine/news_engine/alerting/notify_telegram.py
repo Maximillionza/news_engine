@@ -62,6 +62,7 @@ def send_alert(
     affected_symbols: list[dict], sources: list[dict], is_escalation: bool = False,
     classification_failed: bool = False, cap_note: Optional[str] = None,
     freshness_line: Optional[str] = None,
+    update_of_incident: Optional[int] = None, update_reason: Optional[str] = None,
 ) -> bool:
     """
     Returns True on a confirmed 200 from Telegram's API, False on any
@@ -88,11 +89,19 @@ def send_alert(
     freshness_line (B2 K7): when given, a line directly under the headline
     ("Published 14:42 SAST · +2 min · Fresh") -- how old the story was when caught.
 
+    update_of_incident / update_reason (B7, 2026-10-22): the push is a follow-up of an ALREADY-ALERTED
+    incident whose severity rose or direction flipped. Line 1 is the normal severity prefix (never
+    "ESCALATION"), line 2 reads "Update to incident #N: <headline>", and "Why pushed: <reason>" follows
+    the freshness line.
+
     Retry policy: see _post_text.
     """
     affects_block = _affects_block(affected_symbols)
     source_line = sources[0]["url"] if sources else ""
-    if is_escalation:
+    if update_of_incident is not None:
+        prefix = _SEVERITY_PREFIX.get(severity, f"{severity.upper()}")
+        headline = f"Update to incident #{update_of_incident}: {headline}"
+    elif is_escalation:
         prefix = f"⬆️ ESCALATION ({severity.upper()})"
     elif classification_failed:
         prefix = "❓ UNCLASSIFIED (needs review)"
@@ -102,6 +111,7 @@ def send_alert(
         f"{prefix} -- {category}\n"
         f"{headline}\n"
         + (f"{freshness_line}\n" if freshness_line else "")
+        + (f"Why pushed: {update_reason}\n" if update_of_incident is not None and update_reason else "")
         + f"{affects_block}\n"
         + (f"{cap_note}\n" if cap_note else "")
         + f"{rationale or ''}\n"
