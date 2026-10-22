@@ -250,8 +250,8 @@ def maybe_refresh_macro_calendar(now: Optional[dt.datetime] = None) -> Optional[
     (2026-08-16 manual run, never scheduled) - the scheduler is now its
     caller. Returns run()'s result, or None while waiting out a retry delay
     or after an exception. A result of 0 (nothing written) or an exception
-    delays the next attempt by MACRO_RETRY_AFTER_FAILURE; -1 (not due / no
-    key) leaves the gate alone.
+    delays the next attempt by MACRO_RETRY_AFTER_FAILURE; -1 (no FRED key — not-due
+    is filtered by is_due() before run()) leaves the gate alone.
     """
     global _macro_retry_not_before
     now = now or dt.datetime.now(dt.timezone.utc)

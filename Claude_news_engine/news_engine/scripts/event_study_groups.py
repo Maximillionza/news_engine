@@ -97,6 +97,11 @@ class Member:
     actual: Optional[str]
     impact: Optional[str]
 
+    def __post_init__(self) -> None:
+        # Same test as compute_release_reactions._aware_utc; no conversion, a naive value is a caller bug.
+        if self.when_utc.tzinfo is None or self.when_utc.utcoffset() is None:
+            raise ValueError(f"when_utc must be timezone-aware, got naive {self.when_utc!r}")
+
 
 def _readable(m: Member) -> bool:
     return stats_rules.parse_number(m.forecast) is not None and stats_rules.parse_number(m.actual) is not None

@@ -7,6 +7,7 @@ __pycache__/
 webapp/dashboard.db
 data_layer/.last_ff_fetch_at
 data_layer/.last_macro_calendar_refresh_at
+data_layer/.last_macro_calendar_refresh_failure
 webapp/.actuals_sync/
 
 # Dated DB backups (e.g. backtest_log.db.pre_*) and runtime logs stay local (roadmap B1/S2)

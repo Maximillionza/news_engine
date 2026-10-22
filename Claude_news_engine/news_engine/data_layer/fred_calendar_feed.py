@@ -8,10 +8,10 @@ Forex Factory's feed (data_layer/calendar_feed.py) which only ever shows
 See docs/calendar-lookahead-source-research-2026-08-15.md for how this
 source was chosen and live-verified, and config/settings.py's
 FRED_RELEASE_ID_BY_EVENT_TITLE for which event titles map to which FRED
-release. NOT wired into scoring, the dashboard, or the accumulator —
-scripts/compare_fred_lookahead.py is the only intended caller, and it's a
-standalone, read-only comparison/logging tool, not a live pipeline
-participant.
+release. NOT wired into scoring, the dashboard, or the accumulator.
+Callers: scripts/refresh_macro_calendar.py (the scheduled one; it also
+reads `last_failure_reason`) and scripts/compare_fred_lookahead.py, a
+standalone, read-only comparison/logging tool.
 
 READ-ONLY. This module never writes anything — it only reads FRED's
 public /fred/releases/dates endpoint.
@@ -35,11 +35,21 @@ from config.settings import FRED_API_KEY
 
 FRED_BASE_URL = "https://api.stlouisfed.org/fred"
 
+# Why the last get_upcoming_release_dates() call returned nothing, when FRED itself said so
+# (module state: reset to None at the start of every call; read by refresh_macro_calendar).
+FRED_MAINTENANCE: str = "fred_maintenance"
+last_failure_reason: Optional[str] = None
+
 
 @dataclass
 class FredReleaseDate:
     release_id: int
     release_date: dt.date
+
+
+def is_maintenance_page(body: object) -> bool:
+    """True for an HTML body mentioning "maintenance" (FRED serves one instead of JSON while down)."""
+    return isinstance(body, str) and body.lstrip()[:1] == "<" and "maintenance" in body.lower()
 
 
 def get_upcoming_release_dates(release_id: int, days_ahead: int = 35, today: Optional[dt.date] = None) -> list[FredReleaseDate]:
@@ -55,6 +65,8 @@ def get_upcoming_release_dates(release_id: int, days_ahead: int = 35, today: Opt
     per this feature's own purpose, with a few days of slack so a release
     landing right at the edge of a calendar month isn't missed.
     """
+    global last_failure_reason
+    last_failure_reason = None
     if not FRED_API_KEY:
         print("[fred_calendar_feed] WARNING: FRED_API_KEY not set — skipping FRED lookahead (see .env.example)")
         return []
@@ -88,6 +100,10 @@ def get_upcoming_release_dates(release_id: int, days_ahead: int = 35, today: Opt
             },
             timeout=15,
         )
+        if is_maintenance_page(getattr(resp, "text", None)):
+            last_failure_reason = FRED_MAINTENANCE
+            print(f"[fred_calendar_feed] WARNING: FRED under maintenance (HTML page) for release_id={release_id}")
+            return []
         resp.raise_for_status()
         rows = resp.json().get("release_dates", [])
     except Exception as exc:  # noqa: BLE001 — a failed fetch/parse must degrade to an empty list, never crash the caller

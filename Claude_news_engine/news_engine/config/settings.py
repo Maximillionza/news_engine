@@ -319,7 +319,6 @@ DIRECTION_FLIP_HYSTERESIS_MARGIN = 0.03
 # happened. Don't add them here — see data_layer/rss_sources.py for the
 # tier split.
 SOURCE_TRUST_WEIGHTS = {
-    "forexfactory_calendar": 1.0,   # ground truth for scheduled event timing, not sentiment
     "alpha_vantage_news": 0.7,
     "apitube_news": 0.7,
     "rss_reuters_business": 0.85,   # wire service, fast + historically reliable

@@ -9,11 +9,23 @@ import datetime as dt
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import scripts.refresh_macro_calendar as refresh_macro_calendar
 import webapp.store as store
+import data_layer.fred_calendar_feed as fred_calendar_feed
 from data_layer.fred_calendar_feed import FredReleaseDate
+
+
+@pytest.fixture(autouse=True)
+def _tmp_failure_marker(tmp_path, monkeypatch):
+    """Never let run() touch the real data_layer/ failure marker; also reset the module flag."""
+    path = tmp_path / ".last_macro_calendar_refresh_failure"
+    monkeypatch.setattr(refresh_macro_calendar, "_LAST_MACRO_FAILURE_FILE", path)
+    monkeypatch.setattr(fred_calendar_feed, "last_failure_reason", None)
+    return path
 
 
 def test_is_due_true_when_never_run_before():
@@ -175,3 +187,42 @@ def test_run_does_not_mark_refreshed_when_fred_returns_nothing(capsys):
             assert refresh_macro_calendar.is_due() is True
     assert "not marking the refresh done" in capsys.readouterr().out
     print("PASS\n")
+
+
+def _run_with(tmp_path, fetch_effect):
+    """run(force=True) against a tmp DB/cooldown with one mapped title; returns (result, cooldown path)."""
+    cooldown = tmp_path / ".last_macro_calendar_refresh_at"
+    with patch.object(refresh_macro_calendar, "_LAST_MACRO_REFRESH_FILE", cooldown), \
+         patch.object(store, "DB_PATH", tmp_path / "dashboard.db"), \
+         patch.object(refresh_macro_calendar, "FRED_API_KEY", "test-key"), \
+         patch.object(refresh_macro_calendar, "FRED_RELEASE_ID_BY_EVENT_TITLE", {"CPI m/m": 10}), \
+         patch.object(refresh_macro_calendar, "get_upcoming_release_dates", **fetch_effect):
+        return refresh_macro_calendar.run(force=True), cooldown
+
+
+def test_run_records_fred_maintenance_failure(tmp_path, _tmp_failure_marker, capsys):
+    def maintenance(*args, **kwargs):
+        fred_calendar_feed.last_failure_reason = fred_calendar_feed.FRED_MAINTENANCE
+        return []
+
+    result, cooldown = _run_with(tmp_path, {"side_effect": maintenance})
+    assert result == 0
+    assert _tmp_failure_marker.exists()
+    assert dt.datetime.fromisoformat(_tmp_failure_marker.read_text().strip()).tzinfo is not None
+    assert not cooldown.exists()
+    assert "FRED under maintenance" in capsys.readouterr().out
+
+
+def test_run_zero_rows_without_maintenance_clears_failure_marker(tmp_path, _tmp_failure_marker):
+    _tmp_failure_marker.write_text("2026-10-01T00:00:00+00:00")
+    result, _ = _run_with(tmp_path, {"return_value": []})
+    assert result == 0
+    assert not _tmp_failure_marker.exists()
+
+
+def test_run_success_clears_failure_marker(tmp_path, _tmp_failure_marker):
+    _tmp_failure_marker.write_text("2026-10-01T00:00:00+00:00")
+    result, _ = _run_with(
+        tmp_path, {"return_value": [FredReleaseDate(release_id=10, release_date=dt.date(2026, 9, 11))]})
+    assert result == 1
+    assert not _tmp_failure_marker.exists()

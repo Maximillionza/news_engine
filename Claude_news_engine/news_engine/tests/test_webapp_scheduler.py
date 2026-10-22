@@ -564,12 +564,11 @@ def test_macro_refresh_exception_never_breaks_the_iteration():
     assert interval == scheduler.FAR_INTERVAL_SECONDS
 
 
-def test_macro_refresh_retries_after_6_hours_not_every_cycle():
+def test_macro_refresh_retries_after_6_hours_not_every_cycle(monkeypatch):
     import scripts.refresh_macro_calendar as refresh
     t0 = dt.datetime(2026, 10, 21, 8, 0, tzinfo=UTC_TZ)
-    scheduler._macro_retry_not_before = None
-    refresh_due = patch.object(refresh, "is_due", return_value=True)
-    refresh_due.start()
+    monkeypatch.setattr(scheduler, "_macro_retry_not_before", None)
+    monkeypatch.setattr(refresh, "is_due", lambda *a, **k: True)
     with patch.object(refresh, "run", return_value=0) as run:
         assert scheduler.maybe_refresh_macro_calendar(now=t0) == 0
         assert scheduler.maybe_refresh_macro_calendar(now=t0 + dt.timedelta(hours=1)) is None
@@ -577,7 +576,7 @@ def test_macro_refresh_retries_after_6_hours_not_every_cycle():
         assert scheduler.maybe_refresh_macro_calendar(now=t0 + dt.timedelta(hours=6)) == 0
         assert run.call_count == 2
     # a successful run (rows written) is called every iteration; run() self-gates on is_due
-    scheduler._macro_retry_not_before = None
+    monkeypatch.setattr(scheduler, "_macro_retry_not_before", None)
     with patch.object(refresh, "run", return_value=21) as run:
         for i in range(3):
             assert scheduler.maybe_refresh_macro_calendar(now=t0 + dt.timedelta(minutes=i)) == 21
@@ -590,8 +589,6 @@ def test_macro_refresh_retries_after_6_hours_not_every_cycle():
     with patch.object(refresh, "run", side_effect=RuntimeError("fred down")):
         assert scheduler.maybe_refresh_macro_calendar(now=t0) is None
     assert scheduler._macro_retry_not_before == t0 + dt.timedelta(hours=6)
-    scheduler._macro_retry_not_before = None
-    refresh_due.stop()
 
 
 def test_macro_refresh_prints_nothing_and_skips_run_when_not_due(capsys):

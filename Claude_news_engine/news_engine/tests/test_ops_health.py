@@ -37,6 +37,7 @@ def _open(tmp_path: Path, tracking_since: dt.datetime = NOW - dt.timedelta(days=
         alerts=alerting_store.get_connection(":memory:"),
         ops=ops_state.get_connection(tmp_path / name, now=tracking_since),
         marker=tmp_path / "macro_marker",
+        failure_marker=tmp_path / "macro_failure",
     )
 
 
@@ -53,7 +54,8 @@ def c(tmp_path: Path):
 
 def _build(c, now: dt.datetime = NOW) -> dict[str, health.HealthItem]:
     items = health.build_health(
-        now, dash_conn=c.dash, bt_conn=c.bt, alerts_conn=c.alerts, ops_conn=c.ops, macro_marker_path=c.marker)
+        now, dash_conn=c.dash, bt_conn=c.bt, alerts_conn=c.alerts, ops_conn=c.ops, macro_marker_path=c.marker,
+        macro_failure_marker_path=c.failure_marker)
     return {item.key: item for item in items}
 
 
@@ -263,6 +265,28 @@ def test_macro_calendar_ok_when_refreshed_with_rows_ahead(c):
     assert _build(c)["macro_calendar"].status == "ok"
 
 
+def test_macro_calendar_detail_says_fred_under_maintenance(c):
+    c.marker.write_text((NOW - dt.timedelta(days=1)).isoformat())
+    _macro(c, "2026-11-20", (NOW - dt.timedelta(days=1)).isoformat())
+    status_before = _build(c)["macro_calendar"].status
+    c.failure_marker.write_text((NOW - dt.timedelta(hours=2)).isoformat())
+    item = _build(c)["macro_calendar"]
+    assert "FRED under maintenance" in item.detail
+    assert item.status == status_before
+
+
+def test_macro_calendar_ignores_failure_older_than_last_refresh(c):
+    c.marker.write_text((NOW - dt.timedelta(hours=2)).isoformat())
+    _macro(c, "2026-11-20", (NOW - dt.timedelta(hours=2)).isoformat())
+    c.failure_marker.write_text((NOW - dt.timedelta(days=1)).isoformat())
+    assert "FRED under maintenance" not in _build(c)["macro_calendar"].detail
+
+
+def test_macro_failure_marker_path_matches_the_refresh_script():
+    from scripts import refresh_macro_calendar
+    assert health.MACRO_FAILURE_MARKER_PATH == refresh_macro_calendar._LAST_MACRO_FAILURE_FILE
+
+
 def test_data_timestamp_counts_when_the_job_has_no_run_record(c):
     bs.record_check(c.bt, NOW - dt.timedelta(hours=2))
     item = _build(c)["article_accumulator"]
@@ -283,7 +307,8 @@ def test_one_failing_check_does_not_break_the_others(c):
 
 def test_item_keys_and_order_are_stable(c):
     keys = [item.key for item in health.build_health(
-        NOW, dash_conn=c.dash, bt_conn=c.bt, alerts_conn=c.alerts, ops_conn=c.ops, macro_marker_path=c.marker)]
+        NOW, dash_conn=c.dash, bt_conn=c.bt, alerts_conn=c.alerts, ops_conn=c.ops, macro_marker_path=c.marker,
+        macro_failure_marker_path=c.failure_marker)]
     assert keys == EXPECTED_KEYS
 
 

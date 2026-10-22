@@ -297,3 +297,9 @@ def test_peak_distribution_bands():
     assert s["mean"] == 2.5 and s["max"] == 4
     empty = g.summarize([])
     assert empty["n"] == 0 and empty["median"] is None and empty["max"] is None
+
+
+def test_member_rejects_naive_datetime():
+    with pytest.raises(ValueError, match="timezone-aware"):
+        g.Member("CPI m/m", dt.datetime(2026, 3, 12, 12, 30), "0.2%", "0.3%", None)
+    assert g.Member("CPI m/m", T, "0.2%", "0.3%", None).when_utc == T

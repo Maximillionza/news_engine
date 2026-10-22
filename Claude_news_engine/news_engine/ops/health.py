@@ -42,6 +42,8 @@ UTC = dt.timezone.utc
 # scripts/refresh_macro_calendar.py's _LAST_MACRO_REFRESH_FILE (pinned equal by a
 # test). Not imported, so the 2-minute poll never loads the refresh script.
 MACRO_MARKER_PATH: Path = Path(__file__).parent.parent / "data_layer" / ".last_macro_calendar_refresh_at"
+# scripts/refresh_macro_calendar.py's _LAST_MACRO_FAILURE_FILE (pinned equal by a test too).
+MACRO_FAILURE_MARKER_PATH: Path = Path(__file__).parent.parent / "data_layer" / ".last_macro_calendar_refresh_failure"
 MISSED_RELEASE_LOOKBACK = dt.timedelta(days=7)
 TIER1_DUE_WINDOW = dt.timedelta(hours=24)
 # Same as alerting/poll_once.py's _METHOD_BY_PROVIDER (pinned equal by a test).
@@ -298,19 +300,30 @@ def _read_marker(path: Path) -> Optional[dt.datetime]:
         return None  # missing or unreadable marker: fall back to the rows' own stamps
 
 
-def _macro_calendar_check(now: dt.datetime, conns: dict[str, sqlite3.Connection], marker: Path) -> HealthItem:
+def _macro_calendar_check(
+    now: dt.datetime, conns: dict[str, sqlite3.Connection], marker: Path, failure_marker: Path,
+) -> HealthItem:
     dash = conns["dash"]
     last = _read_marker(marker)
     if last is None:
         last = _newest(dash, "SELECT recorded_at_utc FROM macro_calendar ORDER BY julianday(recorded_at_utc) DESC LIMIT 1")
     max_date = dash.execute("SELECT MAX(event_date) FROM macro_calendar").fetchone()[0]
     item = _aged_item(_MACRO, now, last, _as_utc(ops_state.get_tracking_since(conns["ops"])))
+    # A FRED-maintenance failure newer than the last good refresh adds detail text only; it never moves the status.
+    failed_at = _read_marker(failure_marker)
+    failure_note = (f"last refresh attempt failed: FRED under maintenance ({_sast(failed_at)})"
+                    if failed_at is not None and (last is None or failed_at > last) else "")
     # event_date is a plain YYYY-MM-DD date, so a string compare is a date compare.
     if max_date is not None and max_date < now.astimezone(UTC).date().isoformat():
         detail = f"no macro_calendar rows after {max_date}"
         if last is not None:
             detail += f"; last refresh {_sast(last)}"
+        detail = "; ".join(part for part in (detail, failure_note) if part)
         return HealthItem(item.key, item.label, "red", item.last_success_utc, item.age_seconds,
+                          item.expected_every_seconds, detail)
+    if failure_note:
+        detail = "; ".join(part for part in (item.detail, failure_note) if part)
+        return HealthItem(item.key, item.label, item.status, item.last_success_utc, item.age_seconds,
                           item.expected_every_seconds, detail)
     return item
 
@@ -365,11 +378,14 @@ def _feed_check(name: str, now: dt.datetime, conns: dict[str, sqlite3.Connection
 def build_health(
     now: dt.datetime, *, dash_conn: sqlite3.Connection, bt_conn: sqlite3.Connection,
     alerts_conn: sqlite3.Connection, ops_conn: sqlite3.Connection, macro_marker_path: Optional[Path] = None,
+    macro_failure_marker_path: Optional[Path] = None,
 ) -> list[HealthItem]:
     """Every item in a fixed order; a check that raises becomes an amber 'check failed' item."""
     now = _as_utc(now)
     # Resolved here (not as a default argument) so tests can patch MACRO_MARKER_PATH.
     marker = macro_marker_path if macro_marker_path is not None else MACRO_MARKER_PATH
+    failure_marker = (macro_failure_marker_path if macro_failure_marker_path is not None
+                      else MACRO_FAILURE_MARKER_PATH)
     conns = {"dash": dash_conn, "bt": bt_conn, "alerts": alerts_conn, "ops": ops_conn}
 
     def job(key: str) -> tuple[str, str, int, Callable[[], HealthItem]]:
@@ -391,7 +407,7 @@ def build_health(
         job("article_accumulator"),
         job("calendar_refresh"),
         (_MACRO.key, _MACRO.label, int(_MACRO.expected.total_seconds()),
-         lambda: _macro_calendar_check(now, conns, marker)),
+         lambda: _macro_calendar_check(now, conns, marker, failure_marker)),
     ]
     for provider in CLASSIFIER_PROVIDER_ORDER:
         checks.append((f"classifier:{provider}", f"Shock classifier: {provider}", day,

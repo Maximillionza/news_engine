@@ -45,11 +45,15 @@ from typing import Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import FRED_API_KEY, FRED_RELEASE_ID_BY_EVENT_TITLE, UTC_TZ
+import data_layer.fred_calendar_feed as fred_calendar_feed
 from data_layer.fred_calendar_feed import get_upcoming_release_dates
 import webapp.store as store
 
 MACRO_REFRESH_INTERVAL_DAYS = 29
 _LAST_MACRO_REFRESH_FILE = Path(__file__).parent.parent / "data_layer" / ".last_macro_calendar_refresh_at"
+# UTC ISO stamp of the latest zero-row run caused by FRED maintenance; ops/health.py reads it for the
+# macro_calendar detail (a test pins the two paths equal). Gitignored; cleared by any later run.
+_LAST_MACRO_FAILURE_FILE = Path(__file__).parent.parent / "data_layer" / ".last_macro_calendar_refresh_failure"
 
 
 def _seconds_since_last_refresh() -> Optional[float]:
@@ -99,9 +103,13 @@ def run(days_ahead: int = 35, force: bool = False, now: Optional[dt.datetime] = 
 
     conn = store.get_connection()
     written = 0
+    maintenance_seen = False
+    fred_calendar_feed.last_failure_reason = None  # no stale value from an earlier call/test
     try:
         for title, release_id in FRED_RELEASE_ID_BY_EVENT_TITLE.items():
             dates = get_upcoming_release_dates(release_id, days_ahead=days_ahead)
+            if fred_calendar_feed.last_failure_reason == fred_calendar_feed.FRED_MAINTENANCE:
+                maintenance_seen = True
             if not dates:
                 continue
             time_of_day = store.infer_event_time_of_day(conn, title)
@@ -124,11 +132,17 @@ def run(days_ahead: int = 35, force: bool = False, now: Optional[dt.datetime] = 
     if written == 0:
         # Nothing written (FRED down / empty / key rejected): do NOT start a
         # 29-day "done" window on a run that did nothing.
-        print("[refresh_macro_calendar] WARNING: FRED returned no release dates for any title - "
+        reason = " (FRED under maintenance)" if maintenance_seen else ""
+        print(f"[refresh_macro_calendar] WARNING: FRED returned no release dates for any title{reason} - "
               "not marking the refresh done; will retry.")
+        if maintenance_seen:
+            _LAST_MACRO_FAILURE_FILE.write_text(now.astimezone(dt.timezone.utc).isoformat())
+        else:
+            _LAST_MACRO_FAILURE_FILE.unlink(missing_ok=True)
         return 0
 
     _record_refresh(now)
+    _LAST_MACRO_FAILURE_FILE.unlink(missing_ok=True)
     print(f"[refresh_macro_calendar] done — {written} macro-calendar row(s) written/refreshed.")
     return written
 

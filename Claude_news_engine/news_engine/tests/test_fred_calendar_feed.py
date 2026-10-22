@@ -175,3 +175,35 @@ if __name__ == "__main__":
     test_compare_fred_to_ff_still_flags_ff_only_for_an_upcoming_unmatched_event()
     test_compare_fred_to_ff_ignores_events_with_a_different_title()
     print("All fred_calendar_feed tests passed.")
+
+
+MAINTENANCE_HTML = "<!DOCTYPE html><html><head><title>Site Maintenance</title>"
+
+
+def test_is_maintenance_page():
+    assert fred_calendar_feed.is_maintenance_page(MAINTENANCE_HTML) is True
+    assert fred_calendar_feed.is_maintenance_page('{"release_dates": []}') is False
+    assert fred_calendar_feed.is_maintenance_page("<html>502 Bad Gateway</html>") is False
+    assert fred_calendar_feed.is_maintenance_page(None) is False
+    assert fred_calendar_feed.is_maintenance_page(MagicMock()) is False
+
+
+def test_maintenance_html_body_returns_empty_and_sets_reason():
+    import requests
+    resp = MagicMock()
+    resp.text = MAINTENANCE_HTML
+    resp.raise_for_status.side_effect = requests.HTTPError("503")
+    with patch.object(fred_calendar_feed, "FRED_API_KEY", "test-key"), \
+         patch.object(fred_calendar_feed.requests, "get", return_value=resp):
+        assert fred_calendar_feed.get_upcoming_release_dates(10, today=dt.date(2026, 8, 15)) == []
+    assert fred_calendar_feed.last_failure_reason == "fred_maintenance"
+
+
+def test_normal_response_clears_failure_reason():
+    fred_calendar_feed.last_failure_reason = fred_calendar_feed.FRED_MAINTENANCE
+    resp = _fake_response({"release_dates": []})
+    resp.text = '{"release_dates": []}'
+    with patch.object(fred_calendar_feed, "FRED_API_KEY", "test-key"), \
+         patch.object(fred_calendar_feed.requests, "get", return_value=resp):
+        fred_calendar_feed.get_upcoming_release_dates(10, today=dt.date(2026, 8, 15))
+    assert fred_calendar_feed.last_failure_reason is None
