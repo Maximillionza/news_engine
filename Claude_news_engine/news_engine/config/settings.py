@@ -1076,6 +1076,20 @@ REDUNDANCY_TIME_PROXIMITY_MINUTES = 90     # articles further apart than this ar
 REDUNDANCY_TERM_OVERLAP_THRESHOLD = 0.6    # Jaccard overlap of significant title+summary words needed to count as the same underlying story
 REDUNDANCY_DISCOUNT_MULTIPLIER = 0.3       # a redundant contribution is still WEAK corroborating evidence, not zero — discounted, not dropped
 
+# --- Same-incident exclusion (B7 (2026-10-22), audit AS-01, roadmap A9) ---
+# The redundancy discount above only sees syndicated copies within 90
+# minutes. Follow-up coverage of ONE incident ("Iran seizes tanker in
+# Hormuz", then a day later "Tanker seized by Iran near Hormuz as oil
+# jumps") is re-coverage, not a new development, yet it kept voting at
+# full weight across the 72 h bundle window. Owner ruling: count it ONCE.
+# A later article is excluded (not discounted) when it names the same
+# non-empty set of data_layer/entities.py gazetteer entities as an earlier
+# kept article, does not lean the opposite USD way, and shares enough
+# significant words. Articles naming no gazetteer entity (plain macro
+# coverage) are never touched. Untuned starting values.
+SAME_INCIDENT_MIN_WORD_OVERLAP = 0.25    # B7 A9: Jaccard of significant title+summary words also required (two "China" stories are not one incident)
+SAME_INCIDENT_SENTIMENT_EPSILON = 0.05   # |usd_sentiment| below this has no direction; opposite directions above it are a new development
+
 # --- Predictions display retention (2026-08-16) ---
 # webapp/app.py's /api/predictions previously built its event list ONLY
 # from whatever Forex Factory's currently-fetched calendar_snapshot

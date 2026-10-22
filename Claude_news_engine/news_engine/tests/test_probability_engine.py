@@ -1233,6 +1233,98 @@ def test_score_bundle_raises_for_a_real_fx_cross_pair_no_usd_leg():
     print("PASS\n")
 
 
+# --- B7 (2026-10-22), A9 / AS-01: re-coverage of one incident counts once. A
+# later article naming the SAME gazetteer entity set, with no opposite USD
+# sentiment and enough shared words, is excluded before aggregation. ---
+
+_B7_T0 = EVENT_TIME - dt.timedelta(hours=60)
+
+
+def _b7_article(title: str, hours_after_t0: float, sentiment: float) -> "NewsArticle":
+    from data_layer.news_feed import NewsArticle
+    return NewsArticle(
+        title=title, summary="", source="Test Wire", source_type="test",
+        published_utc=_B7_T0 + dt.timedelta(hours=hours_after_t0),
+        url=f"https://example.test/b7/{abs(hash(title)) % 100000}",
+        native_sentiment=sentiment,
+    )
+
+
+def _b7_score(articles: list) -> probability_engine.ProbabilityResult:
+    bundle = EventNewsBundle(event=_cpi_event(), articles=articles, as_of_utc=EVENT_TIME)
+    return score_bundle(bundle, "XAUUSD")
+
+
+def test_same_incident_recoverage_counts_once():
+    print("=== B7 A9: three re-tellings of one Iran/Hormuz tanker seizure vote once ===")
+    first = _b7_article("Iran seizes oil tanker in Strait of Hormuz", 0, 0.4)
+    second = _b7_article("Tanker seized by Iran near Hormuz as oil jumps", 30, 0.3)
+    third = _b7_article("Iran holds seized tanker in Hormuz, oil tanker crew detained", 50, 0.35)
+    result = _b7_score([third, first, second])  # input order must not matter: earliest is kept
+    assert result.article_count == 1
+    assert [c.article.title for c in result.same_incident_excluded] == [second.title, third.title]
+    assert [c.article.title for c in result.contributions] == [first.title]
+    alone = _b7_score([first])
+    assert result.aggregate_usd_sentiment == alone.aggregate_usd_sentiment
+    print("PASS\n")
+
+
+def test_new_entity_is_not_discounted():
+    print("=== B7 A9: a later article naming a new actor (Israel) is a new development, kept ===")
+    first = _b7_article("Iran seizes oil tanker in Strait of Hormuz", 0, 0.4)
+    second = _b7_article("Iran and Israel trade strikes after Hormuz tanker seizure", 30, 0.4)
+    result = _b7_score([first, second])
+    assert result.article_count == 2
+    assert result.same_incident_excluded == []
+    print("PASS\n")
+
+
+def test_opposite_sentiment_is_not_discounted():
+    print("=== B7 A9: same entities but opposite USD sentiment is a new development, kept ===")
+    first = _b7_article("Iran seizes oil tanker in Strait of Hormuz", 0, 0.4)
+    second = _b7_article("Tanker seized by Iran near Hormuz as oil jumps", 30, -0.4)
+    result = _b7_score([first, second])
+    assert result.article_count == 2
+    assert result.same_incident_excluded == []
+    print("PASS\n")
+
+
+def test_low_word_overlap_is_not_discounted():
+    print("=== B7 A9: two different China stories (same entity, little shared wording) are both kept ===")
+    first = _b7_article("China imposes export curbs on rare earths", 0, 0.3)
+    second = _b7_article("China retaliates with tariffs on US farm goods", 20, 0.3)
+    result = _b7_score([first, second])
+    assert result.article_count == 2
+    assert result.same_incident_excluded == []
+    print("PASS\n")
+
+
+def test_articles_without_entities_are_never_excluded():
+    print("=== B7 A9: macro articles naming no gazetteer entity are never touched ===")
+    articles = [
+        _b7_article("Fed watchers brace for a hot CPI print", 50, 0.3),
+        _b7_article("US inflation expected to cool in September CPI", 53, 0.2),
+        _b7_article("Traders eye CPI as Fed weighs cuts", 56, 0.25),
+    ]
+    result = _b7_score(articles)
+    assert result.same_incident_excluded == []
+    assert result.article_count == 3
+    print("PASS\n")
+
+
+def test_same_incident_runs_before_redundancy_discount():
+    print("=== B7 A9: a near-copy that adds an entity is not same-incident, so B6's redundancy discount still applies ===")
+    first = _b7_article("Oil tanker seized in Strait of Hormuz, shipping sources say", 0, 0.4)
+    second = _b7_article("Oil tanker seized in Strait of Hormuz by Iran, shipping sources say", 10 / 60, 0.4)
+    result = _b7_score([first, second])
+    assert result.same_incident_excluded == []
+    assert result.article_count == 2
+    by_title = {c.article.title: c for c in result.contributions}
+    assert by_title[first.title].redundancy_discounted is False
+    assert by_title[second.title].redundancy_discounted is True
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_bundle_scores_a_real_symbol_never_in_config_settings_instruments()
     test_score_bundle_raises_for_a_genuinely_unrecognized_ticker()
@@ -1305,4 +1397,10 @@ if __name__ == "__main__":
     test_adp_and_ppi_links_stay_0_90()
     test_unlinked_precursor_falls_back_to_global_weight()
     test_score_bundle_passes_target_title_to_precursors()
+    test_same_incident_recoverage_counts_once()
+    test_new_entity_is_not_discounted()
+    test_opposite_sentiment_is_not_discounted()
+    test_low_word_overlap_is_not_discounted()
+    test_articles_without_entities_are_never_excluded()
+    test_same_incident_runs_before_redundancy_discount()
     print("All probability_engine tests passed.")

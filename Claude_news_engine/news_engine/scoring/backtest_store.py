@@ -499,7 +499,7 @@ class PredictionArticleContribution:
     source_type: str               # SOURCE_TRUST_WEIGHTS key -- the feed, not the publisher (AS-02 caveat)
     published_utc: str
     status: str                    # 'included' | 'excluded'
-    reason: Optional[str]          # excluded: EXCLUSION_REASONS; included: None or 'redundancy_discount'
+    reason: Optional[str]          # excluded: EXCLUSION_REASONS or 'same_incident' (B7 2026-10-22: re-coverage of one incident, usd_sentiment kept); included: None or 'redundancy_discount'
     usd_sentiment: Optional[float]
     trust_weight: Optional[float]
     time_weight: Optional[float]

@@ -1345,6 +1345,90 @@ def test_evidence_write_failure_keeps_prediction():
     print("PASS\n")
 
 
+# --- B7 (2026-10-22), A9: an article excluded as same-incident re-coverage is
+# kept in the evidence table as excluded / "same_incident", its sentiment kept for audit. ---
+
+def test_contribution_rows_record_same_incident():
+    print("=== accumulator: B7 -- a same-incident article is an excluded evidence row with its sentiment kept ===")
+    now = dt.datetime(2026, 9, 2, 10, 0, tzinfo=UTC_TZ)
+    a1 = _evidence_article("Iran seizes oil tanker in Strait of Hormuz", 30, 0.4, now)
+    a2 = _evidence_article("Dollar firm on rate outlook", 20, 0.2, now)
+    repeat = _evidence_article("Tanker seized by Iran near Hormuz as oil jumps", 10, 0.3, now)
+    contributions = [_evidence_contribution(a1, 0.4, 0.8, 0.9), _evidence_contribution(a2, 0.2, 0.6, 0.7)]
+    same_incident = [_evidence_contribution(repeat, 0.3, 0.8, 0.95)]
+    rows = accumulator._build_article_contribution_rows(contributions, [], same_incident)
+    assert len(rows) == 3
+    for row in rows:
+        assert set(row) == _EVIDENCE_KEYS
+    included = [r for r in rows if r["status"] == "included"]
+    assert len(included) == 2
+    assert abs(sum(r["weight_pct"] for r in included) - 100.0) <= 0.2
+    same = [r for r in rows if r["reason"] == "same_incident"]
+    assert len(same) == 1
+    row = same[0]
+    assert row["status"] == "excluded" and row["title"] == repeat.title
+    assert row["usd_sentiment"] == 0.3
+    for key in ("trust_weight", "time_weight", "combined_weight", "weight_pct"):
+        assert row[key] is None
+    assert row["matched_terms"] == []
+    print("PASS\n")
+
+
+class _StubSource:
+    """A NewsSource returning fixed articles, so the real build_event_news_bundle() runs."""
+    name = "stub"
+
+    def __init__(self, articles):
+        self._articles = articles
+
+    def fetch(self, query, since_utc, limit=50):
+        return list(self._articles)
+
+
+def test_record_prediction_stores_same_incident_rows():
+    print("=== accumulator: B7 -- re-coverage of one incident is stored as same_incident evidence and logged ===")
+    import contextlib
+    import io
+    from config import settings
+    now = dt.datetime.now(UTC_TZ)
+    event = EconomicEvent(
+        title="B7 Test Shock Event", country="USD", impact="High",
+        event_time_utc=now + dt.timedelta(hours=2), forecast=None, previous=None,
+    )
+    articles = [
+        _evidence_article("Iran seizes oil tanker in Strait of Hormuz", 55 * 60, 0.4, now),
+        _evidence_article("Tanker seized by Iran near Hormuz as oil jumps", 25 * 60, 0.3, now),
+        _evidence_article("Iran holds seized tanker in Hormuz, oil tanker crew detained", 5 * 60, 0.35, now),
+    ]
+    with tempfile.TemporaryDirectory() as tmp, \
+         patch.dict(settings.EVENT_RELEVANCE_KEYWORDS_BY_TITLE, {event.title: ["hormuz"]}), \
+         patch.object(accumulator, "_read_precursor_events", return_value=[]), \
+         patch.object(accumulator, "score_print_direction", return_value=None), \
+         patch.object(accumulator, "_read_trend_signal", return_value=None), \
+         patch.object(accumulator, "_read_kalshi_signal", return_value=(None, None)):
+        conn = store.get_connection(Path(tmp) / "t.db")
+        try:  # closed even on a failed assert, so Windows can delete the temp DB
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                results = accumulator.score_and_record_event(
+                    conn=conn, event=event, all_events=[event], instruments=["XAUUSD"],
+                    sources=[_StubSource(articles)], now=now,
+                )
+            assert results["XAUUSD"].article_count == 1
+            pred_id = conn.execute("SELECT id FROM predictions").fetchone()[0]
+            rows = store.get_prediction_article_contributions(conn, pred_id)
+            same = [r for r in rows if r.reason == "same_incident"]
+            assert len(same) == 2
+            assert all(r.status == "excluded" for r in same)
+            assert sorted(r.usd_sentiment for r in same) == [0.3, 0.35]
+            assert [r.title for r in rows if r.status == "included"] == [articles[0].title]
+            recorded = [line for line in buf.getvalue().splitlines() if "] recorded XAUUSD" in line]
+            assert len(recorded) == 1 and "same_incident excluded: 2" in recorded[0]
+        finally:
+            conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_and_record_event_skips_fx_cross_instruments_without_calling_score_bundle()
     test_interval_far_when_nothing_active()
@@ -1396,6 +1480,8 @@ if __name__ == "__main__":
     test_every_article_recorded_with_prediction()
     test_unchanged_rescore_writes_no_evidence()
     test_evidence_write_failure_keeps_prediction()
+    test_contribution_rows_record_same_incident()
+    test_record_prediction_stores_same_incident_rows()
     print("All backtest_accumulator tests passed.")
 
 

@@ -54,6 +54,8 @@ from config.settings import (
     REDUNDANCY_TERM_OVERLAP_THRESHOLD,
     REDUNDANCY_TIME_PROXIMITY_MINUTES,
     RISK_SENTIMENT_DAMPENING,
+    SAME_INCIDENT_MIN_WORD_OVERLAP,
+    SAME_INCIDENT_SENTIMENT_EPSILON,
     SOURCE_TRUST_WEIGHTS,
     THIN_SAMPLE_PROBABILITY_CAP,
     THIN_SAMPLE_PROBABILITY_CAP_BY_SIGNAL_COUNT,
@@ -63,6 +65,7 @@ from config.settings import (
     UTC_TZ,
 )
 from data_layer.calendar_feed import EconomicEvent
+from data_layer.entities import incident_entities
 from data_layer.event_context import EventNewsBundle
 from data_layer.macro_backdrop import EQUITY_INDEX_LEAN_THRESHOLD_PCT, OIL_SHOCK_DAILY_THRESHOLD_PCT
 from data_layer.news_feed import NewsArticle
@@ -181,6 +184,10 @@ class ProbabilityResult:
     redundant_contributions_discounted: int = 0   # how many article contributions were discounted as likely-redundant with an earlier one (see _apply_redundancy_discounts)
     contributions: list[ArticleContribution] = field(default_factory=list, repr=False)
     precursor_contributions: list[PrecursorContribution] = field(default_factory=list, repr=False)
+    # B7 (2026-10-22): article contributions excluded as re-coverage of an incident an
+    # earlier kept article already reported (see _apply_same_incident_exclusions). Never
+    # aggregated or counted; the accumulator records them as evidence rows "same_incident".
+    same_incident_excluded: list[ArticleContribution] = field(default_factory=list, repr=False)
 
     def summary(self) -> str:
         base = (
@@ -348,6 +355,67 @@ def _apply_redundancy_discounts(contributions: list[ArticleContribution]) -> tup
         else:
             kept.append(c)
     return kept, discounted_count
+
+
+def _is_same_incident(earlier: ArticleContribution, later: ArticleContribution) -> bool:
+    """
+    B7 (2026-10-22), audit AS-01 / roadmap A9: True if `later` is re-coverage
+    of the incident `earlier` already reported, so it must not vote again.
+    All three are required:
+      - the same NON-EMPTY set of gazetteer entities (data_layer/entities.py)
+        in title + summary — a new place or actor is a new development, and
+        an article naming none (plain macro coverage) is never touched;
+      - no opposite USD direction (both |usd_sentiment| at or above
+        SAME_INCIDENT_SENTIMENT_EPSILON with opposite signs is a new
+        development, e.g. a de-escalation after an escalation);
+      - significant-word Jaccard at or above SAME_INCIDENT_MIN_WORD_OVERLAP,
+        so two different stories that merely share one country ("China
+        curbs rare earths" / "China tariffs farm goods") stay apart.
+    No time limit: the event bundle window (72 h) already bounds it. Within
+    one bundle the event itself plays the role the category family plays for
+    shock alerts (alerting/incident.py).
+    """
+    entities_earlier = incident_entities(f"{earlier.article.title} {earlier.article.summary}")
+    if not entities_earlier:
+        return False
+    if incident_entities(f"{later.article.title} {later.article.summary}") != entities_earlier:
+        return False
+
+    s_earlier, s_later = earlier.usd_sentiment, later.usd_sentiment
+    if (abs(s_earlier) >= SAME_INCIDENT_SENTIMENT_EPSILON and abs(s_later) >= SAME_INCIDENT_SENTIMENT_EPSILON
+            and (s_earlier > 0) != (s_later > 0)):
+        return False
+
+    words_earlier = _significant_words(f"{earlier.article.title} {earlier.article.summary}")
+    words_later = _significant_words(f"{later.article.title} {later.article.summary}")
+    if not words_earlier or not words_later:
+        return False
+    overlap = len(words_earlier & words_later) / len(words_earlier | words_later)
+    return overlap >= SAME_INCIDENT_MIN_WORD_OVERLAP
+
+
+def _apply_same_incident_exclusions(
+    contributions: list[ArticleContribution],
+) -> tuple[list[ArticleContribution], list[ArticleContribution]]:
+    """
+    B7 (2026-10-22): returns (kept, excluded). Earliest published first; a
+    contribution that _is_same_incident() with an already-KEPT one is
+    excluded (owner ruling: re-coverage counts once — excluded, not
+    discounted), so the earliest telling keeps its full weight. Comparing
+    only against kept contributions means a chain of re-tellings all
+    collapse onto the first, and an excluded article never shadows a later
+    one. Runs before _apply_redundancy_discounts(), which still discounts
+    near-copies this rule leaves in (e.g. one that adds an entity).
+    """
+    ordered = sorted(contributions, key=lambda c: c.article.published_utc)
+    kept: list[ArticleContribution] = []
+    excluded: list[ArticleContribution] = []
+    for c in ordered:
+        if any(_is_same_incident(earlier, c) for earlier in kept):
+            excluded.append(c)
+        else:
+            kept.append(c)
+    return kept, excluded
 
 
 def _precursor_link_weight(target_title: str | None, precursor_title: str) -> float:
@@ -1063,6 +1131,11 @@ def score_bundle(
 
     as_of = bundle.as_of_utc
     article_contributions = _build_contributions(bundle.articles, as_of, TIME_DECAY_HALF_LIFE_MINUTES)
+    # B7 (2026-10-22), A9: re-coverage of one incident counts once. Excluded here,
+    # before the redundancy discount, so an excluded article reaches neither
+    # aggregation, agreement, the contradiction check, the thin-sample count nor
+    # article_count. See _apply_same_incident_exclusions()'s docstring.
+    article_contributions, same_incident_excluded = _apply_same_incident_exclusions(article_contributions)
     # Correlation/redundancy discount (2026-08-16 follow-up to R5): applied
     # here, before article_contributions feeds into aggregation, agreement,
     # contradiction detection, or the thin-sample count — every one of
@@ -1196,4 +1269,5 @@ def score_bundle(
         redundant_contributions_discounted=redundant_contributions_discounted,
         contributions=article_contributions,
         precursor_contributions=precursor_contributions,
+        same_incident_excluded=same_incident_excluded,
     )

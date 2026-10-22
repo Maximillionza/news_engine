@@ -177,7 +177,8 @@ def _build_top_contributions(contributions: list, limit: int = TOP_CONTRIBUTIONS
     ]
 
 
-def _build_article_contribution_rows(contributions: list, excluded: list[tuple]) -> list[dict]:
+def _build_article_contribution_rows(contributions: list, excluded: list[tuple],
+                                     same_incident: list = ()) -> list[dict]:
     """
     B6 (2026-10-22): one row dict per article behind a prediction, for
     scoring.backtest_store.record_prediction_article_contributions(). Included
@@ -186,6 +187,12 @@ def _build_article_contribution_rows(contributions: list, excluded: list[tuple])
     basis as _build_top_contributions); excluded rows come from
     EventNewsBundle.excluded as (article, reason) with the weight fields None.
     A redundancy-discounted article carries reason "redundancy_discount".
+
+    B7 (2026-10-22): `same_incident` is ProbabilityResult.same_incident_excluded
+    (re-coverage of an incident an earlier article already reported). Each is an
+    excluded row with reason "same_incident"; its usd_sentiment is kept for
+    audit (it was scored, just not counted), every weight field is None and
+    it takes no share of weight_pct.
     """
     total_weight = sum(c.combined_weight for c in contributions)
     rows: list[dict] = []
@@ -215,6 +222,22 @@ def _build_article_contribution_rows(contributions: list, excluded: list[tuple])
             "status": "excluded",
             "reason": reason,
             "usd_sentiment": None,
+            "trust_weight": None,
+            "time_weight": None,
+            "combined_weight": None,
+            "weight_pct": None,
+            "matched_terms": [],
+        })
+    for c in same_incident:
+        rows.append({
+            "title": c.article.title,
+            "url": c.article.url or "",
+            "source": c.article.source,
+            "source_type": c.article.source_type,
+            "published_utc": c.article.published_utc.isoformat(),
+            "status": "excluded",
+            "reason": "same_incident",
+            "usd_sentiment": c.usd_sentiment,
             "trust_weight": None,
             "time_weight": None,
             "combined_weight": None,
@@ -632,11 +655,14 @@ def score_and_record_event(
         try:
             record_prediction_article_contributions(
                 conn, prediction_id, event.title, event.event_time_utc, instrument,
-                _build_article_contribution_rows(result.contributions, bundle.excluded),
+                _build_article_contribution_rows(result.contributions, bundle.excluded, result.same_incident_excluded),
             )
         except Exception as exc:  # noqa: BLE001
             print(f"[backtest_accumulator] WARNING: evidence write failed for {instrument}/{event.title}: {exc}")
-        print(f"[backtest_accumulator] recorded {instrument} / {event.title}: {result.summary()}")
+        # B7 (2026-10-22): say when same-incident re-coverage was left out of this call.
+        same_incident_count = len(result.same_incident_excluded)
+        same_incident_note = f" (same_incident excluded: {same_incident_count})" if same_incident_count else ""
+        print(f"[backtest_accumulator] recorded {instrument} / {event.title}: {result.summary()}{same_incident_note}")
 
     return results
 
