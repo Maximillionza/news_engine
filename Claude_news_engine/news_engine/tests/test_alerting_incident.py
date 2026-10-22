@@ -105,7 +105,7 @@ def test_entity_rule_window_is_24h():
     conn = store.get_connection(":memory:")
     id54 = _seed(conn, 54)
     detected54 = _ts(_LIVE["54"]["detected_at_utc"])
-    headline = "Second blast reported at Riyadh airport terminal"
+    headline = "Riyadh airport flights cancelled as travellers evacuated, airlines say"
     link = find_incident(conn, _other(headline, "geopolitical_conflict", detected54 + dt.timedelta(hours=23)))
     assert link is not None
     assert link.incident_id == id54
@@ -117,7 +117,7 @@ def test_family_is_respected():
     conn = store.get_connection(":memory:")
     id54 = _seed(conn, 54)
     at = _ts(_LIVE["54"]["detected_at_utc"]) + dt.timedelta(hours=2)
-    headline = "Riyadh airport blast halts Saudi jet fuel deliveries"
+    headline = "Riyadh airport flights cancelled, travellers evacuated, Saudi jet fuel deliveries halted"
     link = find_incident(conn, _other(headline, "energy", at))
     assert link is not None and link.incident_id == id54
     assert find_incident(conn, _other(headline, "central_bank", at)) is None
@@ -235,13 +235,12 @@ def test_update_reason_cases():
 # --- Final-review fixes (2026-10-22): incident-scoped entity rule, push guarantee, one same-story test ---
 
 
-def test_entity_rule_links_54_55_without_the_shared_url():
+def test_entity_rule_does_not_link_54_55_without_the_shared_url():
     conn = store.get_connection(":memory:")
     id54 = _seed(conn, 54)
-    link = find_incident(conn, _cand(55, url="https://example.com/riyadh-airport-eyewitnesses"))
-    assert link is not None
-    assert link.incident_id == id54
-    assert link.rule == "entity:saudi arabia"  # shares "blast" + "airport" as well as Riyadh
+    # Ruling 2026-10-22: #55 reports a violent event ("wounded in blast"), so the entity rule never
+    # links it; off the shared URL it is a new incident and is pushed (errs toward pushing).
+    assert find_incident(conn, _cand(55, url="https://example.com/riyadh-airport-eyewitnesses")) is None
 
 
 @pytest.mark.parametrize("root,cand", [(78, 79), (56, 60), (64, 65), (68, 69), (6, 7), (48, 50)],
@@ -270,7 +269,7 @@ def test_entity_rule_compares_incident_roots_only():
     id68 = _seed(conn, 68)
     _seed(conn, 69, incident_id=id68, role="update")
     at = _ts(_LIVE["69"]["detected_at_utc"]) + dt.timedelta(hours=1)
-    headline = "Ukraine vows to hit more Russian refineries after drone raid"
+    headline = "Ukraine vows to hit more Russian refineries, Zelenskyy says"
     assert incident.entity_rule_links(headline, _LIVE["69"]["headline"])  # would link to the update row itself
     assert find_incident(conn, _other(headline, "geopolitical_conflict", at)) is None
 
@@ -280,12 +279,12 @@ def test_entity_window_runs_from_the_root_not_the_latest_follow_up():
     id54 = _seed(conn, 54)
     detected54 = _ts(_LIVE["54"]["detected_at_utc"])
     store.record_alert(
-        conn, headline="Second blast at Riyadh airport", source="s", url="https://example.com/second-blast",
+        conn, headline="Riyadh airport flights cancelled again, travellers evacuated", source="s", url="https://example.com/second-blast",
         published_utc=detected54 + dt.timedelta(hours=20), detected_at_utc=detected54 + dt.timedelta(hours=20),
         category="geopolitical_conflict", severity="High", classification_method="llm_ollama", rationale=None,
         affected_symbols=[], incident_id=id54, incident_role="follow_up", incident_rule="entity:saudi arabia",
     )
-    late = _other("Third blast at Riyadh airport", "geopolitical_conflict", detected54 + dt.timedelta(hours=25))
+    late = _other("Riyadh airport flights cancelled once more, travellers evacuated", "geopolitical_conflict", detected54 + dt.timedelta(hours=25))
     assert find_incident(conn, late) is None
 
 
@@ -293,7 +292,7 @@ def test_failed_classification_is_never_linked_by_the_entity_rule():
     conn = store.get_connection(":memory:")
     id54 = _seed(conn, 54)
     at = _ts(_LIVE["54"]["detected_at_utc"]) + dt.timedelta(hours=1)
-    headline = "Second blast reported at Riyadh airport terminal"
+    headline = "Riyadh airport flights cancelled as travellers evacuated, airlines say"
     assert find_incident(conn, _other(headline, "geopolitical_conflict", at, failed=True)) is None
     classified = find_incident(conn, _other(headline, "geopolitical_conflict", at))
     assert classified is not None and classified.incident_id == id54  # the rule itself would link it
@@ -343,3 +342,22 @@ def test_deploy_runbook_states_verify_condition_and_backfill_rerun():
 
 def test_source_has_no_backspace_bytes():
     assert b"\x08" not in _MODULE_PATH.read_bytes()
+
+
+_REPEAT_ATTACK_PAIRS = [
+    ("Container ship sinks in Strait of Hormuz after Iranian attack",
+     "Second container ship sinks in Strait of Hormuz as Iran widens campaign"),
+    ("Houthis seize cargo ship in Red Sea", "Houthis seize second cargo ship in Red Sea"),
+    ("Russia launches massive missile attack on Kyiv, power grid hit",
+     "Russia launches another massive missile attack on Kyiv, power grid hit"),
+    ("Explosion at Saudi Aramco Ras Tanura refinery",
+     "New explosion hits Saudi Aramco Ras Tanura refinery hours after first blast"),
+    ("Israel strikes Iran nuclear facility at Natanz",
+     "Israel strikes Iran nuclear facility at Fordow in second wave"),
+]
+
+
+@pytest.mark.parametrize("root, candidate", _REPEAT_ATTACK_PAIRS)
+def test_entity_rule_never_links_violent_event_headlines(root, candidate):
+    """Controller ruling 2026-10-22: a repeat attack is a new escalation; the entity rule errs toward pushing."""
+    assert incident.entity_rule_links(candidate, root) is None

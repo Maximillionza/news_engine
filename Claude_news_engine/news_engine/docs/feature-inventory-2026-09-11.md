@@ -47,7 +47,7 @@ Approved by the owner on 2026-10-21 ('proceed'). Full detail, order rationale an
 | B4 Ops health and waste | QoL, cleanup | done 2026-10-21 (merged, live; backups *.pre_b4_2026-10-21; one engine copy running, duplicate launch exits 3; /api/health live) |
 | B5 Measure first (read-only study) | Evidence | done 2026-10-21 (merged; study run 2026-10-21; report docs/superpowers/specs/2026-10-21-event-study-report.md) |
 | B6 Article read: stop wrong-sign evidence | Correctness | done 2026-10-22 (merged, live since 2026-10-22T01:52:19Z; backup scoring/backtest_log.db.pre_b6_2026-10-22; scoring change: article relevance rules, link weights, non-USD surprise guard) |
-| B7 Same incident, one voice | Correctness | built on branch b7-same-incident (not merged; scoring change on deploy) |
+| B7 Same incident, one voice | Correctness | built on branch b7-same-incident (not merged; scoring change on deploy); linking rule ruling 2026-10-22: entity rule is conservative — never links violent-event headlines; errs toward pushing. |
 | B8 Surprise metric and event history | Correctness, data quality | agreed, not started |
 | B9 Stats: honest scoreboard | Correctness, QoL | agreed, not started |
 | B10 Grade shock-alert leans | Capability | agreed, not started |

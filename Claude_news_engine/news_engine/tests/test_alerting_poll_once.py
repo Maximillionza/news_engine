@@ -1030,7 +1030,7 @@ def test_direction_flip_pushes_an_update():
     send = _live_cycle(conn, webapp, 54, "High", "escalation")
     detected = _parse(_B7_FIXTURE["54"]["detected_at_utc"]) + dt.timedelta(hours=3)
     article = NewsArticle(
-        title="Riyadh airport reopens as Saudi authorities say blast contained", summary="",
+        title="Riyadh airport reopens, flights resume as evacuated travellers return, airlines say", summary="",
         source="reuters_business", source_type="rss", published_utc=detected - dt.timedelta(minutes=5),
         url="https://example.com/riyadh-airport-reopens")
     _run_article(conn, webapp, article, "geopolitical_conflict", "High", "relief", detected, send)
@@ -1092,7 +1092,7 @@ def test_failed_classification_entity_only_match_keeps_its_unclassified_push():
     send = _live_cycle(conn, webapp, 54, "High", "escalation")
     detected = _parse(_B7_FIXTURE["54"]["detected_at_utc"]) + dt.timedelta(hours=2)
     article = NewsArticle(
-        title="Second blast reported at Riyadh airport terminal", summary="", source="reuters_business",
+        title="Riyadh airport flights cancelled as travellers evacuated, airlines say", summary="", source="reuters_business",
         source_type="rss", published_utc=detected - dt.timedelta(minutes=3), url="https://example.com/second-riyadh-blast")
     _run_article(conn, webapp, article, "geopolitical_conflict", "Medium", None, detected, send, failed=True)
     first, second = _alerts_by_detection(conn)
@@ -1110,7 +1110,7 @@ def test_classified_entity_match_is_a_silent_follow_up():
     send = _live_cycle(conn, webapp, 54, "High", "escalation")
     detected = _parse(_B7_FIXTURE["54"]["detected_at_utc"]) + dt.timedelta(hours=2)
     article = NewsArticle(
-        title="Second blast reported at Riyadh airport terminal", summary="", source="reuters_business",
+        title="Riyadh airport flights cancelled as travellers evacuated, airlines say", summary="", source="reuters_business",
         source_type="rss", published_utc=detected - dt.timedelta(minutes=3), url="https://example.com/second-riyadh-blast")
     _run_article(conn, webapp, article, "geopolitical_conflict", "Medium", "escalation", detected, send)
     first, second = _alerts_by_detection(conn)

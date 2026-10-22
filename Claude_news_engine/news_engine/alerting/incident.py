@@ -35,11 +35,18 @@ storms -- stops a link):
       ...) and not market vocabulary (oil, prices, ...). A country or strait
       names a theatre, not an incident; the event words say WHAT happened
       (#54/#55 share "blast" + "airport");
-   c. new-attack veto: if the headline reports a violent event (struck,
-      sinks, killed, blast, ...) and the root reports none, it is a new event,
-      never a follow-up of talk (#36 "More tankers struck ... as Iran
-      reiterates conditions" is not a follow-up of #35 "Iran says Hormuz will
-      not reopen until conditions are met");
+   c. violent-event veto (controller ruling 2026-10-22, owner rule: never bury
+      a genuine escalation): if the headline reports a violent event (struck,
+      sinks, killed, blast, seize, ...) the entity rule NEVER links it, whether
+      or not the root also reports one. A second ship sunk, a repeat missile
+      attack or a second blast is a new escalation, not a follow-up, and the
+      entity rule cannot tell a repeat from a rewording. Such a candidate can
+      link only through the URL rule (same URL, same story); otherwise it
+      becomes a new incident and is pushed. The rule is conservative on
+      purpose and errs toward pushing. (This subsumes the earlier new-attack
+      veto: #36 "More tankers struck ... as Iran reiterates conditions" is not
+      a follow-up of #35 "Iran says Hormuz will not reopen until conditions
+      are met");
    d. the classification did not fail: a failed classification's severity is
       a fallback guess, so it keeps its pre-B7 push guarantee (UNCLASSIFIED)
       instead of being linked silently on a shared place name.
@@ -135,7 +142,7 @@ def entity_rule_links(headline: str, root_headline: str) -> Optional[frozenset[s
     words, root_words = event_words(headline), event_words(root_headline)
     if len((words & root_words) - _GENERIC_EVENT_WORDS) < ENTITY_RULE_MIN_EVENT_WORDS:
         return None
-    if (words & _VIOLENT_EVENT_WORDS) and not (root_words & _VIOLENT_EVENT_WORDS):
+    if words & _VIOLENT_EVENT_WORDS:  # violent-event headlines never link by entity (rule c): errs toward pushing
         return None
     return shared_entities
 
