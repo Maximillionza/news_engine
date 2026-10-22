@@ -38,7 +38,7 @@ schtasks /run /tn NewsEngine_AutoStart
 - `GET http://localhost:5001/api/predictions` returns 200.
 - `GET /api/health` lists `macro_calendar` with an unchanged status.
 - After the next `NewsEngine_OutcomeConfirm` tick, the `job_runs` row for outcome_confirm shows exit 0 (read-only: `sqlite3 "file:ops/ops_state.db?mode=ro"`).
-- `SELECT COUNT(*) FROM tier1_comparisons` (in `scoring\backtest_log.db`, read-only) stays 10 after a confirm run.
+- `SELECT COUNT(*) FROM tier1_comparisons` (in `scoring\backtest_log.db`, read-only): note the count before the merge (10 on 2026-10-22) and confirm it is unchanged after the next confirm run.
 
 ## 5. Rollback
 
