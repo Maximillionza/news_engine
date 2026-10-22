@@ -34,3 +34,19 @@ export function capBadgeHtml(row) {
   }
   return ` <span style="color:#ef6c00">${escapeHtml(text)}</span>`;
 }
+
+// B7 (2026-10-22): label for an alert stored on an earlier incident; "" for an incident's first alert.
+// "Follow-up of incident #12 · same article URL · no push, no new lean"
+// "Update to incident #33 · shared: saudi arabia"
+export function incidentLabelText(row) {
+  const role = row.incident_role;
+  if (role !== "follow_up" && role !== "update") return "";
+  const rule = String(row.incident_rule || "");
+  let why = "";
+  if (rule === "url") why = "same article URL";
+  else if (rule.startsWith("entity:")) why = `shared: ${rule.slice("entity:".length).split(",").join(", ")}`;
+  const parts = [`${role === "update" ? "Update to" : "Follow-up of"} incident #${row.incident_id}`];
+  if (why) parts.push(why);
+  if (role === "follow_up") parts.push("no push, no new lean");
+  return escapeHtml(parts.join(" · "));
+}

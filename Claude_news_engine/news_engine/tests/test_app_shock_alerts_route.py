@@ -59,6 +59,7 @@ EXPECTED_ROW_KEYS = {
     "classification_method", "rationale", "affected_symbols", "delivery_status",
     "reality_mismatch", "polarity", "country", "us_link", "capped_no_us_link",
     "original_severity", "first_published_utc", "age_minutes", "freshness_band",
+    "incident_id", "incident_role", "incident_rule",
 }
 
 
@@ -131,3 +132,23 @@ def test_shock_alert_route_serves_freshness_for_old_rows(monkeypatch):
     assert row["first_published_utc"] is None
     assert row["age_minutes"] is None
     assert row["freshness_band"] is None
+
+
+def test_shock_alert_route_serves_incident_fields(monkeypatch):
+    conn = _conn(monkeypatch)
+    root = _record(conn)
+    follow = _record(conn, headline="Russia pipeline strike widens", url="https://y",
+                     incident_id=root, incident_role="follow_up", incident_rule="url")
+    with app.test_client() as c:
+        rows = {r["id"]: r for r in c.get("/api/shock-alerts").get_json()["rows"]}
+    assert (rows[root]["incident_id"], rows[root]["incident_role"], rows[root]["incident_rule"]) == (root, None, None)
+    assert (rows[follow]["incident_id"], rows[follow]["incident_role"], rows[follow]["incident_rule"]) == (
+        root, "follow_up", "url")
+
+    # A raw pre-B7 row (NULL incident columns) is served as its own incident.
+    conn.execute("UPDATE shock_alerts SET incident_id=NULL, incident_role=NULL, incident_rule=NULL WHERE id=?", (root,))
+    conn.commit()
+    with app.test_client() as c:
+        rows = {r["id"]: r for r in c.get("/api/shock-alerts").get_json()["rows"]}
+    assert rows[root]["incident_id"] == root
+    assert rows[root]["incident_role"] is None and rows[root]["incident_rule"] is None

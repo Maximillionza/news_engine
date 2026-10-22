@@ -397,6 +397,9 @@ def get_shock_alerts():
             "first_published_utc": r.first_published_utc.isoformat() if r.first_published_utc else None,
             "age_minutes": age,
             "freshness_band": alerting_freshness.freshness_band(age),
+            # B7 (2026-10-22): the reader already fills incident_id with the row's own id for NULL.
+            "incident_id": r.incident_id, "incident_role": r.incident_role,
+            "incident_rule": r.incident_rule,
         })
     return jsonify({"rows": out})
 
