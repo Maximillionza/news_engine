@@ -51,7 +51,7 @@ Approved by the owner on 2026-10-21 ('proceed'). Full detail, order rationale an
 | B8 Surprise metric and event history | Correctness, data quality | agreed, not started |
 | B9 Stats: honest scoreboard | Correctness, QoL | agreed, not started |
 | B10 Grade shock-alert leans | Capability | agreed, not started |
-| B11 Dead code and consolidation | Cleanup | built on branch b11-dead-code; C5 deferred to B10 |
+| B11 Dead code and consolidation | Cleanup | done 2026-10-22 (merged and live; no DB changes; pytest 1907/1907, npm 223/223 on live); C5 deferred to B10 |
 | B12 Tier 1 expansion (Core PCE, y/y, Kalshi) | Capability | agreed, not started |
 
 ---
