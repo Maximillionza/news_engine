@@ -49,10 +49,10 @@ Approved by the owner on 2026-10-21 ('proceed'). Full detail, order rationale an
 | B6 Article read: stop wrong-sign evidence | Correctness | done 2026-10-22 (merged, live since 2026-10-22T01:52:19Z; backup scoring/backtest_log.db.pre_b6_2026-10-22; scoring change: article relevance rules, link weights, non-USD surprise guard) |
 | B7 Same incident, one voice | Correctness | done 2026-10-22 (merged, live since 11:13:19 UTC; backups *.pre_b7_2026-10-22; scoring change); linking rule ruling 2026-10-22: entity rule is conservative — never links violent-event headlines; errs toward pushing. |
 | B8 Surprise metric and event history | Correctness, data quality | agreed, not started |
-| B9 Stats: honest scoreboard | Correctness, QoL | agreed, not started |
+| B9 Stats: honest scoreboard | Correctness, QoL | agreed; ST3-ST5 done in B9a; ST1-ST2 pending after B8 |
 | B10 Grade shock-alert leans | Capability | agreed, not started |
 | B11 Dead code and consolidation | Cleanup | done 2026-10-22 (merged and live; no DB changes; pytest 1907/1907, npm 223/223 on live); C5 deferred to B10 |
-| B12 Tier 1 expansion (Core PCE, y/y, Kalshi) | Capability | agreed, not started |
+| B12 Tier 1 expansion (Core PCE, y/y, Kalshi) | Capability | agreed, not started; T12 done in B9a |
 
 ---
 
