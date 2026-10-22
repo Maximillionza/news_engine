@@ -16,7 +16,7 @@ AS_OF = WHEN - dt.timedelta(hours=40)
 
 ROW_KEYS = {"event_title", "event_time_utc", "forecast", "actual", "forecast_text", "actual_text", "status",
             "tier1_tracked", "nowcast_as_of_utc", "pre_news_period", "tier1", "news", "combined", "detail",
-            "impact", "impact_effective", "impact_inferred", "impact_bucket"}
+            "impact", "impact_effective", "impact_inferred", "impact_bucket", "agreement", "tier1_tier"}
 CALL_KEYS = {"predicted", "surprise", "verdict", "miss", "leans", "note", "kind"}
 DETAIL_KEYS = {"forecast_text", "nowcast_value", "nowcast_as_of_utc", "tier1_surprise", "news_lean", "news_scale",
                "news_surprise", "combined_surprise", "weights", "hand_logged", "news_article_count", "brent"}
@@ -79,7 +79,8 @@ def test_events_route_serves_every_field_the_tab_renders(client):
     assert (row["impact"], row["impact_effective"], row["impact_inferred"], row["impact_bucket"]) == (
         "High", "High", False, "High")
     assert row["nowcast_as_of_utc"] == AS_OF.isoformat()
-    assert set(row["tier1"]) == CALL_KEYS
+    assert set(row["tier1"]) == CALL_KEYS                       # side stays unserved
+    assert row["tier1_tier"] == "formula" and row["agreement"] is None   # snapshot call; news is None
     assert row["tier1"]["verdict"] == "right" and row["tier1"]["leans"]["XAUUSD"] == "sell"
     assert row["tier1"]["predicted"] == 0.4 and row["tier1"]["kind"] == "live"
     assert row["news"] is None                                  # no articles and no scale history
@@ -97,6 +98,7 @@ def test_events_route_serves_real_news_and_combined_calls(full_client):
     assert len(rows) == 1
     row = rows[0]
     assert set(row) == ROW_KEYS
+    assert row["agreement"] in ("agree", "disagree")
     tier1, news, combined = row["tier1"], row["news"], row["combined"]
     for call in (tier1, news, combined):
         assert set(call) == CALL_KEYS

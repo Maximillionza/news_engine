@@ -710,3 +710,82 @@ def test_impacts_filter_runs_after_the_news_scale_history_is_built(conns):
     _print_call(bt, "CPI m/m", _t(10), "higher", 0.5, scored_at=_t(10) - dt.timedelta(days=1))
     [row] = svc.build_rows(dash, bt, impacts=frozenset({"High"}))
     assert row.news.predicted == pytest.approx(0.3 + 0.5 * 0.1)     # scale 0.1 came from the hidden rows
+
+
+# --- B9a: informational agreement + Tier 1 tier --------------------------------------------------
+
+@pytest.mark.parametrize("t1,news,expected", [
+    (1, 1, "agree"), (-1, -1, "agree"), (1, -1, "disagree"), (-1, 1, "disagree"),
+    (0, 1, None), (1, 0, None), (0, 0, None), (None, 1, None), (1, None, None), (None, None, None),
+])
+def test_agreement_rule_truth_table(t1, news, expected):
+    assert svc.agreement_for(t1, news) == expected
+
+
+def test_tier1_tier_follows_the_source_actually_used(conns):
+    dash, bt = conns
+    # (a) snapshot -> formula
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    _snap(bt, "CPI m/m", _t(10), 0.4)
+    assert svc.build_rows(dash, bt, event_title="CPI m/m")[-1].tier1_tier == "formula"
+    # (b) hand-logged non-formula source -> judgment
+    _event(dash, "PPI m/m", _t(10), "0.2%", "0.5%")
+    bs.record_tier1_prediction(bt, "PPI m/m", "XAUUSD", _t(10), "hot", "Likely", "BLS", "bearish",
+                               logged_at_utc=_t(10) - dt.timedelta(days=3))
+    assert svc.build_rows(dash, bt, event_title="PPI m/m")[-1].tier1_tier == "judgment"
+    # (e) untracked title -> None
+    _event(dash, "Unemployment Claims", _t(10), "220K", "230K")
+    row = svc.build_rows(dash, bt, event_title="Unemployment Claims")[-1]
+    assert row.tier1_tracked is False and row.tier1_tier is None
+
+
+@pytest.mark.parametrize("source,expected", [
+    ("Cleveland Fed nowcast (formula)", "formula"), ("Cleveland Fed Inflation Nowcasting tool", "judgment"),
+])
+def test_tier1_tier_for_a_hand_logged_cpi_row_without_snapshot(conns, source, expected):
+    dash, bt = conns
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    bs.record_tier1_prediction(bt, "CPI m/m", "XAUUSD", _t(10), "0.4", "Likely", source, "bearish",
+                               logged_at_utc=_t(10) - dt.timedelta(days=3))
+    assert svc.build_rows(dash, bt, event_title="CPI m/m")[-1].tier1_tier == expected
+
+
+def test_tier1_tier_is_none_for_tracked_row_with_no_call_and_for_not_scoreable(conns):
+    dash, bt = conns
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    row = svc.build_rows(dash, bt, event_title="CPI m/m")[-1]
+    assert row.tier1_tracked is True and row.tier1 is None and row.tier1_tier is None
+    _event(dash, "CPI y/y", _t(10), "n/a", "3.0%")
+    ns = svc.build_rows(dash, bt, event_title="CPI y/y")[-1]
+    assert ns.status == "not_scoreable" and ns.agreement is None and ns.tier1_tier is None
+
+
+def _agreement_rows(conns):
+    """CPI m/m with a snapshot (+1 side) and a hotter print call (news +1 side) on the last month."""
+    dash, bt = conns
+    _cpi_history(dash)
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    _snap(bt, "CPI m/m", _t(10), 0.5)
+    _print_call(bt, "CPI m/m", _t(10), "higher", 1.0, scored_at=_t(10) - dt.timedelta(days=1))
+    return svc.build_rows(dash, bt, event_title="CPI m/m")
+
+
+def test_row_agreement_uses_both_sides(conns):
+    rows = _agreement_rows(conns)
+    row = rows[-1]
+    assert row.tier1.side != 0 and row.news.side != 0
+    assert row.agreement == svc.agreement_for(row.tier1.side, row.news.side)
+    assert row.agreement in ("agree", "disagree")
+    assert rows[0].news is None and rows[0].agreement is None
+
+
+def test_agreement_and_tier_do_not_change_combined_or_scoreboard(conns):
+    from dataclasses import replace
+    rows = _agreement_rows(conns)
+    stripped = [replace(r, agreement=None, tier1_tier=None) for r in rows]
+    assert svc.build_scoreboard(rows) == svc.build_scoreboard(stripped)
+    assert svc.build_chart(rows, "combined") == svc.build_chart(stripped, "combined")
+    row = rows[-1]
+    s1, sn = row.detail.tier1_surprise, row.detail.news_surprise
+    assert row.combined.surprise == pytest.approx(0.7 * s1 + 0.3 * sn, abs=1e-12)
+    assert row.combined.surprise == pytest.approx(row.detail.combined_surprise, abs=1e-12)

@@ -444,7 +444,8 @@ def _stats_conns():
                 bt.close()
 
 
-# StatsRow.tol and MethodCall.side are internal scoring inputs and are deliberately not served.
+# StatsRow.tol and MethodCall.side are internal scoring inputs and are deliberately not served;
+# StatsRow.agreement is the only thing derived from side that leaves the server.
 def _method_dict(call):
     if call is None:
         return None
@@ -482,6 +483,7 @@ def _stats_row_dict(r):
         "detail": _detail_dict(r.detail),
         "impact": r.impact, "impact_effective": r.impact_effective,
         "impact_inferred": r.impact_inferred, "impact_bucket": r.impact_bucket,
+        "agreement": r.agreement, "tier1_tier": r.tier1_tier,
     }
 
 

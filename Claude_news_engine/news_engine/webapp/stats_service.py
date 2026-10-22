@@ -22,7 +22,7 @@ from typing import Callable, Optional
 
 from config.settings import EVENT_SURPRISE_DIRECTION
 from data_layer import brent_feed
-from data_layer.tier1_events import TIER1_FORMULA, tier1_titles
+from data_layer.tier1_events import TIER1_FORMULA, tier1_row_tier, tier1_titles
 from scoring.backtest_store import get_scored_nowcast_snapshot
 from webapp.history import _implied_surprise_direction
 from webapp.reaction_rules import impact_info, title_tag_counts
@@ -100,6 +100,10 @@ class StatsRow:
     impact_effective: str = "Unrated"
     impact_inferred: bool = True
     impact_bucket: str = "Unrated"
+    # Informational only, never read by scoring: whether Tier 1 and News lean the same way, and which Tier 1
+    # tier produced the Tier 1 call actually used (None = no Tier 1 call).
+    agreement: Optional[str] = None   # 'agree' | 'disagree' | None
+    tier1_tier: Optional[str] = None  # TIER1_FORMULA | TIER1_MARKET_IMPLIED | TIER1_JUDGMENT of the call used
 
 
 def _parse_time(value: str) -> dt.datetime:
@@ -213,6 +217,17 @@ def _call(predicted: Optional[float], surprise: Optional[float], forecast: float
     )
 
 
+def agreement_for(tier1_side: Optional[int], news_side: Optional[int]) -> Optional[str]:
+    """
+    'agree' / 'disagree' when Tier 1 and News both lean (non-zero) the same / opposite way, else None.
+    A 0 ('in line') or missing side is never a disagreement (the webapp/conflict.py neutral rule). Owner
+    decision 2026-10-20: this is an informational marker only; Combined stays 70/30 and nothing reads it.
+    """
+    if not tier1_side or not news_side:
+        return None
+    return "agree" if tier1_side == news_side else "disagree"
+
+
 def build_rows(dash_conn: sqlite3.Connection, bt_conn: sqlite3.Connection, year: Optional[int] = None,
                month: Optional[int] = None, event_title: Optional[str] = None,
                brent_series_fn: Optional[Callable[[], Optional[list]]] = None,
@@ -296,6 +311,7 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
     nowcast_value: Optional[float] = None
     brent: Optional[dict] = None
     hand_logged: Optional[dict] = None
+    tier1_tier: Optional[str] = None
     s1 = None
     snapshot = get_scored_nowcast_snapshot(bt_conn, title, when) if title in NOWCAST_EVENTS else None
     if snapshot is not None:
@@ -310,6 +326,7 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
                 brent = None
         tier1 = _call(nowcast_value, s1, forecast, tol, actual, title, kind=snapshot["kind"])
         tier1_tracked = True
+        tier1_tier = TIER1_FORMULA          # the snapshot is the Cleveland formula input
     else:
         logged = _hand_logged_tier1_before(bt_conn, title, release_iso)
         if logged is not None:
@@ -323,6 +340,7 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
             tier1 = _call(None, None, forecast, tol, actual, title, note="hand-logged", explicit_side=logged_side)
             hand_logged = {"value": logged["value"], "confidence": logged["confidence"], "source": logged["source"]}
             tier1_tracked = True
+            tier1_tier = tier1_row_tier(logged["source"])
         else:
             tier1_tracked = title in NOWCAST_EVENTS      # tracked but no snapshot yet: row shows no call
 
@@ -344,6 +362,8 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
     sn = news_surprise(lean, scale)
     news = None if sn is None else _call(forecast + sn, sn, forecast, tol, actual, title, note="scaled")
 
+    agreement = agreement_for(None if tier1 is None else tier1.side, None if news is None else news.side)
+
     # Combined: 70/30 blend; Tier 1 only (flagged news_missing) when there is no news; n/a without Tier 1.
     # It carries the Tier 1 snapshot's kind, so the scoreboard keeps live and reconstructed apart.
     combined = None
@@ -364,7 +384,8 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
         news_article_count=article_count, hand_logged=hand_logged, brent=brent,
     )
     return StatsRow(title, when, r["forecast"], r["actual"], forecast, actual, tol, status,
-                    tier1_tracked, tier1, news, combined, nowcast_as_of, pre_news, detail)
+                    tier1_tracked, tier1, news, combined, nowcast_as_of, pre_news, detail,
+                    agreement=agreement, tier1_tier=tier1_tier)
 
 
 # --- payloads ---------------------------------------------------------------------------------
