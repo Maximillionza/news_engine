@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   tier1RowHtml, combinedRowHtml, sentimentRowHtml, verdictChip, leanText,
   pickNextRow, briefCardHtml, scoreboardHtml, filterRows, yearsPresent, disclaimerHtml, componentFor, orderTier1,
-  toSast, emptyRowHtml, tier1BodyHtml, tier1Criteria, rowKey, CRITERIA,
+  toSast, emptyRowHtml, tier1BodyHtml, tier1Criteria, rowKey, CRITERIA, AGREEMENT_TITLE,
 } from "./rows.js";
 
 const base = { event_title: "CPI m/m", event_time_utc: "2026-10-14T12:30:00+00:00", forecast: 0.3, forecast_text: "0.3%",
@@ -329,4 +329,46 @@ test("the empty brief card names the impact levels when the chips are filtering"
   assert.ok(briefCardHtml(null, "combined", DISC, true).includes("No upcoming call yet for the selected impact levels."));
   assert.ok(briefCardHtml(null, "combined", DISC, false).includes("No upcoming call yet.<"));
   assert.ok(briefCardHtml(null, "combined", DISC).includes("No upcoming call yet.<"));
+});
+
+const combinedBase = { ...base, news: { predicted: 0.2, verdict: "right", leans: {}, note: null }, combined: { predicted: 0.3, verdict: "right", leans: {}, note: null } };
+
+test("tier tag shows the served tier", () => {
+  assert.ok(tier1RowHtml({ ...base, tier1_tier: "formula" }).includes(">formula<"));
+  assert.ok(combinedRowHtml({ ...combinedBase, tier1_tier: "market_implied" }).includes(">market-implied<"));
+  assert.ok(tier1RowHtml({ ...base, tier1_tier: "judgment" }).includes(">judgment<"));
+});
+
+test("tier tag is absent when tier1_tier is null", () => {
+  for (const t of [null, "guess"]) {
+    assert.ok(!tier1RowHtml({ ...base, tier1_tier: t }).includes("tier-tag"));
+    assert.ok(!combinedRowHtml({ ...combinedBase, tier1_tier: t }).includes("tier-tag"));
+  }
+  assert.ok(!tier1RowHtml({ ...base, tier1_tracked: false, tier1: null, tier1_tier: "formula" }).includes("tier-tag"));
+});
+
+test("agreement chip renders agree and disagree with their tooltips", () => {
+  const a = combinedRowHtml({ ...combinedBase, agreement: "agree" });
+  assert.ok(a.includes(">agree<") && a.includes('title="Tier 1 and News point the same way"'));
+  const d = combinedRowHtml({ ...combinedBase, agreement: "disagree" });
+  assert.ok(d.includes(">disagree<")
+    && d.includes('title="Tier 1 and News point opposite ways; informational only, Combined is still 70/30"'));
+});
+
+test("no agreement chip when agreement is null", () => {
+  const withNull = combinedRowHtml({ ...combinedBase, agreement: null });
+  const { agreement, ...without } = { ...combinedBase, agreement: null };
+  assert.equal(withNull, combinedRowHtml(without));
+  assert.ok(!withNull.includes(">agree<") && !withNull.includes(">disagree<"));
+});
+
+test("agreement chip never uses the word conflict", () => {
+  for (const ag of ["agree", "disagree"]) assert.ok(!/conflict/i.test(combinedRowHtml({ ...combinedBase, agreement: ag })));
+  for (const v of Object.values(AGREEMENT_TITLE)) assert.ok(!/conflict/i.test(v));
+});
+
+test("the combined call cell is unchanged by the marker", () => {
+  const callCell = `${"0.3"} ${verdictChip("right")}`;
+  assert.ok(combinedRowHtml({ ...combinedBase, agreement: "disagree" }).includes(callCell));
+  assert.ok(combinedRowHtml({ ...combinedBase, agreement: null }).includes(callCell));
 });
