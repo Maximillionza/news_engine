@@ -1,3 +1,5 @@
+> Archived 2026-10-22 (B11/C6): historical handover from 2026-08-08; superseded by README.md and docs/feature-inventory-2026-09-11.md. The key line is redacted; rotate per roadmap OA1.
+
 # News Engine — Handover Doc
 
 Status as of 2026-08-08 (SAST). Written for whoever/whatever picks this up next
