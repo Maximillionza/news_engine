@@ -1207,6 +1207,144 @@ def test_score_and_record_event_skips_fx_cross_instruments_without_calling_score
     print("PASS\n")
 
 
+# --- B6 (2026-10-22): every article behind a recorded prediction is persisted
+# (included with its weight, excluded with its reason), not just the top 3. ---
+
+_EVIDENCE_KEYS = {
+    "title", "url", "source", "published_utc", "source_type", "status", "reason", "usd_sentiment",
+    "trust_weight", "time_weight", "combined_weight", "weight_pct", "matched_terms",
+}
+
+
+def _evidence_article(title, minutes_before, sentiment, now, url=None):
+    return NewsArticle(
+        title=title, summary="", source="Test Wire", source_type="test",
+        published_utc=now - dt.timedelta(minutes=minutes_before),
+        url=url if url is not None else f"https://example.test/{abs(hash(title)) % 100000}",
+        native_sentiment=sentiment,
+    )
+
+
+def _evidence_contribution(article, sentiment, trust, time_w, discounted=False):
+    return ArticleContribution(
+        article=article, usd_sentiment=sentiment, trust_weight=trust, time_weight=time_w,
+        combined_weight=trust * time_w, matched_terms=["<native_sentiment>"], redundancy_discounted=discounted,
+    )
+
+
+def test_article_contribution_row_keys_exact():
+    print("=== accumulator: B6 -- evidence rows have exactly the 13 documented keys ===")
+    now = dt.datetime(2026, 9, 2, 10, 0, tzinfo=UTC_TZ)
+    a1 = _evidence_article("Fed hawkish", 30, 0.4, now)
+    a2 = _evidence_article("Fed hawkish again", 20, 0.4, now)
+    a3 = _evidence_article("Fed dovish", 10, -0.3, now)
+    contributions = [
+        _evidence_contribution(a1, 0.4, 0.8, 0.9),
+        _evidence_contribution(a2, 0.4, 0.8, 0.9, discounted=True),
+        _evidence_contribution(a3, -0.3, 0.6, 0.7),
+    ]
+    ecb = _evidence_article("ECB cuts", 15, None, now)
+    rows = accumulator._build_article_contribution_rows(contributions, [(ecb, "foreign_cb")])
+    assert len(rows) == 4
+    for row in rows:
+        assert set(row) == _EVIDENCE_KEYS
+    included = [r for r in rows if r["status"] == "included"]
+    excluded = [r for r in rows if r["status"] == "excluded"]
+    assert abs(sum(r["weight_pct"] for r in included) - 100.0) <= 0.2
+    assert [r["reason"] for r in included] == [None, "redundancy_discount", None]
+    assert included[0]["matched_terms"] == ["<native_sentiment>"]
+    assert included[0]["published_utc"] == a1.published_utc.isoformat()
+    assert len(excluded) == 1 and excluded[0]["reason"] == "foreign_cb"
+    for key in ("usd_sentiment", "trust_weight", "time_weight", "combined_weight", "weight_pct"):
+        assert excluded[0][key] is None
+    assert excluded[0]["matched_terms"] == [] and excluded[0]["title"] == "ECB cuts"
+    print("PASS\n")
+
+
+def _run_scoring(conn, event, bundle, instruments, now):
+    with patch.object(accumulator, "build_event_news_bundle", return_value=bundle), \
+         patch.object(accumulator, "_read_precursor_events", return_value=[]), \
+         patch.object(accumulator, "score_print_direction", return_value=None), \
+         patch.object(accumulator, "_read_trend_signal", return_value=None), \
+         patch.object(accumulator, "_read_kalshi_signal", return_value=(None, None)):
+        return accumulator.score_and_record_event(
+            conn=conn, event=event, all_events=[event], instruments=instruments, sources=[], now=now,
+        )
+
+
+def _evidence_fixture(now):
+    event = EconomicEvent(
+        title="CPI m/m", country="USD", impact="High",
+        event_time_utc=now + dt.timedelta(hours=2), forecast="0.3%", previous="0.3%",
+    )
+    articles = [
+        _evidence_article("Inflation runs hot says Fed speaker", 50, 0.5, now),
+        _evidence_article("Treasury yields climb before CPI", 40, 0.3, now),
+        _evidence_article("Fed hawks eye another hike", 30, 0.6, now),
+        _evidence_article("Cooling price pressures seen", 20, -0.2, now),
+        _evidence_article("Dollar firm on rate outlook", 10, 0.4, now),
+    ]
+    ecb = _evidence_article("ECB signals easing", 25, None, now)
+    bundle = EventNewsBundle(event=event, articles=articles, as_of_utc=now, excluded=[(ecb, "foreign_cb")])
+    return event, bundle
+
+
+def test_every_article_recorded_with_prediction():
+    print("=== accumulator: B6 -- all articles (not just the top 3) are stored with each new prediction ===")
+    now = dt.datetime.now(UTC_TZ)
+    event, bundle = _evidence_fixture(now)
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = store.get_connection(Path(tmp) / "t.db")
+        results = _run_scoring(conn, event, bundle, ["XAUUSD", "US30"], now)
+        assert set(results) == {"XAUUSD", "US30"}
+        pred_ids = [r["id"] for r in conn.execute("SELECT id FROM predictions").fetchall()]
+        assert len(pred_ids) == 2
+        for pid in pred_ids:
+            rows = store.get_prediction_article_contributions(conn, pid)
+            assert len([r for r in rows if r.status == "included"]) == 5
+            excluded = [r for r in rows if r.status == "excluded"]
+            assert len(excluded) == 1 and excluded[0].reason == "foreign_cb"
+            assert all(r.event_title == "CPI m/m" for r in rows)
+        conn.close()
+    print("PASS\n")
+
+
+def test_unchanged_rescore_writes_no_evidence():
+    print("=== accumulator: B6 -- a non-material re-score records no prediction and no evidence rows ===")
+    now = dt.datetime.now(UTC_TZ)
+    event, bundle = _evidence_fixture(now)
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = store.get_connection(Path(tmp) / "t.db")
+        _run_scoring(conn, event, bundle, ["XAUUSD"], now)
+        before_preds = conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0]
+        before_rows = conn.execute("SELECT COUNT(*) FROM prediction_article_contributions").fetchone()[0]
+        assert before_preds == 1 and before_rows == 6
+        _run_scoring(conn, event, bundle, ["XAUUSD"], now)
+        assert conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0] == before_preds
+        assert conn.execute("SELECT COUNT(*) FROM prediction_article_contributions").fetchone()[0] == before_rows
+        conn.close()
+    print("PASS\n")
+
+
+def test_evidence_write_failure_keeps_prediction():
+    print("=== accumulator: B6 -- a failed evidence write warns but never loses the prediction ===")
+    import contextlib
+    import io
+    now = dt.datetime.now(UTC_TZ)
+    event, bundle = _evidence_fixture(now)
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = store.get_connection(Path(tmp) / "t.db")
+        buf = io.StringIO()
+        with patch.object(accumulator, "record_prediction_article_contributions", side_effect=RuntimeError("disk full")), \
+             contextlib.redirect_stdout(buf):
+            results = _run_scoring(conn, event, bundle, ["XAUUSD"], now)
+        assert "XAUUSD" in results
+        assert conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0] == 1
+        assert "WARNING: evidence write failed" in buf.getvalue()
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_and_record_event_skips_fx_cross_instruments_without_calling_score_bundle()
     test_interval_far_when_nothing_active()
@@ -1254,6 +1392,10 @@ if __name__ == "__main__":
     test_kalshi_fetch_returning_none_fails_open_without_crashing_cycle()
     test_read_kalshi_signal_resolves_fomc_via_month_ticker()
     test_read_kalshi_signal_resolves_date_ticketed_event()
+    test_article_contribution_row_keys_exact()
+    test_every_article_recorded_with_prediction()
+    test_unchanged_rescore_writes_no_evidence()
+    test_evidence_write_failure_keeps_prediction()
     print("All backtest_accumulator tests passed.")
 
 

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 from config.settings import EVENT_RELEVANCE_KEYWORDS_BY_TITLE, PRE_EVENT_WINDOW_HOURS, UTC_TZ
 from data_layer.calendar_feed import EconomicEvent
-from data_layer.news_feed import NewsArticle, NewsSource, fetch_from_all_sources, deduplicate_articles
+from data_layer.news_feed import NewsArticle, NewsSource, fetch_from_all_sources, deduplicate_articles, dedupe_same_url
 from data_layer.subject_rules import b6_exclusion_reason
 
 # B6 (2026-10-22): why an article that matched an event's keywords was
@@ -194,6 +194,10 @@ def build_event_news_bundle(
     # Enforce the cutoff strictly — some APIs are sloppy about time_from filtering
     windowed = [a for a in raw_articles if window_start <= a.published_utc <= as_of]
     windowed, excluded = _partition_relevant(windowed, event.title)
+    # B6 (2026-10-22): same-URL dedup runs AFTER relevance so an off-topic earlier
+    # copy of a live-blog URL can't shadow its relevant later copy; earliest relevant wins.
+    windowed, same_url_dupes = dedupe_same_url(windowed)
+    excluded.extend((a, "duplicate_url") for a in same_url_dupes)
     windowed = deduplicate_articles(windowed)
     _log_exclusions(event.title, excluded)
 

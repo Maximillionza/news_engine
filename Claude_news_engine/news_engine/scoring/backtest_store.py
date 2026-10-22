@@ -185,6 +185,29 @@ CREATE TABLE IF NOT EXISTS exogenous_shocks (
     logged_at_utc TEXT NOT NULL,
     UNIQUE(series, shock_date)
 );
+CREATE TABLE IF NOT EXISTS prediction_article_contributions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prediction_id INTEGER NOT NULL,
+    event_title TEXT NOT NULL,
+    event_time_utc TEXT NOT NULL,
+    instrument TEXT NOT NULL,
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    source TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    published_utc TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('included', 'excluded')),
+    reason TEXT,
+    usd_sentiment REAL,
+    trust_weight REAL,
+    time_weight REAL,
+    combined_weight REAL,
+    weight_pct REAL,
+    matched_terms_json TEXT,
+    recorded_at_utc TEXT NOT NULL,
+    UNIQUE(prediction_id, status, title, url)
+);
+CREATE INDEX IF NOT EXISTS idx_pac_occurrence ON prediction_article_contributions (event_title, event_time_utc, instrument);
 """
 
 
@@ -461,6 +484,128 @@ def record_prediction(
     )
     conn.commit()
     return cursor.lastrowid
+
+
+@dataclass
+class PredictionArticleContribution:
+    id: int
+    prediction_id: int
+    event_title: str
+    event_time_utc: str
+    instrument: str
+    title: str
+    url: str                       # '' when the feed gave none
+    source: str                    # publisher (NewsArticle.source)
+    source_type: str               # SOURCE_TRUST_WEIGHTS key -- the feed, not the publisher (AS-02 caveat)
+    published_utc: str
+    status: str                    # 'included' | 'excluded'
+    reason: Optional[str]          # excluded: EXCLUSION_REASONS; included: None or 'redundancy_discount'
+    usd_sentiment: Optional[float]
+    trust_weight: Optional[float]
+    time_weight: Optional[float]
+    combined_weight: Optional[float]
+    weight_pct: Optional[float]    # share of total article weight; None when excluded
+    matched_terms: list[str]
+    recorded_at_utc: str
+
+
+_CONTRIBUTION_STATUSES = ("included", "excluded")
+
+
+def _row_to_contribution(row: sqlite3.Row) -> PredictionArticleContribution:
+    raw_terms = row["matched_terms_json"]
+    return PredictionArticleContribution(
+        id=row["id"], prediction_id=row["prediction_id"], event_title=row["event_title"],
+        event_time_utc=row["event_time_utc"], instrument=row["instrument"], title=row["title"],
+        url=row["url"], source=row["source"], source_type=row["source_type"],
+        published_utc=row["published_utc"], status=row["status"], reason=row["reason"],
+        usd_sentiment=row["usd_sentiment"], trust_weight=row["trust_weight"],
+        time_weight=row["time_weight"], combined_weight=row["combined_weight"],
+        weight_pct=row["weight_pct"], matched_terms=json.loads(raw_terms) if raw_terms else [],
+        recorded_at_utc=row["recorded_at_utc"],
+    )
+
+
+def record_prediction_article_contributions(
+    conn: sqlite3.Connection,
+    prediction_id: int,
+    event_title: str,
+    event_time_utc: dt.datetime,
+    instrument: str,
+    rows: list[dict],
+) -> int:
+    """
+    B6 (2026-10-22): the full per-prediction article evidence -- EVERY
+    article behind a recorded prediction (included with its weight) plus
+    the keyword-matched articles a guard excluded (with the reason), not
+    just the top 3 of predictions.top_contributions_json. Append-only and
+    idempotent (owner ruling 9): INSERT OR IGNORE against
+    UNIQUE(prediction_id, status, title, url), never an UPDATE or DELETE,
+    so re-recording the same prediction inserts nothing. Returns rows
+    actually inserted.
+
+    source_type is the fetcher key, not the publisher (AS-02 caveat): the
+    publisher is `source`. Each row dict needs: title, url, source,
+    source_type, published_utc, status, reason, usd_sentiment, trust_weight,
+    time_weight, combined_weight, weight_pct, matched_terms (see
+    scoring.backtest_accumulator._build_article_contribution_rows()).
+
+    status is validated here because INSERT OR IGNORE would otherwise
+    swallow the table's CHECK violation silently; a bad status raises
+    sqlite3.IntegrityError, same as a plain INSERT would.
+    """
+    event_iso = _utc_iso(event_time_utc, "event_time_utc")
+    recorded_at = dt.datetime.now(dt.timezone.utc).isoformat()
+    inserted = 0
+    for row in rows:
+        if row["status"] not in _CONTRIBUTION_STATUSES:
+            raise sqlite3.IntegrityError(f"prediction_article_contributions.status must be one of {_CONTRIBUTION_STATUSES}, got {row['status']!r}")
+        terms = row.get("matched_terms")
+        cursor = conn.execute(
+            "INSERT OR IGNORE INTO prediction_article_contributions (prediction_id, event_title, event_time_utc, "
+            "instrument, title, url, source, source_type, published_utc, status, reason, usd_sentiment, "
+            "trust_weight, time_weight, combined_weight, weight_pct, matched_terms_json, recorded_at_utc) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (prediction_id, event_title, event_iso, instrument, row["title"], row["url"] or "", row["source"],
+             row["source_type"], row["published_utc"], row["status"], row.get("reason"),
+             row.get("usd_sentiment"), row.get("trust_weight"), row.get("time_weight"),
+             row.get("combined_weight"), row.get("weight_pct"),
+             json.dumps(terms) if terms else None, recorded_at),
+        )
+        inserted += cursor.rowcount
+    conn.commit()
+    return inserted
+
+
+def get_prediction_article_contributions(conn: sqlite3.Connection, prediction_id: int) -> list[PredictionArticleContribution]:
+    """Included rows first (heaviest first), then excluded rows; id breaks ties."""
+    rows = conn.execute(
+        "SELECT * FROM prediction_article_contributions WHERE prediction_id = ? "
+        "ORDER BY CASE status WHEN 'included' THEN 0 ELSE 1 END, combined_weight DESC NULLS LAST, id",
+        (prediction_id,),
+    ).fetchall()
+    return [_row_to_contribution(r) for r in rows]
+
+
+def get_final_pre_event_article_contributions(
+    conn: sqlite3.Connection, event_title: str, instrument: str, event_time_utc: dt.datetime,
+) -> list[PredictionArticleContribution]:
+    """
+    The evidence behind the LAST prediction of this occurrence scored at or
+    before the release -- evidence is written for every recorded prediction,
+    so "final pre-event" is chosen here at read time (a post-release
+    prediction is never returned). Compared on the isoformat strings the
+    predictions table itself stores. [] when the occurrence has none.
+    """
+    event_iso = event_time_utc.isoformat()
+    row = conn.execute(
+        "SELECT id FROM predictions WHERE event_title = ? AND instrument = ? AND event_time_utc = ? "
+        "AND scored_at_utc <= ? ORDER BY scored_at_utc DESC, id DESC LIMIT 1",
+        (event_title, instrument, event_iso, event_iso),
+    ).fetchone()
+    if row is None:
+        return []
+    return get_prediction_article_contributions(conn, row["id"])
 
 
 def count_predictions(

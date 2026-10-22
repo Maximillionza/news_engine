@@ -79,6 +79,7 @@ from scoring.probability_engine import score_bundle, get_precursor_events_for
 from scoring.print_direction import score_print_direction
 from scoring.backtest_store import (
     get_connection, record_prediction, get_latest_prediction, record_check, count_recent_checks,
+    record_prediction_article_contributions,
     record_print_prediction_if_changed, record_kalshi_read_if_changed,
 )
 from webapp.store import get_connection as get_dashboard_connection, get_event_history, DB_PATH as DASHBOARD_DB_PATH
@@ -131,6 +132,10 @@ BUDGET_FALLBACK_INTERVAL_SECONDS = 3 * 60 * 60
 # "why did this call change" context (2026-08-17) — see
 # _build_top_contributions() and scoring.backtest_store.record_prediction()'s
 # top_contributions param. Requested as "top 3 only".
+# B6 (2026-10-22): the FULL article list (every included article with its weight,
+# every guard-excluded one with its reason) now lives in the
+# prediction_article_contributions table; top_contributions_json is unchanged
+# because the History/Stats UI reads it.
 TOP_CONTRIBUTIONS_LIMIT = 3
 
 
@@ -170,6 +175,53 @@ def _build_top_contributions(contributions: list, limit: int = TOP_CONTRIBUTIONS
         }
         for c in ranked
     ]
+
+
+def _build_article_contribution_rows(contributions: list, excluded: list[tuple]) -> list[dict]:
+    """
+    B6 (2026-10-22): one row dict per article behind a prediction, for
+    scoring.backtest_store.record_prediction_article_contributions(). Included
+    rows come from ProbabilityResult.contributions (post redundancy-discount),
+    weight_pct being each article's share of the total article weight (same
+    basis as _build_top_contributions); excluded rows come from
+    EventNewsBundle.excluded as (article, reason) with the weight fields None.
+    A redundancy-discounted article carries reason "redundancy_discount".
+    """
+    total_weight = sum(c.combined_weight for c in contributions)
+    rows: list[dict] = []
+    for c in contributions:
+        rows.append({
+            "title": c.article.title,
+            "url": c.article.url or "",
+            "source": c.article.source,
+            "source_type": c.article.source_type,
+            "published_utc": c.article.published_utc.isoformat(),
+            "status": "included",
+            "reason": "redundancy_discount" if getattr(c, "redundancy_discounted", False) else None,
+            "usd_sentiment": c.usd_sentiment,
+            "trust_weight": c.trust_weight,
+            "time_weight": c.time_weight,
+            "combined_weight": c.combined_weight,
+            "weight_pct": round(c.combined_weight / total_weight * 100, 1) if total_weight > 0 else 0.0,
+            "matched_terms": list(c.matched_terms),
+        })
+    for article, reason in excluded:
+        rows.append({
+            "title": article.title,
+            "url": article.url or "",
+            "source": article.source,
+            "source_type": article.source_type,
+            "published_utc": article.published_utc.isoformat(),
+            "status": "excluded",
+            "reason": reason,
+            "usd_sentiment": None,
+            "trust_weight": None,
+            "time_weight": None,
+            "combined_weight": None,
+            "weight_pct": None,
+            "matched_terms": [],
+        })
+    return rows
 
 
 def _build_confidence_multipliers(result) -> dict:
@@ -568,13 +620,22 @@ def score_and_record_event(
             )
             continue
 
-        record_prediction(
+        prediction_id = record_prediction(
             conn, event.title, instrument, event.event_time_utc,
             result.probability, result.direction.value, result.confidence,
             result.article_count, result.contradiction_flag,
             top_contributions=_build_top_contributions(result.contributions),
             confidence_multipliers=_build_confidence_multipliers(result),
         )
+        # B6 (2026-10-22): the full article evidence for this prediction. A failure here
+        # must never lose the prediction row that was just committed.
+        try:
+            record_prediction_article_contributions(
+                conn, prediction_id, event.title, event.event_time_utc, instrument,
+                _build_article_contribution_rows(result.contributions, bundle.excluded),
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[backtest_accumulator] WARNING: evidence write failed for {instrument}/{event.title}: {exc}")
         print(f"[backtest_accumulator] recorded {instrument} / {event.title}: {result.summary()}")
 
     return results

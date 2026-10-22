@@ -13,6 +13,7 @@ import datetime as dt
 import difflib
 from dataclasses import dataclass, field
 from typing import Optional, Protocol
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
 
@@ -208,6 +209,50 @@ def fetch_from_all_sources(
 
 def _trust_weight_for(article: NewsArticle) -> float:
     return SOURCE_TRUST_WEIGHTS.get(article.source_type, 0.5)  # unknown sources get a conservative default
+
+
+def normalize_url(url: str) -> str:
+    """
+    B6 (2026-10-22): comparison key for same-URL dedup. Strips whitespace,
+    lower-cases scheme and host, drops the fragment, a trailing "/" on the
+    path and utm_* tracking params. Anything else in the query is kept (two
+    different ?id= values are different articles). A blank URL stays "".
+    """
+    url = (url or "").strip()
+    if not url:
+        return ""
+    parts = urlsplit(url)
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if not k.lower().startswith("utm_")]
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), urlencode(query), ""))
+
+
+def dedupe_same_url(articles: list[NewsArticle]) -> tuple[list[NewsArticle], list[NewsArticle]]:
+    """
+    B6 (2026-10-22, AS-01): returns (kept, dropped). Feeds re-stamp a live
+    blog or updated story under the SAME URL with a new headline and time;
+    each re-stamp used to vote again as an independent article. Per
+    normalized non-empty URL the EARLIEST published copy is kept (ties:
+    higher source trust), so a live-blog URL keeps its first relevant
+    headline. Blank URLs are never merged. Both lists keep input order.
+    Title dedup (deduplicate_articles) is unchanged and runs after this.
+    """
+    winner_by_url: dict[str, NewsArticle] = {}
+    for a in articles:
+        key = normalize_url(a.url)
+        if not key:
+            continue
+        current = winner_by_url.get(key)
+        if current is None or (a.published_utc, -_trust_weight_for(a)) < (current.published_utc, -_trust_weight_for(current)):
+            winner_by_url[key] = a
+    kept: list[NewsArticle] = []
+    dropped: list[NewsArticle] = []
+    for a in articles:
+        key = normalize_url(a.url)
+        if not key or winner_by_url[key] is a:
+            kept.append(a)
+        else:
+            dropped.append(a)
+    return kept, dropped
 
 
 def deduplicate_articles(articles: list[NewsArticle], title_similarity_threshold: float = 0.85) -> list[NewsArticle]:

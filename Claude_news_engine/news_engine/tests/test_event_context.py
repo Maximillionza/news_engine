@@ -306,6 +306,31 @@ def test_exclusion_reason_vocabulary():
     print("PASS\n")
 
 
+# --- B6 (2026-10-22): same-URL dedup (AS-01), earliest copy kept, after relevance. ---
+
+def _url_article(title, summary, hours_before_event, url="https://example.test/live-blog"):
+    return NewsArticle(
+        title=title, summary=summary, source="Test Wire", source_type="test",
+        published_utc=EVENT_TIME - dt.timedelta(hours=hours_before_event), url=url,
+    )
+
+
+def test_url_dedup_runs_after_relevance():
+    print("=== event_context: B6 -- same-URL dedup runs AFTER relevance: an off-topic earlier copy must not win ===")
+    off = _url_article("Live: Apple event recap", "iPhone launch", 3.0)
+    fed = _url_article("Live: Fed holds rates, FOMC statement", "Federal Reserve policy", 1.0)
+    bundle = _build(_event("FOMC Statement"), _StubSource([off, fed]))
+    assert [a.title for a in bundle.articles] == [fed.title]
+    assert "duplicate_url" not in [r for _, r in bundle.excluded]
+
+    early = _url_article("Fed officials split at FOMC meeting", "Federal Reserve policy", 3.0)
+    late = _url_article("Fed officials split at FOMC meeting, dollar slips", "Federal Reserve policy", 1.0)
+    bundle = _build(_event("FOMC Statement"), _StubSource([late, early]))
+    assert [a.title for a in bundle.articles] == [early.title]
+    assert [(a.title, r) for a, r in bundle.excluded] == [(late.title, "duplicate_url")]
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_off_topic_article_is_dropped_for_an_event_with_configured_keywords()
     test_relevance_keyword_match_is_case_insensitive_and_checks_summary_too()
@@ -325,4 +350,5 @@ if __name__ == "__main__":
     test_bundle_excluded_carries_reasons_not_articles()
     test_off_topic_not_in_excluded()
     test_exclusion_reason_vocabulary()
+    test_url_dedup_runs_after_relevance()
     print("All event_context tests passed.")

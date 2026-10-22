@@ -24,6 +24,8 @@ from scoring.backtest_store import (
     record_exogenous_shock, get_exogenous_shock_for_date, ExogenousShockRow,
     get_latest_tier1_predictions_bulk, record_tier1_late_check, get_tier1_late_checks_for_occurrence,
     get_latest_tier1_late_checks_bulk,
+    record_prediction_article_contributions, get_prediction_article_contributions,
+    get_final_pre_event_article_contributions, PredictionArticleContribution,
 )
 
 
@@ -1209,6 +1211,111 @@ def test_latest_late_checks_bulk_newest_wins_per_occurrence():
         conn.close()
 
 
+
+# --- B6 (2026-10-22): append-only per-prediction article evidence table. ---
+
+def _evidence_rows():
+    base = dict(source="Wire", source_type="test", published_utc="2026-08-12T10:00:00+00:00")
+    return [
+        dict(base, title="A", url="https://a.test/1", status="included", reason=None, usd_sentiment=0.4,
+             trust_weight=0.8, time_weight=0.9, combined_weight=0.72, weight_pct=60.0, matched_terms=["<native_sentiment>"]),
+        dict(base, title="B", url="https://a.test/2", status="included", reason="redundancy_discount", usd_sentiment=-0.2,
+             trust_weight=0.8, time_weight=0.6, combined_weight=0.48, weight_pct=40.0, matched_terms=[]),
+        dict(base, title="C", url="https://a.test/3", status="excluded", reason="foreign_cb", usd_sentiment=None,
+             trust_weight=None, time_weight=None, combined_weight=None, weight_pct=None, matched_terms=[]),
+    ]
+
+
+def test_contributions_table_created_additively():
+    print("=== backtest_store: B6 -- evidence table is added to an old DB without touching existing rows ===")
+    schema = store._SCHEMA
+    start = schema.index("CREATE TABLE IF NOT EXISTS prediction_article_contributions")
+    old_schema = schema[:start]
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "old.db"
+        raw = sqlite3.connect(db_path)
+        raw.executescript(old_schema)
+        raw.execute(
+            "INSERT INTO predictions (event_title, instrument, event_time_utc, scored_at_utc, probability, direction, "
+            "confidence, article_count, contradiction_flag) VALUES ('CPI m/m','XAUUSD','2026-08-12T12:30:00+00:00',"
+            "'2026-08-12T10:00:00+00:00',0.6,'bullish',0.5,3,0)"
+        )
+        raw.commit()
+        raw.close()
+        store._schema_ready_paths.discard(str(db_path.resolve()))
+        conn = get_connection(db_path)
+        tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        indexes = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+        assert "prediction_article_contributions" in tables
+        assert "idx_pac_occurrence" in indexes
+        assert conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0] == 1
+        conn.close()
+    print("PASS\n")
+
+
+def test_record_contributions_idempotent():
+    print("=== backtest_store: B6 -- recording the same evidence twice inserts nothing the second time ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "t.db")
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        pid = record_prediction(conn, "CPI m/m", "XAUUSD", event_time, 0.6, "bullish", 0.5, 2, False)
+        rows = _evidence_rows()
+        assert record_prediction_article_contributions(conn, pid, "CPI m/m", event_time, "XAUUSD", rows) == 3
+        assert record_prediction_article_contributions(conn, pid, "CPI m/m", event_time, "XAUUSD", rows) == 0
+        assert conn.execute("SELECT COUNT(*) FROM prediction_article_contributions").fetchone()[0] == 3
+        bad = dict(rows[0], title="Z", status="maybe")
+        try:
+            record_prediction_article_contributions(conn, pid, "CPI m/m", event_time, "XAUUSD", [bad])
+            raise AssertionError("invalid status should raise")
+        except sqlite3.IntegrityError:
+            pass
+        conn.close()
+    print("PASS\n")
+
+
+def test_final_pre_event_ignores_post_release_prediction():
+    print("=== backtest_store: B6 -- the final pre-event evidence is the last prediction at or before the release ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "t.db")
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        ids = {}
+        for label, delta in (("a", -120), ("b", -10), ("c", 5)):
+            ids[label] = record_prediction(
+                conn, "CPI m/m", "XAUUSD", event_time, 0.6, "bullish", 0.5, 2, False,
+                scored_at_utc=event_time + dt.timedelta(minutes=delta),
+            )
+            row = dict(_evidence_rows()[0], title=f"row-{label}", url=f"https://a.test/{label}")
+            record_prediction_article_contributions(conn, ids[label], "CPI m/m", event_time, "XAUUSD", [row])
+        final = get_final_pre_event_article_contributions(conn, "CPI m/m", "XAUUSD", event_time)
+        assert [r.title for r in final] == ["row-b"]
+        assert final[0].prediction_id == ids["b"]
+        assert get_final_pre_event_article_contributions(conn, "CPI m/m", "US30", event_time) == []
+        conn.close()
+    print("PASS\n")
+
+
+def test_contribution_row_dataclass_fields():
+    print("=== backtest_store: B6 -- evidence rows expose matched_terms as a list and NULL weights as None ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "t.db")
+        event_time = dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ)
+        pid = record_prediction(conn, "CPI m/m", "XAUUSD", event_time, 0.6, "bullish", 0.5, 2, False)
+        record_prediction_article_contributions(conn, pid, "CPI m/m", event_time, "XAUUSD", _evidence_rows())
+        got = get_prediction_article_contributions(conn, pid)
+        assert [r.title for r in got] == ["A", "B", "C"]   # included by weight desc, then excluded
+        assert isinstance(got[0], PredictionArticleContribution)
+        assert got[0].matched_terms == ["<native_sentiment>"]
+        assert got[1].reason == "redundancy_discount"
+        excl = got[2]
+        assert excl.status == "excluded" and excl.reason == "foreign_cb"
+        assert excl.usd_sentiment is None and excl.combined_weight is None and excl.weight_pct is None
+        assert excl.matched_terms == []
+        assert excl.event_title == "CPI m/m" and excl.instrument == "XAUUSD"
+        assert excl.event_time_utc == event_time.isoformat()
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_record_and_count_predictions()
     test_count_predictions_scoped_to_event_occurrence_not_just_title()
@@ -1274,4 +1381,8 @@ if __name__ == "__main__":
     test_record_late_check_never_writes_tier1_predictions()
     test_record_late_check_refuses_no_call_naive_or_post_release_time_and_bad_values()
     test_latest_late_checks_bulk_newest_wins_per_occurrence()
+    test_contributions_table_created_additively()
+    test_record_contributions_idempotent()
+    test_final_pre_event_ignores_post_release_prediction()
+    test_contribution_row_dataclass_fields()
     print("All backtest_store tests passed.")

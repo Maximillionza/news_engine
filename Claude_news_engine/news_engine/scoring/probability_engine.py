@@ -87,6 +87,7 @@ class ArticleContribution:
     time_weight: float
     combined_weight: float
     matched_terms: list[str] = field(default_factory=list)
+    redundancy_discounted: bool = False   # B6 (2026-10-22): set by _apply_redundancy_discounts, recorded in the evidence table
 
 
 @dataclass
@@ -342,7 +343,7 @@ def _apply_redundancy_discounts(contributions: list[ArticleContribution]) -> tup
     discounted_count = 0
     for c in ordered:
         if any(_is_likely_redundant(earlier, c) for earlier in kept):
-            kept.append(replace(c, combined_weight=c.combined_weight * REDUNDANCY_DISCOUNT_MULTIPLIER))
+            kept.append(replace(c, combined_weight=c.combined_weight * REDUNDANCY_DISCOUNT_MULTIPLIER, redundancy_discounted=True))
             discounted_count += 1
         else:
             kept.append(c)
