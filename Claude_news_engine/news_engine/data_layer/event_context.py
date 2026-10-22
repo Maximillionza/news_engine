@@ -11,11 +11,19 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 
 from config.settings import EVENT_RELEVANCE_KEYWORDS_BY_TITLE, PRE_EVENT_WINDOW_HOURS, UTC_TZ
 from data_layer.calendar_feed import EconomicEvent
 from data_layer.news_feed import NewsArticle, NewsSource, fetch_from_all_sources, deduplicate_articles
+from data_layer.subject_rules import b6_exclusion_reason
+
+# B6 (2026-10-22): why an article that matched an event's keywords was
+# still kept out of its score. Recorded in EventNewsBundle.excluded (and,
+# from Task 3, in the evidence table). Keyword misses are NOT recorded:
+# there are hundreds per event and they say nothing about a source.
+EXCLUSION_REASONS: tuple[str, ...] = ("single_stock_blurb", "foreign_cb", "no_fed_coterm", "off_subject", "duplicate_url")
 
 # 2026-09-24 fix: a single-company stock-price blurb ("First Solar stock
 # heads into the open after a 4.42 percent drop", "NetApp stock rises 1.8
@@ -58,6 +66,9 @@ class EventNewsBundle:
     event: EconomicEvent
     articles: list[NewsArticle]
     as_of_utc: dt.datetime   # the "now" this bundle was assembled for (live) or capped at (backtest)
+    # B6 (2026-10-22): keyword-matched articles kept out of the score, each
+    # with its EXCLUSION_REASONS entry. Never scored, never counted.
+    excluded: list[tuple[NewsArticle, str]] = field(default_factory=list)
 
     def articles_sorted_by_recency(self) -> list[NewsArticle]:
         return sorted(self.articles, key=lambda a: a.published_utc, reverse=True)
@@ -72,7 +83,9 @@ def _is_relevant(article: NewsArticle, keywords: list[str]) -> bool:
     return any(kw in haystack for kw in keywords)
 
 
-def _filter_relevant(articles: list[NewsArticle], event_title: str) -> list[NewsArticle]:
+def _partition_relevant(
+    articles: list[NewsArticle], event_title: str
+) -> tuple[list[NewsArticle], list[tuple[NewsArticle, str]]]:
     """
     Applies EVENT_RELEVANCE_KEYWORDS_BY_TITLE's keyword filter. An event
     title with no entry FAILS CLOSED (returns no articles at all), not
@@ -97,6 +110,12 @@ def _filter_relevant(articles: list[NewsArticle], event_title: str) -> list[News
     now applied here too. Add a real, curated keyword list to
     config.settings.EVENT_RELEVANCE_KEYWORDS_BY_TITLE before this event
     can get article-based sentiment coverage again.
+
+    B6 (2026-10-22): returns (kept, excluded). Per article: a keyword miss
+    is skipped and not recorded; a keyword match is then excluded as
+    "single_stock_blurb", or by data_layer/subject_rules.py's
+    b6_exclusion_reason() ("foreign_cb", "no_fed_coterm", "off_subject");
+    anything left is kept.
     """
     keywords = EVENT_RELEVANCE_KEYWORDS_BY_TITLE.get(event_title)
     if not keywords:
@@ -107,8 +126,38 @@ def _filter_relevant(articles: list[NewsArticle], event_title: str) -> list[News
             f"config.settings.EVENT_RELEVANCE_KEYWORDS_BY_TITLE to restore "
             f"article-based sentiment coverage for this event."
         )
-        return []
-    return [a for a in articles if not _is_single_stock_blurb(a) and _is_relevant(a, keywords)]
+        return [], []
+
+    kept: list[NewsArticle] = []
+    excluded: list[tuple[NewsArticle, str]] = []
+    for article in articles:
+        if not _is_relevant(article, keywords):
+            continue
+        if _is_single_stock_blurb(article):
+            excluded.append((article, "single_stock_blurb"))
+            continue
+        reason = b6_exclusion_reason(article.title, article.summary, event_title)
+        if reason is not None:
+            excluded.append((article, reason))
+            continue
+        kept.append(article)
+    return kept, excluded
+
+
+def _filter_relevant(articles: list[NewsArticle], event_title: str) -> list[NewsArticle]:
+    """The kept half of _partition_relevant() (signature unchanged for older callers and audit probes)."""
+    kept, _ = _partition_relevant(articles, event_title)
+    return kept
+
+
+def _log_exclusions(event_title: str, excluded: list[tuple[NewsArticle, str]]) -> None:
+    # One line per event, reasons in EXCLUSION_REASONS order, e.g.
+    # "[event_context] FOMC Statement: excluded 7 (foreign_cb=2, no_fed_coterm=1, off_subject=3, duplicate_url=1)"
+    if not excluded:
+        return
+    counts = Counter(reason for _, reason in excluded)
+    parts = ", ".join(f"{reason}={counts[reason]}" for reason in EXCLUSION_REASONS if counts[reason])
+    print(f"[event_context] {event_title}: excluded {len(excluded)} ({parts})")
 
 
 def build_event_news_bundle(
@@ -144,10 +193,11 @@ def build_event_news_bundle(
 
     # Enforce the cutoff strictly — some APIs are sloppy about time_from filtering
     windowed = [a for a in raw_articles if window_start <= a.published_utc <= as_of]
-    windowed = _filter_relevant(windowed, event.title)
+    windowed, excluded = _partition_relevant(windowed, event.title)
     windowed = deduplicate_articles(windowed)
+    _log_exclusions(event.title, excluded)
 
-    return EventNewsBundle(event=event, articles=windowed, as_of_utc=as_of)
+    return EventNewsBundle(event=event, articles=windowed, as_of_utc=as_of, excluded=excluded)
 
 
 def fetch_outcome_confirmation(

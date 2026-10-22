@@ -688,6 +688,7 @@ _CPI_RELEVANCE_KEYWORDS = [
 # row) — both names kept so historical Powell-era coverage and current
 # Warsh-era coverage both match, same "never drop real coverage" reasoning
 # as everything else in this dict.
+# B6 (2026-10-22): keyword list unchanged; the Fed co-term and title subject rules live in data_layer/subject_rules.py.
 _FOMC_RELEVANCE_KEYWORDS = [
     "fomc", "federal reserve", "federal funds rate", "fed rate", "fed chair",
     "fed meeting", "fed minutes", "interest rate decision", "monetary policy",
@@ -774,6 +775,44 @@ EVENT_RELEVANCE_KEYWORDS_BY_TITLE = {
         "consumer expectations",
     ],
 }
+
+# B6 (2026-10-22, audit AUD-P0-1 / AS-04, owner decision 8): the subject
+# rules in data_layer/subject_rules.py apply per relevance FAMILY, not per
+# title. The family map is built by identity from the shared keyword lists
+# above, so a title added to EVENT_RELEVANCE_KEYWORDS_BY_TITLE with an
+# existing list joins that family automatically. Titles with their own
+# inline list (Core PCE, UoM) are absent here and read as "other".
+_RELEVANCE_FAMILY_LISTS: tuple[tuple[str, list[str]], ...] = (
+    ("fomc", _FOMC_RELEVANCE_KEYWORDS),
+    ("cpi", _CPI_RELEVANCE_KEYWORDS),
+    ("jobs", _JOBS_RELEVANCE_KEYWORDS),
+    ("ppi", _PPI_RELEVANCE_KEYWORDS),
+    ("ism", _ISM_RELEVANCE_KEYWORDS),
+    ("retail_sales", _RETAIL_SALES_RELEVANCE_KEYWORDS),
+    ("gdp", _GDP_RELEVANCE_KEYWORDS),
+)
+RELEVANCE_FAMILY_BY_TITLE: dict[str, str] = {
+    title: family
+    for title, keywords in EVENT_RELEVANCE_KEYWORDS_BY_TITLE.items()
+    for family, family_keywords in _RELEVANCE_FAMILY_LISTS
+    if keywords is family_keywords
+}
+FOMC_FAMILY_TITLES: frozenset[str] = frozenset(
+    title for title, family in RELEVANCE_FAMILY_BY_TITLE.items() if family == "fomc"
+)
+CPI_FAMILY_TITLES: frozenset[str] = frozenset(
+    title for title, family in RELEVANCE_FAMILY_BY_TITLE.items() if family == "cpi"
+)
+
+# Fed officials whose surname alone counts as a Fed co-term (subject_rules.names_fed).
+# Roster as of 2026-10-22. Cook, Williams and Collins are left out on purpose
+# (Tim Cook, Serena Williams, ...); "Fed's Cook" / "New York Fed's Williams"
+# still match through "fed".
+FED_OFFICIAL_SURNAMES: tuple[str, ...] = (
+    "warsh", "powell", "waller", "bowman", "jefferson", "barr", "miran",
+    "goolsbee", "kashkari", "musalem", "hammack", "bostic", "barkin", "daly",
+    "schmid", "logan", "paulson", "kugler",
+)
 
 # Trust weight for a precursor's structured surprise contribution — high,
 # since it's a real released number rather than lexicon-guessed text, but

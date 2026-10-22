@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import UTC_TZ, PRE_EVENT_WINDOW_HOURS
 from data_layer.calendar_feed import EconomicEvent
-from data_layer.event_context import build_event_news_bundle
+from data_layer.event_context import EXCLUSION_REASONS, build_event_news_bundle
 from data_layer.news_feed import NewsArticle
 
 EVENT_TIME = dt.datetime(2026, 8, 19, 18, 0, tzinfo=UTC_TZ)
@@ -85,9 +85,14 @@ def test_off_topic_article_is_dropped_for_an_event_with_configured_keywords():
 
 def test_relevance_keyword_match_is_case_insensitive_and_checks_summary_too():
     print("=== event_context: relevance match is case-insensitive and checks the summary, not just the title ===")
-    matches_via_summary = _article("Markets steady ahead of release", "Traders await the FOMC statement for rate guidance")
+    # B6 (2026-10-22): re-pointed from FOMC Meeting Minutes to Retail Sales
+    # m/m. The old FOMC version ("Markets steady ahead of release" with the
+    # FOMC named only in the summary) is now correctly excluded as
+    # off_subject: the FOMC title rule needs the headline itself to name the
+    # Fed, the dollar or US rates (data_layer/subject_rules.py).
+    matches_via_summary = _article("Markets steady ahead of release", "Traders await the RETAIL SALES report")
     source = _StubSource([matches_via_summary])
-    bundle = _build(_event("FOMC Meeting Minutes"), source)
+    bundle = _build(_event("Retail Sales m/m"), source)
     assert len(bundle.articles) == 1
     print("PASS\n")
 
@@ -268,6 +273,39 @@ def test_single_stock_blurb_filter_does_not_drop_genuine_macro_headlines():
     print("PASS\n")
 
 
+# --- B6 (2026-10-22): relevance partition. Articles that matched an
+# event's keywords but were then dropped by a guard are kept in
+# bundle.excluded with the reason (for the evidence table); keyword misses
+# are not recorded. ---
+
+def test_bundle_excluded_carries_reasons_not_articles():
+    print("=== event_context: B6 -- excluded articles carry a reason and never reach bundle.articles ===")
+    fed = _article("Fed signals hawkish tilt in FOMC minutes", "")
+    ecb = _article("ECB signals faster rate cuts as euro zone stalls", "Lagarde said the central bank is ready to ease further.")
+    gold = _article("Gold edges up as October rate hike bets ease, stronger dollar cap gains", "Traders trimmed bets on a Federal Reserve hike")
+    bundle = _build(_event("FOMC Statement"), _StubSource([fed, ecb, gold]))
+    assert [a.title for a in bundle.articles] == [fed.title]
+    assert sorted(r for _, r in bundle.excluded) == ["foreign_cb", "off_subject"]
+    print("PASS\n")
+
+
+def test_off_topic_not_in_excluded():
+    print("=== event_context: B6 -- a keyword miss is skipped silently, a single-stock blurb is recorded ===")
+    off_topic = _article("Apple to change app data consent rules, German regulator says")
+    blurb = _article("First Solar stock heads into the open after a 4.42 percent drop", "US jobless claims and housing data are due today.")
+    bundle = _build(_event("Unemployment Claims"), _StubSource([off_topic, blurb]))
+    assert off_topic.title not in [a.title for a in bundle.articles]
+    assert off_topic.title not in [a.title for a, _ in bundle.excluded]
+    assert (blurb.title, "single_stock_blurb") in [(a.title, r) for a, r in bundle.excluded]
+    print("PASS\n")
+
+
+def test_exclusion_reason_vocabulary():
+    print("=== event_context: B6 -- the exclusion-reason vocabulary is fixed ===")
+    assert EXCLUSION_REASONS == ("single_stock_blurb", "foreign_cb", "no_fed_coterm", "off_subject", "duplicate_url")
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_off_topic_article_is_dropped_for_an_event_with_configured_keywords()
     test_relevance_keyword_match_is_case_insensitive_and_checks_summary_too()
@@ -284,4 +322,7 @@ if __name__ == "__main__":
     test_single_stock_blurb_dropped_despite_real_keyword_in_boilerplate_footer()
     test_single_stock_blurb_dropped_even_without_percent_figure_or_ahead_of_open_phrasing()
     test_single_stock_blurb_filter_does_not_drop_genuine_macro_headlines()
+    test_bundle_excluded_carries_reasons_not_articles()
+    test_off_topic_not_in_excluded()
+    test_exclusion_reason_vocabulary()
     print("All event_context tests passed.")
