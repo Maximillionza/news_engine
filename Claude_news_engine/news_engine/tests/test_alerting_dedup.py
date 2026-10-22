@@ -109,3 +109,24 @@ def test_energy_and_geopolitical_get_no_topic_merge_so_a_new_attack_is_never_bur
     conn = store.get_connection(":memory:")
     _seed_alert(conn, "Iran says Strait of Hormuz will not reopen until conditions are met", "energy", _hours_ago(2))
     assert find_existing_alert("More tankers struck in the Middle East as Iran reiterates conditions for reopening the Strait of Hormuz", "energy", conn) is None
+
+
+# --- B7 (2026-10-22): storm veto on the similarity path too ---
+
+def test_similar_headline_different_storm_does_not_merge():
+    """
+    Live 2026-10-09: the Hurricane Simon article was merged into alert #46 (Isaias) by
+    similarity (ratio 0.954), which is how #46 came to carry Simon's URL. Two headlines
+    naming different storms never merge; the same storm still does.
+    """
+    conn = store.get_connection(":memory:")
+    isaias = _seed_alert(
+        conn, "Hurricane Isaias strengthens as US Gulf Coast prepares for landfall - Reuters",
+        "natural_disaster_supply_chain", _hours_ago(1),
+    )
+    assert find_existing_alert(
+        "Hurricane Simon strengthens as US Gulf Coast prepares for landfall - Reuters", "natural_disaster_supply_chain", conn,
+    ) is None
+    assert find_existing_alert(
+        "Hurricane Isaias strengthens further as US Gulf Coast braces for landfall - Reuters", "natural_disaster_supply_chain", conn,
+    ) == isaias

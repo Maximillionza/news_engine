@@ -1,0 +1,211 @@
+{
+ "12": {
+  "headline": "Iran floats conditions for Hormuz reopening as Trump says deal could come after midterms",
+  "category": "energy",
+  "detected_at_utc": "2026-09-23T05:52:24.099711+00:00",
+  "sources": [
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/09/23/us-iran-war-trump-hormuz.html",
+    "published_utc": "2026-09-23T05:37:48+00:00"
+   }
+  ]
+ },
+ "13": {
+  "headline": "Iran says Trump\u2019s threats a sign of \u2018strategic desperation,\u2019 floats conditions for Hormuz reopening",
+  "category": "energy",
+  "detected_at_utc": "2026-09-23T09:06:24.153499+00:00",
+  "sources": [
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/09/23/us-iran-war-trump-hormuz.html",
+    "published_utc": "2026-09-23T09:05:23+00:00"
+   },
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/09/23/us-iran-war-trump-hormuz.html",
+    "published_utc": "2026-09-23T11:56:04+00:00"
+   },
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/09/23/us-iran-war-trump-hormuz.html",
+    "published_utc": "2026-09-23T14:06:40+00:00"
+   },
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/09/23/us-iran-war-trump-hormuz.html",
+    "published_utc": "2026-09-23T14:47:28+00:00"
+   }
+  ]
+ },
+ "33": {
+  "headline": "EXCLUSIVE: Ukraine will hit Russian refineries in response to Moscow's 'new doctrine' of airstrikes - Reuters",
+  "category": "geopolitical_conflict",
+  "detected_at_utc": "2026-10-03T20:20:25.793469+00:00",
+  "sources": [
+   {
+    "source": "reuters_business",
+    "url": "https://news.google.com/rss/articles/CBMi1gFBVV95cUxOQ0JETXJlUlJGblZwbTljbXFFb0JkS2REVzBWUVdPUE5uN0xSRGpVZVBpS3B3Qnh1VkFWQjdYUzdOWnFFZkd4aVRFQmViaEJkVkVzTUxUMDJKdWh5UWJfaExXMi1UbTlLd1AxVnJ2UF9BUUZFc2g0ZEFTOWJGTi1WS3h0YlNtYzFRY0FTam5WbllJVXdGbUp1S0tQcGgtdmppSHpIMGg5dUtuLVN3SjJFME9MYTNSci1maHptc3RVVVk5d3k4NmgwS0oxZUZ5alpUNmYzR09R?oc=5",
+    "published_utc": "2026-10-03T20:17:10+00:00"
+   },
+   {
+    "source": "reuters_business",
+    "url": "https://news.google.com/rss/articles/CBMi1gFBVV95cUxOQ0JETXJlUlJGblZwbTljbXFFb0JkS2REVzBWUVdPUE5uN0xSRGpVZVBpS3B3Qnh1VkFWQjdYUzdOWnFFZkd4aVRFQmViaEJkVkVzTUxUMDJKdWh5UWJfaExXMi1UbTlLd1AxVnJ2UF9BUUZFc2g0ZEFTOWJGTi1WS3h0YlNtYzFRY0FTam5WbllJVXdGbUp1S0tQcGgtdmppSHpIMGg5dUtuLVN3SjJFME9MYTNSci1maHptc3RVVVk5d3k4NmgwS0oxZUZ5alpUNmYzR09R?oc=5",
+    "published_utc": "2026-10-03T20:25:53+00:00"
+   }
+  ]
+ },
+ "39": {
+  "headline": "EXCLUSIVE: Ukraine will hit Russian refineries in response to Moscow's 'new doctrine' of airstrikes, Zelenskiy says - Reuters",
+  "category": "geopolitical_conflict",
+  "detected_at_utc": "2026-10-06T10:12:31.334461+00:00",
+  "sources": [
+   {
+    "source": "reuters_business",
+    "url": "https://news.google.com/rss/articles/CBMi1gFBVV95cUxOQ0JETXJlUlJGblZwbTljbXFFb0JkS2REVzBWUVdPUE5uN0xSRGpVZVBpS3B3Qnh1VkFWQjdYUzdOWnFFZkd4aVRFQmViaEJkVkVzTUxUMDJKdWh5UWJfaExXMi1UbTlLd1AxVnJ2UF9BUUZFc2g0ZEFTOWJGTi1WS3h0YlNtYzFRY0FTam5WbllJVXdGbUp1S0tQcGgtdmppSHpIMGg5dUtuLVN3SjJFME9MYTNSci1maHptc3RVVVk5d3k4NmgwS0oxZUZ5alpUNmYzR09R?oc=5",
+    "published_utc": "2026-10-06T10:07:41+00:00"
+   }
+  ]
+ },
+ "41": {
+  "headline": "Oil rises as concerns over Houthi attacks on Saudi Arabia eclipse supply recovery",
+  "category": "energy",
+  "detected_at_utc": "2026-10-07T02:12:29.103337+00:00",
+  "sources": [
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/10/07/oil-prices-today-brent-wti-hormuz.html",
+    "published_utc": "2026-10-07T02:09:50+00:00"
+   },
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/10/07/oil-prices-today-brent-wti-hormuz.html",
+    "published_utc": "2026-10-07T04:24:10+00:00"
+   },
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/10/07/oil-prices-today-brent-wti-hormuz.html",
+    "published_utc": "2026-10-07T05:29:30+00:00"
+   },
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/10/07/oil-prices-today-brent-wti-hormuz.html",
+    "published_utc": "2026-10-07T08:59:59+00:00"
+   }
+  ]
+ },
+ "43": {
+  "headline": "Oil prices fall as IEA members agree to prioritize release of diesel stocks",
+  "category": "energy",
+  "detected_at_utc": "2026-10-07T18:20:29.368020+00:00",
+  "sources": [
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/10/07/oil-prices-today-brent-wti-hormuz.html",
+    "published_utc": "2026-10-07T18:18:47+00:00"
+   },
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/10/07/oil-prices-today-brent-wti-hormuz.html",
+    "published_utc": "2026-10-07T19:17:01+00:00"
+   }
+  ]
+ },
+ "46": {
+  "headline": "Hurricane Isaias strengthens as US Gulf Coast prepares for landfall - Reuters",
+  "category": "natural_disaster_supply_chain",
+  "detected_at_utc": "2026-10-08T21:32:31.967560+00:00",
+  "sources": [
+   {
+    "source": "reuters_business",
+    "url": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxQTkVvX05DT3UzVHJzUExmeUdGVEpBMHozdUcyd191dGQ5YmFCcGV4X2FlTjIwTWNNSndDTEtRdWpRY1I5UEZ2eVRfVHJaVFR4YkNwWjR2clF3Nkh4QkQ1YkcyRy1JQ3hJYVljZHNmYmtCbEp6N3F6bG5yVF9BdWFNczRzUklVb0RBYzRZSmpfXzlrdHctNzVLVWV6bEFEVlZUTWpvMzQ2T2NXZ3liWkJBbGpDcjBtMVpP?oc=5",
+    "published_utc": "2026-10-08T21:27:39+00:00"
+   },
+   {
+    "source": "reuters_business",
+    "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxNN1lrVWNzOXo2NzdsUVRRelhFV28yR0FRT044TUlIRlg0T2hvYmhSSktWSm5TUUhiaEkzYUtYTmJWTVVfTjNsMGlrZmpkLWhmUzYwUzUwSGI3djVDT2xJT241M2g0T1lBcVpQUTlZSFdUazVCd2JTcEc3R3RNUHlNbnpDdTRUYUVjcjdXNE1qaDBYN2ZqQkpjSHVPalBtRnRzcThWZVF0bmdCblRwWlBreTVOTnBHMVptZGc?oc=5",
+    "published_utc": "2026-10-09T15:51:42+00:00"
+   }
+  ]
+ },
+ "52": {
+  "headline": "Hurricane Simon rapidly strengths off Mexico's Pacific coast, threatens tourist region - Reuters",
+  "category": "natural_disaster_supply_chain",
+  "detected_at_utc": "2026-10-09T22:08:28.283037+00:00",
+  "sources": [
+   {
+    "source": "reuters_business",
+    "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxNN1lrVWNzOXo2NzdsUVRRelhFV28yR0FRT044TUlIRlg0T2hvYmhSSktWSm5TUUhiaEkzYUtYTmJWTVVfTjNsMGlrZmpkLWhmUzYwUzUwSGI3djVDT2xJT241M2g0T1lBcVpQUTlZSFdUazVCd2JTcEc3R3RNUHlNbnpDdTRUYUVjcjdXNE1qaDBYN2ZqQkpjSHVPalBtRnRzcThWZVF0bmdCblRwWlBreTVOTnBHMVptZGc?oc=5",
+    "published_utc": "2026-10-09T21:49:43+00:00"
+   },
+   {
+    "source": "reuters_business",
+    "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxNN1lrVWNzOXo2NzdsUVRRelhFV28yR0FRT044TUlIRlg0T2hvYmhSSktWSm5TUUhiaEkzYUtYTmJWTVVfTjNsMGlrZmpkLWhmUzYwUzUwSGI3djVDT2xJT241M2g0T1lBcVpQUTlZSFdUazVCd2JTcEc3R3RNUHlNbnpDdTRUYUVjcjdXNE1qaDBYN2ZqQkpjSHVPalBtRnRzcThWZVF0bmdCblRwWlBreTVOTnBHMVptZGc?oc=5",
+    "published_utc": "2026-10-09T22:12:14+00:00"
+   },
+   {
+    "source": "reuters_business",
+    "url": "https://news.google.com/rss/articles/CBMisgFBVV95cUxQQ1gzcTFLZkZiN21jcFllb2VoN2VGRU90SEdFUTFrZmY5anpHbU11dUR3NWF5VGlOUkZYZjVORUJYaTBGZkRwcDFvN2dzVHdpU2xLRnJlZGNRSWpUYmlHTlQ3TlJoRk9WVGRYb2pzTFdUMVFtRVo4c0dMeXZZamNtVzZrWTBZRXdZb3ZLeHBaeldRN240LWxVckd1NWJRbUc5d2JmLXdKX0RVZnZaR3dnbGFn?oc=5",
+    "published_utc": "2026-10-10T17:27:44+00:00"
+   }
+  ]
+ },
+ "54": {
+  "headline": "Loud blast at Riyadh airport as travellers evacuated and airlines cancel flights - Reuters",
+  "category": "geopolitical_conflict",
+  "detected_at_utc": "2026-10-10T14:54:30.436541+00:00",
+  "sources": [
+   {
+    "source": "reuters_business",
+    "url": "https://news.google.com/rss/articles/CBMitAFBVV95cUxQbV9hVGtMSXpTVDJ3c05vRW9SQ2lRLTg3cUlOeWxDc2w4amF5V2N2Ul9YazdxcHJGNDRwd3hlQi15a2ZGWWZoZnc1dlA5UkY3cU9PclVCNkh6SVkzQ25waEVRRlN2TVdES3lKV1VuVXN6QnJycWxtdkNOdUIwMTdTRE9fbko3Umt5d0huNVY1dW9ZcFpLSF9yczRGRHJfSWZhM1AtTkVzbVR4TlRUdzhIb19JN3o?oc=5",
+    "published_utc": "2026-10-10T14:29:39+00:00"
+   }
+  ]
+ },
+ "55": {
+  "headline": "Multiple people wounded in blast at Riyadh airport, say eyewitnesses - Reuters",
+  "category": "geopolitical_conflict",
+  "detected_at_utc": "2026-10-10T15:48:30.618471+00:00",
+  "sources": [
+   {
+    "source": "reuters_business",
+    "url": "https://news.google.com/rss/articles/CBMitAFBVV95cUxQbV9hVGtMSXpTVDJ3c05vRW9SQ2lRLTg3cUlOeWxDc2w4amF5V2N2Ul9YazdxcHJGNDRwd3hlQi15a2ZGWWZoZnc1dlA5UkY3cU9PclVCNkh6SVkzQ25waEVRRlN2TVdES3lKV1VuVXN6QnJycWxtdkNOdUIwMTdTRE9fbko3Umt5d0huNVY1dW9ZcFpLSF9yczRGRHJfSWZhM1AtTkVzbVR4TlRUdzhIb19JN3o?oc=5",
+    "published_utc": "2026-10-10T15:30:21+00:00"
+   }
+  ]
+ },
+ "71": {
+  "headline": "Trump waives broad new Russia sanctions and tariffs under Graham Act, citing national interest",
+  "category": "geopolitical_conflict",
+  "detected_at_utc": "2026-10-17T10:32:30.319524+00:00",
+  "sources": [
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/10/17/trump-waives-russia-related-sanctions-tariffs-before-they-take-effect-.html",
+    "published_utc": "2026-10-17T10:20:44+00:00"
+   },
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/10/17/trump-waives-russia-related-sanctions-tariffs-before-they-take-effect-.html",
+    "published_utc": "2026-10-17T19:28:01+00:00"
+   },
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/10/17/trump-waives-russia-related-sanctions-tariffs-before-they-take-effect-.html",
+    "published_utc": "2026-10-17T19:35:18+00:00"
+   }
+  ]
+ },
+ "72": {
+  "headline": "Trump waives broad new Russia sanctions, Zelenskyy condemns it as 'wrong'",
+  "category": "geopolitical_conflict",
+  "detected_at_utc": "2026-10-18T12:52:45.430801+00:00",
+  "sources": [
+   {
+    "source": "cnbc_top_news",
+    "url": "https://www.cnbc.com/2026/10/17/trump-waives-russia-related-sanctions-tariffs-before-they-take-effect-.html",
+    "published_utc": "2026-10-18T12:50:33+00:00"
+   }
+  ]
+ }
+}

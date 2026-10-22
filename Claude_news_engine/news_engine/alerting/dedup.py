@@ -36,7 +36,8 @@ def _trigrams(headline: str) -> set[tuple[str, ...]]:
     return {tuple(words[i:i + 3]) for i in range(len(words) - 2)}
 
 
-def _storm_names(headline: str) -> set[str]:
+def storm_names(headline: str) -> set[str]:
+    """Named storms in a headline ("hurricane isaias" -> {"isaias"}); public since B7 (alerting/incident.py's storm veto)."""
     return {m.group(1) for m in _STORM_NAME.finditer(headline.lower()) if m.group(1) not in _NOT_A_STORM_NAME}
 
 
@@ -45,7 +46,7 @@ def same_story(category: str, candidate: str, existing: str) -> bool:
     if category == "trade_policy":
         return bool(_trigrams(candidate) & _trigrams(existing))
     if category == "natural_disaster_supply_chain":
-        return bool(_storm_names(candidate) & _storm_names(existing))
+        return bool(storm_names(candidate) & storm_names(existing))
     return False
 
 SIMILARITY_THRESHOLD = 0.6  # difflib.SequenceMatcher ratio -- tunable; conservative enough to
@@ -71,11 +72,21 @@ def find_existing_alert(
     0.877 -- well above SIMILARITY_THRESHOLD) and duplicated into a
     second Telegram push, missing the old 6h window by minutes. A full
     day is a more realistic span for ongoing coverage of one event.
+
+    B7 (2026-10-22): in natural_disaster_supply_chain, an existing alert
+    naming a different storm is skipped on both branches. Live 2026-10-09:
+    "Hurricane Simon ..." merged into the Isaias alert #46 by similarity
+    (ratio 0.954), which also handed #46 Simon's URL.
     """
     now_utc = now_utc or dt.datetime.now(dt.timezone.utc)
     topic_window = max(window_hours, TOPIC_DEDUP_WINDOW_HOURS) if category in _TOPIC_CATEGORIES else window_hours
     similarity_cutoff = now_utc - dt.timedelta(hours=window_hours)
+    candidate_storms = storm_names(candidate_headline) if category == "natural_disaster_supply_chain" else set()
     for existing in store.list_recent_alerts_in_category(conn, category, now_utc - dt.timedelta(hours=topic_window)):
+        if candidate_storms:
+            existing_storms = storm_names(existing.headline)
+            if existing_storms and not (candidate_storms & existing_storms):
+                continue  # B7 storm veto: different named storms are never one alert, however similar the wording
         if existing.detected_at_utc >= similarity_cutoff:
             ratio = difflib.SequenceMatcher(None, candidate_headline.lower(), existing.headline.lower()).ratio()
             if ratio >= SIMILARITY_THRESHOLD:
