@@ -129,7 +129,7 @@ export function sentimentRowHtml(row) {
   const n = row.news;
   const title = escapeHtml(row.event_title);
   if (!n) {
-    const why = row.pre_news_period ? "No articles before 12 Aug 2026" : "No news call";
+    const why = row.pre_news_period ? "No news predictions before 12 Aug 2026" : "No news call";
     return `<tr class="row-off"><td>${title}</td><td>${dateCell(row)}</td><td>${articlesLeanCell(row)}</td>`
       + `<td colspan="3">${why}</td></tr>`;
   }

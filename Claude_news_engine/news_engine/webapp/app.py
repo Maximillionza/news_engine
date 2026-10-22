@@ -409,7 +409,7 @@ def get_shock_alerts():
 # ---------------------------------------------------------------------------
 STATS_FOOTNOTE = "Weights fixed at 70/30 until the 2027-01-15 review."
 STATS_DISCLAIMERS = {
-    "pre_news": "No news articles exist before 12 Aug 2026. Combined for these months is Tier 1 only.",
+    "pre_news": "No news predictions exist for releases before 12 Aug 2026. Combined for these months is Tier 1 only.",
     "reconstructed": "Reconstructed after the fact from the stated rule; not a live call.",
     "typical_reaction": "Typical reaction, not a trade signal.",
 }

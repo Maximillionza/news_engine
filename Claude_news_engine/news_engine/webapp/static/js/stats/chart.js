@@ -1,12 +1,15 @@
 // webapp/static/js/stats/chart.js
 //
 // Stats tab line chart: Forecast (dotted grey), Actual (solid), Predicted (dashed; green when the
-// call was Right, red when Wrong). A release with no call leaves a gap, never a zero. Pure: returns
+// call was Right, red when Wrong, grey while pending). A release with no call leaves a gap, never a zero. Pure: returns
 // an SVG string so it can be unit-tested under plain Node.
 import { escapeHtml } from "../format.js";
 
 const GREEN = "#2e7d32";
 const RED = "#c62828";
+const GREY = "#9e9e9e";   // pending: a call exists but is not yet scored
+// Sub-tab labels (index.html), used in the "no calls" note.
+const METHOD_NAME = { tier1: "Tier 1", news: "News sentiment", combined: "Combined" };
 const DEFAULT_W = 640, H = 210, L = 44, R = 28, T = 12, B = 26;
 const LABEL_PX = 56;   // room one x-axis label needs, so neighbours do not overlap
 
@@ -39,6 +42,8 @@ export function buildChartSvg(chart, opts = {}) {
   const y = (v) => T + ((hi - v) * (H - T - B)) / (hi - lo);
   const unit = escapeHtml((chart && chart.unit) || "");
 
+  // Right = green, Wrong = red, anything else (null verdict = pending) = grey.
+  const colourFor = (verdict) => (verdict === "right" ? GREEN : verdict === "wrong" ? RED : GREY);
   let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Forecast, actual and predicted by release">`;
   for (let k = 0; k <= 4; k++) {
     const v = lo + ((hi - lo) * k) / 4;
@@ -56,14 +61,19 @@ export function buildChartSvg(chart, opts = {}) {
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1], b = pts[i];
     if (a.predicted == null || b.predicted == null) continue;
-    const colour = b.verdict === "right" ? GREEN : RED;
+    const colour = colourFor(b.verdict);
     svg += `<line data-predicted="seg" x1="${x(i - 1).toFixed(1)}" y1="${y(a.predicted).toFixed(1)}" x2="${x(i).toFixed(1)}" y2="${y(b.predicted).toFixed(1)}" stroke="${colour}" stroke-width="2.5" stroke-dasharray="6 4"/>`;
   }
   pts.forEach((p, i) => {
     if (p.actual != null) svg += `<circle cx="${x(i).toFixed(1)}" cy="${y(p.actual).toFixed(1)}" r="3" fill="#222"/>`;
     if (p.predicted != null) {
-      svg += `<circle data-predicted="dot" cx="${x(i).toFixed(1)}" cy="${y(p.predicted).toFixed(1)}" r="4" fill="${p.verdict === "right" ? GREEN : RED}"/>`;
+      svg += `<circle data-predicted="dot" cx="${x(i).toFixed(1)}" cy="${y(p.predicted).toFixed(1)}" r="4" fill="${colourFor(p.verdict)}"/>`;
     }
   });
-  return svg + "</svg>";
+  svg += "</svg>";
+  // Forecast and actual stay drawn; say plainly that this method made no calls here.
+  if (pts.every((p) => p.predicted == null)) {
+    svg += `<div class="meta-text-sm">No ${escapeHtml(METHOD_NAME[chart.method] || "predicted")} calls for this selection</div>`;
+  }
+  return svg;
 }

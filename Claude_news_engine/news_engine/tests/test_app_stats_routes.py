@@ -86,7 +86,7 @@ def test_events_route_serves_every_field_the_tab_renders(client):
     assert row["combined"]["note"] == "news_missing"            # Tier 1 only, flagged
     assert data["news_start_utc"] == "2026-08-12T00:00:00+00:00"
     assert data["disclaimers"] == {
-        "pre_news": "No news articles exist before 12 Aug 2026. Combined for these months is Tier 1 only.",
+        "pre_news": "No news predictions exist for releases before 12 Aug 2026. Combined for these months is Tier 1 only.",
         "reconstructed": "Reconstructed after the fact from the stated rule; not a live call.",
         "typical_reaction": "Typical reaction, not a trade signal.",
     }

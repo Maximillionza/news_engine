@@ -54,3 +54,23 @@ test("narrow charts thin out x-axis labels so they do not overlap", () => {
   const count = (svg) => (svg.match(/text-anchor="middle"/g) || []).length;
   assert.ok(count(buildChartSvg({ unit: "%", points: many }, { width: 320 })) < count(buildChartSvg({ unit: "%", points: many }, { width: 900 })));
 });
+
+test("a method with no calls keeps forecast and actual and says so", () => {
+  const none = pts.map((p) => ({ ...p, predicted: null, verdict: null }));
+  const news = buildChartSvg({ method: "news", unit: "%", points: none });
+  assert.ok(news.includes('data-line="forecast"') && news.includes('data-line="actual"'));
+  assert.equal((news.match(/data-predicted/g) || []).length, 0);
+  assert.ok(news.includes("No News sentiment calls for this selection"));
+  const t1 = buildChartSvg({ method: "tier1", unit: "%", points: none });
+  assert.ok(t1.includes("No Tier 1 calls for this selection"));
+});
+
+test("pending (null-verdict) dots and segments are grey", () => {
+  const svg = buildChartSvg({ unit: "%", points: [
+    { label: "a", forecast: 0.3, actual: 0.3, predicted: 0.4, verdict: "right" },
+    { label: "b", forecast: 0.3, actual: null, predicted: 0.5, verdict: null },
+  ] });
+  assert.ok(/data-predicted="seg"[^>]*stroke="#9e9e9e"/.test(svg));
+  assert.ok(/data-predicted="dot"[^>]*fill="#9e9e9e"/.test(svg));
+  assert.ok(!svg.includes("#c62828"));
+});

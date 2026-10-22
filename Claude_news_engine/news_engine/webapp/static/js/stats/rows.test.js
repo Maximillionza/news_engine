@@ -79,7 +79,7 @@ test("combined row shows all three calls, and flags Tier 1 only when news is mis
 });
 
 test("sentiment row: no news before the news start says so; a call shows its lean", () => {
-  assert.ok(sentimentRowHtml({ ...base, pre_news_period: true }).includes("No articles before 12 Aug 2026"));
+  assert.ok(sentimentRowHtml({ ...base, pre_news_period: true }).includes("No news predictions before 12 Aug 2026"));
   assert.ok(sentimentRowHtml({ ...base }).includes("No news call"));
   const html = sentimentRowHtml({ ...base, news: { predicted: 0.35, verdict: "wrong", leans: { XAUUSD: "buy" }, note: null, kind: null } });
   assert.ok(html.includes("0.35") && html.includes("Wrong") && html.includes("potential BUY"));
@@ -322,7 +322,7 @@ test("a no-call news row still shows any article count and lean it has, and dash
   const html = sentimentRowHtml({ ...base, detail: { news_article_count: 4, news_lean: 0.2 } });
   assert.ok(html.includes("No news call") && html.includes("4 articles") && html.includes("lean +0.20"));
   const bare = sentimentRowHtml({ ...base, pre_news_period: true, detail: null });
-  assert.ok(bare.includes("No articles before 12 Aug 2026") && bare.includes("—"));
+  assert.ok(bare.includes("No news predictions before 12 Aug 2026") && bare.includes("—"));
 });
 
 test("the empty brief card names the impact levels when the chips are filtering", () => {

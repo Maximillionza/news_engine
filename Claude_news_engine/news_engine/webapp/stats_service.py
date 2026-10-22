@@ -34,7 +34,7 @@ from webapp.stats_rules import judge, miss_size, parse_number, side, tolerance
 logger = logging.getLogger(__name__)
 
 NOWCAST_EVENTS = frozenset(tier1_titles(TIER1_FORMULA))
-NEWS_START_UTC = dt.datetime(2026, 8, 12, tzinfo=dt.timezone.utc)   # first article-based prediction day
+NEWS_START_UTC = dt.datetime(2026, 8, 12, tzinfo=dt.timezone.utc)   # first release day with a news prediction (articles exist from 2026-08-10)
 MIN_SCORED_FOR_PERCENT = 20                                          # below this, accuracy % is hidden
 TRACKED_SYMBOLS = ("XAUUSD", "US30")
 METHODS = ("tier1", "news", "combined")
