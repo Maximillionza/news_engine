@@ -603,6 +603,31 @@ def test_macro_refresh_prints_nothing_and_skips_run_when_not_due(capsys):
     assert scheduler._macro_retry_not_before is None
 
 
+def test_scheduler_backfill_runs_after_scoring():
+    print("=== scheduler: actuals backfill runs after scoring, not before ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        order = []
+        real_record_run = scheduler.record_run
+
+        def spy_record_run(*a, **k):
+            order.append("record_run")
+            return real_record_run(*a, **k)
+
+        def spy_backfill(*a, **k):
+            order.append("backfill")
+            return None
+
+        with patch.object(scheduler, "fetch_calendar", return_value=_fake_events()), \
+             patch.object(scheduler, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
+             patch.object(scheduler, "record_run", side_effect=spy_record_run), \
+             patch.object(scheduler, "maybe_backfill", side_effect=spy_backfill):
+            scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
+        assert "record_run" in order and "backfill" in order
+        assert order.index("record_run") < order.index("backfill"), order
+    print("PASS\n")
+
+
 def test_scheduler_cycle_survives_backfill_error():
     print("=== scheduler: a raising actuals backfill never costs the scoring cycle ===")
     with tempfile.TemporaryDirectory() as tmp:

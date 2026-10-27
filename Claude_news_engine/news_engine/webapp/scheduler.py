@@ -195,16 +195,6 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
                     source="fred",
                 )
 
-    # B8 (2026-10-27): hourly FRED/ALFRED backfill of Medium/Low (and any other
-    # mapped) USD rows whose actual FF never supplies. Self-throttled and
-    # fail-open: an error here must never cost the scoring cycle below.
-    try:
-        backfill_report = maybe_backfill(conn, now_for_history)
-        if backfill_report is not None and backfill_report.written > 0:
-            print(f"[actuals_backfill] filled {backfill_report.written}")
-    except Exception as exc:  # noqa: BLE001
-        print(f"[actuals_backfill] WARNING: backfill error, continuing: {type(exc).__name__}")
-
     try:
         for ticker in tracked_symbols:
             try:
@@ -248,6 +238,17 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
                     print(f"[scheduler] recorded {ticker} / {event.title}: pending")
                 else:
                     print(f"[scheduler] recorded {ticker} / {event.title}: {new_probability:.0%} {new_direction}")
+
+        # B8 (2026-10-27): hourly FRED/ALFRED backfill of Medium/Low (and any other
+        # mapped) USD rows whose actual FF never supplies. Self-throttled and
+        # fail-open: an error here must never cost the scoring cycle. Runs AFTER
+        # scoring so a slow FRED pass (~1-2 min) never delays record_run().
+        try:
+            backfill_report = maybe_backfill(conn, now_for_history)
+            if backfill_report is not None and backfill_report.written > 0:
+                print(f"[actuals_backfill] filled {backfill_report.written}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[actuals_backfill] WARNING: backfill error, continuing: {type(exc).__name__}")
     finally:
         conn.close()
 
