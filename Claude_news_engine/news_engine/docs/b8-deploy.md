@@ -108,10 +108,10 @@ Filled actuals are kept by first-writer-wins either way. Restore the `pre_b8` ba
 
 ## U2 root cause
 
-`data_layer/calendar_feed.py:335` reads `actual=item.get("actual") or None`, but the FairEconomy weekly JSON never carries an actual: 0 of 585 `source='live'` rows have one, and the snapshot of 2026-10-27 shows actual None on all 26 events including ones already released. Every actual therefore comes from a fallback, and both fallbacks are gated to a handful of mostly-High titles:
+`data_layer/calendar_feed.py:383` reads `actual=item.get("actual") or None`, but the FairEconomy weekly JSON never carries an actual: 0 of 585 `source='live'` rows have one, and the snapshot of 2026-10-27 shows actual None on all 26 events including ones already released. Every actual therefore comes from a fallback, and both fallbacks are gated to a handful of mostly-High titles:
 
-- The FRED fast path (`webapp/scheduler.py:188-195`) only covers the 10 titles in `config/settings.py:153` `FRED_SERIES_ID_BY_EVENT_TITLE`, and only while the release is still in FF's this-week feed.
-- The web fallback queue only admits the 19 titles in `EVENT_SURPRISE_DIRECTION` (`webapp/store.py:586`) within 48 h (`webapp/actuals_sync.py:40`).
+- The FRED fast path (`webapp/scheduler.py:205-209`) only covers the 10 titles in `config/settings.py:153` `FRED_SERIES_ID_BY_EVENT_TITLE`, and only while the release is still in FF's this-week feed.
+- The web fallback queue only admits the 19 titles in `EVENT_SURPRISE_DIRECTION` (`webapp/store.py:34` import, queue filter at `webapp/store.py:621-647`) within 48 h (`webapp/actuals_sync.py:40`).
 - Medium and Low titles have no path at all.
 
 2026 USD past rows with an actual (2026-10-27): High 31/42, Medium 3/40, Low 2/166.
