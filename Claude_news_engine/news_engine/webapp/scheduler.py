@@ -18,6 +18,7 @@ from config.settings import EVENT_SURPRISE_DIRECTION
 from data_layer.calendar_feed import EconomicEvent, classify_surprise, fetch_calendar, filter_relevant_events
 from data_layer.fred_actuals import get_actual_from_fred
 from ops.state import touch_heartbeat
+from webapp.actuals_backfill import maybe_backfill
 from webapp.scoring_service import score_event_for_symbol
 from webapp.store import (
     get_connection, record_run, get_latest_two, save_calendar_snapshot_if_changed, upsert_event_history,
@@ -193,6 +194,16 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
                     conn, fred_event, classify_surprise(fred_event), now_for_history,
                     source="fred",
                 )
+
+    # B8 (2026-10-27): hourly FRED/ALFRED backfill of Medium/Low (and any other
+    # mapped) USD rows whose actual FF never supplies. Self-throttled and
+    # fail-open: an error here must never cost the scoring cycle below.
+    try:
+        backfill_report = maybe_backfill(conn, now_for_history)
+        if backfill_report is not None and backfill_report.written > 0:
+            print(f"[actuals_backfill] filled {backfill_report.written}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[actuals_backfill] WARNING: backfill error, continuing: {type(exc).__name__}")
 
     try:
         for ticker in tracked_symbols:

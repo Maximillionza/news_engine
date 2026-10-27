@@ -601,3 +601,19 @@ def test_macro_refresh_prints_nothing_and_skips_run_when_not_due(capsys):
     run.assert_not_called()
     assert capsys.readouterr().out == ""
     assert scheduler._macro_retry_not_before is None
+
+
+def test_scheduler_cycle_survives_backfill_error():
+    print("=== scheduler: a raising actuals backfill never costs the scoring cycle ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        with patch.object(scheduler, "fetch_calendar", return_value=_fake_events()), \
+             patch.object(scheduler, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
+             patch.object(scheduler, "maybe_backfill", side_effect=RuntimeError("boom")):
+            events = scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
+            assert [e.title for e in events] == ["Non-Farm Employment Change"]
+            conn = store.get_connection(db_path)
+            assert store.get_event_history(conn, "Non-Farm Employment Change"), "event_history must still be written"
+            assert store.get_latest_two(conn, "XAUUSD", "Non-Farm Employment Change"), "scoring must still run"
+            conn.close()
+    print("PASS\n")
