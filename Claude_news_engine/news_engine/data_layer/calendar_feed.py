@@ -271,6 +271,34 @@ def _parse_numeric(value: Optional[str]) -> Optional[float]:
         return None
 
 
+def tick_of(value: Optional[str]) -> Optional[float]:
+    """
+    One rounding step of a published number, in _parse_numeric units: the
+    smallest increment its last printed digit represents ("0.3%" -> 0.1,
+    "225K" -> 1000.0, "7.23M" -> 10000.0, "-78.3B" -> 1e8, "52" -> 1.0).
+    None for a missing/unparseable value. B8 (2026-10-27): used as the
+    sigma floor (scoring/surprise_scale.py) and as the half-tick tolerance
+    when comparing a FRED value with a stored one (data_layer/fred_history.py).
+    """
+    if _parse_numeric(value) is None:
+        return None
+    s = value.strip().replace(",", "")
+    multiplier = 1.0
+    if s.endswith("%"):
+        s = s[:-1]
+    elif s and s[-1] in "Kk":
+        multiplier = 1_000.0
+        s = s[:-1]
+    elif s and s[-1] in "Mm":
+        multiplier = 1_000_000.0
+        s = s[:-1]
+    elif s and s[-1] in "Bb":
+        multiplier = 1_000_000_000.0
+        s = s[:-1]
+    decimals = len(s.split(".", 1)[1]) if "." in s else 0
+    return multiplier * 10.0 ** -decimals
+
+
 def _parse_event_datetime(raw_date: str) -> dt.datetime:
     """
     FF feed timestamps come as ISO 8601 strings, already UTC-offset aware

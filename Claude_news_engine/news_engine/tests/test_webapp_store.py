@@ -935,6 +935,42 @@ def test_get_macro_calendar_events_filters_by_date_range():
     print("PASS\n")
 
 
+def test_insert_if_absent_does_nothing_on_conflict():
+    print("=== store: insert_event_history_if_absent inserts once, a second call leaves the original row untouched ===")
+    conn = get_connection(":memory:")
+    now = dt.datetime(2026, 10, 27, 12, 0, tzinfo=dt.timezone.utc)
+    when = dt.datetime(2026, 10, 14, 12, 30, tzinfo=dt.timezone.utc)
+    assert store.insert_event_history_if_absent(conn, "CPI m/m", when, None, "0.4%", "0.6%", None, "fred", None, "USD", now) is True
+    assert store.insert_event_history_if_absent(conn, "CPI m/m", when, "0.3%", "0.9%", "0.9%", "higher", "live", "High", "USD", now) is False
+    rows = store.get_event_history(conn, "CPI m/m")
+    assert len(rows) == 1
+    assert (rows[0].forecast, rows[0].previous, rows[0].actual, rows[0].source, rows[0].impact, rows[0].country) == (None, "0.4%", "0.6%", "fred", None, "USD")
+    print("PASS\n")
+
+
+def test_fill_actual_if_missing_keeps_forecast_previous():
+    print("=== store: fill_actual_if_missing fills a NULL actual only, never touches forecast/previous/impact/country ===")
+    conn = get_connection(":memory:")
+    now = dt.datetime(2026, 10, 27, 12, 0, tzinfo=dt.timezone.utc)
+    event = _fake_event(title="CPI m/m", forecast="0.3%", actual=None)
+    event.previous = "0.4%"
+    store.upsert_event_history(conn, event, surprise_direction=None, now=now)
+    row_id = conn.execute("SELECT id FROM event_history WHERE event_title = 'CPI m/m'").fetchone()["id"]
+
+    assert store.fill_actual_if_missing(conn, row_id, "0.6%", "higher", "fred", now) is True
+    assert store.fill_actual_if_missing(conn, row_id, "0.9%", "higher", "fred", now) is False
+    row = store.get_event_history(conn, "CPI m/m")[0]
+    assert (row.forecast, row.previous, row.actual, row.surprise_direction, row.source) == ("0.3%", "0.4%", "0.6%", "higher", "fred")
+    assert row.country == "USD"
+    assert row.impact == event.impact
+
+    near = store.find_event_history_near(conn, "CPI m/m", event.event_time_utc + dt.timedelta(days=2))
+    assert len(near) == 1 and near[0]["id"] == row_id
+    assert store.find_event_history_near(conn, "CPI m/m", event.event_time_utc + dt.timedelta(days=5)) == []
+    assert store.find_event_history_near(conn, "Other", event.event_time_utc) == []
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_round_trip_and_diff()
     test_fewer_than_two_runs()
@@ -980,4 +1016,6 @@ if __name__ == "__main__":
     test_confirm_macro_calendar_event_returns_false_when_no_matching_row()
     test_confirm_macro_calendar_event_outside_tolerance_does_not_match()
     test_get_macro_calendar_events_filters_by_date_range()
+    test_insert_if_absent_does_nothing_on_conflict()
+    test_fill_actual_if_missing_keeps_forecast_previous()
     print("All store tests passed.")

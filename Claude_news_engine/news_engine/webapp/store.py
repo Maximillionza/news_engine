@@ -498,6 +498,75 @@ def upsert_event_history(
     conn.commit()
 
 
+def insert_event_history_if_absent(
+    conn: sqlite3.Connection,
+    title: str,
+    event_time_utc: dt.datetime,
+    forecast: Optional[str],
+    previous: Optional[str],
+    actual: Optional[str],
+    surprise_direction: Optional[str],
+    source: str,
+    impact: Optional[str],
+    country: str,
+    now: dt.datetime,
+) -> bool:
+    """
+    B8 (2026-10-27): append-only insert for FRED-history seeding. An existing
+    (title, event_time_utc) row is left completely alone (ON CONFLICT DO
+    NOTHING) — unlike upsert_event_history this never overwrites a live row's
+    forecast/previous. True if a row was inserted.
+    """
+    cur = conn.execute(
+        """
+        INSERT INTO event_history
+            (event_title, event_time_utc, forecast, previous, actual, surprise_direction, recorded_at_utc, updated_at_utc, source, impact, country)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(event_title, event_time_utc) DO NOTHING
+        """,
+        (title, event_time_utc.isoformat(), forecast, previous, actual, surprise_direction, now.isoformat(), now.isoformat(), source, impact, country),
+    )
+    conn.commit()
+    return cur.rowcount == 1
+
+
+def fill_actual_if_missing(
+    conn: sqlite3.Connection,
+    row_id: int,
+    actual: str,
+    surprise_direction: Optional[str],
+    source: str,
+    now: dt.datetime,
+) -> bool:
+    """
+    B8 (2026-10-27): first-writer-wins actual fill by row id. Only a row whose
+    actual is still NULL changes; forecast/previous/impact/country are never
+    touched. True if a row changed.
+    """
+    cur = conn.execute(
+        "UPDATE event_history SET actual = ?, surprise_direction = ?, source = ?, updated_at_utc = ? "
+        "WHERE id = ? AND actual IS NULL",
+        (actual, surprise_direction, source, now.isoformat(), row_id),
+    )
+    conn.commit()
+    return cur.rowcount == 1
+
+
+def find_event_history_near(
+    conn: sqlite3.Connection, title: str, center_utc: dt.datetime, days: int = 3
+) -> list[sqlite3.Row]:
+    """
+    B8 (2026-10-27): rows of this title (any country, incl. NULL) within
+    `days` of `center_utc`. Lets the seed/backfill recognise an FF row that
+    sits hours or a day off the computed release time instead of duplicating it.
+    """
+    return conn.execute(
+        "SELECT * FROM event_history WHERE event_title = ? "
+        "AND abs(julianday(event_time_utc) - julianday(?)) <= ? ORDER BY event_time_utc",
+        (title, center_utc.isoformat(), days),
+    ).fetchall()
+
+
 def get_event_history(conn: sqlite3.Connection, event_title: str, limit: int = 6) -> list[EventHistoryRow]:
     """Past occurrences of this event title, most recent first, capped at `limit`. Empty list if none recorded yet."""
     rows = conn.execute(
