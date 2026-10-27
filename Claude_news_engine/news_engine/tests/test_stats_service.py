@@ -789,3 +789,24 @@ def test_agreement_and_tier_do_not_change_combined_or_scoreboard(conns):
     s1, sn = row.detail.tier1_surprise, row.detail.news_surprise
     assert row.combined.surprise == pytest.approx(0.7 * s1 + 0.3 * sn, abs=1e-12)
     assert row.combined.surprise == pytest.approx(row.detail.combined_surprise, abs=1e-12)
+
+
+# --- B8 (2026-10-27): the standardized surprise never reaches Stats -----------------------------------
+
+def test_stats_rows_unchanged_by_surprise_sigma(conns, monkeypatch):
+    """Stats never calls usd_surprise_score(), so agreement, tier1_tier and the 70/30 combined values cannot move."""
+    from data_layer.calendar_feed import EconomicEvent
+    dash, bt = conns
+    for k, a in enumerate(["0.4%", "0.2%", "0.3%", "0.5%", "0.2%", "0.4%"], start=1):   # 6 priors: sigma exists
+        _event(dash, "CPI m/m", dt.datetime(2026, 1 + k, 1, 12, 30, tzinfo=UTC), "0.3%", a)
+    rows_before = _mixed_population(dash, bt)
+    board_before = svc.build_scoreboard(rows_before)
+
+    def boom(self):
+        raise AssertionError("Stats must not call usd_surprise_score()")
+
+    monkeypatch.setattr(EconomicEvent, "usd_surprise_score", boom)
+    rows_after = svc.build_rows(dash, bt, event_title="CPI m/m")
+    assert rows_after == rows_before
+    assert svc.build_scoreboard(rows_after) == board_before
+    assert svc.build_chart(rows_after, "combined") == svc.build_chart(rows_before, "combined")

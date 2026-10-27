@@ -179,6 +179,70 @@ def test_relevance_magnitude_read_magnitude_keyerror_is_neutral(monkeypatch):
     assert result is None
 
 
+# --- B8 (2026-10-27): standardized surprise in the read-time recompute ------------------------------
+
+_CLAIMS_PRIORS = [("225K", "215K"), ("220K", "215K"), ("202K", "209K"), ("210K", "206K"), ("208K", "203K"), ("205K", "206K")]
+
+
+def _claims_history(conn, event_time, n_priors=6):
+    import datetime as dt
+    import webapp.store as store
+    for k, (forecast, actual) in enumerate(_CLAIMS_PRIORS[:n_priors], start=1):
+        when = event_time - dt.timedelta(days=7 * k)
+        store.insert_event_history_if_absent(conn, "Unemployment Claims", when, forecast, "210K", actual, None, "live", "Medium", "USD", when)
+    store.insert_event_history_if_absent(conn, "Unemployment Claims", event_time, "225K", "210K", "219K", "lower", "live", "Medium", "USD", event_time)
+
+
+def test_recompute_stale_pending_uses_sigma_when_conn_given(tmp_path):
+    import datetime as dt
+    import math
+    import pytest
+    import webapp.store as store
+    from webapp.predictions_service import _recompute_stale_pending
+    from webapp.symbols import classify_symbol, usd_sign
+
+    event_time = dt.datetime(2026, 10, 22, 12, 30, tzinfo=dt.timezone.utc)
+    conn = store.get_connection(tmp_path / "d.db")
+    _claims_history(conn, event_time)
+    event = {"title": "Unemployment Claims", "event_time_utc": event_time.isoformat(), "impact": "Medium"}
+    history = store.get_event_history(conn, "Unemployment Claims")
+    symbol_class = classify_symbol("XAUUSD")
+
+    without_conn = _recompute_stale_pending(event, symbol_class, history)
+    with_conn = _recompute_stale_pending(event, symbol_class, history, conn)
+    conn.close()
+
+    sign = usd_sign(symbol_class.usd_relationship)
+    assert without_conn.raw_score == pytest.approx(sign * 0.079830, abs=1e-6)      # today's percent method
+    z = -6000 / 5887.84
+    assert with_conn.raw_score == pytest.approx(sign * -math.tanh(z * 0.5), abs=1e-5)
+    assert with_conn.raw_score == pytest.approx(-0.469575, abs=1e-6)
+    assert with_conn.raw_score != without_conn.raw_score
+
+
+def test_build_predictions_payload_recompute_uses_sigma(tmp_path):
+    import datetime as dt
+    import math
+    import pytest
+    import webapp.store as store
+    import scoring.backtest_store as bs
+    from webapp.predictions_service import build_predictions_payload
+
+    event_time = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=1)).replace(microsecond=0)
+    conn = store.get_connection(tmp_path / "d.db")
+    bt = bs.get_connection(tmp_path / "bt.db")
+    store.add_tracked_symbol(conn, "XAUUSD")
+    _claims_history(conn, event_time)
+    payload = build_predictions_payload(conn, bt)
+    conn.close()
+    bt.close()
+
+    xau = next(p for p in payload["predictions"] if p["symbol"] == "XAUUSD")
+    claims = next(e for e in xau["events"] if e["event_title"] == "Unemployment Claims")
+    assert claims["recomputed_from_event_history"] is True
+    assert claims["probability"] == pytest.approx(0.5 + 0.5 * math.tanh(3.0 * -0.469575), abs=1e-5)
+
+
 if __name__ == "__main__":
     test_opposing_directional_calls_flagged_as_conflict()
     test_agreeing_directional_calls_are_not_a_conflict()

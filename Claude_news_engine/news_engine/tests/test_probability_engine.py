@@ -1325,6 +1325,44 @@ def test_same_incident_runs_before_redundancy_discount():
     print("PASS\n")
 
 
+def test_precursor_events_carry_prior_only_sigma():
+    print("=== B8: a precursor carries the sigma of its own PRIOR prints; below 6 priors it keeps today's percent score ===")
+    import math
+    from scoring.probability_engine import _build_precursor_contributions
+    # forecast 0.2% against these actuals -> surprises [0.1, -0.1, 0.0, 0.2, -0.1, 0.1], sigma 0.121106
+    prior_actuals = ["0.3%", "0.1%", "0.2%", "0.4%", "0.1%", "0.3%"]
+    precursor_time = EVENT_TIME - dt.timedelta(hours=5)
+
+    def build(n_priors):
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = webapp_store.get_connection(Path(tmp) / "test.db")
+            for k, actual in enumerate(prior_actuals[:n_priors], start=1):
+                when = dt.datetime(2026, 8 - k, 12, 12, 30, tzinfo=UTC_TZ)
+                webapp_store.insert_event_history_if_absent(
+                    conn, "PPI m/m", when, "0.2%", "0.1%", actual, None, "live", "Medium", "USD", when,
+                )
+            webapp_store.upsert_event_history(
+                conn,
+                EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=precursor_time, forecast="0.2%", actual="0.4%"),
+                surprise_direction="higher", now=precursor_time,
+            )
+            events = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
+            conn.close()
+        assert [e.title for e in events] == ["PPI m/m"]
+        return events[0], _build_precursor_contributions(events, EVENT_TIME, target_title="CPI m/m")[0]
+
+    event, contribution = build(6)
+    assert event.surprise_sigma == pytest.approx(0.121106, abs=1e-6)
+    z = 0.2 / event.surprise_sigma
+    assert contribution.usd_sentiment == pytest.approx(math.tanh(z * 0.5), abs=1e-9)
+    assert contribution.usd_sentiment == pytest.approx(0.678173, abs=1e-6)
+
+    event, contribution = build(5)
+    assert event.surprise_sigma is None
+    assert contribution.usd_sentiment == pytest.approx(math.tanh(1.0 * 3.0), abs=1e-9)   # (0.4 - 0.2) / 0.2, sensitivity 3
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_bundle_scores_a_real_symbol_never_in_config_settings_instruments()
     test_score_bundle_raises_for_a_genuinely_unrecognized_ticker()
@@ -1403,4 +1441,5 @@ if __name__ == "__main__":
     test_low_word_overlap_is_not_discounted()
     test_articles_without_entities_are_never_excluded()
     test_same_incident_runs_before_redundancy_discount()
+    test_precursor_events_carry_prior_only_sigma()
     print("All probability_engine tests passed.")

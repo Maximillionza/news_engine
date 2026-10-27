@@ -952,6 +952,20 @@ KALSHI_TRUST_WEIGHT = 0.95
 # constant in this file: needs real backtest data to calibrate.
 SURPRISE_SENSITIVITY = 3.0
 
+# B8 (2026-10-27) standardized surprise (scoring/surprise_scale.py): a USD
+# surprise is measured in units of that indicator's own typical miss — the
+# sample standard deviation of its last SURPRISE_SIGMA_MAX_HISTORY PRIOR
+# surprises (actual - forecast, USD rows strictly before the release) — so
+# NFP, CPI and claims land on one comparable scale. Below
+# MIN_PRIOR_SURPRISES_FOR_SIGMA priors, usd_surprise_score() keeps the
+# percent method above. The z is mapped with tanh(z * STANDARDIZED_SURPRISE_
+# SENSITIVITY) (1 sigma -> 0.46, 2 sigma -> 0.76, 3 sigma -> 0.91): untuned,
+# same caveat as SURPRISE_SENSITIVITY. Stats and classify_surprise() do not
+# use any of this.
+MIN_PRIOR_SURPRISES_FOR_SIGMA = 6
+SURPRISE_SIGMA_MAX_HISTORY = 24
+STANDARDIZED_SURPRISE_SENSITIVITY = 0.5
+
 # --- Sample-size-aware probability ceiling (R3, docs/fundamental-analysis-swot-2026-08-14.md) ---
 # BACKTEST_REPORT.md's own conclusion flagged this: several "correct"
 # calls only reached 1%/88%/98% probability from 2-3 signal-bearing

@@ -18,6 +18,7 @@ from config.settings import EVENT_SURPRISE_DIRECTION
 from data_layer.calendar_feed import EconomicEvent, classify_surprise, fetch_calendar, filter_relevant_events
 from data_layer.fred_actuals import get_actual_from_fred
 from ops.state import touch_heartbeat
+from scoring.surprise_scale import with_surprise_sigma
 from webapp.actuals_backfill import BACKFILL_BUDGET_SECONDS, start_backfill_thread
 from webapp.scoring_service import score_event_for_symbol
 from webapp.store import (
@@ -212,6 +213,13 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
                     conn, fred_event, classify_surprise(fred_event), now_for_history,
                     source="fred",
                 )
+
+    # B8 (2026-10-27): attach each event's standardized-surprise sigma (its
+    # title's PRIOR USD surprises only; the history rows just written above
+    # for this release are excluded by the strict "before" bound) so
+    # score_event_for_symbol() measures the miss in sigmas. Fails open per
+    # event to the percent method; fewer than 6 priors -> percent method too.
+    scoring_events = [with_surprise_sigma(conn, e) for e in scoring_events]
 
     try:
         for ticker in tracked_symbols:

@@ -724,3 +724,30 @@ def test_scheduler_cycle_survives_backfill_error():
             assert store.get_latest_two(conn, "XAUUSD", "Non-Farm Employment Change"), "scoring must still run"
             conn.close()
     print("PASS\n")
+
+
+def test_scoring_cycle_scores_with_sigma():
+    print("=== B8: the scoring cycle scores a release against the sigma of its own prior surprises ===")
+    import pytest
+    event_time = dt.datetime(2026, 10, 22, 12, 30, tzinfo=UTC_TZ)
+    claims = EconomicEvent(
+        title="Unemployment Claims", country="USD", impact="Medium",
+        event_time_utc=event_time, forecast="225K", previous="210K", actual="219K",
+    )
+    priors = [("225K", "215K"), ("220K", "215K"), ("202K", "209K"), ("210K", "206K"), ("208K", "203K"), ("205K", "206K")]
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        conn = store.get_connection(db_path)
+        for k, (forecast, actual) in enumerate(priors, start=1):
+            when = event_time - dt.timedelta(days=7 * k)
+            store.insert_event_history_if_absent(conn, "Unemployment Claims", when, forecast, "210K", actual, None, "live", "Medium", "USD", when)
+        with patch.object(scheduler, "fetch_calendar", return_value=[claims]), \
+             patch.object(scheduler, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
+             patch.object(scheduler, "start_backfill_thread"):
+            scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
+        runs = store.get_latest_two(conn, "XAUUSD", "Unemployment Claims")
+        conn.close()
+    assert len(runs) == 1
+    # USD +0.469575 (z-based) times XAUUSD's inverse sign; today's percent method would give -0.079830.
+    assert runs[0].raw_score == pytest.approx(-0.469575, abs=1e-6)
+    print("PASS\n")

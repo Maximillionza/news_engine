@@ -43,6 +43,7 @@ from config.settings import (
     LOCAL_TZ,
     POST_RELEASE_GRACE_MINUTES,
     PRE_EVENT_WINDOW_HOURS,
+    STANDARDIZED_SURPRISE_SENSITIVITY,
     SURPRISE_SENSITIVITY,
     UTC_TZ,
 )
@@ -147,6 +148,11 @@ class EconomicEvent:
     previous: Optional[str] = None
     actual: Optional[str] = None
     raw: dict = field(default_factory=dict, repr=False)
+    # B8 (2026-10-27): the sigma of this title's PRIOR USD surprises, attached
+    # by scoring/surprise_scale.with_surprise_sigma(); None = not enough
+    # history (or not attached), usd_surprise_score() then uses the percent
+    # method. Never serialized (_event_to_dict is unchanged).
+    surprise_sigma: Optional[float] = None
 
     @property
     def event_time_local(self) -> dt.datetime:
@@ -175,6 +181,15 @@ class EconomicEvent:
 
         B6 (2026-10-22): None for any non-USD row too -- a foreign print
         under a US title is not a USD surprise.
+
+        B8 (2026-10-27): standardized surprise. When surprise_sigma is a
+        positive number (scoring/surprise_scale.py: the sigma of this title's
+        prior USD surprises, >= MIN_PRIOR_SURPRISES_FOR_SIGMA of them), the
+        miss is measured in sigmas, z = (actual - forecast) / sigma, and
+        mapped with tanh(z * STANDARDIZED_SURPRISE_SENSITIVITY). Otherwise
+        (short history, sigma not attached) the percent method below is
+        unchanged. sigma > 0, so the sign of a surprise never flips; the
+        country/title/parse gates above apply to both branches.
         """
         if self.country != "USD":
             return None
@@ -186,6 +201,11 @@ class EconomicEvent:
         actual = _parse_numeric(self.actual)
         if forecast is None or actual is None:
             return None
+
+        sigma = self.surprise_sigma
+        if isinstance(sigma, (int, float)) and math.isfinite(sigma) and sigma > 0:
+            raw = math.tanh(((actual - forecast) / sigma) * STANDARDIZED_SURPRISE_SENSITIVITY)
+            return raw if direction == "higher_bullish" else -raw
 
         if abs(forecast) > 1e-9:
             pct_diff = (actual - forecast) / abs(forecast)

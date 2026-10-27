@@ -492,8 +492,15 @@ def get_precursor_events_for(
     `conn` is a webapp.store-shaped sqlite3.Connection (duck-typed — this
     module never imports webapp/ at module level, to avoid a cycle with
     webapp/ importing scoring/).
+
+    B8 (2026-10-27): each precursor carries surprise_sigma, computed from
+    that precursor title's own USD prints strictly before ITS release time
+    (scoring/surprise_scale.py), so its contribution uses the standardized
+    surprise; below 6 priors (or on any lookup error) it keeps the percent
+    method.
     """
     from webapp.store import get_event_history  # local import: avoid a module-level cycle with webapp/
+    from scoring.surprise_scale import with_surprise_sigma  # local import, same reason as above
 
     linked = EVENT_INFLUENCE_LINKS.get(target_title, [])
     if not linked:
@@ -520,17 +527,16 @@ def get_precursor_events_for(
         event_time = dt.datetime.fromisoformat(most_recent.event_time_utc)
         if not (window_start <= event_time < target_event_time_utc):
             continue
-        precursors.append(
-            EconomicEvent(
-                title=most_recent.event_title,
-                country="USD",
-                impact=most_recent.impact or "Medium",
-                event_time_utc=event_time,
-                forecast=most_recent.forecast,
-                previous=most_recent.previous,
-                actual=most_recent.actual,
-            )
+        precursor = EconomicEvent(
+            title=most_recent.event_title,
+            country="USD",
+            impact=most_recent.impact or "Medium",
+            event_time_utc=event_time,
+            forecast=most_recent.forecast,
+            previous=most_recent.previous,
+            actual=most_recent.actual,
         )
+        precursors.append(with_surprise_sigma(conn, precursor))
     return precursors
 
 

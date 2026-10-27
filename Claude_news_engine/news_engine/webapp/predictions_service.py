@@ -19,6 +19,7 @@ from typing import Optional
 
 from config.settings import EVENT_SURPRISE_DIRECTION, PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS
 from data_layer.calendar_feed import EconomicEvent, IMPACT_RANK
+from scoring.surprise_scale import with_surprise_sigma
 from webapp.scoring_service import score_event_for_symbol
 from webapp.store import (
     list_tracked_symbols, get_calendar_snapshot, get_event_history_bulk,
@@ -163,6 +164,7 @@ def _trend_instrument_lean(event_title: str, trend_direction: str, usd_relations
 
 def _recompute_stale_pending(
     event: dict, symbol_class, history_rows: list[EventHistoryRow],
+    conn: Optional[sqlite3.Connection] = None,
 ):
     """
     R1 fix (docs/fundamental-analysis-swot-2026-08-14.md): webapp/store.py's
@@ -187,6 +189,11 @@ def _recompute_stale_pending(
     itself still comes back pending/inapplicable (e.g. the title has no
     EVENT_SURPRISE_DIRECTION entry). The caller then falls through to the
     existing "pending" display, unchanged.
+
+    B8 (2026-10-27): when `conn` is given, the recompute attaches the
+    standardized-surprise sigma (scoring/surprise_scale.py, prior USD rows
+    only) so it scores exactly as the scheduler does; without `conn` (or
+    below 6 priors, or on a lookup error) it uses the percent method.
     """
     match = next(
         (r for r in history_rows if r.event_time_utc == event["event_time_utc"] and r.actual is not None),
@@ -199,6 +206,8 @@ def _recompute_stale_pending(
         event_time_utc=dt.datetime.fromisoformat(event["event_time_utc"]),
         forecast=match.forecast, previous=match.previous, actual=match.actual,
     )
+    if conn is not None:
+        enriched_event = with_surprise_sigma(conn, enriched_event)
     result = score_event_for_symbol(enriched_event, symbol_class)
     if not result.applicable or result.pending:
         return None
@@ -321,7 +330,7 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
             prior_occurrences = event_history_by_title.get(event["title"], [])
             recomputed = None
             if latest is None or latest.direction == "pending":
-                recomputed = _recompute_stale_pending(event, symbol_class, prior_occurrences)
+                recomputed = _recompute_stale_pending(event, symbol_class, prior_occurrences, conn)
 
             # The accumulator's own blind, article-based call — direction
             # and probability, not just how many articles backed it. This

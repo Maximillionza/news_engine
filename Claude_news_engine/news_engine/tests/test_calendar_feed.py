@@ -9,9 +9,12 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import datetime as dt
+import math
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from data_layer.calendar_feed import (
     EconomicEvent,
@@ -251,6 +254,38 @@ def test_audit_probe3_handles_no_surprise():
     print("PASS\n")
 
 
+def test_non_usd_event_never_scored_even_with_sigma():
+    print("=== B8: a non-USD row is never scored, even when a sigma is attached ===")
+    t = dt.datetime(2026, 10, 14, 12, 30, tzinfo=UTC_TZ)
+    eur = EconomicEvent("CPI m/m", "EUR", "High", t, forecast="0.2%", actual="0.4%", surprise_sigma=0.12)
+    assert eur.usd_surprise_score() is None
+    print("PASS\n")
+
+
+def test_sigma_keeps_sign_and_direction_map():
+    print("=== B8: the z branch keeps the surprise's sign and the higher_bearish mapping ===")
+    t = dt.datetime(2026, 10, 2, 12, 30, tzinfo=UTC_TZ)
+    above = EconomicEvent("Unemployment Rate", "USD", "High", t, forecast="4.3%", actual="4.5%", surprise_sigma=0.1)
+    below = EconomicEvent("Unemployment Rate", "USD", "High", t, forecast="4.3%", actual="4.1%", surprise_sigma=0.1)
+    # z = +-0.2 / 0.1 = +-2 -> tanh(2 * 0.5); higher unemployment is USD-bearish.
+    assert above.usd_surprise_score() == pytest.approx(-math.tanh(1.0), abs=1e-9)
+    assert below.usd_surprise_score() == pytest.approx(math.tanh(1.0), abs=1e-9)
+    hot_cpi = EconomicEvent("CPI m/m", "USD", "High", t, forecast="0.3%", actual="0.4%", surprise_sigma=0.1)
+    assert hot_cpi.usd_surprise_score() == pytest.approx(math.tanh(0.5), abs=1e-9)
+    print("PASS\n")
+
+
+def test_zero_or_none_sigma_uses_percent_method():
+    print("=== B8: a missing, zero or negative sigma falls back to today's percent method ===")
+    t = dt.datetime(2026, 10, 14, 12, 30, tzinfo=UTC_TZ)
+    baseline = EconomicEvent("CPI m/m", "USD", "High", t, forecast="0.3%", actual="0.5%").usd_surprise_score()
+    assert baseline == pytest.approx(0.964028, abs=1e-6)
+    for sigma in (None, 0.0, -0.1, float("nan")):
+        event = EconomicEvent("CPI m/m", "USD", "High", t, forecast="0.3%", actual="0.5%", surprise_sigma=sigma)
+        assert event.usd_surprise_score() == baseline, sigma
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_lastweek_rejected_with_informative_error()
     test_nextweek_rejected_with_informative_error()
@@ -272,4 +307,7 @@ if __name__ == "__main__":
     test_events_in_pre_window_excludes_an_event_past_the_post_release_grace_period()
     test_non_usd_row_has_no_surprise()
     test_audit_probe3_handles_no_surprise()
+    test_non_usd_event_never_scored_even_with_sigma()
+    test_sigma_keeps_sign_and_direction_map()
+    test_zero_or_none_sigma_uses_percent_method()
     print("All calendar_feed tests passed.")
