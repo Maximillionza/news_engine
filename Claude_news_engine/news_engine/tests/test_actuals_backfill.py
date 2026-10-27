@@ -166,6 +166,126 @@ def test_backfill_fetch_error_skips_title_not_run(tmp_path, monkeypatch):
     assert any("FRED" in r for r in report.skip_reasons)
 
 
+UNRATE_TIME = dt.datetime(2026, 10, 2, 12, 30, tzinfo=UTC)     # sorts before JOLTS_TIME
+
+
+def _two_title_fake():
+    """UNRATE (attempted first: earlier row) and JOLTS, both fillable."""
+    return FakeRequests(
+        initial={"UNRATE": [_init_obs(D(2026, 9, 1), D(2026, 10, 2))],
+                 "JTSJOL": [_init_obs(D(2026, 8, 1), D(2026, 10, 7))]},
+        vintages={("UNRATE", "2026-10-02"): {D(2026, 8, 1): 4.2, D(2026, 9, 1): 4.3},
+                  ("JTSJOL", "2026-10-07"): {D(2026, 7, 1): 7230.0, D(2026, 8, 1): 7400.0}},
+    )
+
+
+def _two_title_rows(conn):
+    _row(conn, title="Unemployment Rate", when=UNRATE_TIME, forecast="4.0%", previous="4.2%", impact="High")
+    _row(conn)
+
+
+def test_backfill_aborts_pass_on_first_transport_error(tmp_path, monkeypatch, capsys):
+    # FRED unreachable: one timeout, not one 20 s timeout per title.
+    class Down(FakeRequests):
+        def get(self, url, params=None, timeout=None):
+            self.calls.append(dict(params))
+            raise TimeoutError("read timed out")
+
+    conn = _db(tmp_path)
+    _two_title_rows(conn)
+    fake = Down()
+    report = ab.backfill_missing_actuals(conn, _client(fake, monkeypatch), NOW)
+    assert len(fake.calls) == 1                       # second title never requested
+    assert report.written == 0 and report.skipped == 2
+    assert len(report.skip_reasons) == 2 and all("aborted" in r for r in report.skip_reasons)
+    assert "FRED unreachable" in capsys.readouterr().out
+
+
+def test_backfill_http_error_still_only_skips_that_title(tmp_path, monkeypatch):
+    # An HTTP error is title-specific (FRED answered), so the pass carries on.
+    class FirstFails(FakeRequests):
+        def get(self, url, params=None, timeout=None):
+            if params["series_id"] == "UNRATE":
+                self.calls.append(dict(params))
+                return FakeResp(status=500, text="boom")
+            return super().get(url, params, timeout)
+
+    conn = _db(tmp_path)
+    _two_title_rows(conn)
+    base = _two_title_fake()
+    fake = FirstFails(initial=base.initial, vintages=base.vintages)
+    report = ab.backfill_missing_actuals(conn, _client(fake, monkeypatch), NOW)
+    assert report.written == 1 and report.skipped == 1
+
+
+def test_backfill_stops_at_wall_clock_budget(tmp_path, monkeypatch, capsys):
+    conn = _db(tmp_path)
+    _two_title_rows(conn)
+    fake = _two_title_fake()
+    ticks = iter([0.0, 0.0, 301.0])                    # start, before title 1, before title 2
+    report = ab.backfill_missing_actuals(conn, _client(fake, monkeypatch), NOW,
+                                         budget_seconds=300, clock=lambda: next(ticks))
+    assert report.written == 1 and report.skipped == 1
+    assert {c["series_id"] for c in fake.calls} == {"UNRATE"}     # JOLTS never requested
+    assert any("budget" in r for r in report.skip_reasons)
+    assert "budget used" in capsys.readouterr().out
+    actuals = dict(conn.execute("SELECT event_title, actual FROM event_history").fetchall())
+    assert actuals == {"Unemployment Rate": "4.3%", "JOLTS Job Openings": None}
+
+
+def test_start_backfill_thread_never_blocks_and_never_overlaps(tmp_path, monkeypatch):
+    import threading
+    import time
+
+    started, release = threading.Event(), threading.Event()
+    passes = []
+
+    def slow_pass(conn, client, now, **kwargs):
+        passes.append(now)
+        started.set()
+        release.wait(30)                                 # a hanging FRED pass
+        return ab.FillReport()
+
+    monkeypatch.setattr(ab, "backfill_missing_actuals", slow_pass)
+    factory = lambda: fh.FredClient("K", pace_seconds=0)
+    db_path = tmp_path / "d.db"
+    _db(tmp_path).close()
+
+    t0 = time.monotonic()
+    thread = ab.start_backfill_thread(db_path, NOW, client_factory=factory)
+    try:
+        assert thread is not None
+        assert time.monotonic() - t0 < 2.0               # returned while the pass is still running
+        assert started.wait(5) and thread.is_alive()
+        # Hours later but the first pass is still running: nothing new starts.
+        assert ab.start_backfill_thread(db_path, NOW + dt.timedelta(hours=2), client_factory=factory) is None
+    finally:
+        release.set()                                    # never leave the lock held for later tests
+    thread.join(5)
+    assert not thread.is_alive() and len(passes) == 1
+    # Throttled within the hour; free again (lock released) after it.
+    assert ab.start_backfill_thread(db_path, NOW + dt.timedelta(minutes=30), client_factory=factory) is None
+    later = ab.start_backfill_thread(db_path, NOW + dt.timedelta(hours=3), client_factory=factory)
+    assert later is not None
+    later.join(5)
+    assert len(passes) == 2
+
+
+def test_start_backfill_thread_keyless_starts_nothing(tmp_path):
+    assert ab.start_backfill_thread(tmp_path / "d.db", NOW, client_factory=lambda: None) is None
+    assert ab._last_run_utc is None
+
+
+def test_start_backfill_thread_fills_via_own_connection(tmp_path, monkeypatch):
+    conn = _db(tmp_path)
+    _row(conn)
+    fake = _jolts_fake()
+    monkeypatch.setattr(fh, "requests", fake)
+    thread = ab.start_backfill_thread(tmp_path / "d.db", NOW, client_factory=lambda: fh.FredClient("K", pace_seconds=0))
+    thread.join(10)
+    assert conn.execute("SELECT actual FROM event_history").fetchone()[0] == "7.40M"
+
+
 def test_maybe_backfill_never_raises(tmp_path, monkeypatch):
     conn = _db(tmp_path)
     monkeypatch.setattr(ab, "backfill_missing_actuals", lambda *a, **k: (_ for _ in ()).throw(ValueError("boom")))

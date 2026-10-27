@@ -621,10 +621,92 @@ def test_scheduler_backfill_runs_after_scoring():
         with patch.object(scheduler, "fetch_calendar", return_value=_fake_events()), \
              patch.object(scheduler, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
              patch.object(scheduler, "record_run", side_effect=spy_record_run), \
-             patch.object(scheduler, "maybe_backfill", side_effect=spy_backfill):
+             patch.object(scheduler, "start_backfill_thread", side_effect=spy_backfill):
             scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
         assert "record_run" in order and "backfill" in order
         assert order.index("record_run") < order.index("backfill"), order
+    print("PASS\n")
+
+
+def _events_at(offset: dt.timedelta, actual=None):
+    return [
+        EconomicEvent(
+            title="Non-Farm Employment Change", country="USD", impact="High",
+            event_time_utc=dt.datetime.now(UTC_TZ) + offset, forecast="75K", actual=actual,
+        )
+    ]
+
+
+def test_release_window_near_bounds():
+    now = dt.datetime(2026, 10, 27, 12, 0, tzinfo=UTC_TZ)
+
+    def near(offset, actual=None):
+        event = EconomicEvent("Non-Farm Employment Change", "USD", "High", now + offset, forecast="75K", actual=actual)
+        return scheduler.release_window_near([event], now)
+
+    budget = dt.timedelta(seconds=scheduler.BACKFILL_BUDGET_SECONDS)
+    assert near(dt.timedelta(minutes=30))                                  # FINAL window
+    assert near(dt.timedelta(hours=1) + budget)                            # a pass started now would overrun into FINAL
+    assert not near(dt.timedelta(hours=1) + budget + dt.timedelta(seconds=1))
+    assert near(-dt.timedelta(minutes=scheduler.POST_RELEASE_GRACE_MINUTES))  # post-release grace cycles
+    assert not near(-dt.timedelta(minutes=scheduler.POST_RELEASE_GRACE_MINUTES + 1))
+    assert not near(dt.timedelta(minutes=30), actual="44K")                # resolved: nothing to protect
+    assert not scheduler.release_window_near([], now) and not scheduler.release_window_near(None, now)
+
+
+def test_scheduler_backfill_not_started_near_release():
+    print("=== scheduler: actuals backfill is not started inside a release window ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        for offset, expect_start in ((dt.timedelta(minutes=4), False), (dt.timedelta(hours=3), True)):
+            with patch.object(scheduler, "fetch_calendar", return_value=_events_at(offset)), \
+                 patch.object(scheduler, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
+                 patch.object(scheduler, "start_backfill_thread") as start:
+                scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
+            assert start.called is expect_start, (offset, start.called)
+    print("PASS\n")
+
+
+def test_scheduler_cycle_not_blocked_by_hanging_backfill():
+    print("=== scheduler: a hanging FRED backfill never delays the scoring cycle ===")
+    import threading
+    import time
+    import webapp.actuals_backfill as ab
+    from data_layer.fred_history import FredClient
+
+    started, release = threading.Event(), threading.Event()
+    threads = []
+
+    def hanging_pass(conn, client, now, **kwargs):
+        started.set()
+        release.wait(30)
+        return ab.FillReport()
+
+    def spy_start(*a, **k):
+        thread = ab.start_backfill_thread(*a, **k)
+        threads.append(thread)
+        return thread
+
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        try:
+            with patch.object(scheduler, "fetch_calendar", return_value=_fake_events()), \
+                 patch.object(scheduler, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
+                 patch.object(scheduler, "start_backfill_thread", side_effect=spy_start), \
+                 patch.object(ab, "default_client", return_value=FredClient("K", pace_seconds=0)), \
+                 patch.object(ab, "backfill_missing_actuals", side_effect=hanging_pass):
+                t0 = time.monotonic()
+                events = scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
+                elapsed = time.monotonic() - t0
+                assert started.wait(5), "the backfill pass should have started"
+                assert threads and threads[0] is not None and threads[0].is_alive()
+            assert [e.title for e in events] == ["Non-Farm Employment Change"]
+            assert elapsed < 5.0, f"cycle waited on the backfill ({elapsed:.1f}s)"
+        finally:
+            release.set()
+            for thread in threads:
+                if thread is not None:
+                    thread.join(5)
     print("PASS\n")
 
 
@@ -634,7 +716,7 @@ def test_scheduler_cycle_survives_backfill_error():
         db_path = Path(tmp) / "test.db"
         with patch.object(scheduler, "fetch_calendar", return_value=_fake_events()), \
              patch.object(scheduler, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
-             patch.object(scheduler, "maybe_backfill", side_effect=RuntimeError("boom")):
+             patch.object(scheduler, "start_backfill_thread", side_effect=RuntimeError("boom")):
             events = scheduler.run_scoring_cycle(["XAUUSD"], db_path=db_path)
             assert [e.title for e in events] == ["Non-Farm Employment Change"]
             conn = store.get_connection(db_path)

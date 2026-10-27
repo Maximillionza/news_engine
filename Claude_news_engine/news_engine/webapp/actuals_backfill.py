@@ -13,18 +13,27 @@ FRED reading's previous period (revised or first print) - that is the check
 that the right series and units are being read. Non-USD / NULL-country rows
 are never touched. Forecast/previous/impact are never modified.
 
-Called from webapp/scheduler.py after the calendar loop, throttled to once an
-hour; never raises (the scheduler cycle must survive any FRED trouble).
+Timing: webapp/scheduler.py starts it via start_backfill_thread() on its own
+daemon thread and DB connection, so a slow or hanging FRED pass never delays
+the next scheduler cycle (the release / post-release cycles record the essence
+call). The scheduler additionally never starts a pass near a release window.
+A pass stops on the first transport-level failure (FRED unreachable: no point
+waiting out the request timeout once per title) and after
+BACKFILL_BUDGET_SECONDS of wall-clock time. Throttled to once an hour; never
+raises.
 """
 from __future__ import annotations
 
 import datetime as dt
+import threading
+import time
+from pathlib import Path
 from typing import Callable, Optional
 
 from config.settings import FRED_API_KEY, NY_TZ
 from data_layer.calendar_feed import EconomicEvent, classify_surprise
 from data_layer.fred_history import (
-    FRED_HISTORY_SPECS, FredClient, FredFetchError, FredMaintenanceError, VintageReading,
+    FRED_HISTORY_SPECS, FredClient, FredFetchError, FredMaintenanceError, FredTransportError, VintageReading,
     previous_check, releases_between,
 )
 from scripts.fill_missing_actuals import FillReport
@@ -32,12 +41,18 @@ import webapp.store as store
 
 BACKFILL_INTERVAL_SECONDS = 3600
 BACKFILL_LOOKBACK_DAYS = 45
+# Hard wall-clock cap on one pass (checked between titles). A healthy pass over
+# ~28 titles at the request pace below takes ~1-2 min; titles not reached are
+# simply retried next hour.
+BACKFILL_BUDGET_SECONDS = 300
 # FF can list a release a day or two off the FRED vintage date (same window as reading_for_event_date).
 _MAX_LAG_DAYS = 3
 _MIN_AGE = dt.timedelta(hours=1)          # leave the same-day fast path / FF a chance first
-_PACE_SECONDS = 0.6                       # FRED allows 120 requests/min; this runs in the scheduler thread
+_PACE_SECONDS = 0.6                       # FRED allows 120 requests/min
 
 _last_run_utc: Optional[dt.datetime] = None
+# Held for the whole life of a background pass, so passes can never overlap.
+_run_lock = threading.Lock()
 
 
 def default_client() -> Optional[FredClient]:
@@ -54,8 +69,16 @@ def _reading_for(readings: list[VintageReading], event_date: dt.date) -> Optiona
     return None
 
 
+def _skip_remaining(report: FillReport, pending: list[tuple[str, list]], reason: str) -> None:
+    """Counts every row of the titles not yet attempted as skipped, with one reason per title."""
+    for title, title_rows in pending:
+        report.skipped += len(title_rows)
+        report.skip_reasons.append(f"{title}: {reason}")
+
+
 def backfill_missing_actuals(
     conn, client: FredClient, now: dt.datetime, lookback_days: int = BACKFILL_LOOKBACK_DAYS,
+    budget_seconds: float = BACKFILL_BUDGET_SECONDS, clock: Callable[[], float] = time.monotonic,
 ) -> FillReport:
     report = FillReport()
     titles = list(FRED_HISTORY_SPECS)
@@ -71,13 +94,24 @@ def backfill_missing_actuals(
     for row in rows:
         by_title.setdefault(row["event_title"], []).append(row)
 
-    for title, title_rows in by_title.items():
+    started = clock()
+    work = list(by_title.items())
+    for index, (title, title_rows) in enumerate(work):
+        if clock() - started >= budget_seconds:
+            print(f"[actuals_backfill] {budget_seconds:.0f}s budget used, {len(work) - index} titles left for next pass")
+            _skip_remaining(report, work[index:], "wall-clock budget exhausted, retried next pass")
+            return report
         dates = [dt.datetime.fromisoformat(r["event_time_utc"]).astimezone(NY_TZ).date() for r in title_rows]
         try:
             # One range query per title (cached vintages) instead of one lookup per row.
             readings = releases_between(client, title, min(dates), max(dates) + dt.timedelta(days=_MAX_LAG_DAYS))
         except FredMaintenanceError:
             print("[actuals_backfill] FRED under maintenance, backfill skipped")
+            return report
+        except FredTransportError as exc:
+            # FRED unreachable: every further title would just wait out the same timeout.
+            print(f"[actuals_backfill] FRED unreachable, pass aborted: {exc}")
+            _skip_remaining(report, work[index:], f"pass aborted, {exc}")
             return report
         except FredFetchError as exc:
             report.skipped += len(title_rows)
@@ -104,12 +138,16 @@ def backfill_missing_actuals(
     return report
 
 
+def _throttled(now: dt.datetime) -> bool:
+    return _last_run_utc is not None and (now - _last_run_utc).total_seconds() < BACKFILL_INTERVAL_SECONDS
+
+
 def maybe_backfill(
     conn, now: dt.datetime, client_factory: Callable[[], Optional[FredClient]] = default_client,
 ) -> Optional[FillReport]:
-    """Runs at most once per BACKFILL_INTERVAL_SECONDS; None when throttled, keyless, or on any error."""
+    """Synchronous pass. Runs at most once per BACKFILL_INTERVAL_SECONDS; None when throttled, keyless, or on any error."""
     global _last_run_utc
-    if _last_run_utc is not None and (now - _last_run_utc).total_seconds() < BACKFILL_INTERVAL_SECONDS:
+    if _throttled(now):
         return None
     try:
         client = client_factory()
@@ -120,3 +158,49 @@ def maybe_backfill(
     except Exception as exc:  # noqa: BLE001 - the scheduler cycle must never be broken by the backfill
         print(f"[actuals_backfill] WARNING: backfill failed: {type(exc).__name__}")
         return None
+
+
+def start_backfill_thread(
+    db_path: Optional[Path], now: dt.datetime,
+    client_factory: Optional[Callable[[], Optional[FredClient]]] = None,
+) -> Optional[threading.Thread]:
+    """
+    Non-blocking: runs maybe_backfill on a daemon thread with its own DB
+    connection and returns that thread, or None (nothing started) when
+    throttled, keyless, a previous pass is still running, or on any error.
+    The throttle and key checks happen here, so an idle hour costs no thread.
+    """
+    try:
+        if _throttled(now):
+            return None
+        client = (client_factory or default_client)()   # resolved at call time so tests can patch default_client
+        if client is None:
+            return None                       # no key: don't start the hourly gate
+        if not _run_lock.acquire(blocking=False):
+            return None                       # a pass is still running; never overlap two
+    except Exception as exc:  # noqa: BLE001
+        print(f"[actuals_backfill] WARNING: backfill not started: {type(exc).__name__}")
+        return None
+
+    def _worker() -> None:
+        try:
+            conn = store.get_connection(db_path)
+            try:
+                report = maybe_backfill(conn, now, lambda: client)
+            finally:
+                conn.close()
+            if report is not None and report.written > 0:
+                print(f"[actuals_backfill] filled {report.written}")
+        except Exception as exc:  # noqa: BLE001 - a background pass must die quietly
+            print(f"[actuals_backfill] WARNING: backfill error: {type(exc).__name__}")
+        finally:
+            _run_lock.release()
+
+    thread = threading.Thread(target=_worker, name="actuals-backfill", daemon=True)
+    try:
+        thread.start()
+    except Exception as exc:  # noqa: BLE001
+        _run_lock.release()
+        print(f"[actuals_backfill] WARNING: backfill thread not started: {type(exc).__name__}")
+        return None
+    return thread

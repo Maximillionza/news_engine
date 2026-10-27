@@ -18,7 +18,7 @@ from config.settings import EVENT_SURPRISE_DIRECTION
 from data_layer.calendar_feed import EconomicEvent, classify_surprise, fetch_calendar, filter_relevant_events
 from data_layer.fred_actuals import get_actual_from_fred
 from ops.state import touch_heartbeat
-from webapp.actuals_backfill import maybe_backfill
+from webapp.actuals_backfill import BACKFILL_BUDGET_SECONDS, start_backfill_thread
 from webapp.scoring_service import score_event_for_symbol
 from webapp.store import (
     get_connection, record_run, get_latest_two, save_calendar_snapshot_if_changed, upsert_event_history,
@@ -101,6 +101,24 @@ def compute_adaptive_interval_seconds(
         if hours_until <= RAMP_WINDOW_HOURS:
             tightest = min(tightest, RAMP_INTERVAL_SECONDS)
     return tightest
+
+
+def release_window_near(events: Optional[list[EconomicEvent]], now: dt.datetime) -> bool:
+    """
+    True while any unresolved scoring event is inside its FINAL-cadence window
+    (from the post-release grace period up to FINAL_WINDOW_HOURS ahead), widened
+    by BACKFILL_BUDGET_SECONDS so a background backfill pass started now has
+    finished before that window opens. The B8 actuals backfill is not started
+    while this holds.
+    """
+    horizon_seconds = FINAL_WINDOW_HOURS * 3600 + BACKFILL_BUDGET_SECONDS
+    for event in events or []:
+        if event.actual:
+            continue  # resolved: no release cycle left to protect
+        seconds_until = (event.event_time_utc - now).total_seconds()
+        if -POST_RELEASE_GRACE_MINUTES * 60 <= seconds_until <= horizon_seconds:
+            return True
+    return False
 
 
 def _scores_equal(prob_a: Optional[float], dir_a: str, prob_b: Optional[float], dir_b: str) -> bool:
@@ -241,12 +259,15 @@ def run_scoring_cycle(tracked_symbols: list[str], db_path: Optional[Path] = None
 
         # B8 (2026-10-27): hourly FRED/ALFRED backfill of Medium/Low (and any other
         # mapped) USD rows whose actual FF never supplies. Self-throttled and
-        # fail-open: an error here must never cost the scoring cycle. Runs AFTER
-        # scoring so a slow FRED pass (~1-2 min) never delays record_run().
+        # fail-open: an error here must never cost the scoring cycle. It runs on
+        # its own daemon thread + connection (this call returns at once), so a
+        # slow or hanging FRED pass can never push back the next cycle; and it
+        # is not even started near a release window, so it never competes with
+        # the same-day FRED fast path for FRED's rate limit or with the release
+        # cycle for the DB write lock. Skipping does not start the hourly gate.
         try:
-            backfill_report = maybe_backfill(conn, now_for_history)
-            if backfill_report is not None and backfill_report.written > 0:
-                print(f"[actuals_backfill] filled {backfill_report.written}")
+            if not release_window_near(scoring_events, now_for_history):
+                start_backfill_thread(db_path, now_for_history)
         except Exception as exc:  # noqa: BLE001
             print(f"[actuals_backfill] WARNING: backfill error, continuing: {type(exc).__name__}")
     finally:

@@ -48,6 +48,12 @@ class FredFetchError(RuntimeError):
     """Any other FRED failure: HTTP error, network error, unparseable body."""
 
 
+class FredTransportError(FredFetchError):
+    """The request never got an HTTP answer (timeout, connection error). FRED as a
+    whole is unreachable, so a multi-title pass should stop rather than wait out
+    the timeout once per title."""
+
+
 @dataclass(frozen=True)
 class FredSeriesSpec:
     series_id: str
@@ -137,7 +143,7 @@ class FredClient:
         try:
             resp = requests.get(f"{FRED_BASE_URL}/series/observations", params=full, timeout=_REQUEST_TIMEOUT_SECONDS)
         except Exception as exc:  # noqa: BLE001 — message carries only the class name: a requests error embeds the URL (and key)
-            raise FredFetchError(f"FRED request failed for {params.get('series_id')}: {type(exc).__name__}") from None
+            raise FredTransportError(f"FRED request failed for {params.get('series_id')}: {type(exc).__name__}") from None
         # Maintenance HTML arrives as HTTP 200, so test for it BEFORE the status check.
         if is_maintenance_page(getattr(resp, "text", "")):
             raise FredMaintenanceError("FRED is under maintenance")
