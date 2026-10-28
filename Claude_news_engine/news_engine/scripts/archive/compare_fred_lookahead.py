@@ -15,7 +15,7 @@ disagreement is worth a human look — see LookaheadComparisonRow's
 docstring in data_layer/fred_calendar_feed.py for what each status means.
 
 Usage:
-    python scripts/compare_fred_lookahead.py [--days N]
+    python scripts/archive/compare_fred_lookahead.py [--days N]
 
 Requires FRED_API_KEY set in the environment (see .env.example) — prints
 a clear message and exits if it's missing, same fail-open contract as

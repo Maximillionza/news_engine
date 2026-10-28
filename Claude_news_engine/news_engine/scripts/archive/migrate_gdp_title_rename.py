@@ -14,7 +14,7 @@ Safe to run more than once (each UPDATE is a no-op the second time, since
 no row will still have the old title after the first run).
 
 Usage:
-    python scripts/migrate_gdp_title_rename.py
+    python scripts/archive/migrate_gdp_title_rename.py
 """
 import sys
 import os

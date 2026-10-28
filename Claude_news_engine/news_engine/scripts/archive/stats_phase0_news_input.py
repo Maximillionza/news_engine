@@ -1,4 +1,4 @@
-# scripts/stats_phase0_news_input.py
+# scripts/archive/stats_phase0_news_input.py
 """Phase 0: how often does each news signal take a side? Read-only. Run by hand."""
 from __future__ import annotations
 

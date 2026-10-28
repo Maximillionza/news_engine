@@ -15,6 +15,7 @@ cd C:/Users/Masoodt/Documents/Claude/Projects/.worktrees/news-engine-live/Claude
 - The Shock Alerts tab gains lean verdicts, lag, hit rates (per incident and overall, each with n) and a date range.
 - Twelve one-off scripts move to `scripts/archive/`; the minute-bar helpers move to `data_layer/minute_bars.py`. The reaction job's output is unchanged.
 - No scheduled-task, Telegram or scoring change.
+- The weekly `NewsEngine_ShockRealityCheck` job now exits 1 when a Dukascopy bar fetch fails (nothing is written for that symbol; it is retried next week). After 9 days with no success the health item turns red and can appear in the existing daily health notice (no new Telegram message type).
 
 ## 2. Backup
 
@@ -61,7 +62,9 @@ python scripts/backfill_shock_grades.py --alerts-db alerting/shock_alerts.db --b
 
 Record the per-anchor verdict counts and the detection-anchored hit rate, and compare them with the build-time expectation below.
 
-Expected at deploy (build-time dry run): not recorded. The build session was not permitted to run the live read-only dry run, so the controller runs it here and pastes the counts and the `overall 5-minute detection-anchored hit rate` line into this section. Starting point before B10: 14 of 26 leans correct at 5 minutes; medium alerts had never been graded.
+Expected at deploy (build-time dry run): not recorded. The build session was not permitted to run the live read-only dry run, so the controller runs it here and pastes the counts and the `overall 5-minute detection-anchored hit rate` line into this section. Starting point before B10: 14 of 26 leans correct at 5 minutes; medium alerts had never been graded. The new overall 5-minute detection-anchored hit rate will differ from the old "14 of 26": the old figure counted High alerts only, used the fixed $10 / 150-point thresholds and the detection anchor only, while the new one covers every severity and both symbols and uses that hour's 75th-percentile baseline (far below $10 on gold in most hours), so n grows and fewer cells read `no_move`.
+
+Live dry-run counts (controller, at deploy): ...
 
 Then apply:
 
@@ -71,7 +74,7 @@ python scripts/backfill_shock_grades.py --apply --alerts-db alerting/shock_alert
 
 Record `written` and the detection-anchored figure next to "14 of 26". Rerun the same `--apply` command: it must print `graded 0`.
 
-Acceptance query. It must return only alerts that the apply output lists as pending (bars not yet available, for example weekend alerts):
+Acceptance query. It should return 0, except for alerts detected within about 15 minutes before the apply or after the bar feed's last bar (their bars are not yet available). Each such alert contributes up to 4 to the apply output's `pending` count, because `pending` counts cells (2 symbols x 2 anchors per alert) while this query counts alerts:
 
 ```
 python -c "import sqlite3; print(sqlite3.connect('file:alerting/shock_alerts.db?mode=ro', uri=True).execute('SELECT COUNT(*) FROM shock_alerts a WHERE (SELECT COUNT(*) FROM shock_alert_grades g WHERE g.alert_id = a.id) < 4').fetchone())"

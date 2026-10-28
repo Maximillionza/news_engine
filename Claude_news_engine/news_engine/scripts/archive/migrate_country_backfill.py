@@ -24,7 +24,7 @@ Safe to re-run: only ever sets country when it is currently NULL, and only
 for the three guaranteed-USD sources.
 
 Usage:
-    python scripts/migrate_country_backfill.py
+    python scripts/archive/migrate_country_backfill.py
 """
 import sys
 import os

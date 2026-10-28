@@ -77,7 +77,7 @@ test("empty table says nothing is graded", () => {
 });
 
 test("summary shows overall, per symbol and per incident hit rates", () => {
-  const counts = { ...EMPTY, n: 3, right: 2, wrong: 1, hit_rate: 0.6667 };
+  const counts = { ...EMPTY, n: 3, right: 2, wrong: 1, hit_rate: 0.6667, no_move: 2, no_lean: 1, no_data: 4, no_baseline: 5 };
   const summary = {
     window_minutes: 5,
     symbols: ["XAUUSD"],
@@ -93,6 +93,10 @@ test("summary shows overall, per symbol and per incident hit rates", () => {
   assert.ok(html.includes("Incident #12"));
   assert.ok(html.includes("(2 of 3)"));
   assert.ok(html.includes("66.7%"));
+  // Excluded verdicts are shown per incident for both anchors (counts is used for detected, EMPTY for published).
+  const incidentRow = html.slice(html.indexOf("Incident #12"));
+  assert.ok(incidentRow.includes("2 of 3) · no move 2 · no lean 1 · no data 4 · no baseline 5"));
+  assert.ok(incidentRow.includes("n/a (0 of 0) · no move 0 · no lean 0 · no data 0 · no baseline 0"));
   assert.ok(html.includes("Hormuz &lt;closed&gt;"));
   assert.ok(html.includes("4"));
   assert.ok(html.includes("not graded yet"));

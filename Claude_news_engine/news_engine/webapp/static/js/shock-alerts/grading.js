@@ -108,8 +108,8 @@ export function summaryHtml(summary) {
     `<tr><th colspan="2">${escapeHtml(s)}</th></tr>${anchorRows(summary.by_symbol[s])}`).join("");
   const incidents = (summary.incidents || []).map((i) =>
     `<tr><td>Incident #${escapeHtml(i.incident_id)}</td><td>${escapeHtml(i.headline)}</td>`
-    + `<td>${escapeHtml(i.alerts)}</td><td>${escapeHtml(hitRateShort(i.published))}</td>`
-    + `<td>${escapeHtml(hitRateShort(i.detected))}</td></tr>`).join("");
+    + `<td>${escapeHtml(i.alerts)}</td><td>${escapeHtml(hitRateText(i.published))}</td>`
+    + `<td>${escapeHtml(hitRateText(i.detected))}</td></tr>`).join("");
   const ungraded = summary.ungraded_alerts
     ? `<div class="meta-text-sm">${escapeHtml(summary.ungraded_alerts)} alert(s) not graded yet (graded weekly, Sunday 20:00 SAST).</div>`
     : "";
