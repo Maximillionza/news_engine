@@ -28,7 +28,9 @@ def _production_files() -> list[Path]:
         if not base.exists():
             continue
         for path in base.rglob("*.py"):
-            if ARCHIVE in path.parents or "node_modules" in path.parts:
+            # Hidden dirs hold git-ignored copies, e.g. webapp/.actuals_sync/repo (a full clone, live only).
+            hidden = any(part.startswith(".") for part in path.relative_to(base).parts)
+            if ARCHIVE in path.parents or "node_modules" in path.parts or hidden:
                 continue
             files.append(path)
     return files

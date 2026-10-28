@@ -64,7 +64,7 @@ Record the per-anchor verdict counts and the detection-anchored hit rate, and co
 
 Expected at deploy (build-time dry run): not recorded. The build session was not permitted to run the live read-only dry run, so the controller runs it here and pastes the counts and the `overall 5-minute detection-anchored hit rate` line into this section. Starting point before B10: 14 of 26 leans correct at 5 minutes; medium alerts had never been graded. The new overall 5-minute detection-anchored hit rate will differ from the old "14 of 26": the old figure counted High alerts only, used the fixed $10 / 150-point thresholds and the detection anchor only, while the new one covers every severity and both symbols and uses that hour's 75th-percentile baseline (far below $10 on gold in most hours), so n grows and fewer cells read `no_move`.
 
-Live dry-run counts (controller, at deploy): ...
+Live dry-run counts (controller, at deploy 2026-10-28; apply identical): published right 5, wrong 6, no_move 29, no_lean 114, no_data 14, no_baseline 0; detected right 4, wrong 6, no_move 30, no_lean 114, no_data 14, no_baseline 0; graded 336, hit rate 42.9% (9 of 21), overall 5-minute detection-anchored hit rate 40.0% (4 of 10). Rerun: written 0. Acceptance query: 0.
 
 Then apply:
 
