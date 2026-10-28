@@ -68,6 +68,12 @@ function tier1Lines(row, d, unit, view) {
   return out;
 }
 
+const NEWS_CALL_LINE = {
+  higher: "News call: higher",
+  lower: "News call: lower",
+  no_call: "News call: none (|lean| under 0.2, pre-registered)",
+};
+
 function combinedLines(row, d, unit) {
   const out = [];
   if (d.tier1_surprise != null) out.push(`Tier 1 surprise: ${signed(d.tier1_surprise)}${unit} (nowcast minus forecast)`);
@@ -75,10 +81,11 @@ function combinedLines(row, d, unit) {
     out.push(`News lean ${signedLean(d.news_lean)} × typical surprise ${plain(d.news_scale)}${unit}`
       + ` = news surprise ${signed(d.news_surprise)}${unit}`);
   } else if (d.news_lean != null) {
-    out.push(`News lean ${signedLean(d.news_lean)}, but fewer than 3 earlier releases to size it: no news call`);
+    out.push(`News lean ${signedLean(d.news_lean)}, but fewer than 3 earlier releases to size it, so no number; the call still follows the lean`);
   } else {
     out.push("News: no news lean before the release");
   }
+  if (NEWS_CALL_LINE[row.news_call]) out.push(NEWS_CALL_LINE[row.news_call]);
   if (d.combined_surprise == null || row.forecast == null) {
     out.push("Combined: n/a (Tier 1 has no number for this release)");
     return out;
@@ -89,7 +96,7 @@ function combinedLines(row, d, unit) {
     out.push(`Contributions: Tier 1 ${pct(w.tier1)} × ${signed(d.tier1_surprise)} = ${signed(w.tier1 * d.tier1_surprise)}; `
       + `news ${pct(w.news)} × ${signed(d.news_surprise)} = ${signed(w.news * d.news_surprise)}`);
   } else {
-    out.push("Weights: Tier 1 only (no news call for this release)");
+    out.push("Weights: Tier 1 only (no news number to blend for this release)");
   }
   const predicted = row.forecast + d.combined_surprise;
   out.push(`Combined: combined surprise ${signed(d.combined_surprise)}${unit}, predicted ${plain(predicted)}${unit}`);

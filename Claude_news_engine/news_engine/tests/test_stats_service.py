@@ -122,7 +122,7 @@ def test_news_call_uses_the_print_call_and_the_median_scale(conns):
     _print_call(bt, "CPI m/m", _t(10), "higher", 0.5, scored_at=_t(10) - dt.timedelta(days=1))
     last = svc.build_rows(dash, bt, event_title="CPI m/m")[-1]
     assert last.news.predicted == pytest.approx(0.3 + 0.5 * 0.1)     # forecast + lean * scale
-    assert last.news.verdict == "wrong"                              # 0.35 is under one 0.1 step above 0.3 = in line; actual 0.4 is hotter
+    assert last.news.verdict == "right"                              # B9 ST1: lean 0.5 -> side higher (the 0.35 number no longer decides); actual 0.4 is hotter
     assert last.combined.note is None                                # news present, so not news_missing
 
 
@@ -282,7 +282,9 @@ def test_non_usd_rows_do_not_count_toward_the_minimum_scale_history(conns):
     _event(dash, "CPI m/m", _t(3), "0.3%", "0.4%", country=None)          # would be the third prior print
     _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
     _print_call(bt, "CPI m/m", _t(10), "higher", 0.5, scored_at=_t(10) - dt.timedelta(days=1))
-    assert svc.build_rows(dash, bt, event_title="CPI m/m")[-1].news is None
+    # B9 ST1: the lean still calls a side, but with only two USD priors there is no scale, so no number.
+    row = svc.build_rows(dash, bt, event_title="CPI m/m")[-1]
+    assert row.detail.news_scale is None and row.news.predicted is None and row.news_call == "higher"
 
 
 # --- coordinator ruling: mean miss only within one event title ----------------------------------
@@ -444,8 +446,9 @@ def test_scoreboard_separates_live_reconstructed_and_with_news_populations(conns
     board = svc.build_scoreboard(_mixed_population(*conns))["methods"]
     # Tier 1: Sep 0.4 vs 0.3 hotter, right; Oct 0.5 hotter, right.
     assert board["tier1"]["by_kind"] == {"live": {"scored": 1, "right": 1}, "reconstructed": {"scored": 1, "right": 1}}
-    # News: Oct only (0.3 + 0.5 x 0.1 = 0.35 is in line; actual hotter -> wrong). Kind None counts as live.
-    assert board["news"]["by_kind"] == {"live": {"scored": 1, "right": 0}, "reconstructed": {"scored": 0, "right": 0}}
+    # News: Oct only. B9 ST1: lean 0.5 -> side higher (not the in-line 0.35 number); actual hotter -> right.
+    # Kind None counts as live.
+    assert board["news"]["by_kind"] == {"live": {"scored": 1, "right": 1}, "reconstructed": {"scored": 0, "right": 0}}
     # Combined: Sep is Tier 1 only (news_missing), Oct is a real blend 0.7 x 0.2 + 0.3 x 0.05 -> hotter, right.
     assert board["combined"]["by_kind"] == {"live": {"scored": 1, "right": 1}, "reconstructed": {"scored": 1, "right": 1}}
     assert board["combined"]["with_news"] == {"scored": 1, "right": 1}
@@ -810,3 +813,168 @@ def test_stats_rows_unchanged_by_surprise_sigma(conns, monkeypatch):
     assert rows_after == rows_before
     assert svc.build_scoreboard(rows_after) == board_before
     assert svc.build_chart(rows_after, "combined") == svc.build_chart(rows_before, "combined")
+
+
+# --- B9 ST1: pre-registered News side (|lean| >= 0.2, else no call); the number is unchanged ----------
+
+def _honest_population(dash, bt):
+    """
+    CPI m/m, scale 0.1 from three priors. Jul: actual in line, print higher 0.2 (a call). Aug: actual hotter,
+    print higher 0.1 (no call). Sep: actual cooler, print lower 0.5 (a call). Tier 1 nowcast 0.4 every month.
+    """
+    _cpi_history(dash)
+    for m, actual, direction, conf in [(7, "0.3%", "higher", 0.2), (8, "0.4%", "higher", 0.1),
+                                       (9, "0.2%", "lower", 0.5)]:
+        _event(dash, "CPI m/m", _t(m), "0.3%", actual)
+        _snap(bt, "CPI m/m", _t(m), 0.4)
+        _print_call(bt, "CPI m/m", _t(m), direction, conf, scored_at=_t(m) - dt.timedelta(days=1))
+    return svc.build_rows(dash, bt, event_title="CPI m/m")
+
+
+def _by_month(rows):
+    return {r.event_time_utc.month: r for r in rows}
+
+
+def _zero_scale_row(dash, bt):
+    """Three priors exactly at forecast (scale 0.0), then Oct hotter with a strong hotter print call."""
+    for m in (1, 2, 3):
+        _event(dash, "CPI m/m", _t(m), "0.3%", "0.3%")
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    _snap(bt, "CPI m/m", _t(10), 0.4)
+    _print_call(bt, "CPI m/m", _t(10), "higher", 0.8, scored_at=_t(10) - dt.timedelta(days=1))
+    return svc.build_rows(dash, bt, event_title="CPI m/m")[-1]
+
+
+def test_combined_number_unchanged_by_st1(conns):
+    # Golden pin: these values were computed with the pre-ST1 code; the News side change must not move them.
+    rows = _by_month(_honest_population(*conns))
+    expected = {7: (0.076, 0.376, "right", None), 8: (0.073, 0.373, "wrong", None), 9: (0.055, 0.355, "wrong", None)}
+    for month, (surprise, predicted, verdict, note) in expected.items():
+        row = rows[month]
+        c = row.combined
+        assert c.surprise == pytest.approx(surprise, abs=1e-12)
+        assert c.predicted == pytest.approx(predicted, abs=1e-12)
+        assert (c.verdict, c.note) == (verdict, note)
+        assert c.surprise == pytest.approx(0.7 * row.detail.tier1_surprise + 0.3 * row.detail.news_surprise, abs=1e-12)
+    board = svc.build_scoreboard(list(rows.values()))["methods"]["combined"]
+    assert (board["scored"], board["right"], board["with_news"]) == (3, 1, {"scored": 3, "right": 1})
+    dash, bt = ws.get_connection(":memory:"), bs.get_connection(":memory:")
+    zero = _zero_scale_row(dash, bt)
+    assert zero.detail.news_surprise == 0.0
+    assert zero.combined.surprise == pytest.approx(0.07)
+    assert zero.combined.predicted == pytest.approx(0.37)
+    assert zero.combined.verdict == "wrong"
+
+
+def test_st1_news_sides_and_agreement(conns):
+    rows = _by_month(_honest_population(*conns))
+    jul, aug, sep = rows[7], rows[8], rows[9]
+    assert (jul.news.side, jul.news_call, jul.news.verdict, jul.agreement) == (1, "higher", "wrong", "agree")
+    assert aug.news.side is None and aug.news_call == "no_call" and aug.news.verdict is None
+    assert aug.news.leans == {} and aug.agreement is None
+    assert aug.news.predicted == pytest.approx(0.31)                     # the number is still drawn
+    assert (sep.news.side, sep.news_call, sep.news.verdict, sep.agreement) == (-1, "lower", "right", "disagree")
+    assert [rows[m].tier1.verdict for m in (7, 8, 9)] == ["wrong", "right", "wrong"]
+
+
+def test_zero_scale_news_takes_the_lean_side_not_in_line(conns):
+    row = _zero_scale_row(*conns)
+    assert row.news.side == 1 and row.news_call == "higher"
+    assert row.news.predicted == pytest.approx(0.3)
+    assert row.news.verdict == "right"
+    assert row.news.miss == pytest.approx(0.1)
+
+
+def _unsized_row(confidence):
+    """Only two USD priors (no scale), then Oct hotter with a hotter print call of the given confidence."""
+    dash, bt = ws.get_connection(":memory:"), bs.get_connection(":memory:")
+    for m in (1, 2):
+        _event(dash, "CPI m/m", _t(m), "0.3%", "0.4%")
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    _snap(bt, "CPI m/m", _t(10), 0.4)
+    _print_call(bt, "CPI m/m", _t(10), "higher", confidence, scored_at=_t(10) - dt.timedelta(days=1))
+    return svc.build_rows(dash, bt, event_title="CPI m/m")[-1]
+
+
+def test_unsized_news_lean_still_calls_a_side():
+    row = _unsized_row(0.5)
+    assert row.news.side == 1 and row.news_call == "higher"
+    assert row.news.predicted is None and row.news.note == "unsized"
+    assert row.news.verdict == "right"
+    assert row.detail.news_scale is None
+    assert row.combined.note == "news_missing"                           # an unsized call never blends
+    assert row.combined.surprise == pytest.approx(0.1)
+    weak = _unsized_row(0.1)
+    assert weak.news_call == "no_call" and weak.news.verdict is None
+
+
+def test_st1_writes_nothing_to_either_db(conns):
+    dash, bt = conns
+    _honest_population(dash, bt)
+
+    def snapshot():
+        tables = {t: [tuple(r) for r in bt.execute(f"SELECT * FROM {t}").fetchall()]
+                  for t in ("print_predictions", "predictions", "tier1_predictions")}
+        tables["event_history"] = [tuple(r) for r in dash.execute("SELECT * FROM event_history").fetchall()]
+        return dash.total_changes, bt.total_changes, tables
+
+    before = snapshot()
+    rows = svc.build_rows(dash, bt, event_title="CPI m/m")
+    svc.build_scoreboard(rows)
+    svc.build_chart(rows, "news")
+    assert snapshot() == before
+
+
+# --- B9 ST2: honest baselines (directional-only, always-in-line) and the News no-call count --------------
+
+def _rate_of(scored, right, shown=False):
+    return {"scored": scored, "right": right,
+            "accuracy": (right / scored) if shown else None, "accuracy_shown": shown}
+
+
+def test_scoreboard_baseline_and_directional_per_method(conns):
+    board = svc.build_scoreboard(_honest_population(*conns))
+    m = board["methods"]
+    assert (m["tier1"]["scored"], m["tier1"]["right"]) == (3, 1)
+    assert m["tier1"]["directional"] == _rate_of(2, 1)
+    assert (m["news"]["scored"], m["news"]["right"]) == (2, 1)
+    assert m["news"]["directional"] == _rate_of(1, 1)
+    assert m["news"]["no_call"] == 1
+    assert (m["combined"]["scored"], m["combined"]["right"]) == (3, 1)
+    assert m["combined"]["directional"] == _rate_of(2, 0)
+    assert board["in_line_baseline"] == {
+        "tier1": _rate_of(3, 1), "news": _rate_of(2, 1), "combined": _rate_of(3, 1)}
+
+
+def test_news_no_call_is_excluded_from_accuracy_and_counted(conns):
+    dash, bt = conns
+    _honest_population(dash, bt)
+    # A pending abstention (no actual yet) must not be counted as a no-call.
+    _event(dash, "CPI m/m", _t(11), "0.3%", None)
+    _snap(bt, "CPI m/m", _t(11), 0.4)
+    _print_call(bt, "CPI m/m", _t(11), "higher", 0.1, scored_at=_t(11) - dt.timedelta(days=1))
+    board = svc.build_scoreboard(svc.build_rows(dash, bt, event_title="CPI m/m"))
+    news = board["methods"]["news"]
+    assert news["scored"] == 2 and news["directional"]["scored"] == 1
+    assert board["in_line_baseline"]["news"]["scored"] == 2
+    assert news["mean_miss"] == pytest.approx((0.02 + 0.05) / 2)     # only graded calls
+    assert news["no_call"] == 1
+
+
+def test_honest_rates_show_percent_from_20(conns):
+    dash, bt = conns
+    for i in range(20):
+        when = dt.datetime(2025, 1, 1, 12, 30, tzinfo=UTC) + dt.timedelta(days=30 * i)
+        _event(dash, "CPI m/m", when, "0.3%", "0.4%")
+        _snap(bt, "CPI m/m", when, 0.4)
+    rows = svc.build_rows(dash, bt, event_title="CPI m/m")
+    board = svc.build_scoreboard(rows)
+    assert board["methods"]["tier1"]["directional"] == {
+        "scored": 20, "right": 20, "accuracy": 1.0, "accuracy_shown": True}
+    assert board["in_line_baseline"]["tier1"] == {
+        "scored": 20, "right": 0, "accuracy": 0.0, "accuracy_shown": True}
+    board19 = svc.build_scoreboard(rows[:19])
+    assert board19["methods"]["tier1"]["directional"]["accuracy"] is None
+    assert board19["methods"]["tier1"]["directional"]["accuracy_shown"] is False
+    assert board19["in_line_baseline"]["tier1"]["accuracy"] is None
+    assert board19["in_line_baseline"]["tier1"]["accuracy_shown"] is False

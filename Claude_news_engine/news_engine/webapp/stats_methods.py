@@ -15,6 +15,19 @@ from webapp.symbols import UnrecognizedSymbolError, classify_symbol, usd_sign
 TIER1_WEIGHT = 0.70
 NEWS_WEIGHT = 0.30
 MIN_HISTORY_FOR_SCALE = 3
+# Pre-registered 2026-10-20 (owner decision 5, roadmap B9 ST1), fixed before viewing more results: do not tune.
+NEWS_CALL_MIN_LEAN = 0.2
+
+
+def news_side(lean: Optional[float]) -> Optional[int]:
+    """
+    The News call's side from the lean alone (B9 ST1): +1 higher / -1 lower when |lean| >= NEWS_CALL_MIN_LEAN,
+    else None (no call). Never 0: News never calls 'in line'. The scale only draws the number, never the side.
+    The 1e-9 absorbs float noise only (accumulator p = 0.6 gives |2p - 1| = 0.19999999999999996, a call).
+    """
+    if lean is None or abs(lean) < NEWS_CALL_MIN_LEAN - 1e-9:
+        return None
+    return 1 if lean > 0 else -1
 
 
 def news_scale(prior_abs_surprises: list[float]) -> Optional[float]:

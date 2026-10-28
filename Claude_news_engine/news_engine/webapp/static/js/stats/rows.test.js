@@ -5,6 +5,7 @@ import {
   tier1RowHtml, combinedRowHtml, sentimentRowHtml, verdictChip, leanText,
   pickNextRow, briefCardHtml, scoreboardHtml, filterRows, yearsPresent, disclaimerHtml, componentFor, orderTier1,
   toSast, emptyRowHtml, tier1BodyHtml, tier1Criteria, rowKey, CRITERIA, AGREEMENT_TITLE,
+  newsCallText,
 } from "./rows.js";
 
 const base = { event_title: "CPI m/m", event_time_utc: "2026-10-14T12:30:00+00:00", forecast: 0.3, forecast_text: "0.3%",
@@ -371,4 +372,65 @@ test("the combined call cell is unchanged by the marker", () => {
   const callCell = `${"0.3"} ${verdictChip("right")}`;
   assert.ok(combinedRowHtml({ ...combinedBase, agreement: "disagree" }).includes(callCell));
   assert.ok(combinedRowHtml({ ...combinedBase, agreement: null }).includes(callCell));
+});
+
+// ---- B9 Task 3: News call word, no-call count, directional-only and the always-in-line baseline ----
+
+test("newsCallText maps the three calls and is empty otherwise", () => {
+  assert.equal(newsCallText("higher"), "calls higher");
+  assert.equal(newsCallText("lower"), "calls lower");
+  assert.equal(newsCallText("no_call"), "no call (|lean| under 0.2)");
+  assert.equal(newsCallText(null), "");
+  assert.equal(newsCallText("<b>"), "");
+});
+
+test("sentiment row shows the call word and a no-call chip", () => {
+  const none = sentimentRowHtml({ ...base, news: { predicted: 0.31, verdict: null, leans: {}, note: "scaled" }, news_call: "no_call" });
+  assert.ok(none.includes("no call (|lean| under 0.2)") && none.includes("No call"));
+  const up = sentimentRowHtml({ ...base, news: { predicted: 0.35, verdict: "right", leans: {}, note: null }, news_call: "higher" });
+  assert.ok(up.includes("calls higher") && up.includes("Right"));
+});
+
+test("an unsized news call shows a dash for the number but still names the call", () => {
+  const html = sentimentRowHtml({ ...base, news: { predicted: null, verdict: "right", leans: {}, note: "unsized" }, news_call: "higher" });
+  assert.ok(html.includes("—") && html.includes("calls higher"));
+});
+
+test("combined row News cell names the call before the verdict chip", () => {
+  const row = { ...base, news: { predicted: 0.3, verdict: null, leans: {}, note: null }, news_call: "no_call",
+    combined: { predicted: 0.4, verdict: "right", note: null, leans: {}, kind: null } };
+  assert.ok(combinedRowHtml(row).includes("no call (|lean| under 0.2)"));
+});
+
+test("news brief card uses the call word, never in line", () => {
+  const row = pend("CPI m/m", "2026-10-16T12:30:00+00:00", { news: { predicted: 0.3, leans: {} }, news_call: "higher" });
+  const html = briefCardHtml(row, "news", DISC);
+  assert.ok(html.includes("hotter than consensus") && !html.includes("in line"));
+  const cool = briefCardHtml({ ...row, news_call: "lower" }, "news", DISC);
+  assert.ok(cool.includes("cooler than consensus") && !cool.includes("in line"));
+  assert.equal(pickNextRow([{ ...row, news_call: "no_call" }], NOW, "news"), null);
+  assert.equal(pickNextRow([row], NOW, "news").event_title, "CPI m/m");
+});
+
+test("scoreboard shows directional-only, the News no-call count and the always-in-line baseline with n", () => {
+  const sb = { methods: {
+    tier1: { scored: 8, right: 5, accuracy: 0.625, accuracy_shown: false, mean_miss: null, directional: { scored: 2, right: 1, accuracy: null, accuracy_shown: false } },
+    news: { scored: 8, right: 5, accuracy: null, accuracy_shown: false, mean_miss: null, no_call: 23,
+      directional: { scored: 6, right: 4, accuracy: null, accuracy_shown: false } },
+    combined: { scored: 25, right: 15, accuracy: 0.6, accuracy_shown: true, mean_miss: null,
+      directional: { scored: 25, right: 15, accuracy: 0.6, accuracy_shown: true } } },
+    in_line_baseline: { tier1: { scored: 19, right: 6, accuracy: null, accuracy_shown: false },
+      news: { scored: 8, right: 2, accuracy: null, accuracy_shown: false },
+      combined: { scored: 25, right: 10, accuracy: 0.4, accuracy_shown: true } },
+    min_for_percent: 20, footnote: "Weights fixed at 70/30." };
+  const html = scoreboardHtml(sb, "%");
+  for (const t of ["Directional only", "1 of 2", "4 of 6", "15 of 25 (60%)", "no call on 23 of 31 graded releases",
+    "Always in line (baseline)", "6 of 19", "2 of 8", "10 of 25 (40%)", "Weights fixed at 70/30."]) {
+    assert.ok(html.includes(t), t);
+  }
+});
+
+test("scoreboard without the new keys renders 0 of 0 for directional and no baseline numbers", () => {
+  const html = scoreboardHtml(SB, "%");
+  assert.ok(html.includes("0 of 0") && html.includes("Directional only") && html.includes("Always in line (baseline)"));
 });

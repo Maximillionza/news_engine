@@ -59,6 +59,7 @@ For one event occurrence with Forecast `F`, Actual `A`, and a method's Predicted
 - **News** `sN = n × scale`, where `n ∈ [−1, +1]` is the news lean (§7) and `scale` is the event's
   median historical `|A − F|`, computed only from occurrences **before** this one (no lookahead).
   The scaling is an assumption and is labelled as such on the chart. `PN = F + sN`.
+- **News side (pre-registered 2026-10-20, owner decision 5, B9 ST1; fixed before viewing more results, not tuned):** side = sign(n) when |n| ≥ 0.2 (NEWS_CALL_MIN_LEAN, webapp/stats_methods.py), otherwise **no call**. News never calls "in line". The scale only sizes the plotted number PN and its miss; it never decides the side. A no-call is excluded from News accuracy and counted as "no call" with n. With fewer than 3 prior releases the side still follows the lean, without a number. Combined keeps S = 0.70·s1 + 0.30·sN on the numbers, including when News abstains. Display only: no stored prediction or predicted_direction is written or changed.
 - **Combined** `S = 0.70·s1 + 0.30·sN`, `PC = F + S`. If news is missing for the occurrence, `S = s1`
   and the row is flagged `news_missing` (so it is excluded from News-only and Combined-vs-News
   comparisons). If Tier 1 is not tracked for the event, Combined is **n/a** (shown as such).
@@ -71,7 +72,7 @@ Top-level tab **Stats** beside Shock Alerts. Sub-tabs:
 
 **Combined** — (a) brief card for the next release: expected surprise, Buy/Sell per symbol, info icon
 for the weighted score; (b) weighted-score panel; (c) filters Event, Year, Month, Method;
-(d) the line chart; (e) three-method scoreboard (accuracy, `k of n`, mean miss); (f) table of
+(d) the line chart; (e) three-method scoreboard (accuracy, `k of n`, mean miss); plus, each with n (B9 ST2): directional-only accuracy (releases whose actual came in higher or lower) and an "always in line" baseline over each method's graded releases; (f) table of
 Forecast / Predicted / Actual / Right-Wrong per month.
 
 **Tier 1** — filters Year, Month, Source (live and reconstructed / live only / reconstructed only).

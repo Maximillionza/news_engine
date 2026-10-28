@@ -9,6 +9,13 @@ const CPI_FAMILY = new Set(["CPI m/m", "Core CPI m/m"]);
 const METHOD_LABEL = { tier1: "Tier 1 only", news: "News only", combined: "Combined (70/30)" };
 const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
 
+// The News side is pre-registered (server: |lean| >= 0.2 gives higher/lower, otherwise no call). The row field
+// `news_call` is the only way the side reaches the UI; News is never described as "in line".
+export const NEWS_CALL_TEXT = { higher: "calls higher", lower: "calls lower", no_call: "no call (|lean| under 0.2)" };
+export function newsCallText(newsCall) {
+  return Object.prototype.hasOwnProperty.call(NEWS_CALL_TEXT, newsCall) ? NEWS_CALL_TEXT[newsCall] : "";
+}
+
 // Up to 2 decimals, no trailing zeros: 0.4 -> "0.4", 89 -> "89", 0.3499 -> "0.35".
 function num(n) {
   return n === null || n === undefined || Number.isNaN(Number(n)) ? "—" : String(Number(Number(n).toFixed(2)));
@@ -120,10 +127,15 @@ export function combinedRowHtml(row) {
   const title = escapeHtml(row.event_title);
   const c = row.combined;
   const cell = (call) => (call == null ? "—" : `${num(call.predicted)} ${verdictChip(call.verdict)}`);
+  const newsCell = (call) => {
+    if (call == null) return "—";
+    const word = newsCallText(row.news_call);
+    return `${num(call.predicted)}${word ? ` · ${word}` : ""} ${verdictChip(call.verdict)}`;
+  };
   const flag = c && c.note === "news_missing" ? ' <span class="meta-text-sm">Tier 1 only</span>' : "";
   const attrs = row.tier1_tracked ? clickAttrs(row, "combined", "combined") : "";
   return `<tr${attrs}><td>${title}${reconTag(row)}</td><td>${dateCell(row)}</td><td>${escapeHtml(row.forecast_text ?? "")}</td>`
-    + `<td>${cell(row.tier1) + (row.tier1 ? tierTag(row) : "")}</td><td>${cell(row.news)}</td><td>${row.tier1_tracked ? cell(c) + flag + agreementChip(row.agreement) : "n/a"}</td>`
+    + `<td>${cell(row.tier1) + (row.tier1 ? tierTag(row) : "")}</td><td>${newsCell(row.news)}</td><td>${row.tier1_tracked ? cell(c) + flag + agreementChip(row.agreement) : "n/a"}</td>`
     + `<td>${row.status === "pending" ? "pending" : escapeHtml(row.actual_text ?? "")}</td></tr>`;
 }
 
@@ -150,19 +162,22 @@ export function sentimentRowHtml(row) {
     return `<tr class="row-off"><td>${title}</td><td>${dateCell(row)}</td><td>${articlesLeanCell(row)}</td>`
       + `<td colspan="3">${why}</td></tr>`;
   }
+  const word = newsCallText(row.news_call);
   return `<tr><td>${title}</td><td>${dateCell(row)}</td><td>${articlesLeanCell(row)}</td>`
-    + `<td>${num(n.predicted)} <div class="meta-text-sm">${leanText(n.leans)}</div></td>`
+    + `<td>${num(n.predicted)}${word ? ` · ${word}` : ""} <div class="meta-text-sm">${leanText(n.leans)}</div></td>`
     + `<td>${row.status === "pending" ? "pending" : escapeHtml(row.actual_text ?? "")}</td><td>${verdictChip(n.verdict)}</td></tr>`;
 }
 
 // ---- next-release brief card -------------------------------------------------
 
 // Soonest upcoming row for this sub-tab's method: status pending, in the future, with a predicted number.
+// News additionally needs a real call (higher/lower); a no-call or unsized-without-call row has nothing to brief.
 export function pickNextRow(rows, now, method) {
   const nowMs = now.getTime();
   const candidates = (rows || []).filter((r) => {
     const call = r[method];
-    return r.status === "pending" && call && call.predicted != null && r.forecast != null
+    const hasCall = method !== "news" || r.news_call === "higher" || r.news_call === "lower";
+    return r.status === "pending" && call && call.predicted != null && r.forecast != null && hasCall
       && new Date(r.event_time_utc).getTime() > nowMs;
   });
   candidates.sort((a, b) => new Date(a.event_time_utc) - new Date(b.event_time_utc));
@@ -189,6 +204,11 @@ export function expectedWord(forecast, predicted, forecastText) {
   return diff > 0 ? "hotter than consensus" : "cooler than consensus";
 }
 
+// News expectation comes from the pre-registered call, never from comparing its number with the forecast.
+function newsExpectedWord(newsCall) {
+  return newsCall === "lower" ? "cooler than consensus" : "hotter than consensus";
+}
+
 // `impactFiltered`: the impact chips are hiding some levels, so an empty card may just mean "none at these levels".
 export function briefCardHtml(row, method, disclaimers, impactFiltered = false) {
   if (!row) {
@@ -200,7 +220,7 @@ export function briefCardHtml(row, method, disclaimers, impactFiltered = false) 
   const lean = leanText(call.leans);
   return `<div class="brief-card"><b>Next release: ${escapeHtml(row.event_title)}</b>`
     + `<div class="meta-text-sm">${escapeHtml(sastText(row.event_time_utc))}</div>`
-    + `<div>Expected: ${expectedWord(row.forecast, call.predicted, row.forecast_text)} `
+    + `<div>Expected: ${method === "news" ? newsExpectedWord(row.news_call) : expectedWord(row.forecast, call.predicted, row.forecast_text)} `
     + `(call ${escapeHtml(num(call.predicted) + unit)} vs forecast ${escapeHtml(row.forecast_text ?? "")})</div>`
     + (lean ? `<div>${lean}</div>` : "")
     + `<div class="meta-text-sm">${escapeHtml((disclaimers && disclaimers.typical_reaction) || "")}</div></div>`;
@@ -218,15 +238,30 @@ function populationLines(m) {
   return lines.map((t) => `<div class="meta-text-sm">${t}</div>`).join("");
 }
 
+// "k of n (p%)" - the percentage only when the server says n is large enough to show it.
+function rateText(r) {
+  const x = r || { scored: 0, right: 0 };
+  const pct = x.accuracy_shown ? ` (${Math.round(x.accuracy * 100)}%)` : "";
+  return `${Number(x.right || 0)} of ${Number(x.scored || 0)}${pct}`;
+}
+
 export function scoreboardHtml(sb, unit) {
   const u = escapeHtml(unit || "");
   const rows = ["tier1", "news", "combined"].map((key) => {
     const m = (sb.methods || {})[key] || { scored: 0, right: 0 };
     const pct = m.accuracy_shown ? ` (${Math.round(m.accuracy * 100)}%)` : "";
     const miss = m.mean_miss == null ? "" : `<div class="meta-text-sm">mean miss ${Number(m.mean_miss).toFixed(2)}${u}</div>`;
-    return `<tr><td>${METHOD_LABEL[key]}</td><td>${m.right} of ${m.scored}${pct}${populationLines(m)}${miss}</td></tr>`;
+    const noCall = key === "news" && m.no_call != null
+      ? `<div class="meta-text-sm">no call on ${Number(m.no_call)} of ${Number(m.scored || 0) + Number(m.no_call)} graded releases (|lean| under 0.2)</div>` : "";
+    return `<tr><td>${METHOD_LABEL[key]}</td><td>${m.right} of ${m.scored}${pct}${populationLines(m)}${noCall}${miss}</td>`
+      + `<td>${rateText(m.directional)}</td></tr>`;
   }).join("");
-  return `<table class="stats-table"><tr><th>Method</th><th>Right calls</th></tr>${rows}</table>`
+  const b = sb.in_line_baseline || {};
+  const baseline = `<tr><td>Always in line (baseline)</td><td colspan="2">Tier 1 releases ${rateText(b.tier1)} · `
+    + `News releases ${rateText(b.news)} · Combined releases ${rateText(b.combined)}</td></tr>`;
+  return `<table class="stats-table"><tr><th>Method</th><th>Right calls</th><th>Directional only</th></tr>${rows}${baseline}</table>`
+    + '<div class="meta-text-sm">Directional only: releases that came in higher or lower than forecast. '
+    + 'Baseline: what always answering "in line" would score on the same releases.</div>'
     + `<div class="meta-text-sm">${escapeHtml(sb.footnote || "")}</div>`;
 }
 

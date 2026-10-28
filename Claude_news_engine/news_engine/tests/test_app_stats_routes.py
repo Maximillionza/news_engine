@@ -16,7 +16,8 @@ AS_OF = WHEN - dt.timedelta(hours=40)
 
 ROW_KEYS = {"event_title", "event_time_utc", "forecast", "actual", "forecast_text", "actual_text", "status",
             "tier1_tracked", "nowcast_as_of_utc", "pre_news_period", "tier1", "news", "combined", "detail",
-            "impact", "impact_effective", "impact_inferred", "impact_bucket", "agreement", "tier1_tier"}
+            "impact", "impact_effective", "impact_inferred", "impact_bucket", "agreement", "tier1_tier",
+            "news_call"}
 CALL_KEYS = {"predicted", "surprise", "verdict", "miss", "leans", "note", "kind"}
 DETAIL_KEYS = {"forecast_text", "nowcast_value", "nowcast_as_of_utc", "tier1_surprise", "news_lean", "news_scale",
                "news_surprise", "combined_surprise", "weights", "hand_logged", "news_article_count", "brent"}
@@ -81,6 +82,7 @@ def test_events_route_serves_every_field_the_tab_renders(client):
     assert row["nowcast_as_of_utc"] == AS_OF.isoformat()
     assert set(row["tier1"]) == CALL_KEYS                       # side stays unserved
     assert row["tier1_tier"] == "formula" and row["agreement"] is None   # snapshot call; news is None
+    assert row["news_call"] is None                             # no News MethodCall at all
     assert row["tier1"]["verdict"] == "right" and row["tier1"]["leans"]["XAUUSD"] == "sell"
     assert row["tier1"]["predicted"] == 0.4 and row["tier1"]["kind"] == "live"
     assert row["news"] is None                                  # no articles and no scale history
@@ -99,6 +101,7 @@ def test_events_route_serves_real_news_and_combined_calls(full_client):
     row = rows[0]
     assert set(row) == ROW_KEYS
     assert row["agreement"] in ("agree", "disagree")
+    assert row["news_call"] == "higher"                         # B9 ST1: lean 0.5 >= 0.2
     tier1, news, combined = row["tier1"], row["news"], row["combined"]
     for call in (tier1, news, combined):
         assert set(call) == CALL_KEYS
@@ -188,16 +191,42 @@ def test_scoreboard_route_serves_live_reconstructed_and_with_news_counts(full_cl
     data = full_client.get("/api/stats/scoreboard?event=CPI%20m/m&month=10").get_json()
     zero = {"scored": 0, "right": 0}
     one_right = {"scored": 1, "right": 1}
+    directional = {"scored": 1, "right": 1, "accuracy": None, "accuracy_shown": False}   # B9 ST2
     for name in ("tier1", "news"):
-        assert data["methods"][name] == {
+        expected = {
             "scored": 1, "right": 1, "accuracy": None, "accuracy_shown": False,
             "mean_miss": pytest.approx(0.0), "by_kind": {"live": one_right, "reconstructed": zero},
+            "directional": directional,
         }
+        if name == "news":
+            expected["no_call"] = 0
+        assert data["methods"][name] == expected
     assert data["methods"]["combined"] == {
         "scored": 1, "right": 1, "accuracy": None, "accuracy_shown": False, "mean_miss": pytest.approx(0.0),
         "by_kind": {"live": one_right, "reconstructed": zero}, "with_news": one_right,
+        "directional": directional,
     }
     assert data["min_for_percent"] == 20
+
+
+def test_scoreboard_route_serves_the_honest_baselines_exactly(full_client):
+    data = full_client.get("/api/stats/scoreboard?event=CPI%20m/m&month=10").get_json()
+    rate_keys = {"scored", "right", "accuracy", "accuracy_shown"}
+    assert set(data) == {"methods", "min_for_percent", "footnote", "in_line_baseline"}
+    assert set(data["in_line_baseline"]) == {"tier1", "news", "combined"}
+    base = {"mean_miss", "by_kind", "directional"} | rate_keys
+    assert set(data["methods"]["tier1"]) == base
+    assert set(data["methods"]["news"]) == base | {"no_call"}
+    assert set(data["methods"]["combined"]) == base | {"with_news"}
+    for name in ("tier1", "news", "combined"):
+        assert set(data["methods"][name]["directional"]) == rate_keys
+        assert set(data["in_line_baseline"][name]) == rate_keys
+        # actual 0.4 vs forecast 0.3 is higher: a directional release, not an in-line one
+        assert data["methods"][name]["directional"]["scored"] == 1
+        assert data["methods"][name]["directional"]["right"] == 1
+        assert data["in_line_baseline"][name]["scored"] == 1
+        assert data["in_line_baseline"][name]["right"] == 0
+    assert data["methods"]["news"]["no_call"] == 0
 
 
 # --- impacts filter (market-reaction spec section 5): shared by events, chart and scoreboard ---------------------

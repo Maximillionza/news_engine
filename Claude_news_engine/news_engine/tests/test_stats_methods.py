@@ -1,7 +1,8 @@
 import pytest
 
 from webapp.stats_methods import (
-    NEWS_WEIGHT, TIER1_WEIGHT, combine, market_lean, news_lean, news_scale, news_surprise, tier1_surprise,
+    NEWS_CALL_MIN_LEAN, NEWS_WEIGHT, TIER1_WEIGHT, combine, market_lean, news_lean, news_scale, news_side,
+    news_surprise, tier1_surprise,
 )
 
 
@@ -69,3 +70,15 @@ def test_news_lean_of_exactly_zero_is_no_call_not_zero():
     # A print call that takes a side with confidence 0 carries no lean either.
     assert news_lean("CPI m/m", "higher", 0.0, None, None) is None
     assert news_lean("CPI m/m", "lower", 0.0, None, None) is None
+
+
+# --- B9 ST1: pre-registered News side ------------------------------------------------------------
+
+def test_news_side_pre_registered_threshold():
+    assert NEWS_CALL_MIN_LEAN == 0.2
+    assert news_side(0.2) == 1 and news_side(-0.2) == -1
+    assert news_side(abs(2 * 0.6 - 1)) == 1              # 0.19999999999999996: float noise, still a call
+    assert news_side(0.1999) is None and news_side(-0.19) is None
+    assert news_side(0.5) == 1 and news_side(-1.0) == -1
+    assert news_side(None) is None
+    assert all(news_side(i / 100) != 0 for i in range(-100, 101))     # never 'in line'

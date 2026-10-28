@@ -50,9 +50,11 @@ test("Combined readings without news say Tier 1 only, and explain a lean that ha
   const noNews = { ...ROW, combined: { ...ROW.combined, note: "news_missing" },
     detail: { ...DETAIL, news_lean: null, news_scale: null, news_surprise: null, combined_surprise: 0.1 } };
   const html = readingsHtml(noNews, "combined");
-  assert.ok(html.includes("Weights: Tier 1 only") && !html.includes("30% news"));
+  assert.ok(html.includes("Weights: Tier 1 only (no news number to blend") && !html.includes("30% news"));
+  assert.ok(!html.includes("no news call"));
   const unsized = readingsHtml({ ...noNews, detail: { ...noNews.detail, news_lean: 0.25 } }, "combined");
-  assert.ok(unsized.includes("News lean +0.25") && unsized.includes("no news call"));
+  assert.ok(unsized.includes("News lean +0.25") && unsized.includes("so no number")
+    && !unsized.includes("to size it: no news call"));
 });
 
 test("hand-logged readings show the researched value, confidence and source and no invented weights", () => {
@@ -126,4 +128,11 @@ test("Brent text is escaped and adds no weight or call", () => {
   assert.ok(!evil.includes("<b>") && !evil.includes("<i>"));
   const plainHtml = readingsHtml({ ...ROW, detail: { ...DETAIL, brent: BRENT } }, "combined");
   assert.ok(plainHtml.includes("Weights: 70% Tier 1 / 30% news"));                  // unchanged: Brent carries no weight
+});
+
+test("Combined readings name the News call", () => {
+  const lower = readingsHtml({ ...ROW, news_call: "lower" }, "combined");
+  assert.ok(lower.includes("News call: lower"));
+  const none = readingsHtml({ ...ROW, news_call: "no_call" }, "combined");
+  assert.ok(none.includes("News call: none (|lean| under 0.2, pre-registered)"));
 });
