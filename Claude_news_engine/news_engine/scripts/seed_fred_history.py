@@ -119,13 +119,36 @@ def _status(matches: int, comparisons: int, unavailable: bool) -> str:
     return "verified" if matches / comparisons >= VERIFY_AGREEMENT_THRESHOLD else "suspect"
 
 
+def _headline_readings(title: str, readings: list[VintageReading], report: SeedReport) -> list[VintageReading]:
+    """
+    One reading per release minute: the latest reference period. A delayed
+    schedule can publish two periods in one release (PPI on 2026-01-14 carried
+    Oct and Nov 2025); the market reacted to the latest, and event_history holds
+    one row per (title, event_time_utc), so the earlier period is reported, not written.
+    """
+    latest: dict[dt.datetime, VintageReading] = {}
+    for reading in readings:
+        event_time = _event_time_utc(title, reading.vintage_date)
+        kept = latest.get(event_time)
+        if kept is None or reading.period > kept.period:
+            latest[event_time] = reading
+    for reading in readings:
+        event_time = _event_time_utc(title, reading.vintage_date)
+        if latest[event_time] is not reading:
+            report.skipped.append(
+                f"{title}@{event_time.isoformat()}: earlier period {reading.period.isoformat()} "
+                f"in the same release, latest period kept"
+            )
+    return [latest[t] for t in sorted(latest)]
+
+
 def _plan_title(
     conn: sqlite3.Connection, title: str, readings: list[VintageReading], now: dt.datetime, report: SeedReport,
 ) -> list[_Queued]:
     """Decide (no writes) what each release needs; also accumulates agreement for the gate."""
     queued: list[_Queued] = []
     matches = comparisons = 0
-    for reading in readings:
+    for reading in _headline_readings(title, readings, report):
         event_time = _event_time_utc(title, reading.vintage_date)
         if event_time >= now:
             continue                                   # not released yet by the New York clock

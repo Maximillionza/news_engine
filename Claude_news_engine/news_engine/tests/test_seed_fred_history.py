@@ -106,6 +106,22 @@ def test_seed_event_time_uses_new_york_release_time(tmp_path, monkeypatch):
     assert times["ADP Non-Farm Employment Change"] == "2026-07-01T12:15:00+00:00"  # EDT: UTC-4
 
 
+def test_seed_two_periods_in_one_release_keeps_latest(tmp_path, monkeypatch):
+    # Delayed schedule: Oct and Nov 2025 CPI both first printed on 2026-01-13.
+    conn = _db(tmp_path)
+    fake = FakeRequests(
+        initial={"CPIAUCSL": [_init_obs(D(2025, 10, 1), D(2026, 1, 13)), _init_obs(D(2025, 11, 1), D(2026, 1, 13))]},
+        vintages={("CPIAUCSL", "2026-01-13"): {D(2025, 9, 1): 320.0, D(2025, 10, 1): 320.64, D(2025, 11, 1): 321.6}},
+    )
+    client = _client(fake, monkeypatch)
+    report = _run(conn, client, apply=True, allow_unverified=True)
+    rows = conn.execute("SELECT actual, previous FROM event_history WHERE event_title = 'CPI m/m'").fetchall()
+    assert [(r["actual"], r["previous"]) for r in rows] == [("0.3%", "0.2%")]   # Nov headline, Oct as previous
+    assert report.inserted == [("CPI m/m", "2026-01-13T13:30:00+00:00")]
+    assert any("earlier period 2025-10-01" in s for s in report.skipped)
+    assert not any("row appeared meanwhile" in s for s in report.skipped)
+
+
 def test_seed_rerun_adds_zero_rows(tmp_path, monkeypatch):
     conn = _db(tmp_path)
     client = _client(_cpi_fake(), monkeypatch)
