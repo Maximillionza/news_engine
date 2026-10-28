@@ -205,16 +205,16 @@ def coverage_markdown(results: Mapping[str, TitleGate]) -> str
 | Core PCE Price Index m/m | bea T20807:M:DPCCRGM lin | M | %, 1 | 08:30 | 7 | yes | PCEPILFE pch |
 | Personal Income m/m / Personal Spending m/m | bea T20600:M:A065RC / DPCERC pch | M | %, 1 | 08:30 | 7 | yes | PI / PCE pch |
 | Retail Sales m/m / Core Retail Sales m/m | census marts:44X72 / 44Y72:MPCSM lin | M | %, 1 | 08:30 | 7 | yes | RSAFS / RSFSXMV pch |
-| Durable Goods Orders m/m / Core Durable Goods Orders m/m | census advm3 (codes from Task 1) lin | M | %, 1 | 08:30 | 7 | yes | DGORDER / ADXTNO pch |
-| Housing Starts / Building Permits | census resconst STARTS / APERMITS TOTAL lin | M | 0.001 -> M, 2 | 08:30 | 7 | yes | HOUST / PERMIT lin |
-| New Home Sales | census ressales (code from Task 1) lin | M | 1 -> K, 0 | 10:00 | 7 | yes | HSN1F lin |
-| Construction Spending m/m | census vip (code from Task 1) lin | M | %, 1 | 10:00 | 7 | yes | TTLCONS pch |
-| Business Inventories m/m | census mtis TOTBUS (code from Task 1) lin | M | %, 1 | 10:00 | 20 | yes | BUSINV pch |
-| Final Wholesale Inventories m/m | census mwts:42:MPCIM lin | M | %, 1 | 10:00 | 20 | yes | WHLSLRIMSA pch |
-| Prelim Wholesale Inventories m/m | census mwtsadv (code from Task 1) lin | M | %, 1 | 08:30 | 7 | yes | none |
-| Goods Trade Balance | census ftdadv (code from Task 1) lin | M | 0.001 -> B, 1 | 08:30 | 7 | yes | none |
-| Trade Balance | census ftd (code from Task 1) lin | M | 0.001 -> B, 1 | 08:30 | 20 | yes | BOPGSTB lin |
-| Factory Orders m/m | census m3 (code from Task 1) lin | M | %, 1 | 10:00 | 20 | yes | AMTMNO pch |
+| Durable Goods Orders m/m / Core Durable Goods Orders m/m | census advm3:MDM / DXT:MPCNO lin (resolved Task 1) | M | %, 1 | 08:30 | 7 | yes | DGORDER / ADXTNO pch |
+| Housing Starts / Building Permits | census resconst:ASTARTS / APERMITS:TOTAL lin (resolved Task 1; STARTS has no SA rows) | M | 0.001 -> M, 2 | 08:30 | 7 | yes | HOUST / PERMIT lin |
+| New Home Sales | census ressales:ASOLD:TOTAL lin (resolved Task 1) | M | 1 -> K, 0 | 10:00 | 7 | yes | HSN1F lin |
+| Construction Spending m/m | census vip:XXXX:MPCT lin (resolved Task 1) | M | %, 1 | 10:00 | 7 | yes | TTLCONS pch |
+| Business Inventories m/m | census mtis:TOTBUS:MPCIM lin (resolved Task 1) | M | %, 1 | 10:00 | 20 | yes | BUSINV pch |
+| Final Wholesale Inventories m/m | census mwts:42:MPCIM lin (UNRESOLVED in Task 1: matches neither stored FF values nor WHLSLRIMSA, which equals mtis WHLSLR:IM; leave out) | M | %, 1 | 10:00 | 20 | yes | WHLSLRIMSA pch |
+| Prelim Wholesale Inventories m/m | census mwtsadv (UNRESOLVED in Task 1: 42:MPCIM has no FF match and no twin; leave out) | M | %, 1 | 08:30 | 7 | yes | none |
+| Goods Trade Balance | census ftdadv (UNRESOLVED in Task 1: CBG:BAL has no FF match, no twin; leave out) | M | 0.001 -> B, 1 | 08:30 | 7 | yes | none |
+| Trade Balance | census ftd:BOPGS:BAL lin (resolved Task 1) | M | 0.001 -> B, 1 | 08:30 | 20 | yes | BOPGSTB lin |
+| Factory Orders m/m | census m3:MTM:MPCNO lin (resolved Task 1; m3 also needs for=us:*) | M | %, 1 | 10:00 | 20 | yes | AMTMNO pch |
 | Crude Oil Inventories | eia petroleum/stoc/wstk:WCESTUS1 chg | W, Fri | 0.001 -> M, 1 | 10:30 | 0 | no | WCESTUS1 chg |
 | Natural Gas Storage | eia natural-gas/stor/wkly:NW2_EPG0_SWO_R48_BCF chg | W, Fri | 1 -> B, 0 | 10:30 | 0 | no | none |
 | Federal Funds Rate | fed fomc_upper lin | event | %, 2 | 14:00 | 0 | no | DFEDTARU lin |
