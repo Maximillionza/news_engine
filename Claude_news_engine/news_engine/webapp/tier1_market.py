@@ -14,7 +14,8 @@ hand. The rule, fixed in advance:
 A forecast far outside the liquid strikes (a units mismatch) or no readable forecast is also no call.
 
 Everything here is pure except record_market_calls, which appends to tier1_predictions, at most one row per
-(title, release, instrument) per distinct implied median (mirrors webapp/tier1_formula.py).
+(title, release, instrument) per distinct (implied median, forecast text) (mirrors webapp/tier1_formula.py): a
+revised forecast can flip the side while the median holds, most often on the stepped Fed Funds ladder.
 """
 from __future__ import annotations
 
@@ -30,7 +31,7 @@ from data_layer.tier1_events import TIER1_MARKET_IMPLIED_CONFIDENCE, TIER1_MARKE
 from scoring.backtest_store import get_latest_tier1_prediction_for_occurrence, record_tier1_prediction
 from webapp.stats_methods import market_lean
 from webapp.stats_rules import parse_number, side, tolerance
-from webapp.tier1_formula import SIDE_LABELS
+from webapp.tier1_formula import SIDE_LABEL_ALTERNATION, SIDE_LABELS
 
 
 @dataclass(frozen=True)
@@ -61,8 +62,12 @@ NO_CROSSING = "no 50% crossing among liquid strikes"
 _EPS = 1e-9   # float noise in bid/ask differences (0.60 - 0.35)
 
 _LEAN_TO_DIRECTION = {"buy": "bullish", "sell": "bearish", "mixed": "neutral"}
-# The stored value text opens with the event ticker and the median at 4 decimals; this reads it back for the dedupe.
+# The stored value text opens with the event ticker and the median at 4 decimals, then the forecast text up to
+# ": <side label> ("; these read both back for the dedupe.
 _IMPLIED_IN_TEXT = re.compile(r"^Kalshi \S+ implied median (-?\d+\.\d{4}) vs forecast ")
+_IMPLIED_KEY_IN_TEXT = re.compile(
+    r"^Kalshi \S+ implied median (-?\d+\.\d{4}) vs forecast (.*): (?:" + SIDE_LABEL_ALTERNATION + r") \(",
+    re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -143,15 +148,22 @@ def implied_in_value_text(text: str) -> Optional[float]:
     return float(match.group(1)) if match else None
 
 
+def implied_key_in_value_text(text: str) -> Optional[tuple[float, str]]:
+    """(median, forecast text) a market-implied row was written from - the dedupe key; None for any other text."""
+    match = _IMPLIED_KEY_IN_TEXT.match(text or "")
+    return (float(match.group(1)), match.group(2)) if match else None
+
+
 def record_market_calls(bt_conn: Optional[sqlite3.Connection], event_title: str, release_utc: dt.datetime,
                         call: MarketCall, forecast_text: str, symbols: list[str], now_utc: dt.datetime,
                         dry_run: bool = False) -> dict:
     """
     Write the market-implied Tier 1 call for each tracked symbol, stamped logged_at_utc = now_utc.
     Returns {"written": [(symbol, direction)], "unchanged": [symbol]}. A symbol is "unchanged" when its latest
-    pre-release Kalshi row already carries this median (at the 4 decimals the text stores); a judgment or
-    FedWatch row for the same occurrence does not count. With dry_run every symbol is reported as would-write
-    and nothing is read or written (bt_conn may be None).
+    pre-release Kalshi row already carries this median (at the 4 decimals the text stores) against this same
+    forecast text; a revised forecast writes a new row even under an unchanged median, since it can change the
+    side. A judgment or FedWatch row for the same occurrence does not count. With dry_run every symbol is
+    reported as would-write and nothing is read or written (bt_conn may be None).
     """
     if now_utc.tzinfo is None or now_utc.utcoffset() is None:
         raise ValueError(f"now_utc must be timezone-aware, got naive {now_utc!r}")
@@ -167,7 +179,8 @@ def record_market_calls(bt_conn: Optional[sqlite3.Connection], event_title: str,
             continue
         latest = get_latest_tier1_prediction_for_occurrence(
             bt_conn, event_title, symbol, release_utc, source=TIER1_MARKET_IMPLIED_SOURCE)
-        if latest is not None and implied_in_value_text(latest.value) == round(call.implied_value, 4):
+        if latest is not None and implied_key_in_value_text(latest.value) == (round(call.implied_value, 4),
+                                                                              forecast_text):
             result["unchanged"].append(symbol)
             continue
         record_tier1_prediction(

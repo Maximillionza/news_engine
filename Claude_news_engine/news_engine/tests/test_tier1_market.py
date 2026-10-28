@@ -93,6 +93,8 @@ def test_market_call_divides_payroll_strikes_to_thousands():
     assert "(13 liquid strikes, read 2026-10-28 07:00 SAST)" in text
     assert tm.implied_in_value_text(text) == 70.0
     assert tm.implied_in_value_text("CME FedWatch (via FXStreet): 91% hold") is None
+    assert tm.implied_key_in_value_text(text) == (70.0, "50K")
+    assert tm.implied_key_in_value_text("CME FedWatch (via FXStreet): 91% hold") is None
 
 
 def test_market_call_continuous_gdp_and_discrete_fed():
@@ -171,6 +173,32 @@ def test_record_market_calls_writes_once_per_median():
     latest = bs.get_latest_tier1_prediction_for_occurrence(bt, "Non-Farm Employment Change", "XAUUSD",
                                                             NFP_RELEASE)
     assert tm.implied_in_value_text(latest.value) == 64.5
+
+
+def test_record_market_calls_revised_forecast_under_an_unchanged_median_writes_a_new_row():
+    # Review finding (B12 T3): the Fed Funds median sits on one 25 bp step for weeks while the consensus moves;
+    # keyed on the median alone, the revised forecast never reached the table and 'hotter' stayed on record.
+    bt = bs.get_connection(":memory:")
+    fed = _mid_ladder("KXFED-26DEC", [(3.75, 0.975), (4.0, 0.81), (4.25, 0.085), (4.5, 0.03)])
+    call, reason = tm.market_call("Federal Funds Rate", fed, "4.00%")
+    assert reason is None and call.implied_value == 4.25 and call.side == 1
+    first = tm.record_market_calls(bt, "Federal Funds Rate", NFP_RELEASE, call, "4.00%", ["XAUUSD"], NOW)
+    assert first == {"written": [("XAUUSD", "bearish")], "unchanged": []}
+
+    revised_call, _ = tm.market_call("Federal Funds Rate", fed, "4.25%")
+    assert revised_call.implied_value == call.implied_value and revised_call.side == 0
+    revised = tm.record_market_calls(bt, "Federal Funds Rate", NFP_RELEASE, revised_call, "4.25%", ["XAUUSD"],
+                                     NOW + dt.timedelta(days=1))
+    assert revised == {"written": [("XAUUSD", "neutral")], "unchanged": []}
+    assert len(_rows(bt)) == 2
+    latest = bs.get_latest_tier1_prediction_for_occurrence(bt, "Federal Funds Rate", "XAUUSD", NFP_RELEASE)
+    assert latest.predicted_direction == "neutral"
+    assert "vs forecast 4.25%: in line with forecast" in latest.value
+    assert tm.implied_key_in_value_text(latest.value) == (4.25, "4.25%")
+
+    again = tm.record_market_calls(bt, "Federal Funds Rate", NFP_RELEASE, revised_call, "4.25%", ["XAUUSD"],
+                                   NOW + dt.timedelta(days=2))
+    assert again == {"written": [], "unchanged": ["XAUUSD"]}
 
 
 def test_record_market_calls_ignores_a_judgment_row_for_the_dedupe():

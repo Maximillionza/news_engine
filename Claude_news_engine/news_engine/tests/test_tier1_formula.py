@@ -51,6 +51,8 @@ def test_value_text_round_trips_the_nowcast_and_shows_sast():
     assert "Fed value dated 2026-11-10" in text
     assert tf.nowcast_in_value_text(text) == 0.5307
     assert tf.nowcast_in_value_text("Consensus 0.3%; BLS/ISM context points hotter") is None
+    assert tf.nowcast_key_in_value_text(text) == (0.5307, "0.3%")
+    assert tf.nowcast_key_in_value_text("Consensus 0.3%; BLS/ISM context points hotter") is None
 
 
 # --- record_formula_calls ------------------------------------------------------------------------
@@ -75,6 +77,23 @@ def test_formula_rows_are_written_once_per_distinct_nowcast():
     assert len(_rows(bt)) == 5
     latest = bs.get_latest_tier1_prediction_for_occurrence(bt, "CPI m/m", "US30", RELEASE)
     assert tf.nowcast_in_value_text(latest.value) == 0.5310
+
+
+def test_formula_revised_forecast_under_an_unchanged_nowcast_writes_a_new_row():
+    # Review finding (B12 T3): the dedupe once keyed on the nowcast alone, so a revised forecast that flips the
+    # side never reached the table and the stale side stayed the call of record.
+    bt = bs.get_connection(":memory:")
+    first = tf.record_formula_calls(bt, "CPI m/m", RELEASE, 0.5307, "0.3%", VALUE_DATE, ["XAUUSD"], NOW)
+    assert first["written"] == [("XAUUSD", "bearish")]
+    revised = tf.record_formula_calls(bt, "CPI m/m", RELEASE, 0.5307, "0.5%", VALUE_DATE, ["XAUUSD"],
+                                      NOW + dt.timedelta(hours=1))
+    assert revised == {"written": [("XAUUSD", "neutral")], "unchanged": [], "pending": None}
+    assert len(_rows(bt)) == 2
+    latest = bs.get_latest_tier1_prediction_for_occurrence(bt, "CPI m/m", "XAUUSD", RELEASE)
+    assert latest.predicted_direction == "neutral" and "vs forecast 0.5%: in line with forecast" in latest.value
+    again = tf.record_formula_calls(bt, "CPI m/m", RELEASE, 0.5307, "0.5%", VALUE_DATE, ["XAUUSD"],
+                                    NOW + dt.timedelta(hours=2))
+    assert again == {"written": [], "unchanged": ["XAUUSD"], "pending": None}
 
 
 def test_record_formula_calls_without_a_forecast_writes_nothing():
