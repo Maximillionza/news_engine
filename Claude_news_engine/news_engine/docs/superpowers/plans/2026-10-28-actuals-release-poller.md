@@ -112,7 +112,7 @@ def fetch_fred_current(series_id: str, key: str, fetcher: Fetcher, observation_s
   - `test_bls_batches_fifty_series_per_post`: 51 ids -> exactly 2 POSTs; the key is in `registrationkey` of each body.
   - `test_bls_daily_threshold_raises_rate_limited`: a `REQUEST_NOT_PROCESSED` body with a threshold message raises `SourceRateLimited`.
   - `test_bea_parses_quarter_and_month_periods_and_commas`: `A191RL`[2026-04-01] == 2.2; `DPCCRGM`[2026-08-01] == 0.2; `A065RC`[2026-08-01] == 27626933.0.
-  - `test_bea_invalid_key_raises_key_inactive`: a BEA error body with `APIErrorCode` 3 raises `KeyInactiveError`.
+  - `test_bea_invalid_key_raises_key_inactive`: a BEA error body with `APIErrorCode` 3, or the live answer to a bad key (`APIErrorCode` 1, "Invalid Request - Invalid API UserId."), raises `KeyInactiveError`; code 1 with any other description and code 40 raise a plain `SourceError`.
   - `test_census_missing_key_page_raises_key_inactive`: HTML title `Missing Key` -> `KeyInactiveError`; `advm3` request carries `for=us:*`; non-US geography rows are dropped.
   - `test_eia_weekly_returns_levels_by_week_end`: crude[2026-10-23] == 410625 and [2026-10-16] == 412517; gas[2026-10-16] == 3644.
   - `test_fed_parses_upper_bound_with_tags_and_fractions`: the 10-28 page -> (3.75, 4.0); the 09-16 page (with `<strong> </strong>`) -> (3.75, 4.0); `fetch_fomc_upper_bounds` keys the 10-28 statement as date(2026, 10, 28) and ignores minutes and discount-rate items.

@@ -147,7 +147,21 @@ def test_bea_invalid_key_raises_key_inactive():
     fake = FakeFetcher([(_url_has("apps.bea.gov"), _ok(json.dumps(body)))])
     with pytest.raises(KeyInactiveError):
         bea.fetch_nipa("T10101", "Q", [2026], SECRET, fake)
-    body["BEAAPI"]["Results"]["Error"]["APIErrorCode"] = "40"
+    # The exact live answer to a made-up UserID (2026-10-28): code 1, not 3.
+    body["BEAAPI"]["Results"]["Error"] = {
+        "APIErrorCode": "1", "APIErrorDescription": "Invalid Request - Invalid API UserId."}
+    fake = FakeFetcher([(_url_has("apps.bea.gov"), _ok(json.dumps(body)))])
+    with pytest.raises(KeyInactiveError):
+        bea.fetch_nipa("T10101", "Q", [2026], SECRET, fake)
+    # Code 1 for any other invalid request stays a plain SourceError.
+    body["BEAAPI"]["Results"]["Error"] = {
+        "APIErrorCode": "1", "APIErrorDescription": "Invalid Request - Invalid Parameter Value(s)."}
+    fake = FakeFetcher([(_url_has("apps.bea.gov"), _ok(json.dumps(body)))])
+    with pytest.raises(SourceError) as info:
+        bea.fetch_nipa("T10101", "Q", [2026], SECRET, fake)
+    assert not isinstance(info.value, KeyInactiveError)
+    body["BEAAPI"]["Results"]["Error"] = {
+        "APIErrorCode": "40", "APIErrorDescription": "The dataset requested requires parameters that were missing from the request."}
     fake = FakeFetcher([(_url_has("apps.bea.gov"), _ok(json.dumps(body)))])
     with pytest.raises(SourceError) as info:
         bea.fetch_nipa("T10101", "Q", [2026], SECRET, fake)

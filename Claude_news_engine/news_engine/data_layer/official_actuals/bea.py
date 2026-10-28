@@ -7,8 +7,12 @@ ResultFormat=JSON. Result: {SeriesCode: {period: value}}; `TimePeriod`
 "2026Q2" -> 2026-04-01, "2026M08" -> 2026-08-01. `DataValue` carries
 thousands separators ("27,626,933"); "(NA)"-style cells are skipped.
 
-BEA answers errors with HTTP 200 and an `Error` object: APIErrorCode 3
-(invalid UserID) raises KeyInactiveError, any other code SourceError.
+BEA answers errors with HTTP 200 and an `Error` object. A rejected UserID
+raises KeyInactiveError: live BEA (checked 2026-10-28) answers a made-up key
+with APIErrorCode 1 and "Invalid Request - Invalid API UserId.", so the
+description is matched as well as the documented code 3. Code 1 alone is not
+enough (BEA uses it for every "Invalid Request - ..." error); any other
+error raises SourceError.
 BEA echoes the key back in Request.RequestParam (USERID), so a body must
 never be logged or saved unscrubbed.
 """
@@ -52,7 +56,8 @@ def parse_nipa(body: str) -> dict[str, dict[dt.date, float]]:
     err = _error(payload)
     if err is not None:
         code = str(err.get("APIErrorCode", "")).strip()
-        if code == _BEA_INVALID_USER_ID:
+        description = str(err.get("APIErrorDescription", "")).lower()
+        if code == _BEA_INVALID_USER_ID or "userid" in description:
             raise KeyInactiveError("bea: UserID rejected")
         raise SourceError(f"bea: API error {code or 'unknown'}")
     data = ((payload.get("BEAAPI") or {}).get("Results") or {}).get("Data")
