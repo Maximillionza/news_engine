@@ -52,7 +52,7 @@ Approved by the owner on 2026-10-21 ('proceed'). Full detail, order rationale an
 | B9 Stats: honest scoreboard | Correctness, QoL | agreed; ST3-ST5 done in B9a; ST1-ST2 done 2026-10-28 (merged and live; B9 scoring-display change live since 2026-10-28 12:49:18 UTC = 14:49 SAST; owner accepted the Market reaction engine-column side effect: 18 cells per instrument changed as listed in docs/b9-deploy.md; no DB changes; pytest 2019/2019, npm 239/239 on live) |
 | B10 Grade shock-alert leans | Capability | done 2026-10-28 (merged and live since 14:33:30 UTC = 16:33 SAST; shock_alerts.db backed up, backfill graded 336 cells = 84 alerts x 2 symbols x 2 anchors, rerun 0; overall 5-minute detection-anchored hit rate 40.0% (4 of 10) vs 14 of 26 before (High-only, fixed $10/150, detection only); pytest 2089/2089, npm 250/250 on live) |
 | B11 Dead code and consolidation | Cleanup | done 2026-10-22 (merged and live; no DB changes; pytest 1907/1907, npm 223/223 on live); C5 deferred to B10 |
-| B12 Tier 1 expansion (Core PCE, y/y, Kalshi) | Capability | built on branch b12-tier1-expansion (T9, T10, T11, FedWatch fix; T12 done in B9a) |
+| B12 Tier 1 expansion (Core PCE, y/y, Kalshi) | Capability | done 2026-10-29 (merged and live since 2026-10-28 23:37:51 UTC = 01:37 SAST; backtest_log.db backed up; Tier 1 tasks re-registered; research-task SKILL.md replaced (backup .bak_2026-10-29); first capture wrote Core PCE m/m (formula) and Advance GDP q/q (Kalshi market-implied) for 2026-10-29; FedWatch rows served market_implied (2 on Stats); pytest 2158/2158, npm 250/250 on live) (T9, T10, T11, FedWatch fix; T12 done in B9a) |
 
 ---
 
