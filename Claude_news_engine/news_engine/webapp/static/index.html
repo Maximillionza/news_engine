@@ -83,7 +83,14 @@
 </section>
 
 <section id="view-shock-alerts" style="display:none" role="tabpanel" aria-labelledby="tab-shock-alerts">
-  <div id="shock-alerts-empty-notice" class="stale-notice" style="display:none">No shock alerts in the last 7 days.</div>
+  <form id="shock-range" class="stats-filters">
+    <label>From <input type="date" id="shock-range-from"></label>
+    <label>To <input type="date" id="shock-range-to"></label>
+    <button type="submit" id="shock-range-show">Show</button>
+  </form>
+  <div id="shock-grading-summary"></div>
+  <div id="shock-grading-table"></div>
+  <div id="shock-alerts-empty-notice" class="stale-notice" style="display:none">No shock alerts in this date range.</div>
   <div id="shock-alerts-list"></div>
   <details id="shock-alerts-low-details" style="display:none">
     <summary>Low-severity (collapsed)</summary>
