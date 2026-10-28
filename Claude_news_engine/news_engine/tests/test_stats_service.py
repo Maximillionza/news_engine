@@ -923,3 +923,58 @@ def test_st1_writes_nothing_to_either_db(conns):
     svc.build_scoreboard(rows)
     svc.build_chart(rows, "news")
     assert snapshot() == before
+
+
+# --- B9 ST2: honest baselines (directional-only, always-in-line) and the News no-call count --------------
+
+def _rate_of(scored, right, shown=False):
+    return {"scored": scored, "right": right,
+            "accuracy": (right / scored) if shown else None, "accuracy_shown": shown}
+
+
+def test_scoreboard_baseline_and_directional_per_method(conns):
+    board = svc.build_scoreboard(_honest_population(*conns))
+    m = board["methods"]
+    assert (m["tier1"]["scored"], m["tier1"]["right"]) == (3, 1)
+    assert m["tier1"]["directional"] == _rate_of(2, 1)
+    assert (m["news"]["scored"], m["news"]["right"]) == (2, 1)
+    assert m["news"]["directional"] == _rate_of(1, 1)
+    assert m["news"]["no_call"] == 1
+    assert (m["combined"]["scored"], m["combined"]["right"]) == (3, 1)
+    assert m["combined"]["directional"] == _rate_of(2, 0)
+    assert board["in_line_baseline"] == {
+        "tier1": _rate_of(3, 1), "news": _rate_of(2, 1), "combined": _rate_of(3, 1)}
+
+
+def test_news_no_call_is_excluded_from_accuracy_and_counted(conns):
+    dash, bt = conns
+    _honest_population(dash, bt)
+    # A pending abstention (no actual yet) must not be counted as a no-call.
+    _event(dash, "CPI m/m", _t(11), "0.3%", None)
+    _snap(bt, "CPI m/m", _t(11), 0.4)
+    _print_call(bt, "CPI m/m", _t(11), "higher", 0.1, scored_at=_t(11) - dt.timedelta(days=1))
+    board = svc.build_scoreboard(svc.build_rows(dash, bt, event_title="CPI m/m"))
+    news = board["methods"]["news"]
+    assert news["scored"] == 2 and news["directional"]["scored"] == 1
+    assert board["in_line_baseline"]["news"]["scored"] == 2
+    assert news["mean_miss"] == pytest.approx((0.02 + 0.05) / 2)     # only graded calls
+    assert news["no_call"] == 1
+
+
+def test_honest_rates_show_percent_from_20(conns):
+    dash, bt = conns
+    for i in range(20):
+        when = dt.datetime(2025, 1, 1, 12, 30, tzinfo=UTC) + dt.timedelta(days=30 * i)
+        _event(dash, "CPI m/m", when, "0.3%", "0.4%")
+        _snap(bt, "CPI m/m", when, 0.4)
+    rows = svc.build_rows(dash, bt, event_title="CPI m/m")
+    board = svc.build_scoreboard(rows)
+    assert board["methods"]["tier1"]["directional"] == {
+        "scored": 20, "right": 20, "accuracy": 1.0, "accuracy_shown": True}
+    assert board["in_line_baseline"]["tier1"] == {
+        "scored": 20, "right": 0, "accuracy": 0.0, "accuracy_shown": True}
+    board19 = svc.build_scoreboard(rows[:19])
+    assert board19["methods"]["tier1"]["directional"]["accuracy"] is None
+    assert board19["methods"]["tier1"]["directional"]["accuracy_shown"] is False
+    assert board19["in_line_baseline"]["tier1"]["accuracy"] is None
+    assert board19["in_line_baseline"]["tier1"]["accuracy_shown"] is False

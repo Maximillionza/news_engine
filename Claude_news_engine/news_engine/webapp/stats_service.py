@@ -441,6 +441,20 @@ def build_chart(rows: list[StatsRow], method: str) -> dict:
     return {"method": method, "unit": _unit(rows), "points": points}
 
 
+def _actual_side(row: StatsRow) -> Optional[int]:
+    """Which way the release actually came in versus the forecast (+1 higher, -1 lower, 0 in line); None if unknown."""
+    if row.actual is None or row.forecast is None or row.tol is None:
+        return None
+    return side(row.actual, row.forecast, row.tol)
+
+
+def _rate(scored: int, right: int) -> dict:
+    """A count pair plus its accuracy; the percentage stays hidden under MIN_SCORED_FOR_PERCENT, the counts never are."""
+    shown = scored >= MIN_SCORED_FOR_PERCENT
+    return {"scored": scored, "right": right,
+            "accuracy": (right / scored) if shown else None, "accuracy_shown": shown}
+
+
 def build_scoreboard(rows: list[StatsRow]) -> dict:
     """
     Per method: calls with a verdict, how many were right, accuracy (hidden under MIN_SCORED_FOR_PERCENT)
@@ -453,14 +467,22 @@ def build_scoreboard(rows: list[StatsRow]) -> dict:
 
     Mean miss is only reported when every scored call belongs to ONE event title: titles carry their own
     units (% vs K), so averaging across them is meaningless. Counts and accuracy are still reported.
+
+    B9 ST2 (honest baselines, each with n, % hidden under 20), over the SAME graded calls as above:
+    `directional` is accuracy on releases whose actual came in higher or lower (in-line actuals left out);
+    top-level `in_line_baseline[name]` is how often an "always in line" guess would have been right on that
+    method's graded releases; `methods.news.no_call` counts scored releases where News abstained (|lean| under
+    the pre-registered threshold). An abstention is never graded, so it is in none of the other counts.
     """
     methods = {}
+    in_line_baseline = {}
     for name in METHODS:
         scored = right = 0
         by_kind = {"live": {"scored": 0, "right": 0}, "reconstructed": {"scored": 0, "right": 0}}
         with_news = {"scored": 0, "right": 0}
         misses: list[float] = []
         titles: set[str] = set()
+        dir_scored = dir_right = base_right = 0
         for row in rows:
             call = getattr(row, name)
             if call is None or call.verdict is None:
@@ -474,6 +496,12 @@ def build_scoreboard(rows: list[StatsRow]) -> dict:
             if call.note != "news_missing":
                 with_news["scored"] += 1
                 with_news["right"] += is_right
+            a_side = _actual_side(row)
+            if a_side == 0:
+                base_right += 1
+            elif a_side is not None:
+                dir_scored += 1
+                dir_right += is_right
             titles.add(row.event_title)
             if call.miss is not None:
                 misses.append(call.miss)
@@ -484,7 +512,11 @@ def build_scoreboard(rows: list[StatsRow]) -> dict:
             "accuracy": (right / scored) if shown else None, "accuracy_shown": shown,
             "mean_miss": (sum(misses) / len(misses)) if misses and one_title else None,
             "by_kind": by_kind,
+            "directional": _rate(dir_scored, dir_right),
         }
+        in_line_baseline[name] = _rate(scored, base_right)
         if name == "combined":
             methods[name]["with_news"] = with_news
-    return {"methods": methods, "min_for_percent": MIN_SCORED_FOR_PERCENT}
+    methods["news"]["no_call"] = sum(
+        1 for r in rows if r.status == "scored" and r.news is not None and r.news.side is None)
+    return {"methods": methods, "min_for_percent": MIN_SCORED_FOR_PERCENT, "in_line_baseline": in_line_baseline}
