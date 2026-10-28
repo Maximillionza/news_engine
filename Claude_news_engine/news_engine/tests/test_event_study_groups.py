@@ -1,10 +1,10 @@
-"""Pure-helper tests for scripts/event_study_groups.py (synthetic members and rows; no network, no DB)."""
+"""Pure-helper tests for scripts/archive/event_study_groups.py (synthetic members and rows; no network, no DB)."""
 import datetime as dt
 
 import pytest
 
-from scripts import event_study_groups as g
-from scripts import event_study_metrics as m
+from scripts.archive import event_study_groups as g
+from scripts.archive import event_study_metrics as m
 
 UTC = dt.timezone.utc
 T = dt.datetime(2026, 3, 12, 12, 30, 0, tzinfo=UTC)

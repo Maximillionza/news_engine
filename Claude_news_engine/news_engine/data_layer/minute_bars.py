@@ -1,7 +1,7 @@
 """
 Shared 1-minute bar helpers (B10 C4, 2026-10-28).
 
-Moved out of the one-off scripts/market_reaction_phase0.py and scripts/compute_release_reactions.py so the
+Moved out of the one-off scripts/archive/market_reaction_phase0.py and scripts/compute_release_reactions.py so the
 hourly reaction job and the shock-alert lean grading (alerting/lean_grading.py) read bars and baselines the
 same way. Behaviour is unchanged by the move (tests/test_minute_bars.py::test_reaction_job_output_unchanged_by_c4).
 

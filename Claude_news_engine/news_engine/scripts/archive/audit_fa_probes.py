@@ -7,7 +7,7 @@ FOMC relevance filter, shock triage, shock symbol relevance,
 usd_surprise_score) and prints what each one does with non-USD and
 trade-flow news. Re-run after any fix to confirm the finding is closed.
 
-    python scripts/audit_fa_probes.py
+    python scripts/archive/audit_fa_probes.py
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import datetime as dt
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from alerting.symbol_relevance import affected_symbols
 from alerting.triage import triage_article

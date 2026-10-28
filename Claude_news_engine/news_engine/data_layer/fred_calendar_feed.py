@@ -10,7 +10,7 @@ source was chosen and live-verified, and config/settings.py's
 FRED_RELEASE_ID_BY_EVENT_TITLE for which event titles map to which FRED
 release. NOT wired into scoring, the dashboard, or the accumulator.
 Callers: scripts/refresh_macro_calendar.py (the scheduled one; it also
-reads `last_failure_reason`) and scripts/compare_fred_lookahead.py, a
+reads `last_failure_reason`) and scripts/archive/compare_fred_lookahead.py, a
 standalone, read-only comparison/logging tool.
 
 READ-ONLY. This module never writes anything — it only reads FRED's

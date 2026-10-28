@@ -1,5 +1,5 @@
 """
-Tests for scripts/migrate_country_backfill.py — a one-off data migration
+Tests for scripts/archive/migrate_country_backfill.py — a one-off data migration
 backfilling event_history.country = 'USD' for rows whose source guarantees
 they are genuine US releases by construction (seeded, live_web_fallback,
 fred). No network needed.
@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import UTC_TZ
 import webapp.store as store
-import scripts.migrate_country_backfill as migrate
+import scripts.archive.migrate_country_backfill as migrate
 
 
 def _insert_row(conn, title, event_time, source, country=None):

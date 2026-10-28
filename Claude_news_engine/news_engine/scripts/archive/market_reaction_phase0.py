@@ -17,7 +17,7 @@ Prints:
       (spec method) against the Shock-alert audit method (scripts/audit_shock_impact.py baseline
       logic) over the same weekdays.
 
-Usage:  python scripts/market_reaction_phase0.py [path/to/dashboard.db]
+Usage:  python scripts/archive/market_reaction_phase0.py [path/to/dashboard.db]
 """
 from __future__ import annotations
 
@@ -30,8 +30,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
-# Make `python scripts/market_reaction_phase0.py` work from the app dir (repo root on sys.path).
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# Make `python scripts/archive/market_reaction_phase0.py` work from the app dir (repo root on sys.path).
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 # B10 C4 (2026-10-28): the bar fetch/cache and the baseline helpers live in data_layer/minute_bars.py now,
 # shared with the hourly reaction job and the shock-alert lean grading; imported back so nothing is duplicated.

@@ -3,7 +3,7 @@ B5 event study - release members, same-minute clusters, implied directions and g
 (pure; no I/O, no network, no DB).
 
 Plan: docs/superpowers/plans/2026-10-21-b5-event-study.md (Task 2). Uses the window measures of
-scripts/event_study_metrics.py; consumed by scripts/event_study_once.py; unit-tested in
+scripts/archive/event_study_metrics.py; consumed by scripts/archive/event_study_once.py; unit-tested in
 tests/test_event_study_groups.py.
 
 Rules:
@@ -35,10 +35,10 @@ from pathlib import Path
 from typing import Any, Optional
 
 # Make `python scripts/...` work from the app dir (repo root on sys.path).
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config.settings import EVENT_REGISTRY, EVENT_SURPRISE_DIRECTION, LOCAL_TZ  # noqa: E402
-from scripts.compute_release_reactions import quantile  # noqa: E402
-from scripts.event_study_metrics import METRIC_KEYS, baseline_multiple, owner_units  # noqa: E402
+from data_layer.minute_bars import quantile  # noqa: E402
+from scripts.archive.event_study_metrics import METRIC_KEYS, baseline_multiple, owner_units  # noqa: E402
 from webapp import stats_rules  # noqa: E402
 from webapp.reaction_rules import DUPLICATE_WITHIN, collapse_same_title_duplicates  # noqa: E402
 from webapp.stats_methods import market_lean  # noqa: E402

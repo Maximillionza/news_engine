@@ -1,11 +1,11 @@
-"""Pure-helper tests for scripts/event_study_checks.py (chain E2 and Tier 1 dipstick E3; no network, no DB)."""
+"""Pure-helper tests for scripts/archive/event_study_checks.py (chain E2 and Tier 1 dipstick E3; no network, no DB)."""
 import csv
 import datetime as dt
 
 import pytest
 
 from scripts import cleveland_nowcast_to_csv as cn
-from scripts import event_study_checks as c
+from scripts.archive import event_study_checks as c
 
 UTC = dt.timezone.utc
 RELEASE = dt.datetime(2026, 3, 11, 12, 30, 0, tzinfo=UTC)

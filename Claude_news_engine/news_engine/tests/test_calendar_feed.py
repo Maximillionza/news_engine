@@ -247,7 +247,7 @@ def test_non_usd_row_has_no_surprise():
 
 def test_audit_probe3_handles_no_surprise():
     print("=== B6: audit Probe 3 formats a None surprise instead of crashing ===")
-    from scripts.audit_fa_probes import probe_surprise_scale
+    from scripts.archive.audit_fa_probes import probe_surprise_scale
     lines = probe_surprise_scale()
     jpy_lines = [l for l in lines if l.startswith("JPY")]
     assert jpy_lines and jpy_lines[0].endswith("usd_surprise_score=None")

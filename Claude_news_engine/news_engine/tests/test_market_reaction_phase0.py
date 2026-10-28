@@ -1,7 +1,7 @@
-"""Pure-helper tests for scripts/market_reaction_phase0.py (synthetic data only; no network, no DB)."""
+"""Pure-helper tests for scripts/archive/market_reaction_phase0.py (synthetic data only; no network, no DB)."""
 import datetime as dt
 
-from scripts import market_reaction_phase0 as p0
+from scripts.archive import market_reaction_phase0 as p0
 
 UTC = dt.timezone.utc
 

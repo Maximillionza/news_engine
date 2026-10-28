@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import scoring.backtest_store as backtest_store
 import webapp.predictions_service as predictions_service
 import scripts.confirm_backtest_outcomes as confirm_outcomes
-import scripts.event_study_once as once
+import scripts.archive.event_study_once as once
 from dukascopy_python.instruments import INSTRUMENT_IDX_AMERICA_DOLLAR_IDX_USD
 
 

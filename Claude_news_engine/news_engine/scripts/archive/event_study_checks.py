@@ -1,7 +1,7 @@
 """
 B5 event study - chain check (E2) and Tier 1 dipstick (E3) helpers (pure; no network, no DB).
 
-Plan: docs/superpowers/plans/2026-10-21-b5-event-study.md (Task 3). Consumed by scripts/event_study_once.py;
+Plan: docs/superpowers/plans/2026-10-21-b5-event-study.md (Task 3). Consumed by scripts/archive/event_study_once.py;
 unit-tested in tests/test_event_study_checks.py.
 
   * E2 asks two questions of the 5-minute DXY move after a release: does it follow the release's implied USD
@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 # Make `python scripts/...` work from the app dir (repo root on sys.path).
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config.settings import LOCAL_TZ  # noqa: E402
 from webapp import stats_rules  # noqa: E402
 

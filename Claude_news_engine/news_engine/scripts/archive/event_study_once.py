@@ -23,7 +23,7 @@ Read-only guarantee:
     never cached.
 
 Usage (from the app dir):
-    python scripts/event_study_once.py [--dry-run] [--offline] [--limit N] [--since 2026-01-01]
+    python scripts/archive/event_study_once.py [--dry-run] [--offline] [--limit N] [--since 2026-01-01]
         [--dash-db PATH] [--bt-db PATH] [--nowcast-csv PATH] [--out-dir PATH] [--pause SECONDS]
 --dry-run fetches nothing and prints only the sample block (compare with the known sample before a full run).
 Expected run time: 3 requests (XAUUSD, US30, DXY) per release minute at the pause, plus 1-minute fallbacks;
@@ -46,15 +46,15 @@ from typing import Any, Callable, Optional
 import pandas as pd
 
 # Make `python scripts/...` work from the app dir (repo root on sys.path).
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scoring import backtest_store  # noqa: E402
-from scripts import event_study_checks as checks  # noqa: E402
-from scripts import event_study_groups as groups  # noqa: E402
-from scripts import event_study_metrics as metrics  # noqa: E402
-from scripts.event_study_checks import LAGS_DAYS  # noqa: E402,F401  (re-exported for callers/tests)
-from scripts.event_study_groups import Cluster, Member, RELEASE_ROW_KEYS  # noqa: E402
-from scripts.event_study_metrics import Bar  # noqa: E402
-from scripts.market_reaction_phase0 import _parse_utc  # noqa: E402
+from scripts.archive import event_study_checks as checks  # noqa: E402
+from scripts.archive import event_study_groups as groups  # noqa: E402
+from scripts.archive import event_study_metrics as metrics  # noqa: E402
+from scripts.archive.event_study_checks import LAGS_DAYS  # noqa: E402,F401  (re-exported for callers/tests)
+from scripts.archive.event_study_groups import Cluster, Member, RELEASE_ROW_KEYS  # noqa: E402
+from scripts.archive.event_study_metrics import Bar  # noqa: E402
+from data_layer.minute_bars import parse_utc as _parse_utc  # noqa: E402
 from webapp.reaction_rules import DUPLICATE_WITHIN, REACTION_BASELINE_QUANTILE  # noqa: E402
 
 UTC = dt.timezone.utc
@@ -65,7 +65,7 @@ LIVE_DASH_DB = LIVE_ROOT / "webapp" / "dashboard.db"
 LIVE_BT_DB = LIVE_ROOT / "scoring" / "backtest_log.db"
 DEFAULT_OUT_DIR = Path(r"C:\Users\Masoodt\AppData\Local\Temp\news_engine_event_study")
 # Cleveland Fed daily nowcast history (CC BY 4.0), committed so E3 is reproducible after any scratchpad is cleaned.
-DEFAULT_NOWCAST_CSV = Path(__file__).resolve().parents[1] / "docs" / "data" / "cleveland_nowcasts_2026.csv"
+DEFAULT_NOWCAST_CSV = Path(__file__).resolve().parents[2] / "docs" / "data" / "cleveland_nowcasts_2026.csv"
 SYMBOLS = ("XAUUSD", "US30")
 SERIES = SYMBOLS + ("DXY",)
 START = dt.datetime(2026, 1, 1, tzinfo=UTC)
@@ -74,7 +74,7 @@ AFTER = dt.timedelta(minutes=31)            # ... to t + AFTER (30-min horizon +
 SETTLE = dt.timedelta(minutes=10)           # a minute is studied once t + AFTER + SETTLE <= now
 CACHE_MIN_AGE = dt.timedelta(hours=1)       # only windows that ended this long ago are cached
 DEFAULT_PAUSE_S = 1.5                       # seconds between Dukascopy requests
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 CPI_TITLES = ("CPI m/m", "Core CPI m/m")    # the Tier 1 dipstick releases
 CACHE_COLUMNS = ["ts", "open", "high", "low", "close"]
 

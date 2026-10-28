@@ -87,7 +87,7 @@ SHOCK_GLOBAL_SUPPLY_TERMS = (
 # --- FRED (St. Louis Fed) month-lookahead calendar source — READ-ONLY,
 # comparison/logging use only, NOT wired into scoring or the live
 # dashboard/accumulator pipelines (see docs/calendar-lookahead-source-research-2026-08-15.md
-# and scripts/compare_fred_lookahead.py). Forex Factory's feed only ever
+# and scripts/archive/compare_fred_lookahead.py). Forex Factory's feed only ever
 # shows "thisweek" (data_layer/calendar_feed.py's docstring) — FRED's
 # /fred/releases/dates endpoint is a genuinely free, official-source
 # alternative for forward-looking RELEASE DATES (not forecast/consensus

@@ -11,7 +11,7 @@ A rank of 0.5 means "typical"; the null expectation for the share of alerts abov
 the 75th / 90th percentile is 25% / 10%. Direction (alerts carrying a buy/sell lean)
 is scored separately. Small samples: read the counts, not just the percentages.
 
-Usage:  python scripts/audit_shock_impact.py [path/to/shock_alerts.db]   (default: this checkout's DB)
+Usage:  python scripts/archive/audit_shock_impact.py [path/to/shock_alerts.db]   (default: this checkout's DB)
 """
 from __future__ import annotations
 
@@ -24,6 +24,9 @@ from typing import Optional
 
 import json
 import sys
+
+# Make `python scripts/archive/audit_shock_impact.py` work from the app dir (app root on sys.path).
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import dukascopy_python as dk
 import pandas as pd

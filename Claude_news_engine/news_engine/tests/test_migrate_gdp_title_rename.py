@@ -1,5 +1,5 @@
 """
-Tests for scripts/migrate_gdp_title_rename.py — a one-off data migration
+Tests for scripts/archive/migrate_gdp_title_rename.py — a one-off data migration
 re-pointing historical rows stored under the old, wrong event_title
 'Advance GDP q/q' to the corrected 'Prelim GDP q/q'. No network needed.
 """
@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.settings import UTC_TZ
 import webapp.store as store
 import scoring.backtest_store as backtest_store
-import scripts.migrate_gdp_title_rename as migrate
+import scripts.archive.migrate_gdp_title_rename as migrate
 from data_layer.calendar_feed import EconomicEvent
 
 

@@ -118,7 +118,7 @@ def test_crr_uses_shared_helpers():
 
 def test_phase0_imports_the_moved_helpers_back():
     from data_layer import minute_bars
-    from scripts import market_reaction_phase0 as phase0
+    from scripts.archive import market_reaction_phase0 as phase0
     assert phase0.fetch_bars is minute_bars.fetch_bars
     assert phase0.spec_baseline_moves is minute_bars.spec_baseline_moves
     assert phase0.read_usd_events is minute_bars.read_usd_events

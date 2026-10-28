@@ -28,7 +28,7 @@ import os
 import argparse
 import datetime as dt
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from config.settings import FRED_API_KEY, FRED_RELEASE_ID_BY_EVENT_TITLE
 from data_layer.fred_calendar_feed import get_upcoming_release_dates, compare_fred_to_ff
