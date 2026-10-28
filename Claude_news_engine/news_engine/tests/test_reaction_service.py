@@ -370,6 +370,43 @@ def test_engine_failure_degrades_to_no_engine_column(conns, monkeypatch):
     assert row["engine"] is None and row["hit"]["k"] == 1
 
 
+def _news_print_call(bt, title, when, direction, confidence):
+    """A print call scored a day before the release; Stats turns it into the News lean (rule R3)."""
+    bs.record_print_prediction_if_changed(
+        bt, title, when, SimpleNamespace(direction=direction, confidence=confidence, article_count=7),
+        now=when - dt.timedelta(days=1))
+
+
+def test_engine_column_shows_the_st1_news_verdict_and_no_in_line_news_guess(conns):
+    """
+    B9 side effect (docs/b9-deploy.md section 1), no Market reaction code change: the engine column falls back
+    to the Stats News verdict when Combined and Tier 1 have none, so it carries the ST1 News call. A News lean
+    under 0.2 is a no-call, so the old "in line" News guess no longer earns a verdict here; a lean of 0.2 or
+    more is a graded higher/lower call. Real stats_service.build_rows, no Tier 1 snapshot, so Combined is n/a.
+    """
+    dash, bt = conns
+    for m, f, a in [(1, "0.3%", "0.2%"), (2, "0.3%", "0.4%"), (3, "0.3%", "0.4%")]:   # scale history, no calls
+        _ev(dash, "CPI m/m", _t(m), f, a)
+    _ev(dash, "CPI m/m", _t(4), "0.3%", "0.3%")              # in line: pre-B9 News 0.3 + 0.1 x 0.1 read 'right'
+    _news_print_call(bt, "CPI m/m", _t(4), "higher", 0.1)    # |lean| 0.1 < 0.2 -> no call
+    _ev(dash, "CPI m/m", _t(5), "0.3%", "0.4%")              # hotter
+    _news_print_call(bt, "CPI m/m", _t(5), "higher", 0.5)    # |lean| 0.5 -> 'higher' call, right
+    _react(bt, _t(4), "none", 0.5)
+    _react(bt, _t(5), "sell", -4.0)
+
+    stats_rows = {row.event_time_utc: row for row in rs.stats_service.build_rows(dash, bt)}
+    no_call, called = stats_rows[_t(4)], stats_rows[_t(5)]
+    assert no_call.combined is None and no_call.tier1 is None
+    assert no_call.news_call == "no_call" and no_call.news.verdict is None
+    assert rs._engine_call(no_call) is None
+    assert called.combined is None and called.tier1 is None and called.news_call == "higher"
+    assert rs._engine_call(called) == {"method": "news", "verdict": "right"}
+
+    calls = {r["event_time_utc"][:7]: r["engine_call"] for r in _releases(dash, bt, "CPI m/m")}
+    assert calls["2026-04"] is None
+    assert calls["2026-05"] == {"method": "news", "verdict": "right"}
+
+
 # ---- overlap note, duplicate collapse, sorting, robustness -------------------------------------------
 
 def test_overlap_note_tags_a_release_inside_the_5_minute_window_without_changing_credit(conns):
