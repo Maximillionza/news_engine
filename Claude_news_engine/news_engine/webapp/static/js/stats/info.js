@@ -96,7 +96,7 @@ function combinedLines(row, d, unit) {
     out.push(`Contributions: Tier 1 ${pct(w.tier1)} × ${signed(d.tier1_surprise)} = ${signed(w.tier1 * d.tier1_surprise)}; `
       + `news ${pct(w.news)} × ${signed(d.news_surprise)} = ${signed(w.news * d.news_surprise)}`);
   } else {
-    out.push("Weights: Tier 1 only (no news call for this release)");
+    out.push("Weights: Tier 1 only (no news number to blend for this release)");
   }
   const predicted = row.forecast + d.combined_surprise;
   out.push(`Combined: combined surprise ${signed(d.combined_surprise)}${unit}, predicted ${plain(predicted)}${unit}`);

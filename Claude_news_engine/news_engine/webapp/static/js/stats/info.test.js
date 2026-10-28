@@ -50,7 +50,8 @@ test("Combined readings without news say Tier 1 only, and explain a lean that ha
   const noNews = { ...ROW, combined: { ...ROW.combined, note: "news_missing" },
     detail: { ...DETAIL, news_lean: null, news_scale: null, news_surprise: null, combined_surprise: 0.1 } };
   const html = readingsHtml(noNews, "combined");
-  assert.ok(html.includes("Weights: Tier 1 only") && !html.includes("30% news"));
+  assert.ok(html.includes("Weights: Tier 1 only (no news number to blend") && !html.includes("30% news"));
+  assert.ok(!html.includes("no news call"));
   const unsized = readingsHtml({ ...noNews, detail: { ...noNews.detail, news_lean: 0.25 } }, "combined");
   assert.ok(unsized.includes("News lean +0.25") && unsized.includes("so no number")
     && !unsized.includes("to size it: no news call"));
