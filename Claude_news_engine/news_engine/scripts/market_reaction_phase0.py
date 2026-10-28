@@ -23,11 +23,8 @@ from __future__ import annotations
 
 import bisect
 import datetime as dt
-import pickle
 import sqlite3
 import sys
-import tempfile
-import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,15 +33,20 @@ from typing import Iterable, Optional
 # Make `python scripts/market_reaction_phase0.py` work from the app dir (repo root on sys.path).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# B10 C4 (2026-10-28): the bar fetch/cache and the baseline helpers live in data_layer/minute_bars.py now,
+# shared with the hourly reaction job and the shock-alert lean grading; imported back so nothing is duplicated.
+from data_layer.minute_bars import (  # noqa: E402,F401
+    CACHE_DIR, WINDOW_MIN, fetch_bars, month_chunks as _month_chunks, parse_utc as _parse_utc,
+    read_usd_events, spec_baseline_moves, weekdays as _weekdays,
+)
+
 UTC = dt.timezone.utc
 SYMBOLS = ("XAUUSD", "US30")
 START = dt.datetime(2026, 1, 1, tzinfo=UTC)
-WINDOW_MIN = 5
 BASELINE_HOUR = 12
 LIVE_DASHBOARD_DB = Path(
     r"C:\Users\Masoodt\Documents\Claude\Projects\.worktrees\news-engine-live"
     r"\Claude_news_engine\news_engine\webapp\dashboard.db")
-CACHE_DIR = Path(tempfile.gettempdir()) / "market_reaction_phase0_cache"
 
 
 # =============================================================================================
@@ -119,31 +121,6 @@ def median(values: list) -> Optional[float]:
     return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
 
 
-def _weekdays(opens: dict) -> list:
-    return sorted({ts.date() for ts in opens if ts.weekday() < 5})
-
-
-def spec_baseline_moves(opens: dict, hour: int, release_minutes: set,
-                        window_min: int = WINDOW_MIN, grid: Optional[tuple] = None) -> list:
-    """
-    Spec section 4 `typical` input: |open(t+5) - open(t)| for every window starting on a 5-minute boundary
-    inside `hour` (UTC) on weekdays, skipping windows whose start minute is a USD release minute and any
-    window missing either bar (strict: exact minute, no gap tolerance). `grid` limits the start minutes
-    (default every `window_min` minutes) so the method can be compared like-for-like with the audit grid.
-    """
-    horizon = dt.timedelta(minutes=window_min)
-    out = []
-    for day in _weekdays(opens):
-        for minute in (grid if grid is not None else range(0, 60, window_min)):
-            start = dt.datetime(day.year, day.month, day.day, hour, minute, tzinfo=UTC)
-            if start in release_minutes:
-                continue
-            a, b = opens.get(start), opens.get(start + horizon)
-            if a is not None and b is not None:
-                out.append(abs(b - a))
-    return out
-
-
 def audit_price_at(opens: dict, when: dt.datetime, keys: Optional[list] = None) -> Optional[float]:
     """audit_shock_impact.price_at: open of the first bar at/after `when` (ceil to the minute), None if > 5 min away."""
     keys = sorted(opens) if keys is None else keys
@@ -178,19 +155,6 @@ def audit_baseline_moves(opens: dict, hour: int, window_min: int = WINDOW_MIN,
 # I/O (not unit-tested: network + the live DB)
 # =============================================================================================
 
-def _parse_utc(text: str) -> dt.datetime:
-    parsed = dt.datetime.fromisoformat(text)
-    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
-
-
-def read_usd_events(conn: sqlite3.Connection) -> list:
-    """(title, event_time_utc, forecast, actual) for every USD row, via an already-open connection."""
-    rows = conn.execute(
-        "SELECT event_title, event_time_utc, forecast, actual FROM event_history "
-        "WHERE country = 'USD' ORDER BY event_time_utc").fetchall()
-    return [(r[0], _parse_utc(r[1]), r[2], r[3]) for r in rows]
-
-
 def load_usd_events(db_path: Path) -> list:
     """(title, event_time_utc, forecast, actual) for USD rows since START. Read-only connection."""
     conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
@@ -199,42 +163,6 @@ def load_usd_events(db_path: Path) -> list:
     finally:
         conn.close()
     return [e for e in events if e[1] >= START]
-
-
-def _month_chunks(start: dt.datetime, end: dt.datetime) -> list:
-    chunks = []
-    cur = dt.datetime(start.year, start.month, 1, tzinfo=UTC)
-    while cur < end:
-        nxt = dt.datetime(cur.year + (cur.month == 12), cur.month % 12 + 1, 1, tzinfo=UTC)
-        chunks.append((cur, nxt))
-        cur = nxt
-    return chunks
-
-
-def fetch_bars(symbol: str, start: dt.datetime, end: dt.datetime, pause_s: float = 2.0) -> dict:
-    """{minute_start_utc: open} from Dukascopy 1-minute BID bars, fetched per calendar month and cached."""
-    import dukascopy_python as dk
-    from data_layer.dukascopy_feed import _resolve_dukascopy_instrument
-
-    instrument = _resolve_dukascopy_instrument(symbol)
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    now = dt.datetime.now(UTC)
-    opens: dict = {}
-    for lo, hi in _month_chunks(start, end):
-        cache = CACHE_DIR / f"{symbol}_{lo:%Y-%m}.pkl"
-        complete = hi <= now - dt.timedelta(hours=1)           # only finished months are cached
-        if complete and cache.exists():
-            opens.update(pickle.loads(cache.read_bytes()))
-            continue
-        fetch_to = min(hi, now) + dt.timedelta(minutes=10)     # a little slack so a month-end t+5 is included
-        df = dk.fetch(instrument, dk.INTERVAL_MIN_1, dk.OFFER_SIDE_BID, lo, fetch_to)
-        chunk = {ts.to_pydatetime().astimezone(UTC): float(v) for ts, v in df["open"].sort_index().items()}
-        if complete:
-            cache.write_bytes(pickle.dumps(chunk))
-        opens.update(chunk)
-        print(f"  fetched {symbol} {lo:%Y-%m}: {len(chunk)} bars", file=sys.stderr)
-        time.sleep(pause_s)                                    # do not hammer the service
-    return opens
 
 
 def implied_lean(title: str, forecast_text: Optional[str], actual_text: Optional[str], symbol: str) -> str:

@@ -45,20 +45,19 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import math
 import os
 import sqlite3
 import sys
-from collections.abc import Mapping
 from pathlib import Path
-from typing import Callable, Optional, Union
-
-import pandas as pd
+from typing import Callable, Optional
 
 # Allow `python scripts/compute_release_reactions.py ...` (script dir, not the app root, is on sys.path).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from data_layer import minute_bars  # noqa: E402
+from data_layer.minute_bars import (  # noqa: E402
+    Bars, FetchBars, _as_opens, aware_utc as _aware_utc, price_at_minute, quantile, to_opens,
+)
 from scoring import backtest_store  # noqa: E402
-from scripts import market_reaction_phase0 as phase0  # noqa: E402
 from scripts.backfill_tier1_reconstructed import LIVE_ENV_VAR, open_dash_readonly  # noqa: E402
 from webapp import store as dash_store  # noqa: E402
 from webapp.reaction_rules import (  # noqa: E402
@@ -67,87 +66,24 @@ from webapp.reaction_rules import (  # noqa: E402
 )
 
 UTC = dt.timezone.utc
-WINDOW = dt.timedelta(minutes=phase0.WINDOW_MIN)      # the 5-minute reaction window (spec R1)
+WINDOW = dt.timedelta(minutes=minute_bars.WINDOW_MIN)      # the 5-minute reaction window (spec R1)
 MIN_AGE = dt.timedelta(minutes=10)                     # a release must be at least this old to be judged
 DEFAULT_SINCE = dt.datetime(2026, 1, 1, tzinfo=UTC)
 BAR_SOURCE = "dukascopy_1m"
 MODES = ("backfill", "incremental")
 
 # The only code that touches the network: Dukascopy 1-minute BID bars per calendar month, completed months
-# cached as pickles in the OS temp dir (scripts/market_reaction_phase0.py). Tests replace this attribute.
-default_fetch_bars = phase0.fetch_bars
-
-Bars = Union[pd.Series, Mapping]
-FetchBars = Callable[[str, dt.datetime, dt.datetime], Bars]
+# cached as pickles in the OS temp dir (data_layer/minute_bars.py, B10 C4). Tests replace this attribute.
+default_fetch_bars = minute_bars.fetch_bars
 
 
 # =============================================================================================
 # Pure helpers
 # =============================================================================================
 
-def _aware_utc(value: dt.datetime, name: str) -> dt.datetime:
-    """A naive datetime is ambiguous (local or UTC?), so it is refused rather than guessed."""
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError(f"{name} must be timezone-aware, got naive {value!r}")
-    return value.astimezone(UTC)
-
-
 def _release_minute(when: dt.datetime) -> dt.datetime:
     """The UTC minute a release falls in (event_history times are whole minutes; seconds are dropped)."""
     return _aware_utc(when, "release time").replace(second=0, microsecond=0)
-
-
-class _Opens(dict):
-    """A {aware UTC minute: open} dict already validated by to_opens (so it is not re-checked per call)."""
-
-
-def to_opens(bars: Bars) -> dict[dt.datetime, float]:
-    """
-    {aware UTC minute start: open} from a pandas Series (UTC DatetimeIndex -> open) or a mapping.
-    Non-finite opens are dropped (a NaN bar is a missing bar). A naive timestamp raises.
-    """
-    if isinstance(bars, pd.Series):
-        index = bars.index
-        if len(index) and getattr(index, "tz", None) is None:
-            raise ValueError("bar index must be timezone-aware UTC, got a naive index")
-        stamps = [ts.replace(tzinfo=UTC) for ts in index.tz_convert(UTC).to_pydatetime()] if len(index) else []
-        pairs = zip(stamps, bars.to_numpy())
-    elif isinstance(bars, Mapping):
-        pairs = ((_aware_utc(ts, "bar timestamp"), value) for ts, value in bars.items())
-    else:
-        raise TypeError(f"bars must be a pandas Series or a mapping, got {type(bars).__name__}")
-    opens = _Opens()
-    for when, value in pairs:
-        if value is None:
-            continue
-        price = float(value)
-        if math.isfinite(price):
-            opens[when] = price
-    return opens
-
-
-def _as_opens(bars: Bars) -> dict[dt.datetime, float]:
-    """Only to_opens output skips validation; any other dict or Series is normalised (naive keys raise)."""
-    return bars if isinstance(bars, _Opens) else to_opens(bars)
-
-
-def price_at_minute(bars: Bars, when: dt.datetime) -> Optional[float]:
-    """Open of the 1-minute bar starting exactly at `when`, or None. Never a neighbouring bar."""
-    return _as_opens(bars).get(_aware_utc(when, "when"))
-
-
-def quantile(values: list[float], q: float) -> Optional[float]:
-    """
-    The q-quantile with linear interpolation between order statistics (numpy's default 'linear' method):
-    h = (n - 1) * q, value = x[floor(h)] + (h - floor(h)) * (x[floor(h) + 1] - x[floor(h)]). None if empty.
-    """
-    if not values:
-        return None
-    ordered = sorted(values)
-    position = (len(ordered) - 1) * q
-    lower = math.floor(position)
-    upper = min(lower + 1, len(ordered) - 1)
-    return ordered[lower] + (position - lower) * (ordered[upper] - ordered[lower])
 
 
 def compute_baselines(
@@ -156,7 +92,7 @@ def compute_baselines(
 ) -> dict[int, tuple[float, int]]:
     """
     UTC hour -> (q-quantile of |5-minute move|, window count), spec §4 `typical`, over the moves from
-    phase0.spec_baseline_moves (5-minute grid, weekdays only, starts on `release_minutes` excluded, strict
+    minute_bars.spec_baseline_moves (5-minute grid, weekdays only, starts on `release_minutes` excluded, strict
     exact-minute bars). `period` limits window starts to [lo, hi]: bars outside [lo, hi + 5 min] are dropped,
     so a window starting after hi loses its end bar. Hours without a window are absent (never invented).
     """
@@ -166,7 +102,7 @@ def compute_baselines(
         opens = {ts: price for ts, price in opens.items() if lo <= ts <= hi + WINDOW}
     baselines: dict[int, tuple[float, int]] = {}
     for hour in range(24):
-        moves = phase0.spec_baseline_moves(opens, hour, release_minutes)
+        moves = minute_bars.spec_baseline_moves(opens, hour, release_minutes)
         if moves:
             baselines[hour] = (quantile(moves, q), len(moves))
     return baselines
@@ -197,7 +133,7 @@ def release_minute_sets(dash_conn: sqlite3.Connection) -> tuple[set[dt.datetime]
     (each is one release); excluded = EVERY raw USD row minute, including the dropped duplicates, which no
     baseline window may start on (controller ruling 5).
     """
-    events = [(title, when) for title, when, _forecast, _actual in phase0.read_usd_events(dash_conn)]
+    events = [(title, when) for title, when, _forecast, _actual in minute_bars.read_usd_events(dash_conn)]
     judged = {_release_minute(when) for _title, when in collapse_same_title_duplicates(events)}
     excluded = {_release_minute(when) for _title, when in events}
     return judged, excluded
