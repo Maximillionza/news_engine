@@ -346,7 +346,7 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
             tier1 = _call(None, None, forecast, tol, actual, title, note="hand-logged", explicit_side=logged_side)
             hand_logged = {"value": logged["value"], "confidence": logged["confidence"], "source": logged["source"]}
             tier1_tracked = True
-            tier1_tier = tier1_row_tier(logged["source"])
+            tier1_tier = tier1_row_tier(logged["source"], logged["value"])   # B12: FedWatch value -> market_implied
         else:
             tier1_tracked = title in NOWCAST_EVENTS      # tracked but no snapshot yet: row shows no call
 

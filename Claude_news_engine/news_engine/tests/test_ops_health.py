@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from alerting import store as alerting_store
+from data_layer.tier1_events import TIER1_FORMULA_SOURCE, TIER1_MARKET_IMPLIED_SOURCE
 from ops import health
 from ops import state as ops_state
 from scoring import backtest_store as bs
@@ -186,6 +187,18 @@ def test_tier1_research_amber_when_a_release_within_24h_has_no_call(c):
 
     _tier1_call(c, "Non-Farm Employment Change", when, (NOW - dt.timedelta(hours=1)).isoformat())
     assert _build(c)["tier1_research"].status == "ok"
+
+
+def test_research_check_ignores_capture_sources(c):
+    # B12: Kalshi and Cleveland rows come from the capture task, not the LLM research task; counting them would
+    # make the research line look alive while the research task is dead.
+    llm_at = NOW - dt.timedelta(days=3)
+    _tier1_call(c, "PPI m/m", "2026-10-15T12:30:00+00:00", llm_at.isoformat())
+    _tier1_call(c, "Non-Farm Employment Change", "2026-11-06T13:30:00+00:00",
+                (NOW - dt.timedelta(hours=2)).isoformat(), source=TIER1_MARKET_IMPLIED_SOURCE)
+    _tier1_call(c, "CPI m/m", "2026-11-12T13:30:00+00:00",
+                (NOW - dt.timedelta(hours=1)).isoformat(), source=TIER1_FORMULA_SOURCE)
+    assert _build(c)["tier1_research"].last_success_utc == llm_at
 
 
 def test_nowcast_live_ok_with_a_pre_release_live_snapshot(c):

@@ -158,6 +158,33 @@ def test_events_route_serves_the_hand_logged_detail(monkeypatch):
     }
 
 
+def test_events_route_serves_market_implied_for_a_fedwatch_row(monkeypatch):
+    """B12: the live 2026-10-26 Fed rows cite FedWatch only in the value; the Stats row still says market_implied."""
+    dash, bt = ws.get_connection(":memory:"), bs.get_connection(":memory:")
+    ppi_when = WHEN + dt.timedelta(days=1)
+    for title, when, forecast in (("Federal Funds Rate", WHEN, "4.00%"), ("PPI m/m", ppi_when, "0.2%")):
+        dash.execute(
+            "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, surprise_direction, "
+            "recorded_at_utc, updated_at_utc, source, impact, country) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (title, when.isoformat(), forecast, forecast, forecast, None, when.isoformat(), when.isoformat(), "t",
+             "High", "USD"))
+    dash.commit()
+    bs.record_tier1_prediction(
+        bt, "Federal Funds Rate", "XAUUSD", WHEN,
+        "CME FedWatch (via FXStreet 2026-10-26 and Longbon 2026-10-22): ~90.6-91% hold at 3.75-4.00%", "Likely",
+        "https://fxstreet.com/news/us-dollar-index-falls-to-near-10150-amid-fed-rate-pause-odds-easing-safe-haven-"
+        "demand-202610260532 ; https://alanlongbon.substack.com/p/the-us-feds-october-meeting-a-pause",
+        "neutral", logged_at_utc=WHEN - dt.timedelta(days=2))
+    bs.record_tier1_prediction(bt, "PPI m/m", "XAUUSD", ppi_when, "0.4% hot", "Likely", "BLS", "bearish",
+                               logged_at_utc=ppi_when - dt.timedelta(days=2))
+    monkeypatch.setattr(app_module, "_stats_connections", lambda: (dash, bt))
+    rows = {row["event_title"]: row
+            for row in app_module.app.test_client().get("/api/stats/events").get_json()["rows"]}
+    assert set(rows["Federal Funds Rate"]) == ROW_KEYS and set(rows["PPI m/m"]) == ROW_KEYS
+    assert rows["Federal Funds Rate"]["tier1_tier"] == "market_implied"
+    assert rows["PPI m/m"]["tier1_tier"] == "judgment"
+
+
 def test_filters_and_empty_result(client):
     assert client.get("/api/stats/events?year=2025").get_json()["rows"] == []
     assert len(client.get("/api/stats/events?year=2026&month=10").get_json()["rows"]) == 1

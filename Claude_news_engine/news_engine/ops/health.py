@@ -32,7 +32,9 @@ from alerting import store as alerting_store
 from alerting.source_backoff import in_backoff, is_drop_candidate
 from config.settings import CLASSIFIER_PROVIDER_ORDER, CLAUDE_COOLDOWN_MINUTES, LOCAL_TZ, OLLAMA_COOLDOWN_MINUTES
 from data_layer.rss_sources import FREE_PREVIEW_FEEDS
-from data_layer.tier1_events import TIER1_FORMULA, TIER1_FORMULA_SOURCE, TIER1_JUDGMENT, tier1_titles
+from data_layer.tier1_events import (
+    TIER1_FORMULA, TIER1_FORMULA_SOURCE, TIER1_JUDGMENT, TIER1_MARKET_IMPLIED_SOURCE, tier1_titles,
+)
 from ops import state as ops_state
 from scoring import backtest_store
 from webapp import store as webapp_store
@@ -275,9 +277,12 @@ def _missed_release_item(
 
 def _tier1_research_check(now: dt.datetime, conns: dict[str, sqlite3.Connection]) -> HealthItem:
     bt = conns["bt"]
+    # Only the LLM research task's rows: capture-task rows (Cleveland formula, Kalshi market-implied) would make
+    # this line look alive while the research task is dead (B12).
     stamps = [
-        _newest(bt, "SELECT logged_at_utc FROM tier1_predictions WHERE source != ? "
-                    "ORDER BY julianday(logged_at_utc) DESC LIMIT 1", (TIER1_FORMULA_SOURCE,)),
+        _newest(bt, "SELECT logged_at_utc FROM tier1_predictions WHERE source NOT IN (?, ?) "
+                    "ORDER BY julianday(logged_at_utc) DESC LIMIT 1",
+                (TIER1_FORMULA_SOURCE, TIER1_MARKET_IMPLIED_SOURCE)),
         _newest(bt, "SELECT checked_at_utc FROM tier1_late_checks ORDER BY julianday(checked_at_utc) DESC LIMIT 1"),
     ]
     last = max((s for s in stamps if s is not None), default=None)

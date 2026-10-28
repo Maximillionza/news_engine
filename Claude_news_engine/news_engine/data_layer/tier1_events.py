@@ -5,16 +5,18 @@ Stats tab all read it, so it must be importable from anywhere.
 
 Tier 1 = the pre-release call the dashboard compares news sentiment against.
 Three kinds: "formula" (a deterministic rule on a published model output),
-"market_implied" (reserved for B12 / Kalshi, no titles yet) and "judgment"
-(researched by hand each release).
+"market_implied" (a fixed rule on a traded market's prices: Kalshi ladders,
+and rows that cite CME FedWatch) and "judgment" (researched by hand each
+release). The tier of a title names its only producer.
 """
 from __future__ import annotations
 
 import datetime as dt
+import re
 from typing import Optional
 
 TIER1_FORMULA = "formula"
-TIER1_MARKET_IMPLIED = "market_implied"   # reserved for B12 (Kalshi); no titles map here yet
+TIER1_MARKET_IMPLIED = "market_implied"   # B12: Kalshi capture rows and FedWatch-cited rows (tier1_row_tier)
 TIER1_JUDGMENT = "judgment"
 TIER1_TIERS: tuple[str, ...] = (TIER1_FORMULA, TIER1_MARKET_IMPLIED, TIER1_JUDGMENT)
 
@@ -43,6 +45,14 @@ TIER1_FORMULA_SOURCE = "Cleveland Fed nowcast (formula)"
 # A published model output: primary-sourced but still a model, so never "Certain".
 TIER1_FORMULA_CONFIDENCE = "Likely"
 
+TIER1_MARKET_IMPLIED_SOURCE = "Kalshi market-implied"
+# A market price is a crowd's bet, not a certainty.
+TIER1_MARKET_IMPLIED_CONFIDENCE = "Likely"
+
+# A value that opens with a FedWatch citation ("CME FedWatch (via ...", "FedWatch: ~91% hold"); a mid-text
+# mention ("... FedWatch hike odds rose") is not a citation of the call's basis.
+_FEDWATCH_LEADING_CITATION = re.compile(r"^\s*(?:CME\s+)?FedWatch\b", re.IGNORECASE)
+
 TIER1_RESEARCH_LOOKAHEAD = dt.timedelta(days=8)   # research plan covers releases this far ahead
 LATE_CHECK_STALE_AFTER = dt.timedelta(days=5)     # a call this old (no newer reading) gets a late check
 LATE_CHECK_WINDOW = dt.timedelta(hours=24)        # one more check inside the last 24h before release
@@ -56,9 +66,24 @@ def tier1_titles(tier: str) -> list[str]:
     return [title for title, t in TIER1_EVENTS.items() if t == tier]
 
 
-def tier1_row_tier(source: str) -> str:
-    """Tier of a stored tier1_predictions row: formula only for the formula source (a pre-B3 LLM CPI row is judgment)."""
-    return TIER1_FORMULA if source == TIER1_FORMULA_SOURCE else TIER1_JUDGMENT
+def tier1_row_tier(source: str, value: Optional[str] = None) -> str:
+    """
+    Tier of a stored tier1_predictions row. Formula only for the formula source
+    (a pre-B3 LLM CPI row is judgment); the Kalshi capture source is
+    market_implied; a row citing CME FedWatch is market_implied too, because
+    its call is the futures-implied rate path, not a researcher's view.
+    FedWatch counts when it appears anywhere in the source or when the value
+    opens with it: the live 2026-10-26 Fed rows have URL-only sources and carry
+    FedWatch only as the value's leading citation, so a source-only test would
+    miss them. Everything else is judgment.
+    """
+    if source == TIER1_FORMULA_SOURCE:
+        return TIER1_FORMULA
+    if source == TIER1_MARKET_IMPLIED_SOURCE or "fedwatch" in (source or "").lower():
+        return TIER1_MARKET_IMPLIED
+    if value is not None and _FEDWATCH_LEADING_CITATION.match(value):
+        return TIER1_MARKET_IMPLIED
+    return TIER1_JUDGMENT
 
 
 def late_check_reason(

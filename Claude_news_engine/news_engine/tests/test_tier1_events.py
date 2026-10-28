@@ -8,7 +8,8 @@ import pytest
 
 from data_layer.tier1_events import (
     TIER1_EVENTS, TIER1_FORMULA, TIER1_FORMULA_SOURCE, TIER1_JUDGMENT,
-    TIER1_MARKET_IMPLIED, TIER1_TIERS, late_check_reason, tier1_row_tier, tier1_titles,
+    TIER1_MARKET_IMPLIED, TIER1_MARKET_IMPLIED_CONFIDENCE, TIER1_MARKET_IMPLIED_SOURCE, TIER1_TIERS,
+    late_check_reason, tier1_row_tier, tier1_titles,
 )
 
 UTC = dt.timezone.utc
@@ -42,6 +43,36 @@ def test_tier1_titles_rejects_an_unknown_tier():
 def test_tier1_row_tier_formula_only_for_the_formula_source():
     assert tier1_row_tier(TIER1_FORMULA_SOURCE) == TIER1_FORMULA
     assert tier1_row_tier("BLS/ISM") == TIER1_JUDGMENT
+
+
+# Live 2026-10-26 / 2026-09-16 tier1_predictions strings: FedWatch sits in the source of the September rows but only
+# in the value's leading citation of the October rows, so the helper must read both (and nothing mid-text).
+_URL_ONLY_SOURCE = (
+    "https://fxstreet.com/news/us-dollar-index-falls-to-near-10150-amid-fed-rate-pause-odds-easing-safe-haven-"
+    "demand-202610260532 ; https://alanlongbon.substack.com/p/the-us-feds-october-meeting-a-pause"
+)
+
+
+@pytest.mark.parametrize("source, value, expected", [
+    ("CME FedWatch via CBS News ('Fed rate hike in September is all but guaranteed after CPI report')", None,
+     TIER1_MARKET_IMPLIED),
+    (_URL_ONLY_SOURCE,
+     "CME FedWatch (via FXStreet 2026-10-26 and Longbon 2026-10-22): ~90.6-91% hold at 3.75-4.00%",
+     TIER1_MARKET_IMPLIED),
+    (_URL_ONLY_SOURCE, "FedWatch: ~91% hold priced, Dec hike ~80-87% priced", TIER1_MARKET_IMPLIED),
+    (_URL_ONLY_SOURCE, None, TIER1_JUDGMENT),
+    ("BLS/ISM", "PPI hot; FedWatch hike odds rose after it", TIER1_JUDGMENT),     # mid-text mention: still judgment
+    (TIER1_FORMULA_SOURCE, "FedWatch: ~91% hold priced", TIER1_FORMULA),          # formula source always wins
+    (TIER1_MARKET_IMPLIED_SOURCE, "NFP 70.0K implied median", TIER1_MARKET_IMPLIED),
+    (TIER1_MARKET_IMPLIED_SOURCE, None, TIER1_MARKET_IMPLIED),
+])
+def test_tier1_row_tier_routes_fedwatch_rows_to_market_implied(source, value, expected):
+    assert tier1_row_tier(source, value) == expected
+
+
+def test_market_implied_capture_constants():
+    assert TIER1_MARKET_IMPLIED_SOURCE == "Kalshi market-implied"
+    assert TIER1_MARKET_IMPLIED_CONFIDENCE == "Likely"      # a market price is not a certainty
 
 
 def test_late_check_reason_fresh_call_is_none():

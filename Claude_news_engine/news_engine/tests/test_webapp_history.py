@@ -1160,8 +1160,68 @@ def test_text_only_row_carries_real_tier1_prediction():
         assert rows[0].tier1_prediction == {
             "value": "85.5% probability of a 25bp hike", "confidence": "Certain",
             "source": "CME FedWatch", "predicted_direction": "bearish",
-            "tier": "judgment", "late_check": None,
+            "tier": "market_implied", "late_check": None,    # B12: a FedWatch-sourced row is market-implied
         }
+    print("PASS\n")
+
+
+# B12: the live 2026-10-26 Fed rows carry FedWatch only in the value's leading citation (URL-only source).
+_FEDWATCH_URL_SOURCE = (
+    "https://fxstreet.com/news/us-dollar-index-falls-to-near-10150-amid-fed-rate-pause-odds-easing-safe-haven-"
+    "demand-202610260532 ; https://alanlongbon.substack.com/p/the-us-feds-october-meeting-a-pause"
+)
+_FEDWATCH_VALUE = "CME FedWatch (via FXStreet 2026-10-26 and Longbon 2026-10-22): ~90.6-91% hold at 3.75-4.00%"
+
+
+def _fedwatch_conflict_rows(title, forecast, actual, surprise):
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 16, 18, 0, tzinfo=UTC_TZ)
+
+        dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
+        store.upsert_event_history(
+            dash_conn, _resolved_event(title, event_time, forecast, forecast, actual), surprise, now=event_time,
+        )
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, event_title=title, instrument="XAUUSD", event_time_utc=event_time,
+            probability=0.4, direction="bearish", confidence=0.5, article_count=40,
+            contradiction_flag=False, source="live", scored_at_utc=event_time,
+        )
+        backtest_store.record_tier1_prediction(
+            bt_conn, event_title=title, instrument="XAUUSD", event_time_utc=event_time,
+            value=_FEDWATCH_VALUE, confidence="Likely", source=_FEDWATCH_URL_SOURCE,
+            predicted_direction="bullish", logged_at_utc=event_time - dt.timedelta(days=2),
+        )
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            return history.build_print_call_history()
+
+
+def test_fallback_row_conflict_against_a_fedwatch_valued_row_is_market_implied():
+    print("=== build_print_call_history: a numeric fallback conflict against a FedWatch-valued Tier 1 row names market_implied ===")
+    rows = _fedwatch_conflict_rows("Federal Funds Rate", "4.00%", "4.00%", "in_line")
+    assert len(rows) == 1
+    assert rows[0].tier1_conflict == {
+        "sentiment_direction": "bearish", "tier1_direction": "bullish", "tier1_tier": "market_implied",
+    }
+    assert rows[0].tier1_prediction["tier"] == "market_implied"
+    print("PASS\n")
+
+
+def test_text_only_row_conflict_against_a_fedwatch_valued_row_is_market_implied():
+    print("=== build_print_call_history: a text-only conflict against a FedWatch-valued Tier 1 row names market_implied ===")
+    rows = _fedwatch_conflict_rows("FOMC Statement", None, None, None)
+    assert len(rows) == 1
+    assert rows[0].tier1_conflict == {
+        "sentiment_direction": "bearish", "tier1_direction": "bullish", "tier1_tier": "market_implied",
+    }
+    assert rows[0].tier1_prediction["tier"] == "market_implied"
     print("PASS\n")
 
 

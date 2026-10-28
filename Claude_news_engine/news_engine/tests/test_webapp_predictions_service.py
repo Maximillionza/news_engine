@@ -6,6 +6,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from webapp.predictions_service import compute_tier1_sentiment_conflict
 from webapp.predictions_service import _relevance_magnitude_read
+from webapp.predictions_service import _tier1_prediction_dict
+from types import SimpleNamespace
+
+
+def _tier1_row(source, value):
+    return SimpleNamespace(id=1, value=value, confidence="Likely", source=source, predicted_direction="neutral")
+
+
+def test_tier1_prediction_tier_is_market_implied_for_a_fedwatch_valued_row():
+    print("=== _tier1_prediction_dict: a URL-sourced row whose value leads with a FedWatch citation is market_implied (B12) ===")
+    url_source = "https://fxstreet.com/news/us-dollar-index-falls ; https://alanlongbon.substack.com/p/a-pause"
+    fedwatch = _tier1_row(url_source, "FedWatch: ~91% hold priced, Dec hike ~80-87% priced")
+    assert _tier1_prediction_dict(fedwatch)["tier"] == "market_implied"
+    assert _tier1_prediction_dict(_tier1_row(url_source, "Hold expected per Fed speakers"))["tier"] == "judgment"
+    print("PASS\n")
 
 
 def test_opposing_directional_calls_flagged_as_conflict():
