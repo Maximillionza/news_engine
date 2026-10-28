@@ -239,6 +239,8 @@ def test_record_market_calls_refuses_after_release():
     with pytest.raises(ValueError):
         tm.record_market_calls(bt, "Non-Farm Employment Change", NFP_RELEASE, call, "50K", ["XAUUSD"],
                                NFP_RELEASE + dt.timedelta(minutes=1))
+    with pytest.raises(ValueError):                       # exactly at release counts as too late
+        tm.record_market_calls(bt, "Non-Farm Employment Change", NFP_RELEASE, call, "50K", ["XAUUSD"], NFP_RELEASE)
     with pytest.raises(ValueError):
         tm.record_market_calls(bt, "Non-Farm Employment Change", NFP_RELEASE, call, "50K", ["XAUUSD"],
                                NOW.replace(tzinfo=None))

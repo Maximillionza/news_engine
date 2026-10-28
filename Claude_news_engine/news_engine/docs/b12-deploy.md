@@ -18,8 +18,10 @@ cd C:\Users\Masoodt\Documents\Claude\Projects\.worktrees\news-engine-live\Claude
 ## 2. Back up the backtest DB
 
 ```
-copy scoring\backtest_log.db scoring\backtest_log.db.pre_b12_<deploy date>
+python -c "import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); d.close(); s.close()" scoring/backtest_log.db scoring/backtest_log.db.pre_b12_<deploy date>
 ```
+
+Run this AFTER section 3 (engine stopped): the live DB uses a rollback journal and the engine writes to it, so a copy taken while it runs can be torn. The SQLite backup API is used for the same reason.
 
 ## 3. Stop the single engine copy
 
@@ -72,7 +74,7 @@ Start exactly one copy as `docs/b11-deploy.md` section 3.
 
 ## 10. Rollback
 
-`git revert` the merge; restore the SKILL.md `.bak_<deploy date>` from section 6; re-run `powershell -ExecutionPolicy Bypass -File scripts\register_tier1_tasks.ps1` (the old descriptions come back with the reverted script); restart as in sections 3 and 8. Restore `scoring\backtest_log.db.pre_b12_<deploy date>` only on deploy day (it drops every later row); otherwise leave the B12 rows in place: they are append-only and labelled by source.
+`git revert -m 1 <merge sha>`; restore the SKILL.md `.bak_<deploy date>` from section 6; re-run `powershell -ExecutionPolicy Bypass -File scripts\register_tier1_tasks.ps1` (the old descriptions come back with the reverted script); restart as in sections 3 and 8. Restore `scoring\backtest_log.db.pre_b12_<deploy date>` only on deploy day (it drops every later row); otherwise leave the B12 rows in place: they are append-only. Note: after a revert the old code labels any Kalshi rows already written as judgment, the old health check counts them as research-task activity, and the restored research task treats those releases as covered (record-call refuses a second call), so the Kalshi row stays the call of record for them. Roll back before the first real capture run (section 7) to avoid this.
 
 ## New SKILL.md
 

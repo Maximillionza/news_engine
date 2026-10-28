@@ -128,4 +128,6 @@ def test_record_formula_calls_refuses_a_naive_or_post_release_now():
     with pytest.raises(ValueError):
         tf.record_formula_calls(bt, "CPI m/m", RELEASE, 0.47, "0.3%", VALUE_DATE, ["XAUUSD"],
                                 RELEASE + dt.timedelta(minutes=1))
+    with pytest.raises(ValueError):                       # exactly at release counts as too late
+        tf.record_formula_calls(bt, "CPI m/m", RELEASE, 0.47, "0.3%", VALUE_DATE, ["XAUUSD"], RELEASE)
     assert _rows(bt) == []

@@ -171,7 +171,7 @@ def record_market_calls(bt_conn: Optional[sqlite3.Connection], event_title: str,
     """
     if now_utc.tzinfo is None or now_utc.utcoffset() is None:
         raise ValueError(f"now_utc must be timezone-aware, got naive {now_utc!r}")
-    if now_utc > release_utc:
+    if now_utc >= release_utc:
         # Same rule as record_formula_calls: a call stamped after the print is hindsight.
         raise ValueError(f"now_utc {now_utc.isoformat()} is after the release {release_utc.isoformat()}")
     result: dict = {"written": [], "unchanged": []}
