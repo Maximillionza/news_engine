@@ -304,6 +304,14 @@ nav .tab-btn.active { background: #222; color: #fff; border-color: #222; }
   box-shadow: 0 1px 2px rgba(0,0,0,0.08);
 }
 
+/* B10 K13: Shock Alerts grading table and summary. Verdicts repeat as text so colour is never the only signal. */
+.shock-grading-table { border-collapse: collapse; font-size: 13px; margin: 8px 0; background: #fff; }
+.shock-grading-table th, .shock-grading-table td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
+.verdict-badge { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 8px; background: #eee; color: #555; }
+.verdict-right { background: #e8f5e9; color: #2e7d32; }
+.verdict-wrong { background: #ffebee; color: #c62828; }
+#shock-range button { padding: 4px 12px; cursor: pointer; }
+
 /* Stats tab. Chips repeat the chart colours as text so colour is never the only signal. */
 .stats-subtabs { margin: 8px 0; }
 .stats-subtabs .tab-btn { background: none; border: 1px solid var(--border); padding: 6px 12px; margin-right: 8px; border-radius: 6px; cursor: pointer; }

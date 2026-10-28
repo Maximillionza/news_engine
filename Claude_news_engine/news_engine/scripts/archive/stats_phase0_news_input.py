@@ -1,4 +1,4 @@
-# scripts/stats_phase0_news_input.py
+# scripts/archive/stats_phase0_news_input.py
 """Phase 0: how often does each news signal take a side? Read-only. Run by hand."""
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Optional
 
 # Extension (Task 0, 2026-10-15): R3 coverage below reuses the app's own surprise map and symbol
 # classifier from THIS checkout; it still only reads the live DB, read-only.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config.settings import EVENT_SURPRISE_DIRECTION  # noqa: E402
 from webapp.symbols import classify_symbol  # noqa: E402
 

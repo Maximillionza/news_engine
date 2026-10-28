@@ -1,7 +1,7 @@
-"""Pure-helper tests for scripts/market_reaction_phase0.py (synthetic data only; no network, no DB)."""
+"""Pure-helper tests for scripts/archive/market_reaction_phase0.py (synthetic data only; no network, no DB)."""
 import datetime as dt
 
-from scripts import market_reaction_phase0 as p0
+from scripts.archive import market_reaction_phase0 as p0
 
 UTC = dt.timezone.utc
 
@@ -76,29 +76,11 @@ def test_overlap_windows_duplicates_are_one_minute_not_overlap():
     assert p0.overlap_windows([_t(2, 12, 30), _t(2, 12, 30)]) == []
 
 
-# ---- baselines ---------------------------------------------------------------------------------
+# ---- baselines (the spec_baseline_* tests moved to tests/test_minute_bars.py, B10 C4) ----
 
 def _flat_day(day: int, hour: int, step_value: float) -> dict:
     """One bar per minute for the hour (plus the next 5), open rising by step_value per minute."""
     return {_t(day, hour, 0) + dt.timedelta(minutes=i): 100.0 + step_value * i for i in range(66)}
-
-
-def test_spec_baseline_excludes_release_windows_and_weekends():
-    opens = _flat_day(2, 12, 1.0)               # Mon 2026-03-02: every 5-min move = 5.0
-    opens.update(_flat_day(7, 12, 9.0))         # Sat 2026-03-07: must be ignored
-    opens[_t(2, 12, 30)] = 1000.0     # distorts the 12:25 window (875) and the 12:30 window (865)
-    moves_all = p0.spec_baseline_moves(opens, 12, set())
-    moves_ex = p0.spec_baseline_moves(opens, 12, {_t(2, 12, 30)})
-    assert len(moves_all) == 12 and len(moves_ex) == 11
-    assert 865.0 in moves_all and 865.0 not in moves_ex   # the release-minute window is dropped...
-    assert 875.0 in moves_ex                              # ...but only that one (its neighbour starts at 12:25)
-    assert p0.median(moves_ex) == 5.0
-
-
-def test_spec_baseline_skips_windows_with_a_missing_bar():
-    opens = _flat_day(2, 12, 1.0)
-    del opens[_t(2, 12, 15)]                     # kills the 12:10 (t+5) and 12:15 (t) windows
-    assert len(p0.spec_baseline_moves(opens, 12, set())) == 10
 
 
 def test_audit_price_at_takes_next_bar_within_five_minutes_else_none():
@@ -118,8 +100,3 @@ def test_median_even_and_odd():
     assert p0.median([3.0, 1.0, 2.0]) == 2.0
     assert p0.median([1.0, 2.0, 3.0, 4.0]) == 2.5
     assert p0.median([]) is None
-
-
-def test_spec_baseline_grid_limits_start_minutes():
-    opens = _flat_day(2, 12, 1.0)
-    assert len(p0.spec_baseline_moves(opens, 12, set(), grid=(0, 15, 30, 45))) == 4

@@ -1,29 +1,38 @@
 """
-One-off migration: renames event_title 'Advance GDP q/q' -> 'Prelim GDP q/q'
-across every table that stores it, in both this project's SQLite databases.
+One-off migration: renames event_title 'ADP Nonfarm Employment Change' ->
+'ADP Non-Farm Employment Change' across every table that stores it, in both
+this project's SQLite databases.
 
-Why: config/settings.py's event title for US GDP was corrected from
-"Advance GDP q/q" (a guessed title that never matched any real Forex
-Factory row — confirmed live, FF has only ever used "Prelim GDP q/q" for
-this occurrence) to "Prelim GDP q/q", the title FF's live feed actually
-sends. event_title is the join key across every table below — this
-migration re-points historical rows stored under the old, wrong title so
-they aren't silently orphaned (invisible to every future lookup).
+Why: config/settings.py's event title for the ADP private-payrolls report
+was "ADP Nonfarm Employment Change" (no hyphen) -- a guessed spelling that
+never matched Forex Factory's real live feed. Confirmed live 2026-09-02:
+the live feed actually sends "ADP Non-Farm Employment Change" (hyphenated).
+Every title-keyed lookup in this codebase (EVENT_SURPRISE_DIRECTION,
+EVENT_REGISTRY, EVENT_INFLUENCE_LINKS, ACCUMULATOR_MEDIUM_ALLOWLIST,
+KALSHI_SERIES_BY_EVENT_TITLE, FRED_RELEASE_ID_BY_EVENT_TITLE) was blind to
+the live title, so ADP's actual was never filled by any fallback and its
+precursor links to NFP/Unemployment Rate/Average Hourly Earnings m/m never
+resolved. config/settings.py and data_layer/historical_events.py were
+corrected to the real hyphenated title; this migration re-points historical
+rows stored under the old title so they aren't silently orphaned (invisible
+to every future lookup) -- same pattern as
+scripts/migrate_gdp_title_rename.py's 'Advance GDP q/q' -> 'Prelim GDP q/q'
+fix last month.
 
 Safe to run more than once (each UPDATE is a no-op the second time, since
 no row will still have the old title after the first run).
 
 Usage:
-    python scripts/migrate_gdp_title_rename.py
+    python scripts/archive/migrate_adp_title_rename.py
 """
 import sys
 import os
 import sqlite3
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-OLD_TITLE = "Advance GDP q/q"
-NEW_TITLE = "Prelim GDP q/q"
+OLD_TITLE = "ADP Nonfarm Employment Change"
+NEW_TITLE = "ADP Non-Farm Employment Change"
 
 # (table, unique_columns_besides_event_title) — unique_columns is None for
 # tables with no UNIQUE constraint involving event_title (a plain UPDATE

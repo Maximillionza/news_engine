@@ -2,7 +2,7 @@
 B5 event study - per-window price measures from OHLC bars (pure; no I/O, no network, no DB).
 
 Plan: docs/superpowers/plans/2026-10-21-b5-event-study.md (Task 1). Used by
-scripts/event_study_groups.py and scripts/event_study_once.py; unit-tested in
+scripts/archive/event_study_groups.py and scripts/archive/event_study_once.py; unit-tested in
 tests/test_event_study_metrics.py.
 
 Bar rules (the reason every lookup here is "first at/after" or "last before", never "the bar at"):
@@ -32,7 +32,7 @@ from typing import Any, Optional
 import pandas as pd
 
 # Make `python scripts/...` work from the app dir (repo root on sys.path).
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 UTC = dt.timezone.utc
 

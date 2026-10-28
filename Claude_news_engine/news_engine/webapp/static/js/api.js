@@ -4,9 +4,19 @@
 // non-ok response so callers can catch/handle uniformly, same behavior
 // dashboard-poll.js / calendar-poll.js (Tasks 6-7) already need.
 
+import { rangeQuery } from "./shock-alerts/grading.js";
+
 async function fetchJson(url, options) {
   const resp = await fetch(url, options);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
+  if (!resp.ok) {
+    const err = new Error(`HTTP ${resp.status} for ${url}`);
+    // The server's own error text (for example a rejected date range), when the body carries one.
+    try {
+      const body = await resp.json();
+      if (body && typeof body.error === "string") err.detail = body.error;
+    } catch (_) { /* body was not JSON */ }
+    throw err;
+  }
   return resp.json();
 }
 
@@ -34,8 +44,9 @@ export function fetchHistoryStats() {
   return fetchJson("/api/history/stats");
 }
 
-export function fetchShockAlerts() {
-  return fetchJson("/api/shock-alerts");
+// B10 (2026-10-28): range = {from, to} as SAST YYYY-MM-DD; {} gives the server default (last 7 days).
+export function fetchShockAlerts(range = {}) {
+  return fetchJson(`/api/shock-alerts${rangeQuery(range.from, range.to)}`);
 }
 
 // B4 O6: every job, feed, classifier and Tier 1 capture graded ok/amber/red.

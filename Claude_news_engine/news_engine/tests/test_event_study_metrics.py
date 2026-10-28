@@ -1,11 +1,11 @@
-"""Pure-helper tests for scripts/event_study_metrics.py (synthetic bars only; no network, no DB)."""
+"""Pure-helper tests for scripts/archive/event_study_metrics.py (synthetic bars only; no network, no DB)."""
 import datetime as dt
 import math
 
 import pandas as pd
 import pytest
 
-from scripts import event_study_metrics as m
+from scripts.archive import event_study_metrics as m
 
 UTC = dt.timezone.utc
 T = dt.datetime(2026, 3, 12, 12, 30, 0, tzinfo=UTC)

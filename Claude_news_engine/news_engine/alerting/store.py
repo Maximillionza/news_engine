@@ -12,10 +12,13 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from config.settings import INCIDENT_URL_WINDOW_HOURS
 from data_layer.news_feed import normalize_url
+
+if TYPE_CHECKING:                       # lean_grading imports this module; the type is only for annotations
+    from alerting.lean_grading import Grade
 
 DB_PATH = Path(__file__).parent / "shock_alerts.db"
 
@@ -92,7 +95,37 @@ CREATE TABLE IF NOT EXISTS seen_urls (
 );
 
 CREATE INDEX IF NOT EXISTS idx_seen_urls_first_seen ON seen_urls(first_seen_utc);
+
+CREATE TABLE IF NOT EXISTS shock_alert_grades (
+    alert_id INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    anchor TEXT NOT NULL,
+    window_minutes INTEGER NOT NULL,
+    lean TEXT,
+    anchor_utc TEXT,
+    p0 REAL,
+    p_end REAL,
+    move REAL,
+    baseline REAL,
+    baseline_multiple REAL NOT NULL,
+    moved INTEGER,
+    verdict TEXT NOT NULL,
+    graded_at_utc TEXT NOT NULL,
+    PRIMARY KEY (alert_id, symbol, anchor, window_minutes)
+);
+
+CREATE TABLE IF NOT EXISTS shock_grading_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_at_utc TEXT NOT NULL,
+    source TEXT NOT NULL,
+    counts_json TEXT NOT NULL,
+    summary_line TEXT NOT NULL
+);
 """
+# B10 (2026-10-28) K11/K12: shock_alert_grades is append-only -- one row per alert x tracked symbol x anchor x
+# window, written with INSERT OR IGNORE so a rerun writes nothing and a grade is never rewritten (it stores the
+# baseline it used, so a later monthly baseline refresh never changes it). shock_grading_runs keeps one summary
+# row per grading run for ops/health.py. Both are additive: no ALTER on shock_alerts, no alert column rewritten.
 # No index on the B2 shock_alerts columns may live in _SCHEMA: it runs
 # before _migrate_shock_alert_columns() on an old DB, where those columns
 # don't exist yet, so the CREATE INDEX would fail.
@@ -678,6 +711,22 @@ def set_severity(conn: sqlite3.Connection, alert_id: int, severity: str) -> None
     conn.commit()
 
 
+def list_all_alerts(conn: sqlite3.Connection) -> list[ShockAlertRow]:
+    """B10: every alert, oldest detection first (by instant via julianday, so mixed offsets sort correctly)."""
+    rows = conn.execute("SELECT * FROM shock_alerts ORDER BY julianday(detected_at_utc), id").fetchall()
+    return [_row_to_shock_alert(dict(r)) for r in rows]
+
+
+def list_alerts_between(conn: sqlite3.Connection, start_utc: dt.datetime, end_utc: dt.datetime) -> list[ShockAlertRow]:
+    """B10 K13: alerts detected in [start_utc, end_utc), compared by instant; newest first."""
+    rows = conn.execute(
+        "SELECT * FROM shock_alerts WHERE julianday(detected_at_utc) >= julianday(?) "
+        "AND julianday(detected_at_utc) < julianday(?) ORDER BY julianday(detected_at_utc) DESC, id DESC",
+        (start_utc.isoformat(), end_utc.isoformat()),
+    ).fetchall()
+    return [_row_to_shock_alert(dict(r)) for r in rows]
+
+
 def get_alerts_needing_reality_check(conn: sqlite3.Connection, older_than_utc: dt.datetime) -> list[ShockAlertRow]:
     rows = conn.execute(
         "SELECT * FROM shock_alerts WHERE reality_check_at_utc IS NULL AND detected_at_utc >= ? "
@@ -705,3 +754,100 @@ def record_reality_check(
         ),
     )
     conn.commit()
+
+
+# --- B10 (2026-10-28) K11/K12: lean grades and grading runs ---------------------------------
+
+_GRADE_COLUMNS: tuple[str, ...] = (
+    "alert_id", "symbol", "anchor", "window_minutes", "lean", "anchor_utc", "p0", "p_end", "move",
+    "baseline", "baseline_multiple", "moved", "verdict", "graded_at_utc",
+)
+_LIST_GRADES_CHUNK = 500  # alert ids per IN (...) query, well under SQLite's bound-parameter limit
+
+
+def _has_table(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)).fetchone() is not None
+
+
+def record_grade(conn: sqlite3.Connection, grade: "Grade", graded_at_utc: dt.datetime, *, commit: bool = True) -> bool:
+    """
+    Append-only: INSERT OR IGNORE on (alert_id, symbol, anchor, window_minutes), so an existing grade is never
+    rewritten. Returns True when the row was inserted. commit=False lets the grading job commit once per alert.
+    """
+    cur = conn.execute(
+        f"INSERT OR IGNORE INTO shock_alert_grades ({', '.join(_GRADE_COLUMNS)}) "
+        f"VALUES ({', '.join('?' for _ in _GRADE_COLUMNS)})",
+        (
+            grade.alert_id, grade.symbol, grade.anchor, grade.window_minutes, grade.lean,
+            grade.anchor_utc.isoformat() if grade.anchor_utc is not None else None,
+            grade.p0, grade.p_end, grade.move, grade.baseline, grade.baseline_multiple,
+            None if grade.moved is None else int(grade.moved), grade.verdict, graded_at_utc.isoformat(),
+        ),
+    )
+    if commit:
+        conn.commit()
+    return cur.rowcount == 1
+
+
+def graded_keys(conn: sqlite3.Connection) -> set[tuple[int, str, str, int]]:
+    """Every stored (alert_id, symbol, anchor, window_minutes); empty when the table is absent (read-only dry run)."""
+    if not _has_table(conn, "shock_alert_grades"):
+        return set()
+    rows = conn.execute("SELECT alert_id, symbol, anchor, window_minutes FROM shock_alert_grades").fetchall()
+    return {(r["alert_id"], r["symbol"], r["anchor"], r["window_minutes"]) for r in rows}
+
+
+def list_grades(conn: sqlite3.Connection, alert_ids: list[int]) -> dict[int, list[dict]]:
+    """
+    {alert_id: [grade dict, ...]} for every requested id ([] when it has no grades yet). Each dict carries the
+    table's columns (times stay UTC ISO text; moved is a bool or None), ordered by symbol, then the published
+    anchor before the detected one.
+    """
+    ids = list(dict.fromkeys(alert_ids))
+    out: dict[int, list[dict]] = {alert_id: [] for alert_id in ids}
+    if not ids or not _has_table(conn, "shock_alert_grades"):
+        return out
+    for i in range(0, len(ids), _LIST_GRADES_CHUNK):
+        chunk = ids[i:i + _LIST_GRADES_CHUNK]
+        rows = conn.execute(
+            f"SELECT {', '.join(_GRADE_COLUMNS)} FROM shock_alert_grades "
+            f"WHERE alert_id IN ({', '.join('?' for _ in chunk)}) "
+            "ORDER BY alert_id, symbol, CASE anchor WHEN 'published' THEN 0 WHEN 'detected' THEN 1 ELSE 2 END, "
+            "anchor, window_minutes",
+            chunk,
+        ).fetchall()
+        for r in rows:
+            grade = dict(r)
+            grade["moved"] = None if grade["moved"] is None else bool(grade["moved"])
+            out[grade["alert_id"]].append(grade)
+    return out
+
+
+def record_grading_run(
+    conn: sqlite3.Connection, run_at_utc: dt.datetime, source: str, counts: dict, summary_line: str,
+) -> int:
+    """One summary row per grading run ("weekly" job or "backfill" script); returns the new row id."""
+    cur = conn.execute(
+        "INSERT INTO shock_grading_runs (run_at_utc, source, counts_json, summary_line) VALUES (?, ?, ?, ?)",
+        (run_at_utc.isoformat(), source, json.dumps(counts, sort_keys=True), summary_line),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def latest_grading_run(conn: sqlite3.Connection) -> Optional[dict]:
+    """The newest run by instant: {run_at_utc (aware), source, counts, summary_line}; None when absent or empty."""
+    if not _has_table(conn, "shock_grading_runs"):
+        return None
+    row = conn.execute(
+        "SELECT run_at_utc, source, counts_json, summary_line FROM shock_grading_runs "
+        "ORDER BY julianday(run_at_utc) DESC, id DESC LIMIT 1"
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "run_at_utc": _parse_utc(row["run_at_utc"]),
+        "source": row["source"],
+        "counts": json.loads(row["counts_json"]),
+        "summary_line": row["summary_line"],
+    }

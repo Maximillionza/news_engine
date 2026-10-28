@@ -15,7 +15,7 @@ disagreement is worth a human look — see LookaheadComparisonRow's
 docstring in data_layer/fred_calendar_feed.py for what each status means.
 
 Usage:
-    python scripts/compare_fred_lookahead.py [--days N]
+    python scripts/archive/compare_fred_lookahead.py [--days N]
 
 Requires FRED_API_KEY set in the environment (see .env.example) — prints
 a clear message and exits if it's missing, same fail-open contract as
@@ -28,7 +28,7 @@ import os
 import argparse
 import datetime as dt
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from config.settings import FRED_API_KEY, FRED_RELEASE_ID_BY_EVENT_TITLE
 from data_layer.fred_calendar_feed import get_upcoming_release_dates, compare_fred_to_ff

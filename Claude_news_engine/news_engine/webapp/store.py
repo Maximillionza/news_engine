@@ -212,7 +212,7 @@ def _migrate_add_country_column(conn: sqlite3.Connection) -> None:
     current write path). Legacy rows read back country=None (genuinely
     unknown) until self-healed on their next resolving call, or backfilled
     for known-USD-by-construction sources — see
-    scripts/migrate_country_backfill.py.
+    scripts/archive/migrate_country_backfill.py.
     """
     existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(event_history)").fetchall()}
     if "country" not in existing_columns:

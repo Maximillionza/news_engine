@@ -640,3 +640,109 @@ def test_seen_urls_backfill_runs_once_from_last_72h(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM seen_urls WHERE url = ?", ("https://y.com/b",)).fetchone()[0] == 0
     conn.close()
     store._schema_ready_paths.clear()
+
+
+# --- B10 K11/K12 storage: shock_alert_grades + shock_grading_runs ------------
+
+def test_grade_tables_created_on_old_db(tmp_path):
+    """A pre-B10 DB (every B2/B7 column, no grade tables) gains both tables at connect; alert columns unchanged."""
+    import sqlite3
+
+    db_path = tmp_path / "pre_b10.db"
+    raw = sqlite3.connect(db_path)
+    raw.executescript(_PRE_B2_SHOCK_ALERTS)
+    for column, sql_type in store._SHOCK_ALERT_ADDED_COLUMNS:
+        raw.execute(f"ALTER TABLE shock_alerts ADD COLUMN {column} {sql_type}")
+    raw.commit()
+    before = raw.execute("PRAGMA table_info(shock_alerts)").fetchall()
+    raw.close()
+
+    store._schema_ready_paths.clear()
+    conn = store.get_connection(db_path)
+    tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+    assert {"shock_alert_grades", "shock_grading_runs"} <= tables
+    assert [tuple(r) for r in conn.execute("PRAGMA table_info(shock_alerts)").fetchall()] == [tuple(r) for r in before]
+    grade_columns = [r["name"] for r in conn.execute("PRAGMA table_info(shock_alert_grades)").fetchall()]
+    assert grade_columns == [
+        "alert_id", "symbol", "anchor", "window_minutes", "lean", "anchor_utc", "p0", "p_end", "move",
+        "baseline", "baseline_multiple", "moved", "verdict", "graded_at_utc",
+    ]
+    run_columns = [r["name"] for r in conn.execute("PRAGMA table_info(shock_grading_runs)").fetchall()]
+    assert run_columns == ["id", "run_at_utc", "source", "counts_json", "summary_line"]
+    conn.close()
+    store._schema_ready_paths.clear()
+
+
+def _b10_grade(alert_id, symbol="XAUUSD", anchor="detected", verdict="right"):
+    from alerting.lean_grading import Grade
+
+    return Grade(
+        alert_id=alert_id, symbol=symbol, anchor=anchor, window_minutes=5, lean="buy",
+        anchor_utc=dt.datetime(2026, 10, 21, 10, 1, tzinfo=UTC), p0=100.0, p_end=101.5, move=1.5,
+        baseline=1.0, baseline_multiple=1.0, moved=True, verdict=verdict,
+    )
+
+
+def test_record_grade_is_insert_or_ignore_and_listed_in_order():
+    conn = store.get_connection(":memory:")
+    alert_id = _record(conn)
+    other = _record(conn)
+    graded_at = dt.datetime(2026, 10, 28, 18, 0, tzinfo=UTC)
+    assert store.graded_keys(conn) == set()
+    assert store.record_grade(conn, _b10_grade(alert_id, "XAUUSD", "detected"), graded_at) is True
+    assert store.record_grade(conn, _b10_grade(alert_id, "XAUUSD", "published"), graded_at) is True
+    assert store.record_grade(conn, _b10_grade(alert_id, "US30", "detected", "wrong"), graded_at) is True
+    # Same key again with a different verdict: ignored, the first row stands.
+    assert store.record_grade(conn, _b10_grade(alert_id, "XAUUSD", "detected", "wrong"), graded_at) is False
+
+    assert store.graded_keys(conn) == {
+        (alert_id, "XAUUSD", "detected", 5), (alert_id, "XAUUSD", "published", 5), (alert_id, "US30", "detected", 5),
+    }
+    listed = store.list_grades(conn, [alert_id, other])
+    assert listed[other] == []
+    assert [(g["symbol"], g["anchor"]) for g in listed[alert_id]] == [
+        ("US30", "detected"), ("XAUUSD", "published"), ("XAUUSD", "detected"),
+    ]
+    first = listed[alert_id][2]
+    assert first["verdict"] == "right"
+    assert first["moved"] is True
+    assert first["anchor_utc"] == "2026-10-21T10:01:00+00:00"
+    assert first["graded_at_utc"] == graded_at.isoformat()
+    assert set(first) == {
+        "alert_id", "symbol", "anchor", "window_minutes", "lean", "anchor_utc", "p0", "p_end", "move",
+        "baseline", "baseline_multiple", "moved", "verdict", "graded_at_utc",
+    }
+    assert store.list_grades(conn, []) == {}
+
+
+def test_list_all_alerts_and_between_use_julianday_order():
+    conn = store.get_connection(":memory:")
+
+    def add(detected):
+        return store.record_alert(
+            conn, headline="H", source="s", url="u", published_utc=detected, detected_at_utc=detected,
+            category="energy", severity="Medium", classification_method="llm", rationale=None, affected_symbols=[],
+        )
+
+    late = add(dt.datetime(2026, 10, 21, 12, 0, tzinfo=UTC))
+    # +02:00 offset: 13:00 local is 11:00 UTC, before `late` despite sorting later as text
+    early = add(dt.datetime(2026, 10, 21, 13, 0, tzinfo=dt.timezone(dt.timedelta(hours=2))))
+    edge = add(dt.datetime(2026, 10, 22, 0, 0, tzinfo=UTC))
+    assert [a.id for a in store.list_all_alerts(conn)] == [early, late, edge]
+    between = store.list_alerts_between(conn, dt.datetime(2026, 10, 21, 11, 0, tzinfo=UTC),
+                                        dt.datetime(2026, 10, 22, 0, 0, tzinfo=UTC))
+    assert [a.id for a in between] == [late, early]                          # end is exclusive, newest first
+
+
+def test_grading_runs_round_trip_latest():
+    conn = store.get_connection(":memory:")
+    assert store.latest_grading_run(conn) is None
+    first = store.record_grading_run(conn, dt.datetime(2026, 10, 25, 18, 0, tzinfo=UTC), "backfill",
+                                     {"overall": {"detected": {"n": 0, "hit_rate": None}}}, "graded 3: ...")
+    second = store.record_grading_run(conn, dt.datetime(2026, 10, 26, 18, 0, tzinfo=UTC), "weekly",
+                                      {"overall": {}}, "graded 0: ...")
+    assert second > first
+    latest = store.latest_grading_run(conn)
+    assert latest == {"run_at_utc": dt.datetime(2026, 10, 26, 18, 0, tzinfo=UTC), "source": "weekly",
+                      "counts": {"overall": {}}, "summary_line": "graded 0: ..."}
+    assert latest["run_at_utc"].tzinfo is not None

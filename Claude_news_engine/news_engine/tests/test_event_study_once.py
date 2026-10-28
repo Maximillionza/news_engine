@@ -1,4 +1,4 @@
-"""Tests for scripts/event_study_once.py (B5 study runner): temp DBs, fake Dukascopy fetch and fake sleep only.
+"""Tests for scripts/archive/event_study_once.py (B5 study runner): temp DBs, fake Dukascopy fetch and fake sleep only.
 
 No network, no live path: the DBs are built in tmp_path, the fetch and the sleep are injected.
 """
@@ -11,8 +11,8 @@ import pandas as pd
 import pytest
 
 from scoring import backtest_store as bs
-from scripts import event_study_once as once
-from scripts.event_study_groups import RELEASE_ROW_KEYS
+from scripts.archive import event_study_once as once
+from scripts.archive.event_study_groups import RELEASE_ROW_KEYS
 from webapp import store as ws
 from webapp.reaction_rules import REACTION_BASELINE_QUANTILE as Q
 

@@ -195,6 +195,17 @@ def _job_check(spec: _JobSpec, now: dt.datetime, conns: dict[str, sqlite3.Connec
     return _aged_item(spec, now, last, _as_utc(ops_state.get_tracking_since(ops_conn)), run)
 
 
+def _shock_reality_check_check(now: dt.datetime, conns: dict[str, sqlite3.Connection]) -> HealthItem:
+    """The weekly job's heartbeat item; B10 (2026-10-28) appends the last lean-grading summary to the detail only."""
+    item = _job_check(_JOBS["shock_reality_check"], now, conns)
+    last = alerting_store.latest_grading_run(conns["alerts"])
+    if last is None:
+        return item
+    detail = "; ".join(d for d in (item.detail, f"last grading {_sast(last['run_at_utc'])}: {last['summary_line']}") if d)
+    return HealthItem(item.key, item.label, item.status, item.last_success_utc,
+                      item.age_seconds, item.expected_every_seconds, detail)
+
+
 def _outcome_confirm_check(now: dt.datetime, conns: dict[str, sqlite3.Connection]) -> HealthItem:
     item = _job_check(_JOBS["outcome_confirm"], now, conns)
     awaiting = backtest_store.get_predictions_awaiting_outcome(conns["bt"], now)
@@ -408,7 +419,8 @@ def build_health(
         job("tier1_capture_weekly"),
         ("tier1_research", _TIER1_RESEARCH_LABEL, day, lambda: _tier1_research_check(now, conns)),
         ("nowcast_live", _NOWCAST_LIVE_LABEL, day, lambda: _nowcast_live_check(now, conns)),
-        job("shock_reality_check"),
+        ("shock_reality_check", _JOBS["shock_reality_check"].label,
+         int(_JOBS["shock_reality_check"].expected.total_seconds()), lambda: _shock_reality_check_check(now, conns)),
         job("article_accumulator"),
         job("calendar_refresh"),
         (_MACRO.key, _MACRO.label, int(_MACRO.expected.total_seconds()),

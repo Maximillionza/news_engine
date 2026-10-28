@@ -3,15 +3,57 @@ import { escapeHtml } from "../format.js";
 import { fetchShockAlerts } from "../api.js";
 import { affectsLineHtml } from "./affects.js";
 import { freshnessText, contextTagsText, capBadgeHtml, incidentLabelText } from "./alert-meta.js";
+import { gradingTableHtml, summaryHtml } from "./grading.js";
 
 let shockAlertsLoaded = false;
+let rangeFormWired = false;
+
+const EMPTY_NOTICE_TEXT = "No shock alerts in this date range.";
+
+// A failed range fetch: keep the previous range on screen but say why it did not change.
+function showRangeError(err) {
+  const notice = document.getElementById("shock-alerts-empty-notice");
+  if (!notice) return;
+  notice.textContent = `Could not load that date range: ${(err && (err.detail || err.message)) || "request failed"}`;
+  notice.style.display = "";
+}
+
+async function loadRange(range) {
+  const data = await fetchShockAlerts(range);
+  const from = document.getElementById("shock-range-from");
+  const to = document.getElementById("shock-range-to");
+  if (data.range && from && to) {
+    from.value = data.range.from;
+    to.value = data.range.to;
+  }
+  renderShockAlerts(data.rows || [], data.summary);
+}
+
+// B10 K13: the Show button re-fetches; the first load happens once, with the server's default range.
+export function wireRangeForm() {
+  const form = document.getElementById("shock-range");
+  if (rangeFormWired || !form) return;
+  rangeFormWired = true;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await loadRange({
+        from: document.getElementById("shock-range-from").value,
+        to: document.getElementById("shock-range-to").value,
+      });
+    } catch (err) {
+      console.error("shock alerts range fetch failed", err);
+      showRangeError(err);
+    }
+  });
+}
 
 export async function loadShockAlertsIfNeeded() {
   if (shockAlertsLoaded) return;
   shockAlertsLoaded = true;
+  wireRangeForm();
   try {
-    const data = await fetchShockAlerts();
-    renderShockAlerts(data.rows || []);
+    await loadRange({});
   } catch (err) {
     console.error("loadShockAlertsIfNeeded: fetch failed", err);
   }
@@ -47,8 +89,13 @@ function _alertHtml(row) {
   </div>`;
 }
 
-function renderShockAlerts(rows) {
+function renderShockAlerts(rows, summary) {
+  const summaryBox = document.getElementById("shock-grading-summary");
+  const tableBox = document.getElementById("shock-grading-table");
+  summaryBox.innerHTML = summary && rows.length > 0 ? summaryHtml(summary) : "";
+  tableBox.innerHTML = gradingTableHtml(rows, summary ? summary.symbols : []);
   const emptyNotice = document.getElementById("shock-alerts-empty-notice");
+  emptyNotice.textContent = EMPTY_NOTICE_TEXT;
   const list = document.getElementById("shock-alerts-list");
   const lowDetails = document.getElementById("shock-alerts-low-details");
   const lowList = document.getElementById("shock-alerts-low-list");

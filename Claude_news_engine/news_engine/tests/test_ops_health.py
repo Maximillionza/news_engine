@@ -495,3 +495,26 @@ def test_job_that_ran_but_never_succeeded_shows_its_last_exit_code(c):
     assert item.last_success_utc is None
     assert "no successful run" in item.detail
     assert "last run 2026-10-20 10:00 SAST exited 2" in item.detail
+
+
+def test_shock_reality_check_detail_carries_last_grading_line(c):
+    _fresh_jobs(c)
+    line = "graded 4: right 1, wrong 1, no_move 0, no_lean 2, no_data 0, no_baseline 0; pending 0"
+    alerting_store.record_grading_run(c.alerts, NOW - dt.timedelta(hours=2), "weekly", {}, line)
+    detail = _build(c)["shock_reality_check"].detail
+    assert "last grading 2026-10-20 10:00 SAST" in detail      # 08:00Z is 10:00 SAST
+    assert line in detail
+
+
+def test_shock_reality_check_status_unchanged_by_grading_run(c):
+    _fresh_jobs(c)
+    before = _build(c)["shock_reality_check"]
+    c.alerts.execute("DROP TABLE shock_grading_runs")          # no table: detail unchanged, nothing raised
+    c.alerts.commit()
+    assert _build(c)["shock_reality_check"] == before
+    c.alerts.executescript(alerting_store._SCHEMA)
+    alerting_store.record_grading_run(c.alerts, NOW, "weekly", {}, "graded 0: all quiet")
+    after = _build(c)["shock_reality_check"]
+    assert (after.status, after.last_success_utc, after.age_seconds) == (
+        before.status, before.last_success_utc, before.age_seconds)
+    assert "graded 0: all quiet" in after.detail

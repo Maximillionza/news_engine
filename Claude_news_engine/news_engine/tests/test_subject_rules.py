@@ -27,7 +27,7 @@ from data_layer.subject_rules import (
 
 _MODULE_PATH = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / "data_layer" / "subject_rules.py"
 
-# Probe 1 headlines, copied literally from scripts/audit_fa_probes.py's FOREIGN_CB_HEADLINES.
+# Probe 1 headlines, copied literally from scripts/archive/audit_fa_probes.py's FOREIGN_CB_HEADLINES.
 _PROBE1_FOMC = [
     ("ECB signals faster rate cuts as euro zone stalls", "Lagarde said the central bank is ready to ease further."),
     ("Bank of England delivers surprise rate cut", "The BoE cut rates by 50bp citing weak growth."),
@@ -194,7 +194,7 @@ def test_source_has_no_backspace_bytes():
 
 
 def test_audit_probe1_now_drops_all():
-    from scripts.audit_fa_probes import probe_foreign_cb_sign
+    from scripts.archive.audit_fa_probes import probe_foreign_cb_sign
     lines = probe_foreign_cb_sign()
     assert len(lines) == 4
     for line in lines:

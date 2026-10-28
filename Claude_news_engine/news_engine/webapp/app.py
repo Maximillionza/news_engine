@@ -373,11 +373,63 @@ def get_print_call_history():
     })
 
 
+# B10 (2026-10-28) K13 imports sit here, not in the header block: docs/b8-deploy.md cites webapp/app.py line numbers
+# above this point and tests/test_b8_deploy_doc.py pins them.
+from typing import Mapping  # noqa: E402
+from alerting import lean_grading  # noqa: E402
+from config.settings import LOCAL_TZ  # noqa: E402
+
+# B10 (2026-10-28) K13: the tab takes SAST calendar days, inclusive. Default: today and the 6 days before.
+SHOCK_RANGE_DEFAULT_DAYS = 7
+SHOCK_RANGE_MAX_DAYS = 366
+SHOCK_SYMBOL_FALLBACK = ["US30", "XAUUSD"]  # columns shown when no grade names a symbol yet
+
+
+def _parse_range_day(raw: str, name: str) -> dt.date:
+    # fromisoformat also accepts compact forms ("20261020"); the query contract is YYYY-MM-DD only.
+    if len(raw) != 10:
+        raise ValueError(f"{name} must be YYYY-MM-DD")
+    try:
+        return dt.date.fromisoformat(raw)
+    except ValueError:
+        raise ValueError(f"{name} must be YYYY-MM-DD") from None
+
+
+def _shock_range(args: Mapping[str, str], now: dt.datetime) -> tuple[dt.date, dt.date]:
+    """(from, to) as SAST dates, inclusive. ValueError on a bad format, from > to, or a span over 366 days."""
+    today = now.astimezone(LOCAL_TZ).date()
+    raw_from, raw_to = (args.get("from") or "").strip(), (args.get("to") or "").strip()
+    end = _parse_range_day(raw_to, "to") if raw_to else today
+    start = _parse_range_day(raw_from, "from") if raw_from else end - dt.timedelta(days=SHOCK_RANGE_DEFAULT_DAYS - 1)
+    if start > end:
+        raise ValueError("from must not be after to")
+    if (end - start).days + 1 > SHOCK_RANGE_MAX_DAYS:
+        raise ValueError(f"range is limited to {SHOCK_RANGE_MAX_DAYS} days")
+    return start, end
+
+
+def _sast_midnight_utc(day: dt.date) -> dt.datetime:
+    return dt.datetime.combine(day, dt.time(0, 0), tzinfo=LOCAL_TZ).astimezone(dt.timezone.utc)
+
+
+def _shock_grade_dict(g: dict) -> dict:
+    return {
+        "symbol": g["symbol"], "anchor": g["anchor"], "window_minutes": g["window_minutes"],
+        "lean": g["lean"], "anchor_utc": g["anchor_utc"], "move": g["move"],
+        "baseline": g["baseline"], "verdict": g["verdict"],
+    }
+
+
 @app.route("/api/shock-alerts", methods=["GET"])
 def get_shock_alerts():
+    try:
+        start, end = _shock_range(request.args, dt.datetime.now(dt.timezone.utc))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     conn = alerting_store.get_connection()
-    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)
-    rows = alerting_store.list_recent_alerts(conn, since)
+    rows = alerting_store.list_alerts_between(
+        conn, _sast_midnight_utc(start), _sast_midnight_utc(end + dt.timedelta(days=1)))
+    grades_by_alert = alerting_store.list_grades(conn, [r.id for r in rows])
     out = []
     for r in rows:
         # Pre-B2 rows have NULL new columns; first_published_utc is derived from sources[0]
@@ -400,8 +452,22 @@ def get_shock_alerts():
             # B7 (2026-10-22): the reader already fills incident_id with the row's own id for NULL.
             "incident_id": r.incident_id, "incident_role": r.incident_role,
             "incident_rule": r.incident_rule,
+            "grades": [_shock_grade_dict(g) for g in grades_by_alert.get(r.id, [])],
         })
-    return jsonify({"rows": out})
+    every_grade = [g for r in rows for g in grades_by_alert.get(r.id, [])]
+    totals = lean_grading.summarize_grades(every_grade)
+    return jsonify({
+        "rows": out,
+        "range": {"from": start.isoformat(), "to": end.isoformat()},
+        "summary": {
+            "window_minutes": lean_grading.GRADE_WINDOW_MINUTES,
+            "symbols": list(totals["by_symbol"]) or list(SHOCK_SYMBOL_FALLBACK),
+            "overall": totals["overall"],
+            "by_symbol": totals["by_symbol"],
+            "incidents": lean_grading.summarize_incidents(rows, grades_by_alert),
+            "ungraded_alerts": sum(1 for r in rows if not grades_by_alert.get(r.id)),
+        },
+    })
 
 
 # ---------------------------------------------------------------------------
