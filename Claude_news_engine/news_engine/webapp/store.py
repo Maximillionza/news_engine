@@ -34,6 +34,8 @@ from typing import Optional
 from config.settings import EVENT_SURPRISE_DIRECTION
 
 DB_PATH = Path(__file__).parent / "dashboard.db"
+# Rows get_event_history() returns by default: the window the accumulator's trend prior and the History trend text read.
+EVENT_HISTORY_WINDOW = 6
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS prediction_runs (
@@ -567,7 +569,7 @@ def find_event_history_near(
     ).fetchall()
 
 
-def get_event_history(conn: sqlite3.Connection, event_title: str, limit: int = 6) -> list[EventHistoryRow]:
+def get_event_history(conn: sqlite3.Connection, event_title: str, limit: int = EVENT_HISTORY_WINDOW) -> list[EventHistoryRow]:
     """Past occurrences of this event title, most recent first, capped at `limit`. Empty list if none recorded yet."""
     rows = conn.execute(
         "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source, impact, country "

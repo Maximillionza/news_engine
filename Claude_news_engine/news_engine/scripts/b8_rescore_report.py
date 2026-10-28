@@ -16,9 +16,16 @@ Read-only and offline: the database is opened through a SQLite
 Accumulator (article-based) calls are affected only through precursor
 contributions and are NOT re-run here -- they need the article bundles.
 
+With --before-db (the pre_b8 backup) it also lists the titles whose graded rows
+(surprise_direction set) among the store.EVENT_HISTORY_WINDOW most recent rows
+changed between the backup and now. That window feeds the accumulator's trend
+prior and the History trend text, and both the seed (rows with no forecast,
+so no direction) and the FRED fills (seed and hourly backfill) move it.
+
 Usage (from the app dir):
     python scripts/b8_rescore_report.py --out docs/superpowers/specs/2026-10-27-b8-rescore-report.md
     python scripts/b8_rescore_report.py --db <path>/dashboard.db --out report.md
+    python scripts/b8_rescore_report.py --before-db webapp/dashboard.db.pre_b8_<date> --out report.md
 """
 from __future__ import annotations
 
@@ -34,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.settings import (
     EVENT_SURPRISE_DIRECTION,
+    MIN_OCCURRENCES_FOR_TREND_PRIOR,
     MIN_PRIOR_SURPRISES_FOR_SIGMA,
     STANDARDIZED_SURPRISE_SENSITIVITY,
     SURPRISE_SIGMA_MAX_HISTORY,
@@ -41,6 +49,7 @@ from config.settings import (
 from data_layer.calendar_feed import EconomicEvent, _parse_numeric
 from scoring.surprise_scale import prior_surprises, with_surprise_sigma
 from webapp.scoring_service import score_event_for_symbol
+from webapp.store import EVENT_HISTORY_WINDOW
 from webapp.symbols import classify_symbol
 
 SAST = dt.timezone(dt.timedelta(hours=2))
@@ -125,6 +134,29 @@ def rescore_rows(conn: sqlite3.Connection, symbols: tuple[str, ...] = ("XAUUSD",
     return out
 
 
+def trend_window_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    """Per title: graded rows among its EVENT_HISTORY_WINDOW most recent rows (get_event_history's window)."""
+    rows = conn.execute(
+        "SELECT event_title, SUM(surprise_direction IS NOT NULL) FROM ("
+        "  SELECT event_title, surprise_direction, "
+        "         ROW_NUMBER() OVER (PARTITION BY event_title ORDER BY event_time_utc DESC) AS rn "
+        "  FROM event_history"
+        ") WHERE rn <= ? GROUP BY event_title",
+        (EVENT_HISTORY_WINDOW,),
+    ).fetchall()
+    return {r[0]: int(r[1]) for r in rows}
+
+
+def trend_window_changes(before: sqlite3.Connection, after: sqlite3.Connection) -> list[tuple[str, int, int]]:
+    """(title, graded before, graded after) for every title whose trend-window graded count differs."""
+    old, new = trend_window_counts(before), trend_window_counts(after)
+    return [
+        (t, old.get(t, 0), new.get(t, 0))
+        for t in sorted(set(old) | set(new))
+        if old.get(t, 0) != new.get(t, 0)
+    ]
+
+
 def _sast_with_utc(stored: str) -> str:
     when = _parse_time(stored)
     return f"{when.astimezone(SAST):%Y-%m-%d %H:%M} SAST ({when.astimezone(dt.timezone.utc):%Y-%m-%dT%H:%MZ}; stored {stored})"
@@ -138,8 +170,14 @@ def _fmt(value: Optional[float], digits: int = 3) -> str:
     return "-" if value is None else f"{value:.{digits}f}"
 
 
-def render_report(rows: list[RescoreRow], generated_at: dt.datetime, db_label: str) -> str:
-    """Markdown report (LF newlines; main() converts to CRLF when writing)."""
+def render_report(
+    rows: list[RescoreRow],
+    generated_at: dt.datetime,
+    db_label: str,
+    trend_changes: Optional[list[tuple[str, int, int]]] = None,
+    before_label: Optional[str] = None,
+) -> str:
+    """Markdown report (LF newlines; main() converts to CRLF when writing). Trend section only with --before-db."""
     symbols = list(rows[0].old_dirs) if rows else ["XAUUSD", "US30"]
     z_rows = [r for r in rows if r.method == "z"]
     lines: list[str] = [
@@ -205,6 +243,21 @@ def render_report(rows: list[RescoreRow], generated_at: dt.datetime, db_label: s
         for title in sorted(latest):
             r = latest[title]
             lines.append(f"| {title} | {_sast_with_utc(r.event_time_utc)} | {r.n_prior} | {_fmt(r.sigma, 4)} | {r.method} |")
+    if trend_changes is not None:
+        lines += [
+            "",
+            f"## Trend window changes (vs `{before_label}`)",
+            "",
+            f"Graded rows (surprise_direction set) among each title's {EVENT_HISTORY_WINDOW} most recent rows: the "
+            f"accumulator's trend prior (needs {MIN_OCCURRENCES_FOR_TREND_PRIOR}) and the History trend text read "
+            "this window.",
+            "",
+        ]
+        if not trend_changes:
+            lines.append("No title changes.")
+        else:
+            lines += ["| Title | Graded before | Graded now |", "|---|---|---|"]
+            lines += [f"| {t} | {b} | {a} |" for t, b, a in trend_changes]
     lines += [
         "",
         "## Note",
@@ -220,23 +273,38 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="B8 read-only re-score report")
     parser.add_argument("--db", default=str(DEFAULT_DB), help="dashboard.db path (opened read-only)")
     parser.add_argument("--out", required=True, help="markdown report path (written with CRLF)")
+    parser.add_argument("--before-db", help="pre_b8 backup (opened read-only): also list trend-window changes since it")
     args = parser.parse_args(argv)
+    if not Path(args.out).parent.is_dir():
+        print(f"error: --out folder does not exist: {Path(args.out).parent}", file=sys.stderr)
+        return 2
     try:
         conn = open_readonly(Path(args.db))
     except FileNotFoundError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     try:
+        before = open_readonly(Path(args.before_db)) if args.before_db else None
+    except FileNotFoundError as exc:
+        conn.close()
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    try:
         rows = rescore_rows(conn)
+        trend_changes = trend_window_changes(before, conn) if before is not None else None
     finally:
         conn.close()
-    text = render_report(rows, dt.datetime.now(dt.timezone.utc), args.db)
+        if before is not None:
+            before.close()
+    text = render_report(rows, dt.datetime.now(dt.timezone.utc), args.db, trend_changes, args.before_db)
     Path(args.out).write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
     n_changed = sum(1 for r in rows if r.changed)
     print(f"scored {len(rows)} rows, {n_changed} direction changes -> {args.out}")
+    if trend_changes is not None:
+        print(f"{len(trend_changes)} titles changed graded rows in the trend window")
     return 0
 
 
 if __name__ == "__main__":
-    # Example: python scripts/b8_rescore_report.py --out %TEMP%\b8_rescore.md
+    # Example (any shell): python scripts/b8_rescore_report.py --out C:/Users/Masoodt/b8_deploy/b8_rescore.md
     sys.exit(main())

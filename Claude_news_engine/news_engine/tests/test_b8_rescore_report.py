@@ -106,3 +106,45 @@ def test_non_usd_and_unmapped_rows_excluded(db_path):
     text = report.render_report(rows, dt.datetime(2026, 10, 27, 10, 0, tzinfo=UTC), "d.db")
     assert "JOLTS" not in text and "CPI m/m" not in text
     assert b"\x08" not in Path(report.__file__).read_bytes()
+
+
+def test_trend_window_changes_against_before_db(db_path, tmp_path, capsys):
+    import shutil
+
+    before = tmp_path / "before.db"
+    shutil.copyfile(db_path, before)
+    conn = sqlite3.connect(db_path)
+    # Grade the 3 newest claims rows (as a FRED fill would) and add an ungraded newer row (as a seed
+    # insert would): the window holds the 6 most recent, so the graded count goes 0 -> 3.
+    newest = [r[0] for r in conn.execute(
+        "SELECT id FROM event_history WHERE event_title = 'Unemployment Claims' ORDER BY event_time_utc DESC LIMIT 3")]
+    conn.executemany("UPDATE event_history SET surprise_direction = 'higher' WHERE id = ?", [(i,) for i in newest])
+    conn.commit()
+    conn.close()
+    store_conn = store.get_connection(db_path)
+    _row(store_conn, "Unemployment Claims", RELEASE + dt.timedelta(days=7), None, "230K")
+    store_conn.close()
+
+    b, a = report.open_readonly(before), report.open_readonly(db_path)
+    try:
+        assert report.trend_window_changes(b, a) == [("Unemployment Claims", 0, 3)]
+    finally:
+        b.close()
+        a.close()
+
+    out = tmp_path / "out.md"
+    before_bytes = before.read_bytes()
+    assert report.main(["--db", str(db_path), "--before-db", str(before), "--out", str(out)]) == 0
+    assert before.read_bytes() == before_bytes                           # opened read-only
+    text = out.read_text(encoding="utf-8")
+    assert "Trend window changes" in text and "| Unemployment Claims | 0 | 3 |" in text
+    assert "1 titles changed graded rows in the trend window" in capsys.readouterr().out
+    # Without --before-db the section is absent.
+    assert report.main(["--db", str(db_path), "--out", str(out)]) == 0
+    assert "Trend window changes" not in out.read_text(encoding="utf-8")
+
+
+def test_missing_out_folder_fails_before_reading(db_path, tmp_path):
+    assert report.main(["--db", str(db_path), "--out", str(tmp_path / "nope" / "out.md")]) == 2
+    assert report.main(["--db", str(db_path), "--before-db", str(tmp_path / "missing.db"),
+                        "--out", str(tmp_path / "out.md")]) == 2

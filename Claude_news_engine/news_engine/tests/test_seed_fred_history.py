@@ -284,3 +284,129 @@ def test_seeded_rows_do_not_break_stats_or_trend(tmp_path, monkeypatch):
     assert len(rows) == 1
     assert rows[0].status == "not_scoreable"
     assert isinstance(summarize_trend(ws.get_event_history(conn, "CPI m/m")), str)
+
+
+# --- B8 final-review fixes (2026-10-28) ---------------------------------------------------------
+
+
+def _graded(conn, title, when, direction="higher"):
+    conn.execute(
+        "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, surprise_direction, "
+        "recorded_at_utc, updated_at_utc, source, impact, country) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (title, when.isoformat(), "0.3%", "0.2%", "0.4%", direction, when.isoformat(), when.isoformat(),
+         "live", "High", "USD"),
+    )
+    conn.commit()
+
+
+def test_rollback_deletes_only_this_runs_seed_inserts(tmp_path, monkeypatch):
+    conn = _db(tmp_path)
+    client = _client(_cpi_fake(), monkeypatch)
+    report = _run(conn, client, apply=True, allow_unverified=True)
+    key = report.run_at_utc
+    assert key == NOW.isoformat() and len(report.inserted) == 1
+
+    # A Forex Factory row that appears AFTER the apply and is later relabelled source='fred' by the
+    # hourly backfill (fill_actual_if_missing) -- graded, carries forecast/previous; must survive.
+    later = NOW + dt.timedelta(days=2)
+    _row(conn, "Unemployment Claims", later, forecast="220K", previous="215K", impact="Medium")
+    claims_id = conn.execute("SELECT id FROM event_history WHERE event_title = 'Unemployment Claims'").fetchone()[0]
+    assert ws.fill_actual_if_missing(conn, claims_id, "230K", "higher", "fred", later + dt.timedelta(hours=2))
+
+    # The same-day FRED fast path (upsert_event_history, source='fred') at the very same instant as the
+    # seed run key: still kept, FF rows always carry an impact.
+    from data_layer.calendar_feed import EconomicEvent
+    ev = EconomicEvent("Core CPI m/m", "USD", "High", dt.datetime(2026, 10, 14, 12, 30, tzinfo=UTC),
+                       forecast="0.3%", previous="0.2%", actual="0.3%")
+    ws.upsert_event_history(conn, ev, "in_line", NOW, source="fred")
+
+    # A legacy row with impact and forecast NULL that a FRED fill later relabels: own recorded_at_utc.
+    _row(conn, "Retail Sales m/m", dt.datetime(2026, 3, 17, 12, 30, tzinfo=UTC), impact=None, previous="0.1%")
+    legacy_id = conn.execute("SELECT id FROM event_history WHERE event_title = 'Retail Sales m/m'").fetchone()[0]
+    ws.fill_actual_if_missing(conn, legacy_id, "0.5%", None, "fred", NOW)
+
+    # A second seed run (different key) inserts its own row; a rollback of the first leaves it alone.
+    _row(conn, "PPI m/m", dt.datetime(2026, 5, 14, 12, 30, tzinfo=UTC), impact=None, source="fred", actual="0.2%")
+    conn.execute("UPDATE event_history SET recorded_at_utc = ? WHERE event_title = 'PPI m/m'",
+                 ((NOW + dt.timedelta(hours=1)).isoformat(),))
+    conn.commit()
+
+    total = _count(conn)
+    changes = conn.total_changes
+    assert seed.rollback_seed_inserts(conn, key) == 1                 # dry count, writes nothing
+    assert conn.total_changes == changes and _count(conn) == total
+    assert seed.rollback_seed_inserts(conn, key, apply=True) == 1
+    left = {r["event_title"] for r in conn.execute("SELECT event_title FROM event_history")}
+    assert left == {"Unemployment Claims", "Core CPI m/m", "Retail Sales m/m", "PPI m/m"}
+    assert conn.execute("SELECT actual FROM event_history WHERE event_title = 'Unemployment Claims'").fetchone()[0] == "230K"
+    assert seed.rollback_seed_inserts(conn, key, apply=True) == 0     # rerun is a no-op
+
+
+def test_rollback_rejects_a_key_without_offset(tmp_path):
+    conn = _db(tmp_path)
+    with pytest.raises(ValueError):
+        seed.rollback_seed_inserts(conn, "2026-10-27T12:00:00")
+    with pytest.raises(ValueError):
+        seed.rollback_seed_inserts(conn, "not a time")
+
+
+def test_rollback_cli_counts_read_only_then_deletes(tmp_path, monkeypatch, capsys):
+    conn = _db(tmp_path)
+    client = _client(_cpi_fake(), monkeypatch)
+    key = _run(conn, client, apply=True, allow_unverified=True).run_at_utc
+    conn.close()
+    monkeypatch.setattr(seed, "FRED_API_KEY", "")                     # rollback needs no FRED access
+    db = str(tmp_path / "d.db")
+    assert seed.main(["--db", db, "--rollback", key]) == 0
+    assert "would delete (dry run): 1" in capsys.readouterr().out
+    assert _count(sqlite3.connect(db)) == 1
+    assert seed.main(["--db", db, "--rollback", key, "--apply"]) == 0
+    assert "deleted: 1" in capsys.readouterr().out
+    assert _count(sqlite3.connect(db)) == 0
+    assert seed.main(["--db", db, "--rollback", "garbage"]) == 2
+    assert seed.main(["--db", str(tmp_path / "missing.db"), "--rollback", key]) == 2
+    assert not (tmp_path / "missing.db").exists()
+
+
+def test_apply_report_prints_run_key_and_nothing_to_write_header(tmp_path, monkeypatch):
+    conn = _db(tmp_path)
+    client = _client(_cpi_fake(), monkeypatch)
+    first = seed.format_report(_run(conn, client, apply=True, allow_unverified=True), apply=True)
+    assert first.splitlines()[0] == "APPLIED - rows written"
+    assert f"seed run recorded_at_utc (rollback key for this run's inserts): {NOW.isoformat()}" in first
+    second = seed.format_report(_run(conn, client, apply=True), apply=True)
+    assert second.splitlines()[0] == "APPLIED - nothing to write"
+    assert "inserts: 0  fills: 0" in second                           # the string the runbook's step 7 quotes
+
+
+def test_missing_report_folder_exits_before_any_fetch(tmp_path, monkeypatch, capsys):
+    class Boom(FakeRequests):
+        def get(self, url, params=None, timeout=None):
+            raise AssertionError("no FRED request may happen")
+
+    monkeypatch.setattr(fh, "requests", Boom())
+    monkeypatch.setattr(seed, "FRED_API_KEY", "KEY")
+    rc = seed.main(["--db", str(tmp_path / "d.db"), "--apply", "--report", str(tmp_path / "nope" / "r.txt")])
+    assert rc == 4
+    assert "--report folder does not exist" in capsys.readouterr().out
+    assert not (tmp_path / "d.db").exists()
+
+
+def test_trend_window_insert_pushes_graded_row_out(tmp_path, monkeypatch):
+    conn = _db(tmp_path)
+    for month in range(4, 10):                                          # Apr..Sep, all graded
+        _graded(conn, "CPI m/m", dt.datetime(2026, month, 10, 12, 30, tzinfo=UTC))
+    client = _client(_cpi_fake(), monkeypatch)
+    report = _run(conn, client, allow_unverified=True)                  # dry run
+    assert report.trend_window_changes == [("CPI m/m", 6, 5)]           # seeded Oct row has no direction
+    assert "  CPI m/m: 6 -> 5" in seed.format_report(report, apply=False)
+    assert _count(conn) == 6                                            # simulation wrote nothing
+
+
+def test_trend_window_fill_adds_graded_row(tmp_path, monkeypatch):
+    conn = _db(tmp_path)
+    _row(conn, "CPI m/m", dt.datetime(2026, 10, 14, 12, 30, tzinfo=UTC), forecast="0.3%", previous="0.4%")
+    client = _client(_cpi_fake(), monkeypatch)
+    report = _run(conn, client, allow_unverified=True)
+    assert report.trend_window_changes == [("CPI m/m", 0, 1)]
+    assert "no title changes" in seed.format_report(seed.SeedReport(), apply=False)

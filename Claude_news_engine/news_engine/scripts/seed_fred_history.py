@@ -23,6 +23,16 @@ Safety:
     (never written), no comparison possible = unverified (written only with
     --allow-unverified), FRED error for the series = unavailable.
   - Idempotent: a second --apply adds zero rows.
+  - Rollback key: every row one --apply inserts shares recorded_at_utc = that
+    run's start time (printed as "seed run recorded_at_utc"), with impact and
+    forecast NULL. Forex Factory rows always carry an impact, so that triple
+    never matches a live row that a later FRED fill relabels source='fred'.
+
+The report also lists the titles whose graded rows (surprise_direction set)
+among the EVENT_HISTORY_WINDOW most recent rows change: that window feeds the
+accumulator's trend prior and the History trend text. A seeded row has no
+forecast, so no direction, and can push older graded rows out of the window;
+a fill can give a title graded rows it never had.
 
 Times are shown in SAST (UTC+2) with the stored UTC value beside them.
 
@@ -31,7 +41,11 @@ Usage:
     python scripts/seed_fred_history.py --title "CPI m/m"     # one title (repeatable)
     python scripts/seed_fred_history.py --apply               # write (backs up the DB first)
     python scripts/seed_fred_history.py --apply --allow-unverified
-Exit codes: 0 ok, 2 no FRED_API_KEY, 3 FRED under maintenance (nothing written).
+    python scripts/seed_fred_history.py --rollback "<run key>"           # count that run's inserts (read-only)
+    python scripts/seed_fred_history.py --rollback "<run key>" --apply   # delete them
+Exit codes: 0 ok, 2 no FRED_API_KEY (or, for --rollback, no DB / bad key),
+3 FRED under maintenance (nothing written), 4 the --report folder does not
+exist (checked before any fetch or write).
 """
 from __future__ import annotations
 
@@ -46,7 +60,7 @@ from typing import Callable, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.settings import FRED_API_KEY, LOCAL_TZ, NY_TZ, UTC_TZ
+from config.settings import FRED_API_KEY, LOCAL_TZ, MIN_OCCURRENCES_FOR_TREND_PRIOR, NY_TZ, UTC_TZ
 from data_layer.calendar_feed import EconomicEvent, classify_surprise
 from data_layer.fred_history import (
     FRED_HISTORY_SPECS, FredClient, FredFetchError, FredMaintenanceError, VintageReading,
@@ -72,6 +86,9 @@ class SeedReport:
     agreement: dict[str, tuple[int, int]] = field(default_factory=dict)  # title -> (matches, comparisons)
     new_release_minutes: int = 0
     details: list[str] = field(default_factory=list)                  # one printable line per insert/fill
+    run_at_utc: str = ""                                              # recorded_at_utc of every row this run inserts
+    # (title, graded rows in the trend window before, after) for titles where the count changes
+    trend_window_changes: list[tuple[str, int, int]] = field(default_factory=list)
 
 
 @dataclass
@@ -139,6 +156,39 @@ def _plan_title(
     return queued
 
 
+def _graded_in_window(rows: list[tuple[str, Optional[str]]]) -> int:
+    """Graded rows among the EVENT_HISTORY_WINDOW most recent, as store.get_event_history orders them."""
+    newest = sorted(rows, key=lambda r: r[0], reverse=True)[:store.EVENT_HISTORY_WINDOW]
+    return sum(1 for _, direction in newest if direction is not None)
+
+
+def _trend_window_changes(conn: sqlite3.Connection, approved: list[_Queued]) -> list[tuple[str, int, int]]:
+    """
+    Simulates the approved writes (no DB change) and returns (title, before,
+    after) for every touched title whose graded count in the trend window moves.
+    Inserts add a row with no direction; fills set the row's direction.
+    """
+    changes: list[tuple[str, int, int]] = []
+    for title in sorted({q.title for q in approved}):
+        rows = {
+            r["id"]: (r["event_time_utc"], r["surprise_direction"])
+            for r in conn.execute(
+                "SELECT id, event_time_utc, surprise_direction FROM event_history WHERE event_title = ?", (title,)
+            )
+        }
+        before = _graded_in_window(list(rows.values()))
+        simulated = dict(rows)
+        for n, q in enumerate(x for x in approved if x.title == title):
+            if q.kind == "fill":
+                simulated[q.row_id] = (simulated[q.row_id][0], q.surprise_direction)
+            else:
+                simulated[f"new{n}"] = (q.event_time.isoformat(), None)
+        after = _graded_in_window(list(simulated.values()))
+        if after != before:
+            changes.append((title, before, after))
+    return changes
+
+
 def _detail(q: _Queued) -> str:
     sast = q.event_time.astimezone(LOCAL_TZ).strftime("%Y-%m-%d %H:%M SAST")
     return (f"{q.kind.upper():6} {q.title}  {sast} ({q.event_time.isoformat()})  "
@@ -161,7 +211,7 @@ def run_seed(
     passes the gate): `before_first_write()` once, then the writes. Without
     `apply` the report lists what WOULD be written and nothing is touched.
     """
-    report = SeedReport()
+    report = SeedReport(run_at_utc=now.isoformat())
     wanted = titles if titles else [t for t, s in FRED_HISTORY_SPECS.items() if s.seed]
     plans: dict[str, list[_Queued]] = {}
     for title in wanted:
@@ -193,6 +243,7 @@ def run_seed(
     report.new_release_minutes = len({
         q.event_time.isoformat()[:16] for q in approved if q.kind == "insert"
     } - existing_minutes)
+    report.trend_window_changes = _trend_window_changes(conn, approved)
 
     if not apply:                                      # dry run: report the plan, write nothing
         for q in approved:
@@ -237,11 +288,48 @@ def backup_db(db_path: Path, now: dt.datetime) -> Path:
     return target
 
 
+def rollback_seed_inserts(conn: sqlite3.Connection, run_at_utc: str, apply: bool = False) -> int:
+    """
+    Rows ONE seed --apply inserted (its printed run key), counted or, with
+    `apply`, deleted. The predicate is the seed insert's exact signature:
+    source 'fred', impact NULL, forecast NULL and recorded_at_utc equal to
+    the run key. A Forex Factory row relabelled source='fred' by a later FRED
+    fill (same-day fast path or hourly backfill) keeps its own recorded_at_utc
+    and an impact, so it never matches. A seeded row that FF later upserted
+    (impact filled in) is left alone too - conservative, never over-deletes.
+    """
+    when = dt.datetime.fromisoformat(run_at_utc)          # rejects a typo'd key before touching anything
+    if when.tzinfo is None:
+        raise ValueError(f"rollback key must carry a UTC offset: {run_at_utc!r}")
+    where = ("FROM event_history WHERE source = ? AND impact IS NULL AND forecast IS NULL "
+             "AND recorded_at_utc = ?")
+    params = (SEED_SOURCE, run_at_utc)
+    if not apply:
+        return conn.execute(f"SELECT COUNT(*) {where}", params).fetchone()[0]
+    deleted = conn.execute(f"DELETE {where}", params).rowcount
+    conn.commit()
+    return deleted
+
+
 def format_report(report: SeedReport, apply: bool) -> str:
-    lines = ["APPLIED - rows written" if apply else "DRY RUN - nothing written"]
+    if not apply:
+        header = "DRY RUN - nothing written"
+    elif report.inserted or report.filled:
+        header = "APPLIED - rows written"
+    else:
+        header = "APPLIED - nothing to write"
+    lines = [header]
+    if apply:
+        lines.append(f"seed run recorded_at_utc (rollback key for this run's inserts): {report.run_at_utc}")
     lines.append(f"inserts: {len(report.inserted)}  fills: {len(report.filled)}  "
                  f"new release minutes for the reaction job: {report.new_release_minutes}")
     lines.extend(report.details)
+    lines.append(f"trend window (graded rows among the {store.EVENT_HISTORY_WINDOW} most recent; "
+                 f"trend prior needs {MIN_OCCURRENCES_FOR_TREND_PRIOR}):")
+    if not report.trend_window_changes:
+        lines.append("  no title changes")
+    for title, before, after in report.trend_window_changes:
+        lines.append(f"  {title}: {before} -> {after}")
     lines.append("title status:")
     for title, status in report.title_status.items():
         m, c = report.agreement.get(title, (0, 0))
@@ -260,11 +348,36 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--title", action="append", help="restrict to this FF title (repeatable)")
     parser.add_argument("--report", help="also write the report text to this path")
     parser.add_argument("--pace", type=float, default=DEFAULT_PACE_SECONDS, help="seconds between FRED requests")
+    parser.add_argument("--rollback", metavar="RUN_KEY",
+                        help="count (or with --apply delete) the rows one seed run inserted; RUN_KEY is the printed "
+                             "'seed run recorded_at_utc'. No FRED access.")
     args = parser.parse_args(argv)
+
+    if args.rollback is not None:
+        db_path = Path(args.db)
+        if not db_path.is_file():
+            print(f"database not found: {db_path} - nothing done.")
+            return 2
+        # The count (no --apply) opens the DB read-only; only the delete opens it for writing.
+        conn = (sqlite3.connect(str(db_path)) if args.apply
+                else sqlite3.connect(f"file:{db_path.resolve().as_posix()}?mode=ro", uri=True))
+        try:
+            n = rollback_seed_inserts(conn, args.rollback, apply=args.apply)
+        except ValueError as exc:
+            print(f"bad rollback key: {exc} - nothing done.")
+            return 2
+        finally:
+            conn.close()
+        print(f"{'deleted' if args.apply else 'would delete (dry run)'}: {n} seeded rows of run {args.rollback}")
+        return 0
 
     if not FRED_API_KEY:
         print("FRED_API_KEY is not set - nothing done.")
         return 2
+    # Fail before any fetch or write: a missing folder used to raise only after the DB writes.
+    if args.report and not Path(args.report).parent.is_dir():
+        print(f"--report folder does not exist: {Path(args.report).parent} - nothing done.")
+        return 4
 
     db_path = Path(args.db)
     now = dt.datetime.now(UTC_TZ)

@@ -25,6 +25,7 @@ raises.
 from __future__ import annotations
 
 import datetime as dt
+import sqlite3
 import threading
 import time
 from pathlib import Path
@@ -77,7 +78,7 @@ def _skip_remaining(report: FillReport, pending: list[tuple[str, list]], reason:
 
 
 def backfill_missing_actuals(
-    conn, client: FredClient, now: dt.datetime, lookback_days: int = BACKFILL_LOOKBACK_DAYS,
+    conn: sqlite3.Connection, client: FredClient, now: dt.datetime, lookback_days: int = BACKFILL_LOOKBACK_DAYS,
     budget_seconds: float = BACKFILL_BUDGET_SECONDS, clock: Callable[[], float] = time.monotonic,
 ) -> FillReport:
     report = FillReport()
@@ -143,7 +144,7 @@ def _throttled(now: dt.datetime) -> bool:
 
 
 def maybe_backfill(
-    conn, now: dt.datetime, client_factory: Callable[[], Optional[FredClient]] = default_client,
+    conn: sqlite3.Connection, now: dt.datetime, client_factory: Callable[[], Optional[FredClient]] = default_client,
 ) -> Optional[FillReport]:
     """Synchronous pass. Runs at most once per BACKFILL_INTERVAL_SECONDS; None when throttled, keyless, or on any error."""
     global _last_run_utc
