@@ -27,7 +27,8 @@ from scoring.backtest_store import get_scored_nowcast_snapshot
 from webapp.history import _implied_surprise_direction
 from webapp.reaction_rules import impact_info, title_tag_counts
 from webapp.stats_methods import (
-    NEWS_WEIGHT, TIER1_WEIGHT, combine, market_lean, news_lean, news_scale, news_surprise, tier1_surprise,
+    NEWS_WEIGHT, TIER1_WEIGHT, combine, market_lean, news_lean, news_scale, news_side, news_surprise,
+    tier1_surprise,
 )
 from webapp.stats_rules import judge, miss_size, parse_number, side, tolerance
 
@@ -49,7 +50,7 @@ class MethodCall:
     verdict: Optional[str]
     miss: Optional[float]
     leans: dict[str, str] = field(default_factory=dict)
-    note: Optional[str] = None      # 'hand-logged' | 'scaled' | 'news_missing'
+    note: Optional[str] = None      # 'hand-logged' | 'scaled' | 'unsized' (News side, no scale) | 'news_missing'
     kind: Optional[str] = None      # 'live' | 'reconstructed' for Tier 1 snapshots
 
 
@@ -100,10 +101,11 @@ class StatsRow:
     impact_effective: str = "Unrated"
     impact_inferred: bool = True
     impact_bucket: str = "Unrated"
-    # Informational only, never read by scoring: whether Tier 1 and News lean the same way, and which Tier 1
-    # tier produced the Tier 1 call actually used (None = no Tier 1 call).
+    # Informational only, never read by scoring: whether Tier 1 and News lean the same way, which Tier 1
+    # tier produced the Tier 1 call actually used (None = no Tier 1 call), and the News call word (B9 ST1).
     agreement: Optional[str] = None   # 'agree' | 'disagree' | None
     tier1_tier: Optional[str] = None  # TIER1_FORMULA | TIER1_MARKET_IMPLIED | TIER1_JUDGMENT of the call used
+    news_call: Optional[str] = None   # 'higher' | 'lower' | 'no_call' when a News MethodCall exists, else None
 
 
 def _parse_time(value: str) -> dt.datetime:
@@ -202,9 +204,13 @@ def _brent_detail(series: Optional[list], snapshot_as_of: dt.datetime, release: 
 
 def _call(predicted: Optional[float], surprise: Optional[float], forecast: float, tol: float,
           actual: Optional[float], title: str, note: Optional[str] = None, kind: Optional[str] = None,
-          explicit_side: Optional[int] = None) -> MethodCall:
-    """One method's call, judged by side vs the forecast. explicit_side is for direction-only calls."""
-    if explicit_side is not None:
+          explicit_side: Optional[int] = None, side_fixed: bool = False) -> MethodCall:
+    """
+    One method's call, judged by side vs the forecast. explicit_side is for direction-only calls.
+    side_fixed=True makes explicit_side the side even when it is None (a News abstention), so the number
+    never decides the side; the default path is unchanged.
+    """
+    if side_fixed or explicit_side is not None:
         predicted_side = explicit_side
     else:
         predicted_side = None if predicted is None else side(predicted, forecast, tol)
@@ -344,7 +350,9 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
         else:
             tier1_tracked = title in NOWCAST_EVENTS      # tracked but no snapshot yet: row shows no call
 
-    # News: rule R3 lean (print call first, accumulator fallback) times the prior-only median scale.
+    # News: rule R3 lean (print call first, accumulator fallback). B9 ST1: the side comes from the pre-registered
+    # rule alone (sign of the lean when |lean| >= 0.2, else no call; never 'in line'); the number is still only
+    # forecast + lean x the prior-only median scale, drawn when a scale exists and never used for the side.
     print_row = _print_call_before(bt_conn, title, release_iso)
     acc_row = _accumulator_call_before(bt_conn, title, release_iso)
     lean = news_lean(
@@ -360,7 +368,13 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
         # the map, so it is enforced here; the lean is cleared too, so Combined treats it as news missing.
         lean = None
     sn = news_surprise(lean, scale)
-    news = None if sn is None else _call(forecast + sn, sn, forecast, tol, actual, title, note="scaled")
+    news: Optional[MethodCall] = None
+    news_call: Optional[str] = None
+    if lean is not None:
+        nside = news_side(lean)
+        news = _call(None if sn is None else forecast + sn, sn, forecast, tol, actual, title,
+                     note="scaled" if sn is not None else "unsized", explicit_side=nside, side_fixed=True)
+        news_call = {1: "higher", -1: "lower", None: "no_call"}[nside]
 
     agreement = agreement_for(None if tier1 is None else tier1.side, None if news is None else news.side)
 
@@ -385,7 +399,7 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
     )
     return StatsRow(title, when, r["forecast"], r["actual"], forecast, actual, tol, status,
                     tier1_tracked, tier1, news, combined, nowcast_as_of, pre_news, detail,
-                    agreement=agreement, tier1_tier=tier1_tier)
+                    agreement=agreement, tier1_tier=tier1_tier, news_call=news_call)
 
 
 # --- payloads ---------------------------------------------------------------------------------

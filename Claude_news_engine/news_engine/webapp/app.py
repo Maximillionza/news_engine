@@ -445,7 +445,7 @@ def _stats_conns():
 
 
 # StatsRow.tol and MethodCall.side are internal scoring inputs and are deliberately not served;
-# StatsRow.agreement is the only thing derived from side that leaves the server.
+# StatsRow.agreement and StatsRow.news_call are the only things derived from side that leave the server.
 def _method_dict(call):
     if call is None:
         return None
@@ -483,7 +483,7 @@ def _stats_row_dict(r):
         "detail": _detail_dict(r.detail),
         "impact": r.impact, "impact_effective": r.impact_effective,
         "impact_inferred": r.impact_inferred, "impact_bucket": r.impact_bucket,
-        "agreement": r.agreement, "tier1_tier": r.tier1_tier,
+        "agreement": r.agreement, "tier1_tier": r.tier1_tier, "news_call": r.news_call,
     }
 
 
