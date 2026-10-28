@@ -36,14 +36,16 @@ _FIELD_LABELS = {"Lag/frequency": "Lag", "Confidence": "Confidence", "Evidence /
 # not verified, and how confidence is set. Keys must equal the workbook's POC_* sheets.
 SECTIONS: dict[str, dict] = {
     "POC_CPI_Leading_Indicators": {
-        "titles": ["CPI m/m", "Core CPI m/m"],
+        "titles": ["CPI m/m", "Core CPI m/m", "CPI y/y", "Core CPI y/y"],
         "rule": (
             "Formula tier, not researched. The Cleveland Fed inflation nowcast (this sheet's Tier 1 \"published "
             "nowcast figure\" row) is compared with the release's forecast by the formula rule in the introduction "
             "and written per instrument by the Windows tasks NewsEngine_Tier1Weekly and NewsEngine_Tier1Daily. "
-            "The research task never logs these titles. The sheet's operating rule still frames the result: the "
-            "nowcast is unreliable in the first 1-2 weeks of the month it covers and strong in the final 1-2 weeks "
-            "before release."
+            "The m/m titles read nowcast_month.json (month-over-month, seasonally adjusted); the y/y titles read "
+            "nowcast_year.json (year-over-year, based on not seasonally adjusted CPI and core CPI data, the same "
+            "basis BLS publishes y/y on). The research task never logs these titles. The sheet's operating rule "
+            "still frames the result: the nowcast is unreliable in the first 1-2 weeks of the month it covers and "
+            "strong in the final 1-2 weeks before release."
         ),
         "rejected": [
             "ISM Manufacturing/Services Prices Paid as a CPI input: checked and rejected (Cleveland Fed Economic "
@@ -138,11 +140,13 @@ SECTIONS: dict[str, dict] = {
     "POC_Core_PCE": {
         "titles": ["Core PCE Price Index m/m"],
         "rule": (
-            "The same Cleveland Fed inflation nowcast used for CPI (it outputs PCE and core PCE too) plus the "
-            "quantified CPI-to-PCE weighting adjustment applied to the same month's CPI print: shelter is about 15% "
-            "of PCE vs about 33% of CPI, and PCE includes employer/government-paid healthcare and \"free\" financial "
-            "services that CPI excludes (the confirmed driver of the July 2026 miss). Judgment tier: a Core PCE "
-            "formula capture is roadmap B12, not built."
+            "Formula tier, not researched. The Cleveland Fed inflation nowcast's own Core PCE series (\"Core PCE "
+            "Inflation\" in nowcast_month.json: month-over-month, seasonally adjusted) is compared with the "
+            "release's forecast by the formula rule in the introduction and written per instrument by the Windows "
+            "tasks. The workbook's quantified CPI-to-PCE weighting adjustment (shelter is about 15% of PCE vs about "
+            "33% of CPI, and PCE includes employer/government-paid healthcare and \"free\" financial services that "
+            "CPI excludes, the confirmed driver of the July 2026 miss) is context for reading a miss, not an input "
+            "to the call. The research task never logs this title."
         ),
         "rejected": [
             "The same-month CPI print used unadjusted as a direct predictor of PCE: downgraded to Tier 2 after the "
@@ -218,9 +222,9 @@ SECTIONS: dict[str, dict] = {
             "Applies when sub-readings (headline vs core, m/m vs y/y) point different ways for PPI m/m, Core PCE "
             "Price Index m/m and Retail Sales m/m / Core Retail Sales m/m: the net direction follows the sub-reading "
             "with the larger surprise relative to its own typical volatility / forecast-distribution tightness, "
-            "judged from real data, never computed. Not assumed to transfer to NFP. CPI m/m and Core CPI m/m are "
-            "formula tier and each gets its own formula call; the CPI cases below remain the evidence for the "
-            "hypothesis."
+            "judged from real data, never computed. Not assumed to transfer to NFP. The formula-tier titles (CPI and "
+            "Core CPI m/m and y/y, Core PCE m/m) each get their own formula call; the CPI cases below remain the "
+            "evidence for the hypothesis."
         ),
         "rejected": [
             "A fixed sub-component hierarchy (\"core always wins\") or a vote across sub-readings.",
@@ -244,13 +248,16 @@ _INTRO = [
     "`TIER1_EVENTS` in `data_layer/tier1_events.py`. The workbook rows below are the sheet's own words, "
     "unedited.",
     "",
-    "Tiers: **formula** = a deterministic rule on a published model output, captured by the Windows tasks; "
+    "Tiers: **formula** = a deterministic rule on a published model output, captured by the Windows tasks "
+    "(CPI m/m, Core CPI m/m, CPI y/y, Core CPI y/y, Core PCE Price Index m/m); "
     "**judgment** = researched by hand before each release by the Tier 1 research task "
     "(`scripts/tier1_research.py`), where the first pre-release call stands and a later re-check is only "
     "logged as a late check; **market-implied** is reserved for roadmap B12 (Kalshi) and has no titles yet.",
     "",
-    "Formula rule (CPI m/m and Core CPI m/m): `scripts/capture_nowcast_from_cleveland.py` compares the "
-    "Cleveland Fed nowcast with the release's forecast. Within one rounding step of the forecast's own "
+    "Formula rule (the five formula titles): `scripts/capture_nowcast_from_cleveland.py` compares the "
+    "Cleveland Fed nowcast with the release's forecast. The m/m titles read `nowcast_month.json` "
+    "(month-over-month, seasonally adjusted); CPI y/y and Core CPI y/y read `nowcast_year.json` "
+    "(year-over-year, based on not seasonally adjusted CPI and core CPI data, the basis BLS publishes y/y on). Within one rounding step of the forecast's own "
     "published precision is in line (neutral call); above is hotter, below is cooler. Each tracked instrument's "
     "direction comes from `webapp.stats_methods.market_lean` (buy -> bullish, sell -> bearish, mixed -> "
     f"neutral). Confidence is always \"{TIER1_FORMULA_CONFIDENCE}\" and the source is "

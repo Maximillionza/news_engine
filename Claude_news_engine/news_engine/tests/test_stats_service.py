@@ -978,3 +978,17 @@ def test_honest_rates_show_percent_from_20(conns):
     assert board19["methods"]["tier1"]["directional"]["accuracy_shown"] is False
     assert board19["in_line_baseline"]["tier1"]["accuracy"] is None
     assert board19["in_line_baseline"]["tier1"]["accuracy_shown"] is False
+
+
+def test_core_pce_without_snapshot_keeps_its_hand_logged_call(conns):
+    # B12: Core PCE moved to formula, but its past LLM-logged calls must still score and read as judgment.
+    dash, bt = conns
+    _event(dash, "Core PCE Price Index m/m", _t(9, 30), "0.2%", "0.4%")
+    bs.record_tier1_prediction(bt, "Core PCE Price Index m/m", "XAUUSD", _t(9, 30), "hot", "Likely",
+                               "https://www.clevelandfed.org/indicators-and-data/inflation-nowcasting", "bearish",
+                               logged_at_utc=_t(9, 30) - dt.timedelta(days=3))
+    row = svc.build_rows(dash, bt, event_title="Core PCE Price Index m/m")[-1]
+    assert row.tier1.note == "hand-logged" and row.tier1_tier == "judgment"
+    _snap(bt, "Core PCE Price Index m/m", _t(9, 30), 0.4)
+    row = svc.build_rows(dash, bt, event_title="Core PCE Price Index m/m")[-1]
+    assert row.tier1_tier == "formula"

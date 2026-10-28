@@ -104,3 +104,13 @@ def test_check_exits_1_for_a_stale_doc_and_0_for_a_current_one(tmp_path: Path) -
     assert out.read_text(encoding="utf-8") == "stale\n"   # --check never writes
     assert export.main(["--workbook", str(WORKBOOK), "--out", str(out)]) == 0
     assert export.main(["--check", "--workbook", str(WORKBOOK), "--out", str(out)]) == 0
+
+
+def test_b12_cleveland_titles_are_formula_and_the_intro_names_the_year_file() -> None:
+    text = export.render(WORKBOOK)
+    sections = _sections(text)
+    assert "`CPI y/y` (formula)" in sections["POC_CPI_Leading_Indicators"]
+    assert "`Core CPI y/y` (formula)" in sections["POC_CPI_Leading_Indicators"]
+    assert "`Core PCE Price Index m/m` (formula)" in sections["POC_Core_PCE"]
+    intro = text.split("\n## ")[0]
+    assert "nowcast_year.json" in intro and "not seasonally adjusted" in intro

@@ -25,6 +25,8 @@ TIER1_TIERS: tuple[str, ...] = (TIER1_FORMULA, TIER1_MARKET_IMPLIED, TIER1_JUDGM
 TIER1_EVENTS: dict[str, str] = {
     "CPI m/m": TIER1_FORMULA,
     "Core CPI m/m": TIER1_FORMULA,
+    "CPI y/y": TIER1_FORMULA,
+    "Core CPI y/y": TIER1_FORMULA,
     "PPI m/m": TIER1_JUDGMENT,
     "Non-Farm Employment Change": TIER1_JUDGMENT,
     "FOMC Meeting Minutes": TIER1_JUDGMENT,
@@ -34,7 +36,7 @@ TIER1_EVENTS: dict[str, str] = {
     "Advance GDP q/q": TIER1_JUDGMENT,
     "Final GDP q/q": TIER1_JUDGMENT,
     "GDP q/q": TIER1_JUDGMENT,
-    "Core PCE Price Index m/m": TIER1_JUDGMENT,
+    "Core PCE Price Index m/m": TIER1_FORMULA,
     "ISM Manufacturing PMI": TIER1_JUDGMENT,
     "ISM Services PMI": TIER1_JUDGMENT,
     "Retail Sales m/m": TIER1_JUDGMENT,

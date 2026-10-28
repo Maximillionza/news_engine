@@ -1,14 +1,18 @@
 """
-Deterministic LIVE capture of the Cleveland Fed CPI nowcast for the scheduler (spec 2026-10-15 section 6.1 Freshness).
-No LLM and no hand-typed numbers: the value comes straight from the Fed's published nowcast_month.json.
+Deterministic LIVE capture of the Cleveland Fed inflation nowcast for the scheduler (spec 2026-10-15 section 6.1
+Freshness). No LLM and no hand-typed numbers: the value comes straight from the Fed's published nowcast files.
+Two files are used (B12): nowcast_month.json (month-over-month, seasonally adjusted) for CPI m/m, Core CPI m/m and
+Core PCE Price Index m/m, and nowcast_year.json (year-over-year; NSA for CPI and core CPI, the basis BLS publishes
+y/y on) for CPI y/y and Core CPI y/y. Both hold the same series names, so CAPTURE_SERIES pins which file each
+title reads: a y/y title read from the month file would silently yield an m/m number.
 
 What it does, once per run:
-  1. Finds USD rows in event_history for the formula-tier Tier 1 titles ("CPI m/m" / "Core CPI m/m", from
-     data_layer.tier1_events) whose release time is within the window (strictly after now; --window-hours,
-     default 48; the weekly Windows task uses 192 so a release 8 days out is captured early). If there are
-     none - the common case - it says so and does nothing, without even downloading the file.
-  2. Downloads nowcast_month.json once (60 s timeout, descriptive User-Agent), finds the chart for each
-     release's reference month (the month before the release month), and takes that chart's LAST non-blank
+  1. Finds USD rows in event_history for the formula-tier Tier 1 titles (data_layer.tier1_events) whose release
+     time is within the window (strictly after now; --window-hours, default 48; the weekly Windows task uses 192
+     so a release 8 days out is captured early). If there are none - the common case - it says so and does
+     nothing, without even downloading a file.
+  2. Downloads each file the due releases need, once (60 s timeout, descriptive User-Agent), finds the chart for
+     each release's reference month (the month before the release month), and takes that chart's LAST non-blank
      nowcast value dated before the release day.
   3. Records it as a LIVE snapshot via scripts/capture_nowcast_snapshot.capture() with as_of = the real fetch
      time (capture refuses anything after the release). The store is append-only; a later run adds a newer
@@ -49,12 +53,25 @@ from data_layer.tier1_events import TIER1_FORMULA, TIER1_FORMULA_SOURCE, tier1_t
 from scoring import backtest_store  # noqa: E402
 from scripts.backfill_tier1_reconstructed import open_dash_readonly  # noqa: E402
 from scripts.capture_nowcast_snapshot import capture  # noqa: E402
-from scripts.cleveland_nowcast_to_csv import SERIES_MAP, SOURCE, _series, _slot_dates  # noqa: E402
+from scripts.cleveland_nowcast_to_csv import SOURCE, _series, _slot_dates  # noqa: E402
 from webapp.store import list_tracked_symbols  # noqa: E402
 from webapp.tier1_formula import record_formula_calls  # noqa: E402
 
 UTC = dt.timezone.utc
 NOWCAST_URL = "https://www.clevelandfed.org/-/media/files/webcharts/inflationnowcasting/nowcast_month.json"
+NOWCAST_URLS: dict[str, str] = {
+    "month": NOWCAST_URL,
+    "year": "https://www.clevelandfed.org/-/media/files/webcharts/inflationnowcasting/nowcast_year.json",
+}
+# Formula title -> (file key, nowcast series, actual series); names verified against the live files 2026-10-28.
+# Both files use identical series names, so the file key is what keeps a y/y title out of the month file.
+CAPTURE_SERIES: dict[str, tuple[str, str, str]] = {
+    "CPI m/m": ("month", "CPI Inflation", "Actual CPI Inflation"),
+    "Core CPI m/m": ("month", "Core CPI Inflation", "Actual Core CPI Inflation"),
+    "Core PCE Price Index m/m": ("month", "Core PCE Inflation", "Actual Core PCE Inflation"),
+    "CPI y/y": ("year", "CPI Inflation", "Actual CPI Inflation"),
+    "Core CPI y/y": ("year", "Core CPI Inflation", "Actual Core CPI Inflation"),
+}
 USER_AGENT = "news-fundamental-engine/0.1 (scheduled Cleveland Fed inflation nowcast capture; CC BY 4.0 attribution kept)"
 FETCH_TIMEOUT_SECONDS = 60
 WINDOW = dt.timedelta(hours=48)       # default: a release is "upcoming" when it is strictly after now and within this long
@@ -68,9 +85,9 @@ class FetchError(RuntimeError):
     """The Cleveland Fed file could not be downloaded or is not the document we expect."""
 
 
-def fetch_cleveland_json(http_get: Callable = requests.get):
-    """Download and parse nowcast_month.json once. Raises on any HTTP or JSON problem."""
-    resp = http_get(NOWCAST_URL, timeout=FETCH_TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT})
+def fetch_cleveland_json(file_key: str = "month", http_get: Callable = requests.get):
+    """Download and parse one nowcast file ("month" or "year") once. Raises on any HTTP or JSON problem."""
+    resp = http_get(NOWCAST_URLS[file_key], timeout=FETCH_TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT})
     resp.raise_for_status()
     return resp.json()
 
@@ -78,7 +95,7 @@ def fetch_cleveland_json(http_get: Callable = requests.get):
 # --- pure parsing --------------------------------------------------------------------------------
 
 def _reference_month(release: dt.datetime) -> tuple[int, int]:
-    """CPI for month M is released in month M+1, so the chart is the one for the month before the release."""
+    """CPI and PCE for month M are released in month M+1, so the chart is the one for the month before the release."""
     year, month = release.year, release.month - 1
     return (year - 1, 12) if month == 0 else (year, month)
 
@@ -104,14 +121,14 @@ def _is_blank(text) -> bool:
     return text is None or str(text).strip().lower() in ("", "none")
 
 
-def _latest_for_release(charts: list[dict], title: str, release: dt.datetime) -> dict:
-    if title not in SERIES_MAP:
-        return _reading(title, release, reason="not a CPI-family title")
+def _latest_for_release(charts: list[dict], title: str, release: dt.datetime, file_key: str) -> dict:
+    if title not in CAPTURE_SERIES or CAPTURE_SERIES[title][0] != file_key:
+        return _reading(title, release, reason=f"not a {file_key}-file nowcast title")
     ref = _reference_month(release)
     chart = _find_chart(charts, ref)
     if chart is None:
         return _reading(title, release, reason=f"no Cleveland Fed chart for reference month {ref[0]}-{ref[1]}")
-    nowcast_name, actual_name = SERIES_MAP[title]
+    _file_key, nowcast_name, actual_name = CAPTURE_SERIES[title]
     release_day = release.date()
     try:
         dates = _slot_dates(chart)
@@ -155,24 +172,27 @@ def _latest_for_release(charts: list[dict], title: str, release: dt.datetime) ->
     return _reading(title, release, reason="no nowcast value before the release day in the Fed chart")
 
 
-def latest_nowcasts(json_data, release_dates: Iterable[tuple[str, dt.datetime]]) -> list[dict]:
+def latest_nowcasts(json_data, release_dates: Iterable[tuple[str, dt.datetime]],
+                    file_key: str = "month") -> list[dict]:
     """
-    For each (title, release_utc): the LAST non-blank nowcast in that release's chart and its date.
+    For each (title, release_utc): the LAST non-blank nowcast in that release's chart and its date, read from
+    the file `file_key` ("month" or "year"); a title that belongs to the other file is refused, not read.
     Returns one dict per release: {"event_title", "release_utc", "value", "value_date", "reason"}; when the
     value cannot be taken, value and value_date are None and `reason` says why (nothing is guessed, and an
     unreadable newest slot is never replaced by an older one). Pure: no network, no database.
     """
     if not isinstance(json_data, list):
         raise ValueError(f"expected a list of charts, got {type(json_data).__name__}")
-    return [_latest_for_release(json_data, title, release) for title, release in release_dates]
+    return [_latest_for_release(json_data, title, release, file_key) for title, release in release_dates]
 
 
 # --- run -----------------------------------------------------------------------------------------
 
-def _due_releases(dash_conn, now: dt.datetime,
-                  window: dt.timedelta = WINDOW) -> list[tuple[str, dt.datetime, Optional[str]]]:
-    """(title, release_utc, forecast_text) for every formula-tier release strictly after now and within window."""
-    titles = tier1_titles(TIER1_FORMULA)
+def _due_releases(dash_conn, now: dt.datetime, window: dt.timedelta = WINDOW,
+                  titles: Optional[list[str]] = None) -> list[tuple[str, dt.datetime, Optional[str]]]:
+    """(title, release_utc, forecast_text) for every release of `titles` (default: the formula tier) strictly
+    after now and within window."""
+    titles = tier1_titles(TIER1_FORMULA) if titles is None else titles
     marks = ",".join("?" for _ in titles)
     rows = dash_conn.execute(
         f"SELECT DISTINCT event_title, event_time_utc, forecast FROM event_history "
@@ -211,16 +231,17 @@ def _record_tier1(summary: dict, bt_conn, title: str, release: dt.datetime, nowc
             summary["skipped"].append((title, release_iso, f"no Tier 1 formula call: {result['pending']}"))
 
 
-def run(dash_conn, bt_conn, now: dt.datetime, fetch: Optional[Callable] = None, dry_run: bool = False,
-        window: dt.timedelta = WINDOW) -> dict:
+def run(dash_conn, bt_conn, now: dt.datetime, fetch: Optional[Callable[[str], object]] = None,
+        dry_run: bool = False, window: dt.timedelta = WINDOW) -> dict:
     """
-    Capture a live snapshot for every CPI-family release within `window` after `now`, then write the
-    dashboard's formula Tier 1 row for each tracked instrument.
+    Capture a live snapshot for every formula-tier release within `window` after `now`, then write the
+    dashboard's formula Tier 1 row for each tracked instrument. `fetch(file_key)` returns that file's JSON
+    (default: a live download); each needed file is fetched once.
     Returns {"captured": [(title, release_iso, value)], "skipped": [(title, release_iso, reason)],
     "tier1_rows": [(title, release_iso, symbol, direction, "written"|"unchanged")],
     "tier1_pending": [(title, release_iso, reason)], "dry_run": bool, "message": str}. With dry_run nothing
     is written (bt_conn may be None) and "captured" / "tier1_rows" list what would be. Raises FetchError if
-    the file cannot be fetched or is not a chart list.
+    a needed file cannot be fetched or is not a chart list.
     """
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError(f"now must be timezone-aware, got naive {now!r}")
@@ -230,16 +251,23 @@ def run(dash_conn, bt_conn, now: dt.datetime, fetch: Optional[Callable] = None, 
     due = _due_releases(dash_conn, now, window)
     if not due:
         hours = window.total_seconds() / 3600
-        summary["message"] = f"No CPI-family release within {hours:g} hours: nothing to capture."
+        summary["message"] = f"No formula-tier release within {hours:g} hours: nothing to capture."
         return summary
     forecasts = {(title, release): forecast for title, release, forecast in due}
     symbols = list_tracked_symbols(dash_conn)          # read once: every due release uses the same list
 
+    by_file: dict[str, list[tuple[str, dt.datetime]]] = {}
+    for title, release, _ in due:
+        by_file.setdefault(CAPTURE_SERIES[title][0], []).append((title, release))
+    readings_by_release: dict[tuple[str, dt.datetime], dict] = {}
     try:
-        data = (fetch or fetch_cleveland_json)()
-        readings = latest_nowcasts(data, [(title, release) for title, release, _ in due])
+        for file_key, releases in by_file.items():
+            data = (fetch or fetch_cleveland_json)(file_key)
+            for reading in latest_nowcasts(data, releases, file_key):
+                readings_by_release[(reading["event_title"], reading["release_utc"])] = reading
     except Exception as exc:  # noqa: BLE001 -- anything here means we have no trustworthy number: fail loud
         raise FetchError(f"could not get the Cleveland Fed nowcast: {exc}") from exc
+    readings = [readings_by_release[(title, release)] for title, release, _ in due]
 
     for r in readings:
         title, release = r["event_title"], r["release_utc"]
