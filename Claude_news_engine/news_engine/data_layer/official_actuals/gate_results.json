@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-10-28T23:08:31.382899+00:00",
+  "generated_at_utc": "2026-10-28T23:40:49.799204+00:00",
   "threshold": 0.8,
   "titles": {
     "10-y Bond Auction": {
@@ -115,24 +115,18 @@
       "status": "verified"
     },
     "Core PCE Price Index m/m": {
-      "comparisons": 20,
+      "comparisons": 18,
       "identity": "ok",
-      "matches": 16,
-      "mismatches": [
-        "2026-01-22 15:30 SAST (2026-01-22T13:30:00+00:00) actual: stored 0.2% vs official 0.3% (period 2025-12-01)",
-        "2026-02-20 15:30 SAST (2026-02-20T13:30:00+00:00) previous: stored 0.2% vs official 0.3% (period 2025-12-01)",
-        "2026-03-13 14:30 SAST (2026-03-13T12:30:00+00:00) actual: stored 0.4% vs official 0.3% (period 2026-02-01)",
-        "2026-04-09 14:30 SAST (2026-04-09T12:30:00+00:00) actual: stored 0.4% vs official 0.3% (period 2026-03-01)"
-      ],
-      "revision_explained": 5,
+      "matches": 18,
+      "mismatches": [],
+      "revision_explained": 7,
       "status": "verified"
     },
     "Core PPI m/m": {
-      "comparisons": 22,
+      "comparisons": 20,
       "identity": "ok",
-      "matches": 20,
+      "matches": 19,
       "mismatches": [
-        "2026-01-14 15:30 SAST (2026-01-14T13:30:00+00:00) actual: stored 0.0% vs official 0.5% (period 2025-12-01)",
         "2026-01-30 15:30 SAST (2026-01-30T13:30:00+00:00) previous: stored 0.2% vs official 0.3% (period 2025-11-01)"
       ],
       "revision_explained": 12,
@@ -141,14 +135,9 @@
     "Core Retail Sales m/m": {
       "comparisons": 20,
       "identity": "ok",
-      "matches": 16,
-      "mismatches": [
-        "2026-01-14 15:30 SAST (2026-01-14T13:30:00+00:00) actual: stored 0.5% vs official 0.2% (period 2025-12-01)",
-        "2026-01-14 15:30 SAST (2026-01-14T13:30:00+00:00) previous: stored 0.2% vs official 0.5% (period 2025-11-01)",
-        "2026-02-10 15:30 SAST (2026-02-10T13:30:00+00:00) actual: stored 0.0% vs official -0.6% (period 2026-01-01)",
-        "2026-02-10 15:30 SAST (2026-02-10T13:30:00+00:00) previous: stored 0.4% vs official 0.2% (period 2025-12-01)"
-      ],
-      "revision_explained": 10,
+      "matches": 20,
+      "mismatches": [],
+      "revision_explained": 13,
       "status": "verified"
     },
     "Crude Oil Inventories": {
@@ -218,14 +207,10 @@
       "status": "verified"
     },
     "Import Prices m/m": {
-      "comparisons": 21,
+      "comparisons": 19,
       "identity": "ok",
-      "matches": 18,
-      "mismatches": [
-        "2026-01-15 15:30 SAST (2026-01-15T13:30:00+00:00) actual: stored 0.4% vs official 0.1% (period 2025-12-01)",
-        "2026-02-10 15:30 SAST (2026-02-10T13:30:00+00:00) actual: stored 0.1% vs official 0.5% (period 2026-01-01)",
-        "2026-02-10 15:30 SAST (2026-02-10T13:30:00+00:00) previous: stored 0.3% vs official 0.1% (period 2025-12-01)"
-      ],
+      "matches": 19,
+      "mismatches": [],
       "revision_explained": 14,
       "status": "verified"
     },
@@ -262,13 +247,10 @@
       "status": "verified"
     },
     "PPI m/m": {
-      "comparisons": 22,
+      "comparisons": 20,
       "identity": "ok",
       "matches": 20,
-      "mismatches": [
-        "2026-01-14 15:30 SAST (2026-01-14T13:30:00+00:00) actual: stored 0.2% vs official 0.4% (period 2025-12-01)",
-        "2026-01-14 15:30 SAST (2026-01-14T13:30:00+00:00) previous: stored 0.1% vs official 0.4% (period 2025-11-01)"
-      ],
+      "mismatches": [],
       "revision_explained": 18,
       "status": "verified"
     },
@@ -323,16 +305,12 @@
     "Retail Sales m/m": {
       "comparisons": 22,
       "identity": "ok",
-      "matches": 17,
+      "matches": 21,
       "mismatches": [
-        "2026-01-14 15:30 SAST (2026-01-14T13:30:00+00:00) actual: stored 0.6% vs official 0.1% (period 2025-12-01)",
-        "2026-01-14 15:30 SAST (2026-01-14T13:30:00+00:00) previous: stored -0.1% vs official 0.7% (period 2025-11-01)",
-        "2026-02-10 15:30 SAST (2026-02-10T13:30:00+00:00) actual: stored 0.0% vs official -0.6% (period 2026-01-01)",
-        "2026-02-10 15:30 SAST (2026-02-10T13:30:00+00:00) previous: stored 0.6% vs official 0.1% (period 2025-12-01)",
         "2026-10-15 14:30 SAST (2026-10-15T12:30:00+00:00) previous: stored 1.2% vs official 1.3% (period 2026-08-01)"
       ],
-      "revision_explained": 12,
-      "status": "suspect"
+      "revision_explained": 16,
+      "status": "verified"
     },
     "Revised Nonfarm Productivity q/q": {
       "comparisons": 1,

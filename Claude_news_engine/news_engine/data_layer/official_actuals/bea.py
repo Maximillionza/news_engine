@@ -15,6 +15,10 @@ enough (BEA uses it for every "Invalid Request - ..." error); any other
 error raises SourceError.
 BEA echoes the key back in Request.RequestParam (USERID), so a body must
 never be logged or saved unscrubbed.
+
+The table's own note (`Results.Notes`, NoteRef == TableName) ends with
+"- LastRevised: September 30, 2026": the day BEA last published the table,
+which proves a GDP re-estimate is out even when its value did not change.
 """
 from __future__ import annotations
 
@@ -27,6 +31,7 @@ from data_layer.official_actuals.http import Fetcher, KeyInactiveError, SourceEr
 
 BEA_URL = "https://apps.bea.gov/api/data"
 _BEA_INVALID_USER_ID = "3"
+_LAST_REVISED = re.compile(r"LastRevised:\s*([A-Za-z]+\s+\d{1,2},\s*\d{4})")
 
 
 def _period(text: str) -> Optional[dt.date]:
@@ -76,8 +81,27 @@ def parse_nipa(body: str) -> dict[str, dict[dt.date, float]]:
     return out
 
 
-def fetch_nipa(table: str, frequency: str, years: Sequence[int], key: str, fetcher: Fetcher) -> dict[str, dict[dt.date, float]]:
-    """Every series of one NIPA table at one frequency, keyed by BEA SeriesCode."""
+def parse_last_revised(body: str, table: str) -> Optional[dt.date]:
+    """The "LastRevised" date of `table`'s own note; None when the note is absent or unparseable."""
+    try:
+        notes = ((json.loads(body).get("BEAAPI") or {}).get("Results") or {}).get("Notes") or []
+    except (ValueError, AttributeError):
+        return None
+    for note in notes if isinstance(notes, list) else []:
+        if not isinstance(note, dict) or str(note.get("NoteRef", "")).strip() != table:
+            continue
+        m = _LAST_REVISED.search(str(note.get("NoteText", "")))
+        if m:
+            try:
+                return dt.datetime.strptime(" ".join(m.group(1).replace(",", ", ").split()), "%B %d, %Y").date()
+            except ValueError:
+                return None
+    return None
+
+
+def fetch_nipa_table(table: str, frequency: str, years: Sequence[int], key: str,
+                     fetcher: Fetcher) -> tuple[dict[str, dict[dt.date, float]], Optional[dt.date]]:
+    """`fetch_nipa` plus the table's LastRevised date (one call)."""
     if not key:
         raise KeyInactiveError("bea: no key configured")
     params = {
@@ -85,4 +109,9 @@ def fetch_nipa(table: str, frequency: str, years: Sequence[int], key: str, fetch
         "Frequency": frequency, "Year": ",".join(str(y) for y in years), "ResultFormat": "JSON",
     }
     resp = call(fetcher, "bea", "GET", BEA_URL, params)
-    return parse_nipa(resp.text)
+    return parse_nipa(resp.text), parse_last_revised(resp.text, table)
+
+
+def fetch_nipa(table: str, frequency: str, years: Sequence[int], key: str, fetcher: Fetcher) -> dict[str, dict[dt.date, float]]:
+    """Every series of one NIPA table at one frequency, keyed by BEA SeriesCode."""
+    return fetch_nipa_table(table, frequency, years, key, fetcher)[0]

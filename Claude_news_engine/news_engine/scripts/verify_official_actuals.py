@@ -6,11 +6,19 @@ event_history already holds, and decides whether the release-time poller may
 write that title:
 
   - for every released USD row since GATE_START, the official value for the
-    row's period (registry.expected_period) against the stored actual (rows
+    row's period (next item) against the stored actual (rows
     whose actual one of the new publisher sources wrote are skipped: they are
     not an independent reference), and the prior period's value against FF's
     `previous` (for a re-estimate - Prelim/Final GDP, Revised Productivity -
     FF's previous is the earlier estimate of the SAME period);
+  - the row's period is registry.expected_period, checked against the period
+    the title's FRED twin first published on that day (ALFRED initial
+    releases, up to TWIN_RELEASE_LAG_DAYS later): releases the 2025 shutdown
+    delayed (Jan/Feb 2026 Retail Sales, PPI, ...) published an earlier period
+    than the calendar rule assigns, so such a row is compared with the period
+    actually released, and a row with no matching first print (or two) is
+    skipped. A re-estimate's period is the latest one first published before
+    the row. Titles without a twin (or when FRED fails) keep expected_period;
   - official APIs serve today's revised numbers, so a mismatch still counts as
     agreement when the title's FRED twin read AS OF the row's release date
     (ALFRED vintage; for `previous` also as of the day before) formats to the
@@ -51,7 +59,7 @@ from typing import Any, Mapping, Optional, Protocol
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import LOCAL_TZ, UTC_TZ
-from data_layer.fred_history import FredClient, FredFetchError, FredMaintenanceError, transform_at
+from data_layer.fred_history import FredClient, FredFetchError, FredMaintenanceError, InitialRelease, transform_at
 from data_layer.official_actuals.coverage import GATE_RESULTS_PATH
 from data_layer.official_actuals.fetch import fetch_for_specs, series_key
 from data_layer.official_actuals.http import Fetcher, KeyInactiveError, requests_fetcher
@@ -69,12 +77,18 @@ GATE_IDENTITY_PERIODS = 6
 # Twin levels fetched before a period so its prior and y/y base are inside the vintage.
 TWIN_LOOKBACK_DAYS = 400
 DEFAULT_FRED_PACE_SECONDS = 0.6          # FRED allows 120 requests/min
+# A twin's first print may land up to this many days after the FF row (B8's reading_for_event_date window).
+TWIN_RELEASE_LAG_DAYS = 3
+# First prints read from before GATE_START, so a 2026 re-estimate still sees its quarter's first print.
+TWIN_RELEASE_LOOKBACK_DAYS = 120
 
 
 class TwinSource(Protocol):
     def value_asof(self, series_id: str, transform: str, period: dt.date, vintage_date: dt.date) -> Optional[float]: ...
 
     def current_values(self, series_id: str, transform: str, since: dt.date, today: dt.date) -> dict[dt.date, float]: ...
+
+    def first_releases(self, series_id: str, start: dt.date, end: dt.date) -> list[InitialRelease]: ...
 
 
 class TwinReader:
@@ -96,6 +110,9 @@ class TwinReader:
                 out[period] = value
         return out
 
+    def first_releases(self, series_id: str, start: dt.date, end: dt.date) -> list[InitialRelease]:
+        return self._client.initial_releases(series_id, start, end)
+
 
 @dataclass
 class TitleGate:
@@ -105,6 +122,9 @@ class TitleGate:
     revision_explained: int
     identity: str                # ok | mismatch | unavailable | none (no twin)
     mismatches: list[str] = field(default_factory=list)
+    # Rows compared with another period than expected_period, or skipped, per the twin's first prints.
+    # Printed in the report only; not part of gate_results.json.
+    period_notes: list[str] = field(default_factory=list)
 
 
 def _when(row: sqlite3.Row) -> dt.datetime:
@@ -171,17 +191,70 @@ def _explained_by_twin(spec: OfficialSpec, twin: Optional[TwinSource], stored: s
     return False
 
 
+def _twin_first_releases(spec: OfficialSpec, twin: Optional[TwinSource],
+                         now: dt.datetime) -> Optional[list[InitialRelease]]:
+    """
+    The twin's first prints since GATE_START (with lookback); None without a
+    twin, when FRED fails or when it lists none (a twin that never published
+    is no evidence about periods, so the row keeps expected_period).
+    """
+    if spec.fred_twin is None or twin is None or spec.transform == "auction":
+        return None
+    try:
+        found = list(twin.first_releases(spec.fred_twin[0], GATE_START - dt.timedelta(days=TWIN_RELEASE_LOOKBACK_DAYS),
+                                         now.date()))
+    except (FredFetchError, FredMaintenanceError):
+        return None
+    return found or None
+
+
+def released_period(spec: OfficialSpec, release_et: dt.date, expected: dt.date,
+                    releases: Optional[list[InitialRelease]]) -> Optional[dt.date]:
+    """
+    The period a row actually published, per the twin's first prints: `expected`
+    when there is no twin data or the twin agrees; the single other period first
+    published on the row's day (up to TWIN_RELEASE_LAG_DAYS later) when the release
+    was delayed; None (skip the row) when the twin shows no first print that day or
+    an ambiguous one. A re-estimate re-publishes an earlier first print: the latest
+    period first published before the row.
+    """
+    if releases is None:
+        return expected
+    if spec.reestimate:
+        earlier = [r.period for r in releases if r.vintage_date < release_et]
+        return max(earlier) if earlier else None
+    last_day = release_et + dt.timedelta(days=TWIN_RELEASE_LAG_DAYS)
+    window = [r for r in releases if release_et <= r.vintage_date <= last_day]
+    if not window:
+        return None
+    first_day = min(r.vintage_date for r in window)
+    periods = {r.period for r in window if r.vintage_date == first_day}
+    if expected in periods:
+        return expected
+    return next(iter(periods)) if len(periods) == 1 else None
+
+
 def gate_title(title: str, spec: OfficialSpec, rows: list[sqlite3.Row], series: Mapping[dt.date, Any],
                twin: Optional[TwinSource], now: dt.datetime) -> TitleGate:
     """Agreement of one title's official series with its stored actuals and FF `previous` strings."""
     released = [r for r in rows if release_date_et(_when(r)) >= GATE_START and _when(r) < now]
     identity = _identity(spec, series, twin, _latest_template(rows), now)
+    first_releases = _twin_first_releases(spec, twin, now)
     matches = comparisons = explained = 0
     mismatches: list[str] = []
+    notes: list[str] = []
     for row in released:
         when = _when(row)
         release_et = release_date_et(when)
-        period = expected_period(spec, release_et)
+        expected = expected_period(spec, release_et)
+        period = released_period(spec, release_et, expected, first_releases)
+        if period is None:
+            notes.append(f"{_sast(when)} skipped: no single first print of {spec.fred_twin[0]} that day "
+                         f"(expected period {expected.isoformat()})")
+            continue
+        if period != expected:
+            notes.append(f"{_sast(when)} compared as period {period.isoformat()} (first published that day "
+                         f"per {spec.fred_twin[0]}), not {expected.isoformat()}")
         checks: list[tuple[str, str, Optional[dt.date], tuple[dt.date, ...]]] = []
         if row["source"] not in PUBLISHER_SOURCES and is_ff_number(row["actual"]):
             checks.append(("actual", row["actual"], period, (release_et,)))
@@ -203,7 +276,7 @@ def gate_title(title: str, spec: OfficialSpec, rows: list[sqlite3.Row], series: 
             else:
                 mismatches.append(f"{_sast(when)} {kind}: stored {stored} vs official {candidate} "
                                   f"(period {ref_period.isoformat()})")
-    return TitleGate(_status(matches, comparisons), matches, comparisons, explained, identity, mismatches)
+    return TitleGate(_status(matches, comparisons), matches, comparisons, explained, identity, mismatches, notes)
 
 
 def _title_rows(conn: sqlite3.Connection, title: str) -> list[sqlite3.Row]:
@@ -270,6 +343,7 @@ def format_report(results: Mapping[str, TitleGate], now: dt.datetime) -> str:
         lines.append(f"  {title}: {g.status} (agreement {g.matches}/{g.comparisons}, "
                      f"revision explained {g.revision_explained}, identity {g.identity})")
         lines.extend(f"      {m}" for m in g.mismatches)
+        lines.extend(f"      note: {n}" for n in g.period_notes)
     return "\n".join(lines)
 
 

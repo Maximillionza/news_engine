@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data_layer.official_actuals import bls, coverage, eia, registry
+from data_layer.official_actuals import bea, bls, coverage, eia, registry
 from data_layer.official_actuals.fetch import FetchOutcome, fetch_for_specs, series_key
 from data_layer.official_actuals.http import HttpResponse, SourceRateLimited
 from data_layer.official_actuals.keys import Keys
@@ -178,6 +178,78 @@ def test_decide_fill_reestimate_never_writes_the_stale_earlier_estimate():
     # The first estimate (Advance) needs no such check: its quarter is absent until publication.
     advance = dt.datetime(2026, 7, 30, 12, 30, tzinfo=UTC)
     assert decide_fill(_spec("Advance GDP q/q"), advance, "1.0%", "2.5%", published, False, None).actual == "2.2%"
+
+
+def test_decide_fill_unchanged_reestimate_written_once_published():
+    # Live: Prelim GDP q/q 2026-08-26 printed 1.5% with previous (Advance) 1.5%. BEA's table note
+    # "LastRevised: <date>" proves the second estimate is out, so the unchanged value is written.
+    spec = _spec("Prelim GDP q/q")
+    row_time = dt.datetime(2026, 8, 26, 12, 30, tzinfo=UTC)
+    series = {D(2026, 1, 1): 2.5, D(2026, 4, 1): 1.5}
+    before = registry.ReestimateEvidence(last_revised=D(2026, 7, 30))           # still the Advance table
+    after = registry.ReestimateEvidence(last_revised=D(2026, 8, 26))
+    d = decide_fill(spec, row_time, "1.5%", "1.5%", series, False, None, reestimate_evidence=before)
+    assert d == registry.FillDecision(None, "awaiting publication")
+    d = decide_fill(spec, row_time, "1.5%", "1.5%", series, False, None, reestimate_evidence=after)
+    assert d == registry.FillDecision("1.5%", "fill")
+    # Evidence decides on its own: a value that differs from `previous` is not written before publication.
+    changed = {D(2026, 1, 1): 2.5, D(2026, 4, 1): 1.7}
+    d = decide_fill(spec, row_time, "1.5%", "1.5%", changed, False, None, reestimate_evidence=before)
+    assert d.actual is None and d.reason == "awaiting publication"
+    # No evidence at all (note missing): only a changed value is provably new.
+    d = decide_fill(spec, row_time, "1.5%", "1.5%", series, False, None)
+    assert d.actual is None and d.reason == "re-estimate not distinguishable (no revision evidence from bea)"
+    # An older re-estimate row still never takes today's revised number.
+    d = decide_fill(spec, row_time, "1.5%", "1.5%", series, True, "1.5%", reestimate_evidence=after)
+    assert d.reason.startswith("revised since release")
+
+
+def test_decide_fill_unchanged_revised_productivity_from_bls_footnotes():
+    # Live: Revised Nonfarm Productivity 2026-09-03, previous 1.4%; BLS still shows Q2 1.4 with no
+    # footnote, but Unit Labor Costs (same release) carry "R": the revised estimate is out.
+    spec = _spec("Revised Nonfarm Productivity q/q")
+    row_time = dt.datetime(2026, 9, 3, 12, 30, tzinfo=UTC)
+    fake = FakeFetcher([(_url_has("api.bls.gov"), _ok(_fixture("bls_timeseries.json")))])
+    out = fetch_for_specs([spec], D(2026, 9, 1), fake, KEYS)
+    posted = set(fake.calls[0][3]["seriesid"])
+    assert set(registry._PRODUCTIVITY_FAMILY) <= posted                         # one POST, family included
+    evidence = out.evidence[series_key(spec)]
+    assert D(2026, 4, 1) in evidence.revised_periods
+    series = out.data[series_key(spec)]
+    assert series[D(2026, 4, 1)] == 1.4
+    d = decide_fill(spec, row_time, "1.4%", "1.4%", series, False, None, reestimate_evidence=evidence)
+    assert d == registry.FillDecision("1.4%", "fill")
+    # Before the Revised release no series of the release has "R" on Q2.
+    d = decide_fill(spec, row_time, "1.4%", "1.4%", series, False, None,
+                    reestimate_evidence=registry.ReestimateEvidence())
+    assert d == registry.FillDecision(None, "awaiting publication")
+
+
+def test_bls_parse_keeps_revised_footnotes():
+    parsed = bls.parse_bls(_fixture("bls_timeseries.json"))
+    assert D(2026, 4, 1) in parsed["PRS85006112"].revised                       # {"code": "R", "text": "revised"}
+    assert D(2026, 4, 1) not in parsed["PRS85006092"].revised                   # unchanged: no footnote
+
+
+def test_bea_last_revised_from_table_note():
+    assert bea.parse_last_revised(_fixture("bea_T10101_Q.json"), "T10101") == D(2026, 9, 30)
+    assert bea.parse_last_revised(_fixture("bea_T10107_Q.json"), "T10107") == D(2026, 9, 30)
+    assert bea.parse_last_revised(_fixture("bea_T10101_Q.json"), "T10107") is None   # another table's note
+    assert bea.parse_last_revised('{"BEAAPI": {"Results": {"Data": []}}}', "T10101") is None
+    assert bea.parse_last_revised("not json", "T10101") is None
+    body = json.dumps({"BEAAPI": {"Results": {"Notes": [
+        {"NoteRef": "T10101", "NoteText": "Table 1.1.1. ... - LastRevised: August 26,2026"}]}}})
+    assert bea.parse_last_revised(body, "T10101") == D(2026, 8, 26)
+
+
+def test_fetch_for_specs_bea_evidence_per_table():
+    fake = FakeFetcher([(_url_has("apps.bea.gov"), _ok(_fixture("bea_T10101_Q.json")))])
+    specs = [_spec("Advance GDP q/q"), _spec("Final GDP q/q")]
+    out = fetch_for_specs(specs, D(2026, 9, 1), fake, KEYS)
+    assert len(fake.calls) == 1
+    assert out.evidence[series_key(_spec("Final GDP q/q"))] == registry.ReestimateEvidence(last_revised=D(2026, 9, 30))
+    # FetchOutcome built without evidence (older callers, test fakes) still works.
+    assert FetchOutcome({}, {}).evidence == {}
 
 
 # ---------------------------------------------------------------- coverage

@@ -14,8 +14,18 @@ delayed release or a two-period release therefore never produces a write.
 Older rows: official APIs serve today's revised numbers, so a row that has a
 later release of the same series is filled only for series that are never
 revised (Fed, Treasury, EIA weekly stocks), and only when the value also
-equals FF's `previous` on that next release. Revised series are left to the
-FRED/ALFRED first-print backfill.
+equals FF's `previous` on that next release. Older rows of revised series are
+left to the FRED/ALFRED first-print backfill where the title has one
+(fred_history.FRED_HISTORY_SPECS); GDP, GDP Price Index, Productivity, Unit
+Labor Costs and ECI have none, so such rows stay empty and are reported.
+
+Re-estimates (Prelim/Final GDP, Revised Productivity / Unit Labor Costs)
+publish a later estimate of a period the API already holds, so the period rule
+alone cannot tell the new print from the stale one. `decide_fill` writes one
+only with proof that the re-estimate is out (`ReestimateEvidence`: BEA's
+table note "LastRevised: <date>" on or after the release date; for BLS, a
+"R" (revised) footnote on the period in any series of the same release),
+so an unchanged re-estimate is written too.
 
 Census codes were resolved in Task 1 (see census.py); the three unresolved
 Census titles (Final / Prelim Wholesale Inventories m/m, Goods Trade Balance)
@@ -61,7 +71,11 @@ class OfficialSpec:
     # A later estimate of a period that is ALREADY published (Prelim/Final GDP, Revised Productivity):
     # FF's `previous` is the earlier estimate of the same period, and the API holds the period before
     # this release, so the period rule alone cannot tell the new print from the stale one (see decide_fill).
+    # Outside the plan's interface: added in T2 without prior sign-off, flagged to the owner in the review fix.
     reestimate: bool = False
+    # BLS only: other series of the same release, fetched in the same POST, whose "R" (revised) footnote
+    # on the period proves a re-estimate is out even when this series' own value did not change.
+    revision_family: tuple[str, ...] = ()
 
 
 _T0830 = dt.time(8, 30)
@@ -85,8 +99,15 @@ def _pct(source: str, series: str, transform: str, twin: Optional[tuple[str, str
 
 _GDP = _pct("bea", "T10101:Q:A191RL", "lin", ("A191RL1Q225SBEA", "lin"), frequency="quarterly")
 _GDP_PRICE = _pct("bea", "T10107:Q:A191RV", "lin", ("A191RI1Q225SBEA", "lin"), frequency="quarterly")
-_PRODUCTIVITY = _bls("PRS85006092", "level", "lin", ("PRS85006092", "lin"), frequency="quarterly")
-_UNIT_LABOR = _bls("PRS85006112", "level", "lin", ("PRS85006112", "lin"), frequency="quarterly")
+# Productivity and Costs (nonfarm business, q/q annual rate): productivity, unit labor costs, output,
+# hours, hourly compensation, real hourly compensation. BLS footnotes a value "R" only when the revision
+# changed it (live 2026-10-28: Q2 productivity unchanged at 1.4 has none, ULC / compensation have "R"),
+# so any series of the release is proof that a Revised estimate is out.
+_PRODUCTIVITY_FAMILY = ("PRS85006092", "PRS85006112", "PRS85006042", "PRS85006032", "PRS85006102", "PRS85006152")
+_PRODUCTIVITY = replace(_bls("PRS85006092", "level", "lin", ("PRS85006092", "lin"), frequency="quarterly"),
+                        revision_family=_PRODUCTIVITY_FAMILY)
+_UNIT_LABOR = replace(_bls("PRS85006112", "level", "lin", ("PRS85006112", "lin"), frequency="quarterly"),
+                      revision_family=_PRODUCTIVITY_FAMILY)
 
 # Exact FF titles (live USD title list, 2026-10-28) -> official series.
 OFFICIAL_SPECS: dict[str, OfficialSpec] = {
@@ -303,22 +324,47 @@ class FillDecision:
     reason: str                  # "fill" or why not
 
 
+@dataclass(frozen=True)
+class ReestimateEvidence:
+    """
+    What a publisher answer says about re-estimates (fetch.fetch_for_specs
+    builds one per BEA table and per BLS series): BEA's table note
+    "LastRevised: <date>", and the BLS periods footnoted "R" in the series or
+    its `revision_family`.
+    """
+    last_revised: Optional[dt.date] = None
+    revised_periods: frozenset[dt.date] = frozenset()
+
+    def proves(self, period: dt.date, release_et: dt.date) -> bool:
+        """True when the answer shows a re-estimate of `period` published on or after `release_et`."""
+        if self.last_revised is not None and self.last_revised >= release_et:
+            return True
+        return period in self.revised_periods
+
+
 def release_date_et(event_time_utc: dt.datetime) -> dt.date:
     """The New York calendar date of a release (the period rule's reference day)."""
     return event_time_utc.astimezone(_NY).date()
 
 
 def decide_fill(spec: OfficialSpec, event_time_utc: dt.datetime, forecast: Optional[str], previous: Optional[str],
-                series: Mapping[dt.date, Any], later_release: bool, later_previous: Optional[str]) -> FillDecision:
+                series: Mapping[dt.date, Any], later_release: bool, later_previous: Optional[str],
+                reestimate_evidence: Optional[ReestimateEvidence] = None) -> FillDecision:
     """
     Whether (and what) to write for one row. Order: the expected period is not
     in the data -> wait; the row has a later release and the series revises ->
-    never (today's value is a revision, not the first print); FF's `previous`
-    on the next release disagrees -> never; else the value, formatted like the
-    row's forecast (then previous). A re-estimate (`spec.reestimate`) is
-    written only when it differs from the earlier estimate in `previous`.
+    never (today's value is a revision, not the first print); a re-estimate
+    (`spec.reestimate`) without proof that it is published -> wait; FF's
+    `previous` on the next release disagrees -> never; else the value,
+    formatted like the row's forecast (then previous).
+
+    Re-estimate proof is `reestimate_evidence` (from the same fetch; see
+    ReestimateEvidence), which also lets an unchanged re-estimate be written.
+    Without evidence (a BEA answer with no LastRevised note) the only proof
+    is a value that differs from the earlier estimate in `previous`.
     """
-    period = expected_period(spec, release_date_et(event_time_utc))
+    release_et = release_date_et(event_time_utc)
+    period = expected_period(spec, release_et)
     value = value_for(spec, series, period)
     if value is None:
         return FillDecision(None, "awaiting publication")
@@ -326,11 +372,13 @@ def decide_fill(spec: OfficialSpec, event_time_utc: dt.datetime, forecast: Optio
         return FillDecision(None, f"revised since release (first print not available from {spec.source})")
     template = next((t for t in (forecast, previous) if is_ff_number(t)), None)
     actual = format_like(value, template, spec)
-    if spec.reestimate and not (is_ff_number(previous) and not ff_values_match(previous, actual)):
-        # Before publication the API still holds the earlier estimate, which FF shows as `previous`:
-        # only a value that differs from it is provably the new print. An unchanged re-estimate is
-        # left to the FRED/ALFRED backfill rather than risk writing the stale number.
-        return FillDecision(None, "re-estimate not distinguishable from the earlier estimate")
+    if spec.reestimate:
+        # Before publication the API still holds the earlier estimate (FF's `previous`) for this period.
+        if reestimate_evidence is not None:
+            if not reestimate_evidence.proves(period, release_et):
+                return FillDecision(None, "awaiting publication")
+        elif not (is_ff_number(previous) and not ff_values_match(previous, actual)):
+            return FillDecision(None, f"re-estimate not distinguishable (no revision evidence from {spec.source})")
     if is_ff_number(later_previous) and not ff_values_match(later_previous, actual):
         return FillDecision(None, "disagrees with FF previous on the next release")
     return FillDecision(actual, "fill")

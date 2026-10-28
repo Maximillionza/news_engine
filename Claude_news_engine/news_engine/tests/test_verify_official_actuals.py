@@ -15,6 +15,7 @@ from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from data_layer.fred_history import FredFetchError, InitialRelease
 from data_layer.official_actuals.http import HttpResponse
 from data_layer.official_actuals.keys import Keys
 from data_layer.official_actuals.registry import OFFICIAL_SPECS
@@ -29,11 +30,13 @@ NOW = dt.datetime(2026, 10, 28, 16, 0, tzinfo=UTC)
 
 
 class FakeTwin:
-    """Stands in for TwinReader: fixed as-of values and current values."""
+    """Stands in for TwinReader: fixed as-of values, current values and first prints."""
 
-    def __init__(self, asof: Optional[dict] = None, current: Optional[dict] = None) -> None:
+    def __init__(self, asof: Optional[dict] = None, current: Optional[dict] = None,
+                 releases: Optional[dict] = None) -> None:
         self.asof = asof or {}               # (series_id, period, vintage_date) -> value
         self.current = current or {}         # series_id -> {period: value}
+        self.releases = releases             # series_id -> [(period, first-print date)]; None -> FRED error
         self.asof_calls: list[tuple] = []
 
     def value_asof(self, series_id: str, transform: str, period: dt.date, vintage_date: dt.date) -> Optional[float]:
@@ -42,6 +45,11 @@ class FakeTwin:
 
     def current_values(self, series_id: str, transform: str, since: dt.date, today: dt.date) -> dict:
         return dict(self.current.get(series_id, {}))
+
+    def first_releases(self, series_id: str, start: dt.date, end: dt.date) -> list:
+        if self.releases is None:
+            raise FredFetchError("FRED HTTP error")
+        return [InitialRelease(p, v) for p, v in self.releases.get(series_id, []) if start <= v <= end]
 
 
 def _db(tmp_path):
@@ -102,15 +110,19 @@ def test_gate_explains_gdp_revision_with_alfred_vintage(tmp_path):
     _row(conn, "Advance GDP q/q", _t(2026, 7, 30), "1.0%", "2.5%", "1.5%")
     spec = OFFICIAL_SPECS["Advance GDP q/q"]
     twin_id = spec.fred_twin[0]
-    twin = FakeTwin(asof={(twin_id, D(2026, 4, 1), D(2026, 7, 30)): 1.5}, current={twin_id: _gdp_series()})
+    releases = {twin_id: [(D(2026, 1, 1), D(2026, 4, 30)), (D(2026, 4, 1), D(2026, 7, 30))]}
+    twin = FakeTwin(asof={(twin_id, D(2026, 4, 1), D(2026, 7, 30)): 1.5}, current={twin_id: _gdp_series()},
+                    releases=releases)
     gate = verify.gate_title("Advance GDP q/q", spec, _rows(conn, "Advance GDP q/q"), _gdp_series(), twin, NOW)
     assert gate.identity == "ok"
+    assert gate.period_notes == []
     assert gate.revision_explained == 1
     assert (gate.matches, gate.comparisons) == (2, 2)
     assert gate.status == "verified"
 
     drifted = {p: v + 1.0 for p, v in _gdp_series().items()}              # twin is not the same series
-    twin = FakeTwin(asof={(twin_id, D(2026, 4, 1), D(2026, 7, 30)): 1.5}, current={twin_id: drifted})
+    twin = FakeTwin(asof={(twin_id, D(2026, 4, 1), D(2026, 7, 30)): 1.5}, current={twin_id: drifted},
+                    releases=releases)
     gate = verify.gate_title("Advance GDP q/q", spec, _rows(conn, "Advance GDP q/q"), _gdp_series(), twin, NOW)
     assert gate.identity == "mismatch"
     assert gate.revision_explained == 0
@@ -124,10 +136,73 @@ def test_gate_prelim_and_final_previous_is_the_same_quarter(tmp_path):
     _row(conn, "Final GDP q/q", _t(2026, 9, 30), "1.5%", "1.5%", "2.2%")
     spec = OFFICIAL_SPECS["Final GDP q/q"]
     twin_id = spec.fred_twin[0]
-    twin = FakeTwin(asof={(twin_id, D(2026, 4, 1), D(2026, 9, 29)): 1.5}, current={twin_id: _gdp_series()})
+    twin = FakeTwin(asof={(twin_id, D(2026, 4, 1), D(2026, 9, 29)): 1.5}, current={twin_id: _gdp_series()},
+                    releases={twin_id: [(D(2026, 1, 1), D(2026, 4, 30)), (D(2026, 4, 1), D(2026, 7, 30))]})
     gate = verify.gate_title("Final GDP q/q", spec, _rows(conn, "Final GDP q/q"), _gdp_series(), twin, NOW)
     assert (gate.matches, gate.comparisons, gate.revision_explained) == (2, 2, 1)
     assert gate.status == "verified"
+    assert gate.period_notes == []
+
+
+# Retail Sales m/m (MPCSM, percent) as served today: the 2025 shutdown delayed the November report to
+# 2026-01-14 (live row: actual 0.6%, previous -0.1%), while expected_period assigns December.
+RETAIL = {D(2025, 9, 1): 0.1, D(2025, 10, 1): -0.1, D(2025, 11, 1): 0.6, D(2025, 12, 1): 0.2, D(2026, 1, 1): 0.0}
+
+
+def test_gate_compares_shutdown_delayed_release_with_the_period_first_published(tmp_path):
+    conn = _db(tmp_path)
+    _row(conn, "Retail Sales m/m", _t(2026, 1, 14, 13, 30), "0.4%", "-0.1%", "0.6%", source="fred")
+    _row(conn, "Retail Sales m/m", _t(2026, 2, 10, 13, 30), "0.4%", "0.6%", "0.2%", source="fred")
+    spec = OFFICIAL_SPECS["Retail Sales m/m"]
+    rows = _rows(conn, "Retail Sales m/m")
+    blind = verify.gate_title("Retail Sales m/m", spec, rows, RETAIL, None, NOW)      # the old false negative
+    assert blind.status == "suspect", blind.mismatches
+    twin_id = spec.fred_twin[0]
+    twin = FakeTwin(releases={twin_id: [(D(2025, 11, 1), D(2026, 1, 14)), (D(2025, 12, 1), D(2026, 2, 10))]})
+    gate = verify.gate_title("Retail Sales m/m", spec, rows, RETAIL, twin, NOW)
+    assert (gate.matches, gate.comparisons) == (4, 4), gate.mismatches
+    assert gate.status == "verified"
+    assert gate.revision_explained == 0
+    assert any("2026-01-14 15:30 SAST" in n and "2025-11-01" in n for n in gate.period_notes)
+
+
+def test_gate_skips_row_without_a_matching_first_print(tmp_path):
+    conn = _db(tmp_path)
+    _row(conn, "Retail Sales m/m", _t(2026, 1, 14, 13, 30), "0.4%", "-0.1%", "0.6%", source="fred")
+    _row(conn, "Retail Sales m/m", _t(2026, 2, 10, 13, 30), "0.4%", "0.6%", "0.2%", source="fred")
+    spec = OFFICIAL_SPECS["Retail Sales m/m"]
+    twin_id = spec.fred_twin[0]
+    # FRED shows no first print on 2026-01-14: that row is not a reference at all.
+    twin = FakeTwin(releases={twin_id: [(D(2025, 12, 1), D(2026, 2, 10))]})
+    gate = verify.gate_title("Retail Sales m/m", spec, _rows(conn, "Retail Sales m/m"), RETAIL, twin, NOW)
+    assert (gate.matches, gate.comparisons) == (2, 2)
+    assert any("skipped" in n and "2026-01-14" in n for n in gate.period_notes)
+    # FRED failing (or listing nothing) keeps expected_period: the same as no twin.
+    for failing in (FakeTwin(releases=None), FakeTwin(releases={})):
+        gate = verify.gate_title("Retail Sales m/m", spec, _rows(conn, "Retail Sales m/m"), RETAIL, failing, NOW)
+        assert gate.status == "suspect" and gate.period_notes == []
+
+
+def test_released_period_rules():
+    spec = OFFICIAL_SPECS["Retail Sales m/m"]
+    rel = verify.released_period
+    day = D(2026, 1, 14)
+    assert rel(spec, day, D(2025, 12, 1), None) == D(2025, 12, 1)                       # no twin data
+    assert rel(spec, day, D(2025, 12, 1), [InitialRelease(D(2025, 12, 1), day)]) == D(2025, 12, 1)
+    assert rel(spec, day, D(2025, 12, 1), [InitialRelease(D(2025, 11, 1), day)]) == D(2025, 11, 1)
+    late = [InitialRelease(D(2025, 11, 1), day + dt.timedelta(days=verify.TWIN_RELEASE_LAG_DAYS))]
+    assert rel(spec, day, D(2025, 12, 1), late) == D(2025, 11, 1)
+    too_late = [InitialRelease(D(2025, 11, 1), day + dt.timedelta(days=verify.TWIN_RELEASE_LAG_DAYS + 1))]
+    assert rel(spec, day, D(2025, 12, 1), too_late) is None
+    two = [InitialRelease(D(2025, 10, 1), day), InitialRelease(D(2025, 11, 1), day)]
+    assert rel(spec, day, D(2025, 12, 1), two) is None                                  # ambiguous: skipped
+    assert rel(spec, day, D(2025, 11, 1), two) == D(2025, 11, 1)
+    # A re-estimate re-publishes the latest period first printed BEFORE the row.
+    prelim = OFFICIAL_SPECS["Prelim GDP q/q"]
+    gdp = [InitialRelease(D(2026, 1, 1), D(2026, 4, 30)), InitialRelease(D(2026, 4, 1), D(2026, 7, 30))]
+    assert rel(prelim, D(2026, 8, 26), D(2026, 4, 1), gdp) == D(2026, 4, 1)
+    assert rel(prelim, D(2026, 7, 30), D(2026, 4, 1), gdp) == D(2026, 1, 1)
+    assert rel(prelim, D(2026, 3, 1), D(2025, 10, 1), gdp) is None
 
 
 def test_gate_marks_wrong_scale_suspect(tmp_path):
@@ -224,6 +299,9 @@ class _NoFred:
         pass
 
     def vintage_levels(self, series_id, vintage_date, observation_start):
+        return []
+
+    def initial_releases(self, series_id, start, end):
         return []
 
 

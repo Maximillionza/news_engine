@@ -13,9 +13,9 @@
 | Core CPI m/m | bls | CUSR0000SA0L1E | verified | 17/19 | ok |
 | Core CPI y/y | bls | CUUR0000SA0L1E | verified | 15/16 | ok |
 | Core Durable Goods Orders m/m | census | advm3:DXT:MPCNO | verified | 2/2 | ok |
-| Core PCE Price Index m/m | bea | T20807:M:DPCCRGM | verified | 16/20 | ok |
-| Core PPI m/m | bls | WPSFD49104 | verified | 20/22 | ok |
-| Core Retail Sales m/m | census | marts:44Y72:MPCSM | verified | 16/20 | ok |
+| Core PCE Price Index m/m | bea | T20807:M:DPCCRGM | verified | 18/18 | ok |
+| Core PPI m/m | bls | WPSFD49104 | verified | 19/20 | ok |
+| Core Retail Sales m/m | census | marts:44Y72:MPCSM | verified | 20/20 | ok |
 | Crude Oil Inventories | eia | petroleum/stoc/wstk:WCESTUS1 | verified | 9/9 | none |
 | Durable Goods Orders m/m | census | advm3:MDM:MPCNO | suspect | 1/2 | ok |
 | Employment Cost Index q/q | bls | CIS1010000000000Q | unverified | 0/0 | none |
@@ -24,19 +24,19 @@
 | Final GDP Price Index q/q | bea | T10107:Q:A191RV | unverified | 1/1 | ok |
 | Final GDP q/q | bea | T10101:Q:A191RL | unverified | 1/1 | ok |
 | Housing Starts | census | resconst:ASTARTS:TOTAL | verified | 4/4 | ok |
-| Import Prices m/m | bls | EIUIR | verified | 18/21 | ok |
+| Import Prices m/m | bls | EIUIR | verified | 19/19 | ok |
 | JOLTS Job Openings | bls | JTS000000000000000JOL | verified | 3/3 | ok |
 | Natural Gas Storage | eia | natural-gas/stor/wkly:NW2_EPG0_SWO_R48_BCF | verified | 8/8 | none |
 | New Home Sales | census | ressales:ASOLD:TOTAL | verified | 2/2 | ok |
 | Non-Farm Employment Change | bls | CES0000000001 | verified | 20/20 | ok |
-| PPI m/m | bls | WPSFD4 | verified | 20/22 | ok |
+| PPI m/m | bls | WPSFD4 | verified | 20/20 | ok |
 | Personal Income m/m | bea | T20600:M:A065RC | verified | 2/2 | ok |
 | Personal Spending m/m | bea | T20600:M:DPCERC | verified | 2/2 | ok |
 | Prelim GDP Price Index q/q | bea | T10107:Q:A191RV | unverified | 0/0 | ok |
 | Prelim GDP q/q | bea | T10101:Q:A191RL | verified | 2/2 | ok |
 | Prelim Nonfarm Productivity q/q | bls | PRS85006092 | unverified | 0/0 | ok |
 | Prelim Unit Labor Costs q/q | bls | PRS85006112 | unverified | 0/0 | ok |
-| Retail Sales m/m | census | marts:44X72:MPCSM | suspect | 17/22 | ok |
+| Retail Sales m/m | census | marts:44X72:MPCSM | verified | 21/22 | ok |
 | Revised Nonfarm Productivity q/q | bls | PRS85006092 | unverified | 1/1 | ok |
 | Revised Unit Labor Costs q/q | bls | PRS85006112 | unverified | 1/1 | ok |
 | Trade Balance | census | ftd:BOPGS:BAL | verified | 3/3 | ok |

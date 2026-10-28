@@ -13,15 +13,21 @@ Failures never raise: each publisher request that fails puts its
 other sources' data is still returned (one publisher down never blocks the
 rest). A request that succeeds but lacks a series yields an empty mapping,
 which the fill rule reads as "awaiting publication" (fail closed).
+
+`evidence` (keyed like `data`) carries what the same answers say about
+re-estimates, for `registry.decide_fill(..., reestimate_evidence=...)`: every
+BEA series gets its table's LastRevised date (when the note parses), every BLS
+series the periods footnoted "R" in itself or its `revision_family` (fetched
+in the same POST). No extra request is made for it.
 """
 from __future__ import annotations
 
 import datetime as dt
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
-from data_layer.official_actuals.bea import fetch_nipa
+from data_layer.official_actuals.bea import fetch_nipa_table
 from data_layer.official_actuals.bls import BlsSeries, fetch_bls
 from data_layer.official_actuals.census import fetch_eits
 from data_layer.official_actuals.eia import fetch_eia_weekly
@@ -29,7 +35,7 @@ from data_layer.official_actuals.fed import fetch_fomc_upper_bounds
 from data_layer.official_actuals.fred_current import fetch_fred_current
 from data_layer.official_actuals.http import Fetcher, SourceError, call
 from data_layer.official_actuals.keys import Keys
-from data_layer.official_actuals.registry import OfficialSpec
+from data_layer.official_actuals.registry import OfficialSpec, ReestimateEvidence
 from data_layer.official_actuals.treasury import TREASURY_URL, parse_auctions
 
 # Reach back before `since` so prior-period changes and y/y bases are inside the data.
@@ -41,6 +47,7 @@ _BLS_FIELDS = {"level": "levels", "pct1": "pct1", "pct12": "pct12"}
 class FetchOutcome:
     data: dict[str, dict[dt.date, Any]]          # keyed by series_key(spec)
     errors: dict[str, SourceError]               # keyed by source
+    evidence: dict[str, ReestimateEvidence] = field(default_factory=dict)   # keyed by series_key(spec)
 
 
 def series_key(spec: OfficialSpec) -> str:
@@ -59,6 +66,7 @@ def fetch_for_specs(specs: Iterable[OfficialSpec], since: dt.date, fetcher: Fetc
     today = max(_today(), since)
     data: dict[str, dict[dt.date, Any]] = {}
     errors: dict[str, SourceError] = {}
+    evidence: dict[str, ReestimateEvidence] = {}
     by_source: dict[str, list[OfficialSpec]] = defaultdict(list)
     for spec in unique:
         by_source[spec.source].append(spec)
@@ -73,10 +81,15 @@ def fetch_for_specs(specs: Iterable[OfficialSpec], since: dt.date, fetcher: Fetc
         bls_specs = by_source["bls"]
 
         def bls_request() -> None:
-            got = fetch_bls([s.series for s in bls_specs], keys.bls, fetcher, start.year, today.year)
+            ids = [s.series for s in bls_specs] + [f for s in bls_specs for f in s.revision_family]
+            got = fetch_bls(ids, keys.bls, fetcher, start.year, today.year)
             for s in bls_specs:
                 parsed = got.get(s.series, BlsSeries())
                 data[series_key(s)] = dict(getattr(parsed, _BLS_FIELDS[s.field]))
+                revised = set(parsed.revised)
+                for family_id in s.revision_family:
+                    revised |= got.get(family_id, BlsSeries()).revised
+                evidence[series_key(s)] = ReestimateEvidence(revised_periods=frozenset(revised))
 
         attempt("bls", bls_request)
 
@@ -86,9 +99,12 @@ def fetch_for_specs(specs: Iterable[OfficialSpec], since: dt.date, fetcher: Fetc
         bea_groups[(table, frequency)].append(s)
     for (table, frequency), group in bea_groups.items():
         def bea_request(table: str = table, frequency: str = frequency, group: list[OfficialSpec] = group) -> None:
-            got = fetch_nipa(table, frequency, list(range(start.year, today.year + 1)), keys.bea, fetcher)
+            got, last_revised = fetch_nipa_table(table, frequency, list(range(start.year, today.year + 1)),
+                                                 keys.bea, fetcher)
             for s in group:
                 data[series_key(s)] = dict(got.get(s.series.split(":")[2], {}))
+                if last_revised is not None:
+                    evidence[series_key(s)] = ReestimateEvidence(last_revised=last_revised)
 
         attempt("bea", bea_request)
 
@@ -143,4 +159,4 @@ def fetch_for_specs(specs: Iterable[OfficialSpec], since: dt.date, fetcher: Fetc
     unknown = set(by_source) - {"bls", "bea", "census", "eia", "fed", "treasury", "fred"}
     for source in sorted(unknown):
         errors[source] = SourceError(f"{source}: no adapter")
-    return FetchOutcome(data, errors)
+    return FetchOutcome(data, errors, evidence)

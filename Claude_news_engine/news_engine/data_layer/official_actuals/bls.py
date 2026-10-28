@@ -8,8 +8,11 @@ published figures, not a recomputation from rounded index levels.
 
 Periods: M01..M12 -> first of that month; Q01..Q04 -> first month of the
 quarter (Q02 -> April). M13 / Q05 (annual averages) and "-" values (not
-available) are skipped. A daily-quota message raises SourceRateLimited,
-an invalid key KeyInactiveError, any other refusal SourceError.
+available) are skipped. Footnote code "R" ("revised") marks a value the
+latest release changed; those periods are kept in `revised`, the proof that a
+re-estimate (Revised Productivity) is out. A daily-quota message raises
+SourceRateLimited, an invalid key KeyInactiveError, any other refusal
+SourceError.
 """
 from __future__ import annotations
 
@@ -29,6 +32,7 @@ class BlsSeries:
     levels: dict[dt.date, float] = field(default_factory=dict)
     pct1: dict[dt.date, float] = field(default_factory=dict)
     pct12: dict[dt.date, float] = field(default_factory=dict)
+    revised: set[dt.date] = field(default_factory=set)        # periods footnoted "R" (revised)
 
 
 def _period(year: str, period: str) -> Optional[dt.date]:
@@ -86,6 +90,8 @@ def parse_bls(body: str) -> dict[str, BlsSeries]:
                 value = _number(pct.get(months))
                 if value is not None:
                     target[period] = value
+            if any(isinstance(f, dict) and str(f.get("code", "")).upper() == "R" for f in point.get("footnotes") or []):
+                parsed.revised.add(period)
         out[str(series.get("seriesID"))] = parsed
     return out
 
