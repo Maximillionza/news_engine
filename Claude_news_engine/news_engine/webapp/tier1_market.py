@@ -11,7 +11,7 @@ hand. The rule, fixed in advance:
   4. The median vs the forecast with the Stats tab's tolerance (one rounding step of the forecast's precision)
      -> hotter / in line / cooler, then per instrument through stats_methods.market_lean (buy -> bullish,
      sell -> bearish, mixed -> neutral).
-A forecast far outside the liquid strikes (a units mismatch) or no readable forecast is also no call.
+A forecast far outside the event's listed strikes (a units mismatch) or no readable forecast is also no call.
 
 Everything here is pure except record_market_calls, which appends to tier1_predictions, at most one row per
 (title, release, instrument) per distinct (implied median, forecast text) (mirrors webapp/tier1_formula.py): a
@@ -115,14 +115,18 @@ def market_call(title: str, ladder: KalshiLadder,
     tol = tolerance(forecast_text)
     if forecast is None or tol is None:
         return None, NO_FORECAST
-    points = survival_points(ladder, series.strike_divisor)
-    if points:
-        # Same guard as get_market_read: a forecast far outside the ladder is a scale mismatch, not a view.
-        low, high = points[0][0], points[-1][0]
+    # Same guard as get_market_read: a forecast far outside the ladder is a scale mismatch, not a view. It runs on
+    # every listed strike, not only the liquid ones: one liquid strike (span 0) or a narrow liquid band would
+    # otherwise refuse an ordinary forecast as "units" when the real reason is too few liquid strikes (which
+    # implied_median then reports as no crossing). Under 2 distinct strikes there is no span to judge by.
+    listed = sorted({s.strike / series.strike_divisor for s in ladder.strikes})
+    if len(listed) >= 2:
+        low, high = listed[0], listed[-1]
         span = high - low
         if forecast < low - span / 2 or forecast > high + span / 2:
-            return None, (f"forecast {forecast_text} is far outside the liquid strikes [{low:g}, {high:g}] of "
+            return None, (f"forecast {forecast_text} is far outside the strikes [{low:g}, {high:g}] of "
                           f"{ladder.event_ticker}: likely a units mismatch")
+    points = survival_points(ladder, series.strike_divisor)
     median = implied_median(points, series.discrete)
     if median is None:
         return None, NO_CROSSING

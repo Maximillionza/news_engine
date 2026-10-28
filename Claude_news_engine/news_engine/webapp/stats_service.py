@@ -22,7 +22,7 @@ from typing import Callable, Optional
 
 from config.settings import EVENT_SURPRISE_DIRECTION
 from data_layer import brent_feed
-from data_layer.tier1_events import TIER1_FORMULA, tier1_row_tier, tier1_titles
+from data_layer.tier1_events import TIER1_FORMULA, TIER1_MARKET_IMPLIED_SOURCE, tier1_row_tier, tier1_titles
 from scoring.backtest_store import get_scored_nowcast_snapshot
 from webapp.history import _implied_surprise_direction
 from webapp.reaction_rules import impact_info, title_tag_counts
@@ -31,6 +31,7 @@ from webapp.stats_methods import (
     tier1_surprise,
 )
 from webapp.stats_rules import judge, miss_size, parse_number, side, tolerance
+from webapp.tier1_market import MARKET_SERIES
 
 logger = logging.getLogger(__name__)
 
@@ -202,20 +203,30 @@ def _brent_detail(series: Optional[list], snapshot_as_of: dt.datetime, release: 
 
 # --- row building -----------------------------------------------------------------------------
 
+def _market_implied_sign(title: str, source: Optional[str]) -> Optional[str]:
+    """The series' own surprise sign for a Kalshi market-implied row, else None (use the shared map)."""
+    if source != TIER1_MARKET_IMPLIED_SOURCE or title not in MARKET_SERIES:
+        return None
+    return MARKET_SERIES[title].surprise_direction
+
+
 def _call(predicted: Optional[float], surprise: Optional[float], forecast: float, tol: float,
           actual: Optional[float], title: str, note: Optional[str] = None, kind: Optional[str] = None,
-          explicit_side: Optional[int] = None, side_fixed: bool = False) -> MethodCall:
+          explicit_side: Optional[int] = None, side_fixed: bool = False,
+          surprise_direction: Optional[str] = None) -> MethodCall:
     """
     One method's call, judged by side vs the forecast. explicit_side is for direction-only calls.
     side_fixed=True makes explicit_side the side even when it is None (a News abstention), so the number
-    never decides the side; the default path is unchanged.
+    never decides the side; the default path is unchanged. surprise_direction overrides the shared map for
+    the per-instrument leans (a Kalshi row's own sign, see _market_implied_sign); None keeps the map.
     """
     if side_fixed or explicit_side is not None:
         predicted_side = explicit_side
     else:
         predicted_side = None if predicted is None else side(predicted, forecast, tol)
     actual_side = None if actual is None else side(actual, forecast, tol)
-    leans = {} if predicted_side is None else {s: market_lean(title, predicted_side, s) for s in TRACKED_SYMBOLS}
+    leans = {} if predicted_side is None else {
+        s: market_lean(title, predicted_side, s, surprise_direction=surprise_direction) for s in TRACKED_SYMBOLS}
     return MethodCall(
         predicted=predicted, surprise=surprise, side=predicted_side,
         verdict=judge(predicted_side, actual_side), miss=miss_size(predicted, actual),
@@ -339,11 +350,16 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
             direction = logged["predicted_direction"]
             # 'neutral' is NO call (backtest_store tier1_comparisons convention), never an 'in line' call;
             # so is any direction without a surprise map. side None -> verdict None -> not scored.
+            # B12: a Kalshi row is read back with the sign it was written with (MARKET_SERIES), not the shared
+            # map, which leaves out Federal Funds Rate and Advance GDP q/q (adding them there would switch on
+            # News calls under Ruling 3). Every other row keeps the shared map.
+            row_sign = _market_implied_sign(title, logged["source"])
             logged_side: Optional[int] = None
             if direction in ("bullish", "bearish"):
-                implied = _implied_surprise_direction(title, NEWS_INSTRUMENT, direction)
+                implied = _implied_surprise_direction(title, NEWS_INSTRUMENT, direction, surprise_direction=row_sign)
                 logged_side = {"higher": 1, "lower": -1}.get(implied)
-            tier1 = _call(None, None, forecast, tol, actual, title, note="hand-logged", explicit_side=logged_side)
+            tier1 = _call(None, None, forecast, tol, actual, title, note="hand-logged", explicit_side=logged_side,
+                          surprise_direction=row_sign)
             hand_logged = {"value": logged["value"], "confidence": logged["confidence"], "source": logged["source"]}
             tier1_tracked = True
             tier1_tier = tier1_row_tier(logged["source"], logged["value"])   # B12: FedWatch value -> market_implied

@@ -287,8 +287,9 @@ _INTRO = [
     "published precision is in line (neutral call); above is hotter, below is cooler. Each tracked instrument's "
     "direction comes from `webapp.stats_methods.market_lean` (buy -> bullish, sell -> bearish, mixed -> "
     f"neutral). Confidence is always \"{TIER1_FORMULA_CONFIDENCE}\" and the source is "
-    f"\"{TIER1_FORMULA_SOURCE}\". At most one row is written per release and instrument per distinct nowcast "
-    "value, and no readable forecast writes nothing (never a guessed neutral).",
+    f"\"{TIER1_FORMULA_SOURCE}\". At most one row is written per release and instrument per distinct (nowcast, "
+    "forecast text), so a revised forecast writes a new row, and no readable forecast writes nothing (never a "
+    "guessed neutral).",
     "",
     "Market-implied rule (the six Kalshi titles): `scripts/capture_tier1.py` reads the open \"above strike\" "
     "ladder of the Kalshi event that resolves on the release (public read-only API; KXPAYROLLS, KXUSRETAIL, "
@@ -301,9 +302,12 @@ _INTRO = [
     "tolerance as the formula rule (hotter / in line / cooler), and each tracked instrument's direction comes "
     "from `market_lean` with the series' own surprise sign (higher = USD-bullish for all six). Confidence is "
     f"always \"{TIER1_MARKET_IMPLIED_CONFIDENCE}\" and the source is \"{TIER1_MARKET_IMPLIED_SOURCE}\". At "
-    "most one row is written per release and instrument per distinct implied median. No row (reported, never "
-    "a guessed neutral) when the curve has no 50% crossing among liquid strikes, the forecast sits far outside "
-    "the liquid strikes (a units mismatch), there is no readable forecast, or no open event matches the release.",
+    "most one row is written per release and instrument per distinct (implied median, forecast text), so a "
+    "revised forecast writes a new row. No row (reported, never a guessed neutral) when the curve has no 50% "
+    "crossing among liquid strikes, the forecast sits far outside the event's listed strikes (a units mismatch), "
+    "there is no readable forecast, or no open event matches the release. The Stats tab scores a Kalshi row with "
+    "the same series sign it was written with, so Federal Funds Rate and Advance GDP q/q are scored although the "
+    "shared surprise map (and so the News method) leaves them out.",
     "",
 ]
 

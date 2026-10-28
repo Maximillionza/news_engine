@@ -119,6 +119,27 @@ def test_market_call_no_crossing_is_no_call():
     assert tm.market_call("Retail Sales m/m", empty, "0.3%") == (None, "no 50% crossing among liquid strikes")
 
 
+def test_market_call_one_or_two_liquid_strikes_is_no_crossing_not_units():
+    # B12 review: the units guard used to span the liquid strikes only; one liquid strike (span 0) refused any
+    # off-strike forecast as a "units mismatch". The guard now spans every listed strike.
+    one_liquid = _ladder("KXUSPPI-26NOV13", [
+        (-0.2, 0.90, 0.99, 0.0), (0.0, 0.80, 0.95, 0.0), (0.2, 0.60, 0.64, 500.0), (0.4, 0.20, 0.45, 0.0),
+        (0.6, 0.05, 0.30, 0.0)])
+    assert tm.market_call("PPI m/m", one_liquid, "0.3%") == (None, tm.NO_CROSSING)
+    # Two adjacent liquid strikes with a real crossing and a forecast just outside them: a call, not a refusal.
+    narrow = _ladder("KXUSPPI-26NOV13", [
+        (-0.2, 0.90, 0.99, 0.0), (0.0, 0.80, 0.95, 0.0), (0.2, 0.60, 0.62, 500.0), (0.3, 0.40, 0.42, 500.0),
+        (0.6, 0.05, 0.30, 0.0)])
+    call, reason = tm.market_call("PPI m/m", narrow, "0.5%")
+    assert reason is None and call.implied_value == pytest.approx(0.255) and call.side == -1
+    # A one-strike ladder has no span to judge units by: no crossing.
+    single = _ladder("KXUSPPI-26NOV13", [(0.2, 0.60, 0.62, 500.0)])
+    assert tm.market_call("PPI m/m", single, "0.3%") == (None, tm.NO_CROSSING)
+    # A real units mismatch against the full ladder is still refused.
+    call, reason = tm.market_call("PPI m/m", narrow, "30%")
+    assert call is None and "units" in reason and "[-0.2, 0.6]" in reason
+
+
 def test_market_direction():
     assert tm.market_direction("Federal Funds Rate", 1, "XAUUSD") == "bearish"
     assert tm.market_direction("Federal Funds Rate", 1, "USDJPY") == "bullish"

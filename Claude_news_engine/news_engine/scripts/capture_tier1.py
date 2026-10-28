@@ -8,8 +8,8 @@ every row comes from a fixed rule on a published source. Two phases, run in this
      strictly after now and within the window, read the open Kalshi strike ladder of the event that resolves on
      that release (data_layer.kalshi_feed.get_ladder) and apply the fixed rule in webapp/tier1_market.py
      (implied median vs the forecast). A call writes one tier1_predictions row per tracked instrument (source
-     "Kalshi market-implied", confidence "Likely"), only when the median differs from the last Kalshi row for that
-     occurrence. No open event, an illiquid or uncrossed ladder or a units mismatch = no call and no row (reported
+     "Kalshi market-implied", confidence "Likely"), only when the (median, forecast text) pair differs from the last
+     Kalshi row for that occurrence (a revised forecast can flip the side). No open event, an illiquid or uncrossed ladder or a units mismatch = no call and no row (reported
      as MARKET NO CALL, a legitimate outcome, exit 0). No readable forecast = TIER1 PENDING, and a skip (exit 2)
      once the release is within MISSING_FORECAST_ALERT_WITHIN. A Kalshi read failure is a skip (exit 2).
 

@@ -207,3 +207,6 @@ def test_fed_funds_has_one_producer(tmp_path, capsys):
         bt.close()
     assert row.tier1_tier == "market_implied"
     assert row.detail.hand_logged["source"] == "Kalshi market-implied"
+    # B12 review: Federal Funds Rate is outside the shared surprise map; the Kalshi row's own sign still gives
+    # it a side (implied 4.25 vs forecast 4.00% = hotter = +1), so it is scored once the actual lands.
+    assert row.tier1.side == 1
