@@ -21,25 +21,27 @@ TIER1_JUDGMENT = "judgment"
 TIER1_TIERS: tuple[str, ...] = (TIER1_FORMULA, TIER1_MARKET_IMPLIED, TIER1_JUDGMENT)
 
 # Covered USD releases -> which kind of Tier 1 call they get. Order is the
-# display / research order.
+# display / research order. Producers: formula = scripts/capture_nowcast_from_cleveland.py,
+# market_implied = the Kalshi phase of scripts/capture_tier1.py (webapp/tier1_market.MARKET_SERIES),
+# judgment = scripts/tier1_research.py (B12).
 TIER1_EVENTS: dict[str, str] = {
     "CPI m/m": TIER1_FORMULA,
     "Core CPI m/m": TIER1_FORMULA,
     "CPI y/y": TIER1_FORMULA,
     "Core CPI y/y": TIER1_FORMULA,
-    "PPI m/m": TIER1_JUDGMENT,
-    "Non-Farm Employment Change": TIER1_JUDGMENT,
+    "PPI m/m": TIER1_MARKET_IMPLIED,
+    "Non-Farm Employment Change": TIER1_MARKET_IMPLIED,
     "FOMC Meeting Minutes": TIER1_JUDGMENT,
     "FOMC Statement": TIER1_JUDGMENT,
-    "Federal Funds Rate": TIER1_JUDGMENT,
+    "Federal Funds Rate": TIER1_MARKET_IMPLIED,
     "Prelim GDP q/q": TIER1_JUDGMENT,
-    "Advance GDP q/q": TIER1_JUDGMENT,
+    "Advance GDP q/q": TIER1_MARKET_IMPLIED,
     "Final GDP q/q": TIER1_JUDGMENT,
     "GDP q/q": TIER1_JUDGMENT,
     "Core PCE Price Index m/m": TIER1_FORMULA,
-    "ISM Manufacturing PMI": TIER1_JUDGMENT,
+    "ISM Manufacturing PMI": TIER1_MARKET_IMPLIED,
     "ISM Services PMI": TIER1_JUDGMENT,
-    "Retail Sales m/m": TIER1_JUDGMENT,
+    "Retail Sales m/m": TIER1_MARKET_IMPLIED,
     "Core Retail Sales m/m": TIER1_JUDGMENT,
 }
 

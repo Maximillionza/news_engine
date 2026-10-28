@@ -298,6 +298,20 @@ def run(dash_conn, bt_conn, now: dt.datetime, fetch: Optional[Callable[[str], ob
 
 # --- CLI -----------------------------------------------------------------------------------------
 
+def print_summary(summary: dict, dry_run: bool, now: dt.datetime) -> None:
+    """Print run()'s summary as the scheduler log shows it (scripts/capture_tier1.py prints it too)."""
+    print(summary["message"])
+    verb = "WOULD capture" if dry_run else "captured"
+    for title, release_iso, value in summary["captured"]:
+        print(f"  {verb} {title} release {release_iso} nowcast {value:g} (as of {now.isoformat()})")
+    for title, release_iso, reason in summary["skipped"]:
+        print(f"  SKIPPED {title} release {release_iso}: {reason}")
+    for title, _release_iso, symbol, direction, status in summary["tier1_rows"]:
+        print(f"  TIER1 {title} {symbol}: {direction} ({'would write' if dry_run else status})")
+    for title, release_iso, reason in summary["tier1_pending"]:
+        print(f"  TIER1 PENDING {title} release {release_iso}: {reason}")
+
+
 def main(argv: Optional[list[str]] = None, fetch: Optional[Callable] = None,
          now: Optional[dt.datetime] = None) -> int:
     """fetch and now are test seams; the scheduler uses the defaults (live download, real clock)."""
@@ -325,16 +339,7 @@ def main(argv: Optional[list[str]] = None, fetch: Optional[Callable] = None,
         if bt_conn is not None:
             bt_conn.close()
 
-    print(summary["message"])
-    verb = "WOULD capture" if args.dry_run else "captured"
-    for title, release_iso, value in summary["captured"]:
-        print(f"  {verb} {title} release {release_iso} nowcast {value:g} (as of {now.isoformat()})")
-    for title, release_iso, reason in summary["skipped"]:
-        print(f"  SKIPPED {title} release {release_iso}: {reason}")
-    for title, _release_iso, symbol, direction, status in summary["tier1_rows"]:
-        print(f"  TIER1 {title} {symbol}: {direction} ({'would write' if args.dry_run else status})")
-    for title, release_iso, reason in summary["tier1_pending"]:
-        print(f"  TIER1 PENDING {title} release {release_iso}: {reason}")
+    print_summary(summary, args.dry_run, now)
     return 2 if summary["skipped"] else 0
 
 

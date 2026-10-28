@@ -117,7 +117,7 @@ def test_wrappers_route_every_scheduled_job_through_run_job():
             b"python -m ops.run_job --job %JOB% --log scripts\\reaction_compute_scheduled.log -- scripts\\compute_release_reactions.py %MODE% --bt-db scoring\\backtest_log.db --dash-db webapp\\dashboard.db"],
         "scripts/tier1_capture_scheduled.bat": [
             b"set JOB=tier1_capture_daily", b"set JOB=tier1_capture_weekly",
-            b"python -m ops.run_job --job %JOB% --log scripts\\tier1_capture_scheduled.log -- scripts\\capture_nowcast_from_cleveland.py --window-hours %WINDOW% --bt-db scoring\\backtest_log.db --dash-db webapp\\dashboard.db"],
+            b"python -m ops.run_job --job %JOB% --log scripts\\tier1_capture_scheduled.log -- scripts\\capture_tier1.py --window-hours %WINDOW% --bt-db scoring\\backtest_log.db --dash-db webapp\\dashboard.db"],
         "alerting/scripts/poll_once_hidden.vbs": [
             b'-m ops.run_job --job shock_poll --log alerting\\poll_once.log -- -m alerting.poll_once"'],
         "alerting/scripts/reality_check_hidden.vbs": [

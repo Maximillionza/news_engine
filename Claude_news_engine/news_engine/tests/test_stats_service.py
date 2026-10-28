@@ -992,3 +992,17 @@ def test_core_pce_without_snapshot_keeps_its_hand_logged_call(conns):
     _snap(bt, "Core PCE Price Index m/m", _t(9, 30), 0.4)
     row = svc.build_rows(dash, bt, event_title="Core PCE Price Index m/m")[-1]
     assert row.tier1_tier == "formula"
+
+
+def test_kalshi_rows_label_market_implied_on_stats(conns):
+    # B12: a Kalshi capture row is the NFP call of record; gold bearish = USD up = hotter, side +1.
+    dash, bt = conns
+    _event(dash, "Non-Farm Employment Change", _t(11, 6), "50K", "120K")
+    bs.record_tier1_prediction(bt, "Non-Farm Employment Change", "XAUUSD", _t(11, 6),
+                               "Kalshi KXPAYROLLS-26OCT implied median 70.0000 vs forecast 50K: hotter than forecast",
+                               "Likely", "Kalshi market-implied", "bearish",
+                               logged_at_utc=_t(11, 6) - dt.timedelta(days=2))
+    row = svc.build_rows(dash, bt, event_title="Non-Farm Employment Change")[-1]
+    assert row.tier1_tier == "market_implied"
+    assert row.tier1.side == 1 and row.tier1.note == "hand-logged" and row.tier1.verdict == "right"
+    assert row.detail.hand_logged["source"] == "Kalshi market-implied"

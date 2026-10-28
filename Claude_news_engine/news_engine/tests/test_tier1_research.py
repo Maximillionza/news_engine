@@ -22,7 +22,7 @@ def _event(dash, title, when, country="USD", impact="High"):
     dash.commit()
 
 
-def _setup(tmp_path, events=(("PPI m/m", RELEASE),), foreign=()):
+def _setup(tmp_path, events=(("ISM Services PMI", RELEASE),), foreign=()):
     """Returns (dash_path, bt_path); XAUUSD and US30 tracked, `events` are USD rows, `foreign` are EUR rows."""
     dash_path, bt_path = tmp_path / "dash.db", tmp_path / "bt.db"
     dash = ws.get_connection(str(dash_path))
@@ -45,13 +45,13 @@ def _plan(paths, capsys, now=NOW):
     return json.loads(capsys.readouterr().out)
 
 
-def _call_args(paths, title="PPI m/m", release=RELEASE, instrument="XAUUSD", direction="bullish"):
+def _call_args(paths, title="ISM Services PMI", release=RELEASE, instrument="XAUUSD", direction="bullish"):
     return [*_db(paths), "--event", title, "--release", release.isoformat(), "--instrument", instrument,
-            "--value", "PPI expected soft", "--confidence", "Likely", "--source", "BLS/consensus",
+            "--value", "ISM Services expected soft", "--confidence", "Likely", "--source", "BLS/consensus",
             "--direction", direction]
 
 
-def _log_call(paths, logged_at, direction="bullish", title="PPI m/m", release=RELEASE, instrument="XAUUSD"):
+def _log_call(paths, logged_at, direction="bullish", title="ISM Services PMI", release=RELEASE, instrument="XAUUSD"):
     conn = bs.get_connection(paths[1])
     try:
         bs.record_tier1_prediction(conn, title, instrument, release, "v", "Likely", "src", direction,
@@ -71,20 +71,20 @@ def _count(paths, table="tier1_predictions"):
 def test_plan_lists_only_judgment_titles(tmp_path, capsys):
     paths = _setup(
         tmp_path,
-        [("CPI m/m", RELEASE), ("Core CPI m/m", RELEASE), ("PPI m/m", RELEASE),
+        [("CPI m/m", RELEASE), ("Core CPI m/m", RELEASE), ("ISM Services PMI", RELEASE),
          ("Final GDP q/q", RELEASE + dt.timedelta(hours=1)), ("Unemployment Claims", RELEASE)],
-        foreign=[("PPI m/m", RELEASE + dt.timedelta(days=1))])
+        foreign=[("ISM Services PMI", RELEASE + dt.timedelta(days=1))])
     out = _plan(paths, capsys)
-    assert [e["event_title"] for e in out] == ["PPI m/m", "Final GDP q/q"]
+    assert [e["event_title"] for e in out] == ["ISM Services PMI", "Final GDP q/q"]
     assert out[0]["tier"] == "judgment" and out[0]["event_time_sast"] == "2026-11-12 15:30 SAST"
     assert set(out[0]["instruments"]) == {"XAUUSD", "US30"}
 
 
 def test_plan_window_is_8_days_and_excludes_past_events(tmp_path, capsys):
-    events = [("PPI m/m", NOW + dt.timedelta(hours=191)), ("Final GDP q/q", NOW + dt.timedelta(hours=193)),
-              ("ISM Services PMI", NOW - dt.timedelta(minutes=1))]
+    events = [("ISM Services PMI", NOW + dt.timedelta(hours=191)), ("Final GDP q/q", NOW + dt.timedelta(hours=193)),
+              ("FOMC Statement", NOW - dt.timedelta(minutes=1))]
     out = _plan(_setup(tmp_path, events), capsys)
-    assert [e["event_title"] for e in out] == ["PPI m/m"]
+    assert [e["event_title"] for e in out] == ["ISM Services PMI"]
 
 
 def test_plan_status_needs_call_covered_and_late_check_due(tmp_path, capsys):
@@ -114,12 +114,27 @@ def test_record_call_refuses_a_formula_title(tmp_path, capsys):
     assert _count(paths) == 0
 
 
+def test_plan_excludes_market_implied_titles(tmp_path, capsys):
+    # B12: the Kalshi capture writes these; the research task must not even see them.
+    paths = _setup(tmp_path, [("Non-Farm Employment Change", RELEASE), ("PPI m/m", RELEASE),
+                              ("Federal Funds Rate", RELEASE), ("ISM Services PMI", RELEASE)])
+    assert [e["event_title"] for e in _plan(paths, capsys)] == ["ISM Services PMI"]
+
+
+def test_record_call_refuses_a_market_implied_title(tmp_path, capsys):
+    paths = _setup(tmp_path, [("Non-Farm Employment Change", RELEASE)])
+    assert cli.main(["record-call", *_call_args(paths, title="Non-Farm Employment Change")], now=NOW) == 2
+    assert ("'Non-Farm Employment Change' is a market-implied event: the Kalshi capture (capture_tier1.py) "
+            "writes its call, do not log one by hand") in capsys.readouterr().err
+    assert _count(paths) == 0
+
+
 def test_record_call_writes_the_first_call(tmp_path, capsys):
     paths = _setup(tmp_path)
     assert cli.main(["record-call", *_call_args(paths)], now=NOW) == 0
     assert capsys.readouterr().out.strip().isdigit() and _count(paths) == 1
     conn = bs.get_connection(paths[1])
-    row = bs.get_latest_tier1_prediction_for_occurrence(conn, "PPI m/m", "XAUUSD", RELEASE)
+    row = bs.get_latest_tier1_prediction_for_occurrence(conn, "ISM Services PMI", "XAUUSD", RELEASE)
     assert row.logged_at_utc == NOW.isoformat()
 
 

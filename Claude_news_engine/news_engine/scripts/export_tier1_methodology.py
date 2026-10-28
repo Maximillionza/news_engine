@@ -22,7 +22,8 @@ from typing import Optional
 APP_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP_DIR))
 from data_layer.tier1_events import (  # noqa: E402
-    TIER1_EVENTS, TIER1_FORMULA_CONFIDENCE, TIER1_FORMULA_SOURCE,
+    TIER1_EVENTS, TIER1_FORMULA_CONFIDENCE, TIER1_FORMULA_SOURCE, TIER1_MARKET_IMPLIED_CONFIDENCE,
+    TIER1_MARKET_IMPLIED_SOURCE,
 )
 
 WORKBOOK_PATH = APP_DIR / "docs" / "News_Engine_Causation_Matrix_v2.xlsx"
@@ -64,11 +65,12 @@ SECTIONS: dict[str, dict] = {
     "POC_PPI_Leading_Indicators": {
         "titles": ["PPI m/m"],
         "rule": (
-            "BLS's own most recent prior PPI release (actual headline m/m and core m/m, read through the Final "
-            "Demand-Intermediate Demand stages: crude materials and intermediate demand lead final demand) plus the "
-            "most recent ISM Manufacturing Prices Paid reading (actual, not forecast). The 5-district regional Fed "
-            "prices-paid average is a supporting input one notch below ISM. Headline/core splits: see "
-            "POC_Sub_Event_Consolidation."
+            "Market-implied tier, not researched. The call is the Kalshi KXUSPPI ladder (ticketed by the release "
+            "date, +/-1 day; strikes in the print's own unit) read by the market-implied rule in the introduction "
+            "and written per instrument by the Windows tasks. The workbook's method below (BLS's own most recent "
+            "prior PPI release read through the Final Demand-Intermediate Demand stages, plus the most recent ISM "
+            "Manufacturing Prices Paid reading and the 5-district regional Fed prices-paid average one notch below "
+            "it) is context for reading a miss, not an input to the call. The research task never logs this title."
         ),
         "rejected": [
             "PPI as a lead for CPI: the release-timing lead is certain, but the strength and lag of the pass-through "
@@ -76,17 +78,21 @@ SECTIONS: dict[str, dict] = {
             "A single region's prices-paid print on its own: noisy; only the 5-district average is used.",
         ],
         "confidence": (
-            "Certain only when the primary-sourced inputs (BLS prior actuals, ISM Prices Paid) are current and "
-            "agree; Likely when the call leans on the regional average; Guessing with a neutral call and an honest "
-            "\"NO CONFIDENT DIRECTIONAL CALL\" value when the inputs genuinely split."
+            f"Always \"{TIER1_MARKET_IMPLIED_CONFIDENCE}\" for market-implied rows: a traded price is a crowd's "
+            "bet, not a certainty. No 50% crossing among liquid strikes, a units mismatch or no readable forecast "
+            "writes no call at all."
         ),
     },
     "POC_NFP_Leading_Indicators": {
         "titles": ["Non-Farm Employment Change"],
         "rule": (
-            "Initial jobless claims read against their own recent trend (a time-varying threshold, never a fixed "
-            "number such as 400,000). Claims capture layoffs directly and turn roughly 2-4 months ahead of the "
-            "unemployment-rate cycle."
+            "Market-implied tier, not researched. The call is the Kalshi KXPAYROLLS ladder, ticketed by the "
+            "reference month (the month before the release: KXPAYROLLS-26OCT settles on the October report "
+            "released in November); its strikes are listed in jobs and divided by 1000 to match the forecast's "
+            "\"K\". The market-implied rule in the introduction turns it into the call. The workbook's method below "
+            "(initial jobless claims read against their own recent trend, turning roughly 2-4 months ahead of the "
+            "unemployment-rate cycle) is context for reading a miss, not an input. The research task never logs "
+            "this title."
         ),
         "rejected": [
             "ADP National Employment Report as an \"NFP preview\": REJECTED (City Index 2007-2024 backtest: 47.7% "
@@ -96,18 +102,22 @@ SECTIONS: dict[str, dict] = {
             "Large corporate layoff waves: no real in-window instance identified yet.",
         ],
         "confidence": (
-            "Certain only when the claims data is primary-sourced and clearly off its own trend; the sheet rates the "
-            "2-4 month lag figure Likely (practitioner source), so a call that relies on that timing is at most "
-            "Likely; Guessing with a neutral call when claims sit on their trend or the read is ambiguous."
+            f"Always \"{TIER1_MARKET_IMPLIED_CONFIDENCE}\" for market-implied rows. The claims evidence below "
+            "never raises or lowers it; it explains a miss after the print."
         ),
     },
     "POC_FOMC_Rate_Decision": {
         "titles": ["FOMC Meeting Minutes", "FOMC Statement", "Federal Funds Rate"],
         "rule": (
-            "CME 30-Day Fed Funds futures-implied probability (FedWatch methodology: implied rate = 100 - futures "
-            "price; probability of a 25bp move = (implied rate - EFFR) / 0.25, day-weighted in the meeting month) "
-            "against the current Effective Federal Funds Rate published daily by the NY Fed. Cross-check against "
-            "the other covered releases (NFP, CPI, PCE, PPI, GDP), which are what move the futures."
+            "Federal Funds Rate is market-implied, not researched: the Kalshi KXFED ladder (ticketed by the meeting "
+            "month, KXFED-26DEC is the December decision; strikes are the upper bound of the target range), read "
+            "with the discrete median (the first strike at or below 50%) and compared with the forecast. FOMC "
+            "Meeting Minutes and FOMC Statement have no numeric market and stay judgment: CME 30-Day Fed Funds "
+            "futures-implied probability (FedWatch methodology: implied rate = 100 - futures price; probability of "
+            "a 25bp move = (implied rate - EFFR) / 0.25, day-weighted in the meeting month) against the current "
+            "Effective Federal Funds Rate published daily by the NY Fed, cross-checked against the other covered "
+            "releases (NFP, CPI, PCE, PPI, GDP), which are what move the futures. A judgment call that rests on "
+            "FedWatch starts its source or value with \"CME FedWatch\" and displays as market-implied."
         ),
         "rejected": [
             "Emergency / off-cycle Fed actions: the futures method cannot price them (a stated limitation of the "
@@ -115,7 +125,8 @@ SECTIONS: dict[str, dict] = {
             "Fed Chair transition effects on the reaction function: not quantified.",
         ],
         "confidence": (
-            "Defaults to Certain when a clear futures-implied probability exists (a live, transparent market price, "
+            f"Federal Funds Rate: always \"{TIER1_MARKET_IMPLIED_CONFIDENCE}\" (market-implied). Statement and "
+            "Minutes: Certain when a clear futures-implied probability exists (a live, transparent market price, "
             "not a forecast that needs validating); lower it to Likely or Guessing when the implied probability is "
             "not clear-cut."
         ),
@@ -123,7 +134,10 @@ SECTIONS: dict[str, dict] = {
     "POC_GDP_Nowcast": {
         "titles": ["Prelim GDP q/q", "Advance GDP q/q", "Final GDP q/q", "GDP q/q"],
         "rule": (
-            "The Atlanta Fed's GDPNow nowcast and the Cleveland Fed's yield-curve-slope growth model (10-year minus "
+            "Advance GDP q/q is market-implied, not researched: the Kalshi KXGDP ladder (ticketed by the release "
+            "date, +/-1 day; KXGDP settles on the BEA Advance estimate only) read by the market-implied rule in the "
+            "introduction. Prelim GDP q/q, Final GDP q/q and GDP q/q have no matching market and stay judgment: the "
+            "Atlanta Fed's GDPNow nowcast and the Cleveland Fed's yield-curve-slope growth model (10-year minus "
             "3-month Treasury spread); both are verified Tier 1 sources. GDPNow is unreliable early in the quarter "
             "and its accuracy plateaus in roughly the last 25 days before release."
         ),
@@ -133,6 +147,7 @@ SECTIONS: dict[str, dict] = {
             "Tariff effects on the net-exports subcomponent: the GDP-specific magnitude is not measured.",
         ],
         "confidence": (
+            f"Advance GDP q/q: always \"{TIER1_MARKET_IMPLIED_CONFIDENCE}\" (market-implied). Judgment titles: "
             "Certain when GDPNow and the yield-curve model agree; Likely when only one gives a clear read; Guessing "
             "with a neutral call when they disagree."
         ),
@@ -163,9 +178,11 @@ SECTIONS: dict[str, dict] = {
     "POC_ISM_Manufacturing_PMI": {
         "titles": ["ISM Manufacturing PMI"],
         "rule": (
-            "The regional Federal Reserve manufacturing survey average (the 5-district general-business-conditions "
-            "average that Yardeni Research says closely tracks the national PMI): the same source as PPI's regional "
-            "input, separately verified for this target."
+            "Market-implied tier, not researched. The call is the Kalshi KXISMPMI ladder, ticketed by the reference "
+            "month (the month before the release); its markets are \"greater or equal\" and are read as \"above\" "
+            "(outcomes step 0.1, so the difference is immaterial). The workbook's method below (the regional Federal "
+            "Reserve manufacturing survey average that Yardeni Research says closely tracks the national PMI) is "
+            "context for reading a miss, not an input. The research task never logs this title."
         ),
         "rejected": [
             "New Orders as the leading sub-component: practitioner consensus only, not tested; not weighted like a "
@@ -174,8 +191,8 @@ SECTIONS: dict[str, dict] = {
             "ISM's own methodology document.",
         ],
         "confidence": (
-            "At most Likely from the regional average alone (a research house's tracking claim, not an academic "
-            "correlation study); Guessing with a neutral call when the regional surveys disagree."
+            f"Always \"{TIER1_MARKET_IMPLIED_CONFIDENCE}\" for market-implied rows. The regional average alone "
+            "would support at most Likely (a research house's tracking claim, not an academic correlation study)."
         ),
     },
     "POC_ISM_Services_PMI": {
@@ -200,11 +217,13 @@ SECTIONS: dict[str, dict] = {
     "POC_Retail_Sales": {
         "titles": ["Retail Sales m/m", "Core Retail Sales m/m"],
         "rule": (
-            "Real-time card spending trackers (Bank of America's monthly tracker, JPMorgan Chase Institute's "
-            "near-real-time tracker): actual transaction data with a 0.86 correlation to Census retail sales (0.93 "
-            "after revisions) vs 0.69 for the consensus forecast. Core (ex autos, gasoline, building materials, food "
-            "services) is read separately from headline; tariffs can raise nominal sales while volume falls. "
-            "Headline/core splits: see POC_Sub_Event_Consolidation."
+            "Retail Sales m/m is market-implied, not researched: the Kalshi KXUSRETAIL ladder (ticketed by the "
+            "release date, +/-1 day) read by the market-implied rule in the introduction. Core Retail Sales m/m has "
+            "no Kalshi market and stays judgment: real-time card spending trackers (Bank of America's monthly "
+            "tracker, JPMorgan Chase Institute's near-real-time tracker): actual transaction data with a 0.86 "
+            "correlation to Census retail sales (0.93 after revisions) vs 0.69 for the consensus forecast. Core (ex "
+            "autos, gasoline, building materials, food services) is read separately from headline; tariffs can "
+            "raise nominal sales while volume falls. Headline/core splits: see POC_Sub_Event_Consolidation."
         ),
         "rejected": [
             "Consumer confidence indexes (Conference Board, University of Michigan): REJECTED (Croushore, University "
@@ -212,19 +231,21 @@ SECTIONS: dict[str, dict] = {
             "The 10-120 day ISM-to-hard-data lag figure: removed; its source measured Michigan Sentiment, not ISM.",
         ],
         "confidence": (
-            "Certain when the card trackers are current and agree; Likely when only one is available; Guessing with "
-            "a neutral call when they disagree or the tariff nominal/volume effect makes the direction ambiguous."
+            f"Retail Sales m/m: always \"{TIER1_MARKET_IMPLIED_CONFIDENCE}\" (market-implied). Core Retail Sales "
+            "m/m: Certain when the card trackers are current and agree; Likely when only one is available; Guessing "
+            "with a neutral call when they disagree or the tariff nominal/volume effect makes the direction "
+            "ambiguous."
         ),
     },
     "POC_Sub_Event_Consolidation": {
         "titles": [],
         "rule": (
-            "Applies when sub-readings (headline vs core, m/m vs y/y) point different ways for PPI m/m, Core PCE "
-            "Price Index m/m and Retail Sales m/m / Core Retail Sales m/m: the net direction follows the sub-reading "
-            "with the larger surprise relative to its own typical volatility / forecast-distribution tightness, "
-            "judged from real data, never computed. Not assumed to transfer to NFP. The formula-tier titles (CPI and "
-            "Core CPI m/m and y/y, Core PCE m/m) each get their own formula call; the CPI cases below remain the "
-            "evidence for the hypothesis."
+            "Applies when sub-readings (headline vs core) point different ways for the one judgment title it still "
+            "covers, Core Retail Sales m/m (read against headline Retail Sales m/m): the net direction follows the "
+            "sub-reading with the larger surprise relative to its own typical volatility / forecast-distribution "
+            "tightness, judged from real data, never computed. Not assumed to transfer to NFP. The formula-tier "
+            "titles (CPI and Core CPI m/m and y/y, Core PCE m/m) and the market-implied titles (PPI m/m, Retail "
+            "Sales m/m) each get their own rule call; the CPI cases below remain the evidence for the hypothesis."
         ),
         "rejected": [
             "A fixed sub-component hierarchy (\"core always wins\") or a vote across sub-readings.",
@@ -252,7 +273,12 @@ _INTRO = [
     "(CPI m/m, Core CPI m/m, CPI y/y, Core CPI y/y, Core PCE Price Index m/m); "
     "**judgment** = researched by hand before each release by the Tier 1 research task "
     "(`scripts/tier1_research.py`), where the first pre-release call stands and a later re-check is only "
-    "logged as a late check; **market-implied** is reserved for roadmap B12 (Kalshi) and has no titles yet.",
+    "logged as a late check; **market-implied** = a fixed rule on a traded market's prices, captured by the "
+    "same Windows tasks (Kalshi: PPI m/m, Non-Farm Employment Change, Federal Funds Rate, Advance GDP q/q, ISM "
+    "Manufacturing PMI, Retail Sales m/m). One producer per title: the research task refuses formula and "
+    "market-implied titles. A judgment row whose source mentions FedWatch, or whose value opens with a "
+    "FedWatch citation, also displays as market-implied (its call is the futures-implied rate path, not a "
+    "researcher's view); a mere mid-text mention of FedWatch stays judgment.",
     "",
     "Formula rule (the five formula titles): `scripts/capture_nowcast_from_cleveland.py` compares the "
     "Cleveland Fed nowcast with the release's forecast. The m/m titles read `nowcast_month.json` "
@@ -263,6 +289,21 @@ _INTRO = [
     f"neutral). Confidence is always \"{TIER1_FORMULA_CONFIDENCE}\" and the source is "
     f"\"{TIER1_FORMULA_SOURCE}\". At most one row is written per release and instrument per distinct nowcast "
     "value, and no readable forecast writes nothing (never a guessed neutral).",
+    "",
+    "Market-implied rule (the six Kalshi titles): `scripts/capture_tier1.py` reads the open \"above strike\" "
+    "ladder of the Kalshi event that resolves on the release (public read-only API; KXPAYROLLS, KXUSRETAIL, "
+    "KXUSPPI, KXISMPMI, KXGDP, KXFED) and applies `webapp/tier1_market.py`. Only liquid strikes count: open "
+    "interest >= 10, a quoted ask, and ask - bid <= 0.25. Each strike's yes midpoint is P(print above the "
+    "strike), made non-increasing in the strike by a running minimum. The implied median is where that curve "
+    "crosses 50%: linear between the two strikes around the crossing, or the first strike at or below 50% for "
+    "the discrete Fed Funds ladder (KXFED; rates move in 25 bp steps, so interpolating a priced hike would land "
+    "between two possible outcomes). The median is compared with the forecast with the same one-rounding-step "
+    "tolerance as the formula rule (hotter / in line / cooler), and each tracked instrument's direction comes "
+    "from `market_lean` with the series' own surprise sign (higher = USD-bullish for all six). Confidence is "
+    f"always \"{TIER1_MARKET_IMPLIED_CONFIDENCE}\" and the source is \"{TIER1_MARKET_IMPLIED_SOURCE}\". At "
+    "most one row is written per release and instrument per distinct implied median. No row (reported, never "
+    "a guessed neutral) when the curve has no 50% crossing among liquid strikes, the forecast sits far outside "
+    "the liquid strikes (a units mismatch), there is no readable forecast, or no open event matches the release.",
     "",
 ]
 

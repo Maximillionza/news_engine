@@ -30,6 +30,17 @@ def test_tier1_bat_passes_192_hours_for_weekly_and_48_by_default() -> None:
     assert "tier1_capture_scheduled.bat" in VBS.read_bytes().decode("utf-8")
 
 
+def test_tier1_bat_runs_capture_tier1() -> None:
+    # B12: one task path runs both phases (Cleveland formula, then Kalshi market-implied).
+    text = BAT.read_bytes().decode("utf-8")
+    commands = [line for line in text.splitlines() if line.startswith("python ")]
+    assert len(commands) == 1
+    assert r"-- scripts\capture_tier1.py --window-hours %WINDOW%" in commands[0]
+    assert "capture_nowcast_from_cleveland" not in commands[0]
+    ps1 = PS1.read_bytes().decode("utf-8")
+    assert ps1.count("capture_tier1.py --window-hours") == 2
+
+
 def test_tier1_task_scripts_use_crlf() -> None:
     for path in (BAT, VBS, PS1):
         data = path.read_bytes()

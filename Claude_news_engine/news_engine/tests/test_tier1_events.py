@@ -21,7 +21,9 @@ def _at(day: int, hour: int, minute: int = 0) -> dt.datetime:
     return dt.datetime(2026, 11, day, hour, minute, tzinfo=UTC)
 
 
-def test_tier1_events_has_18_titles_5_formula_13_judgment_0_market_implied():
+def test_tier1_events_has_18_titles_5_formula_7_judgment_6_market_implied():
+    from webapp.tier1_market import MARKET_SERIES
+
     assert list(TIER1_EVENTS) == [
         "CPI m/m", "Core CPI m/m", "CPI y/y", "Core CPI y/y",
         "PPI m/m", "Non-Farm Employment Change", "FOMC Meeting Minutes", "FOMC Statement",
@@ -31,8 +33,13 @@ def test_tier1_events_has_18_titles_5_formula_13_judgment_0_market_implied():
     ]
     assert tier1_titles(TIER1_FORMULA) == [
         "CPI m/m", "Core CPI m/m", "CPI y/y", "Core CPI y/y", "Core PCE Price Index m/m"]
-    assert len(tier1_titles(TIER1_JUDGMENT)) == 13
-    assert tier1_titles(TIER1_MARKET_IMPLIED) == []
+    assert tier1_titles(TIER1_MARKET_IMPLIED) == [
+        "PPI m/m", "Non-Farm Employment Change", "Federal Funds Rate", "Advance GDP q/q",
+        "ISM Manufacturing PMI", "Retail Sales m/m"]
+    assert tier1_titles(TIER1_JUDGMENT) == [
+        "FOMC Meeting Minutes", "FOMC Statement", "Prelim GDP q/q", "Final GDP q/q", "GDP q/q",
+        "ISM Services PMI", "Core Retail Sales m/m"]
+    assert set(MARKET_SERIES) == set(tier1_titles(TIER1_MARKET_IMPLIED))
     assert all(tier in TIER1_TIERS for tier in TIER1_EVENTS.values())
 
 

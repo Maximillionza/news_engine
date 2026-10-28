@@ -9,8 +9,10 @@ task used to write, so fixed commands can be pre-approved and the rules live in 
 plan prints JSON: every USD judgment-tier event (data_layer.tier1_events) within --days, with one status per
 tracked instrument: needs_call, covered, or late_check_due (with the reason and the call of record).
 record-call logs the FIRST pre-release call for an occurrence and refuses a second one (the first call stands),
-a formula-tier title (CPI m/m and Core CPI m/m come from the Cleveland capture), an untracked instrument, a
-release time without a UTC offset, and a release that has already happened.
+a formula-tier title (CPI and Core CPI m/m and y/y, Core PCE m/m come from the Cleveland capture), a
+market-implied title (NFP, Retail Sales, PPI, ISM Manufacturing, Advance GDP and Federal Funds Rate come from the
+Kalshi capture, B12), an untracked instrument, a release time without a UTC offset, and a release that has
+already happened.
 record-late-check appends a re-check to tier1_late_checks only when plan says it is due; it never changes the
 call of record.
 
@@ -30,7 +32,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config.settings import LOCAL_TZ  # noqa: E402
 from data_layer.tier1_events import (  # noqa: E402
-    TIER1_FORMULA, TIER1_JUDGMENT, TIER1_RESEARCH_LOOKAHEAD, late_check_reason, tier1_titles,
+    TIER1_FORMULA, TIER1_JUDGMENT, TIER1_MARKET_IMPLIED, TIER1_RESEARCH_LOOKAHEAD, late_check_reason, tier1_titles,
 )
 from scoring import backtest_store  # noqa: E402
 from scripts.backfill_tier1_reconstructed import open_dash_readonly  # noqa: E402
@@ -104,6 +106,9 @@ def _check_target(args: argparse.Namespace, dash_conn, now: dt.datetime) -> dt.d
     if args.event in tier1_titles(TIER1_FORMULA):
         raise Refused(f"{args.event!r} is a formula-tier event: the Cleveland Fed formula capture "
                       f"(capture_nowcast_from_cleveland.py) writes its call, do not log one by hand")
+    if args.event in tier1_titles(TIER1_MARKET_IMPLIED):
+        raise Refused(f"{args.event!r} is a market-implied event: the Kalshi capture (capture_tier1.py) "
+                      f"writes its call, do not log one by hand")
     if args.event not in tier1_titles(TIER1_JUDGMENT):
         raise Refused(f"{args.event!r} is not a judgment-tier Tier 1 event")
     if args.instrument not in list_tracked_symbols(dash_conn):

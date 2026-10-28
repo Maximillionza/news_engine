@@ -104,9 +104,9 @@ def _clean_feeds(c, now: dt.datetime = NOW) -> None:
 def test_health_flags_the_three_known_silent_failures(c):
     _fresh_jobs(c)
     _clean_feeds(c)
-    _event(c, "PPI m/m", "2026-10-15T12:30:00+00:00")
+    _event(c, "ISM Services PMI", "2026-10-15T12:30:00+00:00")
     _event(c, "CPI m/m", "2026-10-14T12:30:00+00:00")
-    _tier1_call(c, "PPI m/m", "2026-09-14T12:30:00+00:00", "2026-09-13T08:00:00+00:00")
+    _tier1_call(c, "ISM Services PMI", "2026-09-14T12:30:00+00:00", "2026-09-13T08:00:00+00:00")
     for day in ("2026-08-20", "2026-09-03", "2026-09-17"):
         _macro(c, day, "2026-08-16T10:48:00+00:00")
     alerting_store.set_provider_cooldown(c.alerts, "claude", dt.datetime(2026, 10, 20, 9, 55, tzinfo=UTC))
@@ -117,7 +117,7 @@ def test_health_flags_the_three_known_silent_failures(c):
     items = _build(c)
 
     assert items["tier1_research"].status == "red"
-    assert "PPI m/m" in items["tier1_research"].detail
+    assert "ISM Services PMI" in items["tier1_research"].detail
     assert items["nowcast_live"].status == "red"
     assert "CPI m/m" in items["nowcast_live"].detail
     assert items["macro_calendar"].status == "red"
@@ -150,42 +150,42 @@ def test_never_run_job_is_amber_until_red_after_tracking(tmp_path):
 
 def test_missed_release_compares_naive_and_offset_stamps_as_instants(tmp_path):
     on_time = _open(tmp_path, name="a.db")
-    _event(on_time, "PPI m/m", "2026-10-15T12:30:00")
-    _tier1_call(on_time, "PPI m/m", "2026-10-15T12:30:00+00:00", "2026-10-15T14:29:00+02:00")
+    _event(on_time, "ISM Services PMI", "2026-10-15T12:30:00")
+    _tier1_call(on_time, "ISM Services PMI", "2026-10-15T12:30:00+00:00", "2026-10-15T14:29:00+02:00")
     assert _build(on_time)["tier1_research"].status == "ok"
 
     late = _open(tmp_path, name="b.db")
-    _event(late, "PPI m/m", "2026-10-15T12:30:00")
-    _tier1_call(late, "PPI m/m", "2026-10-15T12:30:00+00:00", "2026-10-15T14:31:00+02:00")
+    _event(late, "ISM Services PMI", "2026-10-15T12:30:00")
+    _tier1_call(late, "ISM Services PMI", "2026-10-15T12:30:00+00:00", "2026-10-15T14:31:00+02:00")
     item = _build(late)["tier1_research"]
     assert item.status == "red"
-    assert "missed: PPI m/m 2026-10-15 14:30 SAST" in item.detail
+    assert "missed: ISM Services PMI 2026-10-15 14:30 SAST" in item.detail
 
 
 def test_missed_release_ignores_non_usd_and_out_of_window_occurrences(c):
-    _event(c, "PPI m/m", "2026-10-15T12:30:00+00:00", country="EUR")
-    _event(c, "Retail Sales m/m", "2026-10-10T12:30:00+00:00")      # 10 days back: outside the 7-day lookback
+    _event(c, "ISM Services PMI", "2026-10-15T12:30:00+00:00", country="EUR")
+    _event(c, "Core Retail Sales m/m", "2026-10-10T12:30:00+00:00")      # 10 days back: outside the 7-day lookback
     assert _build(c)["tier1_research"].status == "ok"
 
 
 def test_missed_release_detail_lists_three_then_counts_the_rest(c):
     for day in (13, 14, 15, 16, 17):
-        _event(c, "PPI m/m", f"2026-10-{day}T12:30:00+00:00")
+        _event(c, "ISM Services PMI", f"2026-10-{day}T12:30:00+00:00")
     item = _build(c)["tier1_research"]
     assert item.status == "red"
-    assert item.detail.count("PPI m/m") == 3
+    assert item.detail.count("ISM Services PMI") == 3
     assert item.detail.endswith("and 2 more")
 
 
 def test_tier1_research_amber_when_a_release_within_24h_has_no_call(c):
     when = (NOW + dt.timedelta(hours=20)).isoformat()
-    _event(c, "Non-Farm Employment Change", when)
+    _event(c, "FOMC Statement", when)
     item = _build(c)["tier1_research"]
     assert item.status == "amber"
     assert "due within 24h without a call" in item.detail
-    assert "Non-Farm Employment Change" in item.detail
+    assert "FOMC Statement" in item.detail
 
-    _tier1_call(c, "Non-Farm Employment Change", when, (NOW - dt.timedelta(hours=1)).isoformat())
+    _tier1_call(c, "FOMC Statement", when, (NOW - dt.timedelta(hours=1)).isoformat())
     assert _build(c)["tier1_research"].status == "ok"
 
 
@@ -193,7 +193,7 @@ def test_research_check_ignores_capture_sources(c):
     # B12: Kalshi and Cleveland rows come from the capture task, not the LLM research task; counting them would
     # make the research line look alive while the research task is dead.
     llm_at = NOW - dt.timedelta(days=3)
-    _tier1_call(c, "PPI m/m", "2026-10-15T12:30:00+00:00", llm_at.isoformat())
+    _tier1_call(c, "ISM Services PMI", "2026-10-15T12:30:00+00:00", llm_at.isoformat())
     _tier1_call(c, "Non-Farm Employment Change", "2026-11-06T13:30:00+00:00",
                 (NOW - dt.timedelta(hours=2)).isoformat(), source=TIER1_MARKET_IMPLIED_SOURCE)
     _tier1_call(c, "CPI m/m", "2026-11-12T13:30:00+00:00",
