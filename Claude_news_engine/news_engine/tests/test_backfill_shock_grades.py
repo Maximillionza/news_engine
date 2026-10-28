@@ -33,20 +33,16 @@ def dbs(tmp_path: Path):
         affected_symbols=[{"symbol": "XAUUSD", "channel": "safe_haven", "lean": "buy"}])
     conn.close()
     bt_conn = backtest_store.get_connection(bt)
-    bt_conn.execute("INSERT INTO reaction_baselines (symbol, utc_hour, quantile, baseline, period_end_utc, "
-                    "computed_at_utc) VALUES ('XAUUSD', 12, 0.75, 1.0, '2026-10-16T18:00:00+00:00', "
-                    "'2026-10-16T18:00:00+00:00')") if _baseline_cols(bt_conn) else None
+    # Real schema via the store's own helper; a mismatch must fail loudly, not skip the seed.
+    backtest_store.record_reaction_baseline(
+        bt_conn, "XAUUSD", 12, 1.0, 50, dt.datetime(2026, 10, 1, tzinfo=UTC),
+        dt.datetime(2026, 10, 16, 18, tzinfo=UTC), quantile=0.75)
     bt_conn.commit()
     bt_conn.close()
     dash_conn = web_store.get_connection(dash)
     web_store.add_tracked_symbol(dash_conn, "XAUUSD")
     dash_conn.close()
     return alerts, bt, dash
-
-
-def _baseline_cols(conn) -> bool:
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(reaction_baselines)")}
-    return {"symbol", "utc_hour", "quantile", "baseline", "period_end_utc", "computed_at_utc"} <= cols
 
 
 def _args(dbs, *extra):
@@ -108,6 +104,9 @@ def test_output_reports_starting_point(dbs, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "starting point before B10: 14 of 26" in out
     assert "overall 5-minute detection-anchored hit rate:" in out
+    # Baseline seeded via the real schema, so the cells grade right (not no_baseline / n/a).
+    assert "detected  right 1, wrong 0, no_move 0, no_lean 0, no_data 0, no_baseline 0" in out
+    assert "detection-anchored hit rate: 100.0% (1 of 1)" in out
 
 
 def test_fetch_failure_exits_1(dbs, monkeypatch, capsys):
