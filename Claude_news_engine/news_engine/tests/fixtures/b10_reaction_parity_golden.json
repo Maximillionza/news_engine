@@ -1,0 +1,296 @@
+{
+ "backfill": {
+  "already_present": 0,
+  "baselines": 6,
+  "baselines_by_symbol": {
+   "US30": {
+    "hours": {
+     "12": {
+      "n_windows": 23,
+      "value": 7.5
+     },
+     "13": {
+      "n_windows": 18,
+      "value": 7.5
+     },
+     "14": {
+      "n_windows": 2,
+      "value": 7.5
+     }
+    },
+    "period": [
+     "2026-03-02T12:00:00+00:00",
+     "2026-03-03T13:30:00+00:00"
+    ],
+    "source": "computed"
+   },
+   "XAUUSD": {
+    "hours": {
+     "12": {
+      "n_windows": 23,
+      "value": 0.5
+     },
+     "13": {
+      "n_windows": 18,
+      "value": 0.5
+     },
+     "14": {
+      "n_windows": 2,
+      "value": 0.5
+     }
+    },
+    "period": [
+     "2026-03-02T12:00:00+00:00",
+     "2026-03-03T13:30:00+00:00"
+    ],
+    "source": "computed"
+   }
+  },
+  "baselines_new": 6,
+  "buy": 1,
+  "dry_run": false,
+  "errors": {},
+  "fetch_failed": {},
+  "mode": "backfill",
+  "no_data": 1,
+  "none": 1,
+  "ok": 3,
+  "per_symbol": {
+   "US30": {
+    "already_present": 0,
+    "baselines": 3,
+    "baselines_new": 3,
+    "buy": 0,
+    "no_data": 1,
+    "none": 0,
+    "ok": 1,
+    "sell": 1,
+    "skipped_pending": 0,
+    "skipped_recent": 0,
+    "written": 2
+   },
+   "XAUUSD": {
+    "already_present": 0,
+    "baselines": 3,
+    "baselines_new": 3,
+    "buy": 1,
+    "no_data": 0,
+    "none": 1,
+    "ok": 2,
+    "sell": 0,
+    "skipped_pending": 0,
+    "skipped_recent": 0,
+    "written": 2
+   }
+  },
+  "sell": 1,
+  "skipped_pending": 0,
+  "skipped_recent": 0,
+  "unresolved": [],
+  "written": 4
+ },
+ "incremental": {
+  "already_present": 4,
+  "baselines": 6,
+  "baselines_by_symbol": {
+   "US30": {
+    "hours": {
+     "12": {
+      "n_windows": 23,
+      "value": 7.5
+     },
+     "13": {
+      "n_windows": 18,
+      "value": 7.5
+     },
+     "14": {
+      "n_windows": 2,
+      "value": 7.5
+     }
+    },
+    "period": [
+     "2026-03-02T12:00:00+00:00",
+     "2026-03-03T13:30:00+00:00"
+    ],
+    "source": "computed"
+   },
+   "XAUUSD": {
+    "hours": {
+     "12": {
+      "n_windows": 23,
+      "value": 0.5
+     },
+     "13": {
+      "n_windows": 18,
+      "value": 0.5
+     },
+     "14": {
+      "n_windows": 2,
+      "value": 0.5
+     }
+    },
+    "period": [
+     "2026-03-02T12:00:00+00:00",
+     "2026-03-03T13:30:00+00:00"
+    ],
+    "source": "computed"
+   }
+  },
+  "baselines_new": 0,
+  "buy": 0,
+  "dry_run": false,
+  "errors": {},
+  "fetch_failed": {},
+  "mode": "incremental",
+  "no_data": 0,
+  "none": 0,
+  "ok": 0,
+  "per_symbol": {
+   "US30": {
+    "already_present": 2,
+    "baselines": 3,
+    "baselines_new": 0,
+    "buy": 0,
+    "no_data": 0,
+    "none": 0,
+    "ok": 0,
+    "sell": 0,
+    "skipped_pending": 0,
+    "skipped_recent": 0,
+    "written": 0
+   },
+   "XAUUSD": {
+    "already_present": 2,
+    "baselines": 3,
+    "baselines_new": 0,
+    "buy": 0,
+    "no_data": 0,
+    "none": 0,
+    "ok": 0,
+    "sell": 0,
+    "skipped_pending": 0,
+    "skipped_recent": 0,
+    "written": 0
+   }
+  },
+  "sell": 0,
+  "skipped_pending": 0,
+  "skipped_recent": 0,
+  "unresolved": [],
+  "written": 0
+ },
+ "reaction_baselines": [
+  {
+   "baseline_abs_move": 7.5,
+   "instrument": "US30",
+   "n_windows": 23,
+   "period_end_utc": "2026-03-03T13:30:00+00:00",
+   "period_start_utc": "2026-03-02T12:00:00+00:00",
+   "quantile": 0.75,
+   "utc_hour": 12
+  },
+  {
+   "baseline_abs_move": 7.5,
+   "instrument": "US30",
+   "n_windows": 18,
+   "period_end_utc": "2026-03-03T13:30:00+00:00",
+   "period_start_utc": "2026-03-02T12:00:00+00:00",
+   "quantile": 0.75,
+   "utc_hour": 13
+  },
+  {
+   "baseline_abs_move": 7.5,
+   "instrument": "US30",
+   "n_windows": 2,
+   "period_end_utc": "2026-03-03T13:30:00+00:00",
+   "period_start_utc": "2026-03-02T12:00:00+00:00",
+   "quantile": 0.75,
+   "utc_hour": 14
+  },
+  {
+   "baseline_abs_move": 0.5,
+   "instrument": "XAUUSD",
+   "n_windows": 23,
+   "period_end_utc": "2026-03-03T13:30:00+00:00",
+   "period_start_utc": "2026-03-02T12:00:00+00:00",
+   "quantile": 0.75,
+   "utc_hour": 12
+  },
+  {
+   "baseline_abs_move": 0.5,
+   "instrument": "XAUUSD",
+   "n_windows": 18,
+   "period_end_utc": "2026-03-03T13:30:00+00:00",
+   "period_start_utc": "2026-03-02T12:00:00+00:00",
+   "quantile": 0.75,
+   "utc_hour": 13
+  },
+  {
+   "baseline_abs_move": 0.5,
+   "instrument": "XAUUSD",
+   "n_windows": 2,
+   "period_end_utc": "2026-03-03T13:30:00+00:00",
+   "period_start_utc": "2026-03-02T12:00:00+00:00",
+   "quantile": 0.75,
+   "utc_hour": 14
+  }
+ ],
+ "release_reactions": [
+  {
+   "bar_source": "dukascopy_1m",
+   "baseline_quantile": 0.75,
+   "event_time_utc": "2026-03-03T12:30:00+00:00",
+   "instrument": "US30",
+   "move": -90.0,
+   "move_pct": -0.22473,
+   "p0": 40048.0,
+   "p5": 39958.0,
+   "reaction": "sell",
+   "reaction_multiple": 1.0,
+   "status": "ok",
+   "typical_abs_move": 7.5
+  },
+  {
+   "bar_source": "dukascopy_1m",
+   "baseline_quantile": 0.75,
+   "event_time_utc": "2026-03-03T13:30:00+00:00",
+   "instrument": "US30",
+   "move": null,
+   "move_pct": null,
+   "p0": null,
+   "p5": null,
+   "reaction": null,
+   "reaction_multiple": 1.0,
+   "status": "no_data",
+   "typical_abs_move": 7.5
+  },
+  {
+   "bar_source": "dukascopy_1m",
+   "baseline_quantile": 0.75,
+   "event_time_utc": "2026-03-03T12:30:00+00:00",
+   "instrument": "XAUUSD",
+   "move": 5.0,
+   "move_pct": 0.249252,
+   "p0": 2006.0,
+   "p5": 2011.0,
+   "reaction": "buy",
+   "reaction_multiple": 1.0,
+   "status": "ok",
+   "typical_abs_move": 0.5
+  },
+  {
+   "bar_source": "dukascopy_1m",
+   "baseline_quantile": 0.75,
+   "event_time_utc": "2026-03-03T13:30:00+00:00",
+   "instrument": "XAUUSD",
+   "move": 0.5,
+   "move_pct": 0.024851,
+   "p0": 2012.0,
+   "p5": 2012.5,
+   "reaction": "none",
+   "reaction_multiple": 1.0,
+   "status": "ok",
+   "typical_abs_move": 0.5
+  }
+ ]
+}
