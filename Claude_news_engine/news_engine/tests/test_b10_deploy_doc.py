@@ -36,3 +36,12 @@ def test_every_named_script_exists() -> None:
     assert "scripts/backfill_shock_grades.py" in names
     for name in names:
         assert (APP / name).is_file(), name
+
+
+def test_stop_step_matches_b8_deploy_doc() -> None:
+    """The Get-CimInstance stop lines must equal B8's (a lone backslash-a in a .NET regex is BEL, not a path)."""
+    def _lines(path: Path) -> list[str]:
+        return [l for l in path.read_text(encoding="utf-8").splitlines() if l.startswith("Get-CimInstance")]
+
+    assert _lines(DOC) == _lines(APP / "docs" / "b8-deploy.md")
+    assert r"webapp\\app\.py" in _text()
