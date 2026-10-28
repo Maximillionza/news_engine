@@ -88,9 +88,13 @@ def _signed(strength: float, hotter: bool) -> Optional[float]:
     return strength if hotter else -strength
 
 
-def market_lean(event_title: str, surprise_side: int, symbol: str) -> str:
-    """'buy' | 'sell' | 'mixed' for one symbol given the surprise side (+1 higher, -1 lower, 0 in line)."""
-    surprise_map = EVENT_SURPRISE_DIRECTION.get(event_title)
+def market_lean(event_title: str, surprise_side: int, symbol: str, surprise_direction: Optional[str] = None) -> str:
+    """
+    'buy' | 'sell' | 'mixed' for one symbol given the surprise side (+1 higher, -1 lower, 0 in line).
+    surprise_direction ("higher_bullish" / "higher_bearish"), when given, replaces the EVENT_SURPRISE_DIRECTION
+    lookup (B12: the Kalshi phase's own sign for titles the shared map leaves out, e.g. Federal Funds Rate).
+    """
+    surprise_map = surprise_direction if surprise_direction is not None else EVENT_SURPRISE_DIRECTION.get(event_title)
     if surprise_map is None or surprise_side == 0:
         return "mixed"
     usd_bullish = (surprise_side > 0) == (surprise_map == "higher_bullish")
