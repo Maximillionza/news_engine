@@ -52,7 +52,7 @@ Approved by the owner on 2026-10-21 ('proceed'). Full detail, order rationale an
 | B9 Stats: honest scoreboard | Correctness, QoL | agreed; ST3-ST5 done in B9a; ST1-ST2 done 2026-10-28 (merged and live; B9 scoring-display change live since 2026-10-28 12:49:18 UTC = 14:49 SAST; owner accepted the Market reaction engine-column side effect: 18 cells per instrument changed as listed in docs/b9-deploy.md; no DB changes; pytest 2019/2019, npm 239/239 on live) |
 | B10 Grade shock-alert leans | Capability | agreed, not started |
 | B11 Dead code and consolidation | Cleanup | done 2026-10-22 (merged and live; no DB changes; pytest 1907/1907, npm 223/223 on live); C5 deferred to B10 |
-| B12 Tier 1 expansion (Core PCE, y/y, Kalshi) | Capability | agreed, not started; T12 done in B9a |
+| B12 Tier 1 expansion (Core PCE, y/y, Kalshi) | Capability | built on branch b12-tier1-expansion (T9, T10, T11, FedWatch fix; T12 done in B9a) |
 
 ---
 
