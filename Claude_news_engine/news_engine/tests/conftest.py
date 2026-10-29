@@ -11,6 +11,9 @@ This autouse fixture makes the unmocked defaults inert:
 - Ollama pointed at port 9 (discard; nothing listens) and at an
   executable path that doesn't exist -> no auto-start.
 - ANTHROPIC_API_KEY unset -> no real Claude call can authenticate.
+- ACT: the release-time actuals poller thread is switched off and the official
+  publisher keys (BLS/BEA/Census/EIA/FRED) read as empty, so no test starts the
+  thread or can authenticate against a publisher.
 
 Tests that patch these themselves still win inside their own
 `with patch(...)`. requests.post is deliberately not patched globally,
@@ -21,6 +24,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
+from data_layer.official_actuals.keys import Keys
 
 
 @pytest.fixture(autouse=True)
@@ -39,3 +44,7 @@ def _no_real_network(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     lock_dir = tmp_path / "locks"
     lock_dir.mkdir()
     monkeypatch.setattr("ops.single_instance.LOCK_DIR", lock_dir)
+    # ACT: no test starts the actuals poller thread, and none can read the owner's publisher keys.
+    monkeypatch.setattr("webapp.release_poller.POLLER_ENABLED", False)
+    monkeypatch.setattr("data_layer.official_actuals.keys.load_keys",
+                        lambda env_file=None: Keys(bls="", bea="", census="", eia="", fred=""))

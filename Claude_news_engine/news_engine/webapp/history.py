@@ -51,6 +51,7 @@ from webapp.store import get_connection, get_resolved_event_history, get_text_on
 from webapp.symbols import classify_symbol, usd_sign
 from webapp.conflict import compute_tier1_sentiment_conflict
 from data_layer.tier1_events import tier1_row_tier
+from data_layer.official_actuals.registry import PUBLISHER_SOURCES
 
 DEFAULT_HISTORY_LIMIT = 50
 
@@ -205,7 +206,7 @@ class HistoryRow:
     ne_confidence: float
     outcome: Optional[str]          # 'Confirmed' | 'Missed' | None
     unjudged_reason: Optional[str]  # None when outcome is a real verdict; else 'shrug' | 'unknown_surprise' | 'pending'
-    source: str                     # 'live' | 'seeded' | 'live_web_fallback' | 'fred' — for numeric rows, 'seeded' wins if either side of the join disagrees, else 'live_web_fallback' wins if either side is 'live_web_fallback', else 'fred' wins if either side is 'fred', else 'live'
+    source: str                     # 'live' | 'seeded' | 'live_web_fallback' | 'fred' | an ACT publisher label (bls, bea, census, eia, fed, treasury) — for numeric rows, 'seeded' wins if either side of the join disagrees, else 'live_web_fallback' wins if either side is 'live_web_fallback', else 'fred' wins if either side is 'fred', else 'live'
     tier1_conflict: Optional[dict] = None  # {"sentiment_direction": str, "tier1_direction": str, "tier1_tier": Optional[str]} when Tier 1 and this occurrence's own sentiment call genuinely disagree; None otherwise — see build_print_call_history() for which row shapes this applies to
     tier1_prediction: Optional[dict] = None  # the real Tier1PredictionRow, shaped via webapp.predictions_service._tier1_prediction_dict() (value/confidence/source/predicted_direction/tier/late_check; late_check is always None here) -- None when no Tier1 row exists for this occurrence/instrument, or for a print-call-backed row (instrument=None, same reasoning as tier1_conflict above: no single instrument to attach a Tier1 call to)
 
@@ -379,6 +380,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                             "seeded" if "seeded" in (event.source, prediction.source)
                             else "live_web_fallback" if "live_web_fallback" in (event.source, prediction.source)
                             else "cloud_web_fallback" if "cloud_web_fallback" in (event.source, prediction.source)
+                            else event.source if event.source in PUBLISHER_SOURCES
                             else "fred" if "fred" in (event.source, prediction.source)
                             else "live"
                         ),
@@ -429,12 +431,16 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                 # sides costs nothing and keeps this resilient to a future
                 # write path. 'cloud_web_fallback' follows the same reasoning:
                 # checked before 'fred' to respect its priority in the fallback
-                # chain (see task-1-brief.md). Must genuinely distinguish all five
-                # values — never collapse to a live/seeded boolean.
+                # chain (see task-1-brief.md). The ACT publisher labels (bls, bea,
+                # census, eia, fed, treasury: webapp/release_poller.py's official
+                # actuals) are event_history-only too and win over 'fred' (a row
+                # carries one source). Must genuinely distinguish every value —
+                # never collapse to a live/seeded boolean.
                 source=(
                     "seeded" if "seeded" in (event.source, call.source)
                     else "live_web_fallback" if "live_web_fallback" in (event.source, call.source)
                     else "cloud_web_fallback" if "cloud_web_fallback" in (event.source, call.source)
+                    else event.source if event.source in PUBLISHER_SOURCES
                     else "fred" if "fred" in (event.source, call.source)
                     else "live"
                 ),

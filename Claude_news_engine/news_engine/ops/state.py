@@ -28,6 +28,7 @@ JOB_NAMES: tuple[str, ...] = (
     "tier1_capture_weekly",
     "article_accumulator",
     "calendar_refresh",
+    "actuals_poller",      # ACT: the release-time actuals poller thread (heartbeat only)
 )
 
 _SCHEMA = """
@@ -45,6 +46,12 @@ CREATE TABLE IF NOT EXISTS health_notices (
 CREATE TABLE IF NOT EXISTS ops_meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS official_source_status (
+    source         TEXT PRIMARY KEY,
+    last_ok_utc    TEXT,
+    last_error_utc TEXT,
+    last_error     TEXT
 );
 """
 
@@ -147,3 +154,44 @@ def record_health_notice(conn: sqlite3.Connection, utc_date: dt.date, sent_at_ut
         (utc_date.isoformat(), sent_at_utc.isoformat(), detail),
     )
     conn.commit()
+
+
+def record_source_status(conn: sqlite3.Connection, source: str, ok: bool, now: dt.datetime,
+                         error: Optional[str] = None) -> None:
+    """
+    ACT: upsert how the last request to an official publisher went. An ok call
+    moves last_ok_utc only, a failed one moves last_error_utc and last_error
+    only (the exception class name, never a URL or key), so both stay readable.
+    """
+    stamp = now.isoformat()
+    if ok:
+        conn.execute(
+            """INSERT INTO official_source_status (source, last_ok_utc) VALUES (?, ?)
+               ON CONFLICT(source) DO UPDATE SET last_ok_utc = excluded.last_ok_utc""",
+            (source, stamp),
+        )
+    else:
+        conn.execute(
+            """INSERT INTO official_source_status (source, last_error_utc, last_error) VALUES (?, ?, ?)
+               ON CONFLICT(source) DO UPDATE SET
+                   last_error_utc = excluded.last_error_utc, last_error = excluded.last_error""",
+            (source, stamp, error),
+        )
+    conn.commit()
+
+
+@dataclass(frozen=True)
+class SourceStatus:
+    source: str
+    last_ok_utc: Optional[dt.datetime]
+    last_error_utc: Optional[dt.datetime]
+    last_error: Optional[str]
+
+
+def get_source_status(conn: sqlite3.Connection) -> dict[str, SourceStatus]:
+    rows = conn.execute(
+        "SELECT source, last_ok_utc, last_error_utc, last_error FROM official_source_status").fetchall()
+    return {
+        r["source"]: SourceStatus(r["source"], _parse(r["last_ok_utc"]), _parse(r["last_error_utc"]), r["last_error"])
+        for r in rows
+    }

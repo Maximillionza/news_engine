@@ -66,3 +66,27 @@ def test_touch_heartbeat_records_a_success(tmp_path):
 def test_touch_heartbeat_never_raises(tmp_path):
     # A directory is not an openable database: must be swallowed.
     assert state.touch_heartbeat("shock_poll", db_path=tmp_path) is None
+
+
+def test_record_source_status_upserts_ok_and_error(tmp_path):
+    conn = _conn(tmp_path)
+    t1 = dt.datetime(2026, 10, 29, 12, 30, tzinfo=UTC)
+    t2 = dt.datetime(2026, 10, 29, 12, 31, tzinfo=UTC)
+    t3 = dt.datetime(2026, 10, 29, 12, 32, tzinfo=UTC)
+    state.record_source_status(conn, "bea", True, t1)
+    state.record_source_status(conn, "bea", False, t2, "SourceRateLimited")
+    got = state.get_source_status(conn)["bea"]
+    assert got == state.SourceStatus("bea", t1, t2, "SourceRateLimited")          # an error leaves last_ok intact
+    state.record_source_status(conn, "bea", True, t3)
+    got = state.get_source_status(conn)["bea"]
+    assert got.last_ok_utc == t3 and got.last_error_utc == t2 and got.last_error == "SourceRateLimited"
+    state.record_source_status(conn, "bls", False, t2, "KeyInactiveError")        # a source first seen failing
+    assert state.get_source_status(conn)["bls"].last_ok_utc is None
+    assert conn.execute("SELECT COUNT(*) FROM official_source_status").fetchone()[0] == 2
+
+
+def test_actuals_poller_is_a_known_job(tmp_path):
+    assert "actuals_poller" in state.JOB_NAMES
+    conn = _conn(tmp_path)
+    state.record_job_run(conn, "actuals_poller", dt.datetime(2026, 10, 29, 12, 0, tzinfo=UTC), 0)
+    assert state.get_job_runs(conn)["actuals_poller"].last_exit_code == 0

@@ -354,3 +354,8 @@ def start_scheduler(tracked_symbols_provider: Callable[[], list[str]]) -> None:
 
     thread = threading.Thread(target=_loop, daemon=True)
     thread.start()
+    # ACT: the release-time actuals poller (60 s to T+15 min) runs on its own daemon thread. Imported here,
+    # lazily, so importing the scheduler does not load the publisher adapters, and so this append leaves
+    # the line pointers of docs/b8-deploy.md valid. A no-op under pytest (tests/conftest.py).
+    from webapp.release_poller import start_release_poller
+    start_release_poller()

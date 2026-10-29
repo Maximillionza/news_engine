@@ -751,3 +751,20 @@ def test_scoring_cycle_scores_with_sigma():
     # USD +0.469575 (z-based) times XAUUSD's inverse sign; today's percent method would give -0.079830.
     assert runs[0].raw_score == pytest.approx(-0.469575, abs=1e-6)
     print("PASS\n")
+
+
+def test_start_scheduler_starts_release_poller_once(monkeypatch):
+    import webapp.release_poller as release_poller
+
+    class _NoThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+    calls = []
+    monkeypatch.setattr(scheduler.threading, "Thread", _NoThread)        # the scoring loop must not run
+    monkeypatch.setattr(release_poller, "start_release_poller", lambda *a, **k: calls.append(1))
+    scheduler.start_scheduler(lambda: ["XAUUSD"])
+    assert calls == [1]

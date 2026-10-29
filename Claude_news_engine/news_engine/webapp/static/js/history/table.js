@@ -1,6 +1,7 @@
 import { escapeHtml, directionLabel, directionClass, directionPct, confidenceColorClass } from "../format.js";
 import { fetchHistory, fetchHistoryStats } from "../api.js";
 import { articleProgressionEntryHtml } from "../dashboard/article-progression.js";
+import { sourceBadge } from "./source-badge.js";
 
 let historyLoaded = false;
 // Batch 10: the whole table is small (~35 rows per the live review), so
@@ -199,13 +200,6 @@ function renderHistoryTable(rows) {
     const actualCell = r.unchanged_vs_previous
       ? `${escapeHtml(r.actual ?? "—")} <span class="meta-text-sm">(= prev)</span>`
       : escapeHtml(r.actual ?? "—");
-    const sourceBadge = r.source === "seeded"
-      ? ' <span class="meta-text-sm">(seeded)</span>'
-      : r.source === "live_web_fallback"
-      ? ' <span class="meta-text-sm">(web-sourced)</span>'
-      : r.source === "cloud_web_fallback"
-      ? ' <span class="meta-text-sm">(cloud-researched)</span>'
-      : "";
     // Numeric rows use higher/lower/in_line; text-event fallback rows use bullish/bearish/neutral.
     const predictionLabel = { higher: "Higher", lower: "Lower", in_line: "In-line", bullish: "Bullish", bearish: "Bearish", neutral: "Neutral" }[r.ne_prediction] || escapeHtml(r.ne_prediction);
     // 2026-09-17 fix: previously only rendered when Tier 1 and sentiment
@@ -252,7 +246,7 @@ function renderHistoryTable(rows) {
       ? ` <button class="history-drill-toggle-btn" data-target="${drillId}" data-event-title="${escapeHtml(r.event_title)}" data-instrument="${escapeHtml(r.instrument)}" aria-expanded="false" aria-controls="${drillId}">why ▾</button>`
       : "";
     return `<tr>
-      <td>${escapeHtml(r.event_title)}${sourceBadge}<br><span class="meta-text-sm">${dateLabel}</span>${drillToggle}</td>
+      <td>${escapeHtml(r.event_title)}${sourceBadge(r.source)}<br><span class="meta-text-sm">${dateLabel}</span>${drillToggle}</td>
       <td>${escapeHtml(r.instrument ?? "")}</td>
       <td>${escapeHtml(r.previous ?? "—")}</td>
       <td>${escapeHtml(r.forecast ?? "—")}</td>
