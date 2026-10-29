@@ -54,7 +54,7 @@ def test_render_has_one_section_per_sheet_with_its_titles_rule_and_every_data_ro
     sections = _sections(text)
     assert set(sections) == set(export.SECTIONS)
     assert "`CPI m/m` (formula)" in sections["POC_CPI_Leading_Indicators"]
-    assert "`PPI m/m` (judgment)" in sections["POC_PPI_Leading_Indicators"]
+    assert "`PPI m/m` (market_implied)" in sections["POC_PPI_Leading_Indicators"]
     assert "No event titles" in sections["POC_Sub_Event_Consolidation"]
     for body in sections.values():
         for label in ("**Rule:**", "**Rejected or not verified:**", "**Confidence rules:**"):
@@ -104,3 +104,33 @@ def test_check_exits_1_for_a_stale_doc_and_0_for_a_current_one(tmp_path: Path) -
     assert out.read_text(encoding="utf-8") == "stale\n"   # --check never writes
     assert export.main(["--workbook", str(WORKBOOK), "--out", str(out)]) == 0
     assert export.main(["--check", "--workbook", str(WORKBOOK), "--out", str(out)]) == 0
+
+
+def test_b12_cleveland_titles_are_formula_and_the_intro_names_the_year_file() -> None:
+    text = export.render(WORKBOOK)
+    sections = _sections(text)
+    assert "`CPI y/y` (formula)" in sections["POC_CPI_Leading_Indicators"]
+    assert "`Core CPI y/y` (formula)" in sections["POC_CPI_Leading_Indicators"]
+    assert "`Core PCE Price Index m/m` (formula)" in sections["POC_Core_PCE"]
+    intro = text.split("\n## ")[0]
+    assert "nowcast_year.json" in intro and "not seasonally adjusted" in intro
+
+
+def test_b12_kalshi_titles_are_market_implied_and_the_intro_states_the_rule() -> None:
+    text = export.render(WORKBOOK)
+    sections = _sections(text)
+    assert "`Non-Farm Employment Change` (market_implied)" in sections["POC_NFP_Leading_Indicators"]
+    assert "`ISM Manufacturing PMI` (market_implied)" in sections["POC_ISM_Manufacturing_PMI"]
+    assert "`Advance GDP q/q` (market_implied)" in sections["POC_GDP_Nowcast"]
+    assert "`Prelim GDP q/q` (judgment)" in sections["POC_GDP_Nowcast"]
+    assert "`Retail Sales m/m` (market_implied)" in sections["POC_Retail_Sales"]
+    assert "`Core Retail Sales m/m` (judgment)" in sections["POC_Retail_Sales"]
+    assert "`Federal Funds Rate` (market_implied)" in sections["POC_FOMC_Rate_Decision"]
+    assert "`FOMC Statement` (judgment)" in sections["POC_FOMC_Rate_Decision"]
+    for sheet, ticker in (("POC_NFP_Leading_Indicators", "KXPAYROLLS"), ("POC_PPI_Leading_Indicators", "KXUSPPI"),
+                          ("POC_ISM_Manufacturing_PMI", "KXISMPMI"), ("POC_Retail_Sales", "KXUSRETAIL"),
+                          ("POC_GDP_Nowcast", "KXGDP"), ("POC_FOMC_Rate_Decision", "KXFED")):
+        assert ticker in sections[sheet], sheet
+    intro = text.split("\n## ")[0]
+    assert "Kalshi market-implied" in intro and "KXFED" in intro
+    assert "reserved for roadmap B12" not in intro

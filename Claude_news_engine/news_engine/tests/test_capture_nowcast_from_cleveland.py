@@ -103,7 +103,7 @@ def test_a_malformed_chart_is_a_skip_not_a_crash():
 
 def test_titles_outside_the_cpi_family_are_skipped():
     got = cap.latest_nowcasts(DATA, [("PPI m/m", RELEASE)])[0]
-    assert got["value"] is None and "CPI-family" in got["reason"]
+    assert got["value"] is None and got["reason"] == "not a month-file nowcast title"
 
 
 def test_a_non_list_json_document_is_rejected_loudly():
@@ -136,7 +136,7 @@ def test_run_captures_a_live_snapshot_for_each_release_within_48_hours(conns):
     _event(dash, "Core CPI m/m", RELEASE)
     fetch = MagicMock(return_value=DATA)
     summary = cap.run(dash, bt, NOW, fetch)
-    fetch.assert_called_once_with()
+    fetch.assert_called_once_with("month")
     assert summary["skipped"] == []
     assert sorted(summary["captured"]) == [("CPI m/m", RELEASE.isoformat(), pytest.approx(0.47)),
                                            ("Core CPI m/m", RELEASE.isoformat(), pytest.approx(0.26))]
@@ -164,7 +164,7 @@ def test_run_includes_a_release_exactly_48_hours_out(conns):
     edge = NOW + dt.timedelta(hours=48)                                   # 2026-11-13 06:00Z
     _event(dash, "CPI m/m", edge)
     chart = _chart("2026-10", LABELS + ["11/13"], CPI + [""], CORE + [""])
-    summary = cap.run(dash, bt, NOW, lambda: [chart])
+    summary = cap.run(dash, bt, NOW, lambda key: [chart])
     assert [c[:2] for c in summary["captured"]] == [("CPI m/m", edge.isoformat())]
 
 
@@ -190,17 +190,17 @@ def test_run_ignores_events_outside_the_cpi_family(conns):
 def test_dry_run_reports_but_writes_nothing_and_needs_no_bt_connection(conns):
     dash, bt = conns
     _event(dash, "CPI m/m", RELEASE)
-    summary = cap.run(dash, bt, NOW, lambda: DATA, dry_run=True)
+    summary = cap.run(dash, bt, NOW, lambda key: DATA, dry_run=True)
     assert summary["dry_run"] is True and [c[0] for c in summary["captured"]] == ["CPI m/m"]
     assert _count(bt) == 0
-    assert cap.run(dash, None, NOW, lambda: DATA, dry_run=True)["captured"] == summary["captured"]
+    assert cap.run(dash, None, NOW, lambda key: DATA, dry_run=True)["captured"] == summary["captured"]
 
 
 def test_a_fetch_failure_raises_a_clear_error_and_writes_nothing(conns):
     dash, bt = conns
     _event(dash, "CPI m/m", RELEASE)
 
-    def down():
+    def down(key):
         raise ConnectionError("clevelandfed.org unreachable")
     with pytest.raises(cap.FetchError, match="clevelandfed.org unreachable"):
         cap.run(dash, bt, NOW, down)
@@ -211,7 +211,7 @@ def test_a_document_of_the_wrong_shape_is_a_fetch_error_and_writes_nothing(conns
     dash, bt = conns
     _event(dash, "CPI m/m", RELEASE)
     with pytest.raises(cap.FetchError):
-        cap.run(dash, bt, NOW, lambda: {"error": "maintenance"})
+        cap.run(dash, bt, NOW, lambda key: {"error": "maintenance"})
     assert _count(bt) == 0
 
 
@@ -220,7 +220,7 @@ def test_an_unparseable_value_is_skipped_and_never_written(conns):
     _event(dash, "CPI m/m", RELEASE)
     _event(dash, "Core CPI m/m", RELEASE)
     bad = _chart("2026-10", LABELS, CPI[:7] + ["n/a", "", ""], CORE)
-    summary = cap.run(dash, bt, NOW, lambda: [bad])
+    summary = cap.run(dash, bt, NOW, lambda key: [bad])
     assert [c[0] for c in summary["captured"]] == ["Core CPI m/m"]
     assert [s[0] for s in summary["skipped"]] == ["CPI m/m"] and "parse" in summary["skipped"][0][2]
     assert _count(bt) == 1
@@ -231,7 +231,7 @@ def test_a_stale_fed_value_is_skipped_rather_than_stamped_as_fetched_now(conns):
     _event(dash, "CPI m/m", RELEASE)
     stale_now = dt.datetime(2026, 11, 11, 6, 0, tzinfo=UTC)
     old = _chart("2026-10", LABELS, ["0.40", "0.41", "", "", "", "", "", "", "", ""], CORE)    # last value 11/02
-    summary = cap.run(dash, bt, stale_now, lambda: [old])
+    summary = cap.run(dash, bt, stale_now, lambda key: [old])
     assert summary["captured"] == [] and "stale" in summary["skipped"][0][2]
     assert _count(bt) == 0
 
@@ -243,7 +243,7 @@ def test_lookahead_refusal_from_capture_is_a_skip_and_writes_nothing(conns, monk
     def refuse(*args, **kwargs):
         raise ValueError("as_of_utc is after the release: a snapshot taken after the print cannot be scored")
     monkeypatch.setattr(cap, "capture", refuse)
-    summary = cap.run(dash, bt, NOW, lambda: DATA)
+    summary = cap.run(dash, bt, NOW, lambda key: DATA)
     assert summary["captured"] == [] and "after the release" in summary["skipped"][0][2]
     assert _count(bt) == 0
 
@@ -258,12 +258,12 @@ def test_the_real_capture_function_refuses_a_snapshot_after_the_release():
 def test_a_later_run_adds_a_newer_snapshot_and_the_same_instant_adds_none(conns):
     dash, bt = conns
     _event(dash, "CPI m/m", RELEASE)
-    cap.run(dash, bt, NOW, lambda: DATA)
-    cap.run(dash, bt, NOW, lambda: DATA)                                       # same instant: the store dedupes
+    cap.run(dash, bt, NOW, lambda key: DATA)
+    cap.run(dash, bt, NOW, lambda key: DATA)                                       # same instant: the store dedupes
     assert _count(bt) == 1
     later = NOW + dt.timedelta(hours=8)
     newer = _chart("2026-10", LABELS, CPI[:8] + ["0.55", ""], CORE)
-    cap.run(dash, bt, later, lambda: [newer])
+    cap.run(dash, bt, later, lambda key: [newer])
     assert _count(bt) == 2
     assert bs.get_scored_nowcast_snapshot(bt, "CPI m/m", RELEASE)["nowcast_value"] == pytest.approx(0.55)   # latest wins
 
@@ -271,10 +271,22 @@ def test_a_later_run_adds_a_newer_snapshot_and_the_same_instant_adds_none(conns)
 def test_run_requires_an_aware_now(conns):
     dash, bt = conns
     with pytest.raises(ValueError):
-        cap.run(dash, bt, dt.datetime(2026, 11, 11, 6, 0), lambda: DATA)
+        cap.run(dash, bt, dt.datetime(2026, 11, 11, 6, 0), lambda key: DATA)
 
 
 # --- default fetch and CLI -----------------------------------------------------------------------
+
+def test_default_fetch_uses_the_year_url_for_the_year_key():
+    resp = MagicMock()
+    resp.json.return_value = DATA
+    get = MagicMock(return_value=resp)
+    assert cap.fetch_cleveland_json("year", http_get=get) == DATA
+    get.assert_called_once()
+    assert get.call_args.args[0] == "https://www.clevelandfed.org/-/media/files/webcharts/inflationnowcasting/nowcast_year.json"
+    assert get.call_args.kwargs["timeout"] == 60
+    assert "nowcast" in get.call_args.kwargs["headers"]["User-Agent"]
+    resp.raise_for_status.assert_called_once()
+
 
 def test_default_fetch_downloads_once_with_a_60s_timeout_and_a_descriptive_user_agent():
     resp = MagicMock()
@@ -307,7 +319,7 @@ def _bt_rows(path):
 
 def test_cli_dry_run_prints_what_it_would_capture_and_writes_nothing(tmp_path, capsys):
     dash_path, bt_path = _db_files(tmp_path)
-    code = cap.main(["--dry-run", "--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda: DATA, now=NOW)
+    code = cap.main(["--dry-run", "--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda key: DATA, now=NOW)
     out = capsys.readouterr().out
     assert code == 0 and "WOULD capture" in out and "CPI m/m" in out and "0.47" in out
     assert not bt_path.exists() or _bt_rows(bt_path) == 0
@@ -315,7 +327,7 @@ def test_cli_dry_run_prints_what_it_would_capture_and_writes_nothing(tmp_path, c
 
 def test_cli_captures_into_the_given_bt_db_and_reports_it(tmp_path, capsys):
     dash_path, bt_path = _db_files(tmp_path)
-    code = cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda: DATA, now=NOW)
+    code = cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda key: DATA, now=NOW)
     assert code == 0 and "captured" in capsys.readouterr().out.lower()
     assert _bt_rows(bt_path) == 1
 
@@ -324,14 +336,14 @@ def test_cli_says_so_when_nothing_is_due(tmp_path, capsys):
     dash_path, bt_path = _db_files(tmp_path, with_event=False)
     fetch = MagicMock()
     code = cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=fetch, now=NOW)
-    assert code == 0 and "no cpi-family release within 48" in capsys.readouterr().out.lower()
+    assert code == 0 and "no formula-tier release within 48" in capsys.readouterr().out.lower()
     fetch.assert_not_called()
 
 
 def test_cli_fetch_failure_exits_1_with_a_clear_message_and_writes_nothing(tmp_path, capsys):
     dash_path, bt_path = _db_files(tmp_path)
 
-    def down():
+    def down(key):
         raise ConnectionError("timed out")
     code = cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=down, now=NOW)
     captured = capsys.readouterr()
@@ -353,7 +365,7 @@ def test_cli_opens_the_dashboard_db_read_only(tmp_path):
 def test_cli_exits_2_when_a_due_release_had_to_be_skipped(tmp_path, capsys):
     dash_path, bt_path = _db_files(tmp_path)
     bad = _chart("2026-10", LABELS, CPI[:7] + ["n/a", "", ""], CORE)
-    code = cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda: [bad], now=NOW)
+    code = cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda key: [bad], now=NOW)
     out = capsys.readouterr().out
     assert code == 2 and "SKIPPED CPI m/m" in out and "parse" in out
     assert _bt_rows(bt_path) == 0
@@ -432,8 +444,21 @@ def _track(dash, *symbols):
         ws.add_tracked_symbol(dash, symbol)
 
 
-def test_formula_titles_equal_the_cleveland_series_map():
-    assert set(tier1_titles(TIER1_FORMULA)) == set(cap.SERIES_MAP)
+def test_capture_series_match_the_live_cleveland_files():
+    assert cap.CAPTURE_SERIES == {
+        "CPI m/m": ("month", "CPI Inflation", "Actual CPI Inflation"),
+        "Core CPI m/m": ("month", "Core CPI Inflation", "Actual Core CPI Inflation"),
+        "Core PCE Price Index m/m": ("month", "Core PCE Inflation", "Actual Core PCE Inflation"),
+        "CPI y/y": ("year", "CPI Inflation", "Actual CPI Inflation"),
+        "Core CPI y/y": ("year", "Core CPI Inflation", "Actual Core CPI Inflation"),
+    }
+    assert cap.NOWCAST_URLS["month"] == cap.NOWCAST_URL
+    assert cap.NOWCAST_URLS["year"].endswith("/nowcast_year.json")
+
+
+def test_formula_titles_equal_the_capture_series():
+    assert (set(tier1_titles(TIER1_FORMULA)) == set(cap.CAPTURE_SERIES)
+            == {"CPI m/m", "Core CPI m/m", "CPI y/y", "Core CPI y/y", "Core PCE Price Index m/m"})
 
 
 def test_run_writes_dashboard_rows_per_tracked_symbol(conns):
@@ -441,7 +466,7 @@ def test_run_writes_dashboard_rows_per_tracked_symbol(conns):
     _track(dash, "XAUUSD", "US30")
     _event(dash, "CPI m/m", RELEASE)
     _event(dash, "Core CPI m/m", RELEASE)
-    summary = cap.run(dash, bt, NOW, lambda: DATA)
+    summary = cap.run(dash, bt, NOW, lambda key: DATA)
     # CPI 0.47 vs 0.3% is hotter (bearish gold and US30); Core 0.26 vs 0.3% is in line (neutral).
     assert [(r["event_title"], r["instrument"], r["predicted_direction"]) for r in _tier1(bt)] == [
         ("CPI m/m", "US30", "bearish"), ("CPI m/m", "XAUUSD", "bearish"),
@@ -462,8 +487,8 @@ def test_run_twice_with_the_same_nowcast_adds_snapshots_but_not_tier1_rows(conns
     _track(dash, "XAUUSD", "US30")
     _event(dash, "CPI m/m", RELEASE)
     _event(dash, "Core CPI m/m", RELEASE)
-    cap.run(dash, bt, NOW, lambda: DATA)
-    second = cap.run(dash, bt, NOW + dt.timedelta(hours=1), lambda: DATA)
+    cap.run(dash, bt, NOW, lambda key: DATA)
+    second = cap.run(dash, bt, NOW + dt.timedelta(hours=1), lambda key: DATA)
     assert _count(bt) == 4 and len(_tier1(bt)) == 4
     assert {r[4] for r in second["tier1_rows"]} == {"unchanged"} and len(second["tier1_rows"]) == 4
     assert ("CPI m/m", RELEASE.isoformat(), "XAUUSD", "bearish", "unchanged") in second["tier1_rows"]
@@ -479,14 +504,14 @@ def test_run_without_a_forecast_writes_no_tier1_row_and_reports_it(tmp_path, cap
         _track(dash, "XAUUSD")
         _event(dash, "CPI m/m", RELEASE, forecast=None)
 
-        summary = cap.run(dash, bs.get_connection(":memory:"), now, lambda: DATA)
+        summary = cap.run(dash, bs.get_connection(":memory:"), now, lambda key: DATA)
         assert [c[0] for c in summary["captured"]] == ["CPI m/m"]
         assert summary["tier1_rows"] == []
         assert summary["tier1_pending"] == [("CPI m/m", RELEASE.isoformat(), "no readable forecast yet")]
         assert [s[0] for s in summary["skipped"]] == (["CPI m/m"] if expected_code == 2 else [])
         dash.close()
 
-        code = cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda: DATA, now=now)
+        code = cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda key: DATA, now=now)
         out = capsys.readouterr().out
         assert code == expected_code and "TIER1 PENDING CPI m/m" in out and "no readable forecast" in out
         bt = bs.get_connection(bt_path)
@@ -503,14 +528,14 @@ def test_window_hours_192_includes_a_release_8_days_out_and_48_excludes_it(conns
     fetch.assert_not_called()
     assert narrow["captured"] == [] and "48 hours" in narrow["message"]
     wide = cap.run(dash, bt, NOW, fetch, window=dt.timedelta(hours=192))
-    fetch.assert_called_once_with()
+    fetch.assert_called_once_with("month")
     assert [c[:2] for c in wide["captured"]] == [("CPI m/m", far.isoformat())]
 
 
 def test_the_no_release_message_names_the_window(conns):
     dash, bt = conns
-    summary = cap.run(dash, bt, NOW, lambda: DATA, window=dt.timedelta(hours=192))
-    assert summary["message"] == "No CPI-family release within 192 hours: nothing to capture."
+    summary = cap.run(dash, bt, NOW, lambda key: DATA, window=dt.timedelta(hours=192))
+    assert summary["message"] == "No formula-tier release within 192 hours: nothing to capture."
 
 
 @pytest.mark.parametrize("bad", ["0", "-1", "240.5", "1000"])
@@ -518,7 +543,7 @@ def test_cli_rejects_a_non_positive_window(tmp_path, capsys, bad):
     dash_path, bt_path = _db_files(tmp_path)
     with pytest.raises(SystemExit) as exc:
         cap.main(["--window-hours", bad, "--dash-db", str(dash_path), "--bt-db", str(bt_path)],
-                 fetch=lambda: DATA, now=NOW)
+                 fetch=lambda key: DATA, now=NOW)
     assert exc.value.code == 2 and "--window-hours must be" in capsys.readouterr().err
     assert not bt_path.exists()
 
@@ -535,7 +560,7 @@ def test_cli_dry_run_reports_tier1_rows_and_writes_nothing(tmp_path, capsys):
     dash = ws.get_connection(str(dash_path))
     _track(dash, "XAUUSD", "USDJPY")
     dash.close()
-    code = cap.main(["--dry-run", "--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda: DATA, now=NOW)
+    code = cap.main(["--dry-run", "--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda key: DATA, now=NOW)
     out = capsys.readouterr().out
     assert code == 0
     assert "TIER1 CPI m/m XAUUSD: bearish (would write)" in out
@@ -548,8 +573,104 @@ def test_cli_prints_written_and_unchanged_tier1_rows(tmp_path, capsys):
     dash = ws.get_connection(str(dash_path))
     _track(dash, "US30")
     dash.close()
-    assert cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda: DATA, now=NOW) == 0
+    assert cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda key: DATA, now=NOW) == 0
     assert "TIER1 CPI m/m US30: bearish (written)" in capsys.readouterr().out
     later = NOW + dt.timedelta(hours=1)
-    assert cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda: DATA, now=later) == 0
+    assert cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda key: DATA, now=later) == 0
     assert "TIER1 CPI m/m US30: bearish (unchanged)" in capsys.readouterr().out
+
+
+# --- B12: Core PCE (month file) and CPI y/y / Core CPI y/y (year file) ---------------------------
+
+PCE_RELEASE = dt.datetime(2026, 10, 29, 12, 30, tzinfo=UTC)
+PCE_NOW = dt.datetime(2026, 10, 28, 5, 0, tzinfo=UTC)
+YY_RELEASE = dt.datetime(2026, 11, 10, 13, 30, tzinfo=UTC)
+
+
+def _chart_with(ref, labels, values):
+    """A real-structure chart (blank by default) with named series overridden: {series name: [values]}."""
+    n = len(labels)
+    chart = _chart(ref, labels, [""] * n, [""] * n)
+    for series in chart["dataset"]:
+        if series["seriesname"] in values:
+            series["data"] = [{"value": v, "tooltext": f"{series['seriesname']}{{br}}{labels[i]}{{br}}{v}{{br}}"}
+                              for i, v in enumerate(values[series["seriesname"]])]
+    return chart
+
+
+PCE_MONTH = [_chart_with("2026-9", ["09/30", "10/27", "10/28", "10/29"],
+                         {"Core PCE Inflation": ["0.25", "0.26", "0.27564074403495", ""]})]
+CPI_YEAR = [_chart_with("2026-10", ["10/30", "11/06", "11/09", "11/10"],
+                        {"CPI Inflation": ["3.60", "3.70", "3.74183045049836", ""],
+                         "Core CPI Inflation": ["3.10", "3.11", "3.12", ""]})]
+
+
+def test_latest_nowcasts_reads_core_pce_from_the_month_file():
+    got = cap.latest_nowcasts(PCE_MONTH, [("Core PCE Price Index m/m", PCE_RELEASE)], "month")[0]
+    assert got["value"] == pytest.approx(0.27564074403495) and got["value_date"] == dt.date(2026, 10, 28)
+    assert got["reason"] is None
+
+
+def test_latest_nowcasts_reads_cpi_yy_from_the_year_file():
+    got = cap.latest_nowcasts(CPI_YEAR, [("CPI y/y", YY_RELEASE)], "year")[0]
+    assert got["value"] == pytest.approx(3.74183045049836) and got["value_date"] == dt.date(2026, 11, 9)
+
+
+def test_latest_nowcasts_refuses_a_title_from_the_other_file():
+    got = cap.latest_nowcasts(CPI_YEAR, [("CPI y/y", YY_RELEASE)], "month")[0]
+    assert got["value"] is None and got["reason"] == "not a month-file nowcast title"
+    got = cap.latest_nowcasts(PCE_MONTH, [("Core PCE Price Index m/m", PCE_RELEASE)], "year")[0]
+    assert got["value"] is None and got["reason"] == "not a year-file nowcast title"
+
+
+def _keyed_fetch(calls):
+    files = {"month": PCE_MONTH + DATA, "year": CPI_YEAR}
+
+    def fetch(key):
+        calls.append(key)
+        return files[key]
+    return fetch
+
+
+def test_run_fetches_each_needed_file_once(conns):
+    dash, bt = conns
+    calls: list = []
+    _event(dash, "Core PCE Price Index m/m", PCE_RELEASE)
+    cap.run(dash, bt, PCE_NOW, _keyed_fetch(calls))
+    assert calls == ["month"]
+
+    dash, bt = ws.get_connection(":memory:"), bs.get_connection(":memory:")
+    calls = []
+    now = dt.datetime(2026, 11, 9, 6, 0, tzinfo=UTC)
+    for title in ("CPI m/m", "CPI y/y", "Core CPI y/y"):
+        _event(dash, title, YY_RELEASE)
+    cap.run(dash, bt, now, _keyed_fetch(calls))
+    assert sorted(calls) == ["month", "year"]
+
+    dash, bt = ws.get_connection(":memory:"), bs.get_connection(":memory:")
+    calls = []
+    cap.run(dash, bt, PCE_NOW, _keyed_fetch(calls))
+    assert calls == []
+
+
+def test_run_writes_core_pce_formula_rows(conns):
+    dash, bt = conns
+    _track(dash, "XAUUSD", "US30")
+    _event(dash, "Core PCE Price Index m/m", PCE_RELEASE, forecast="0.3%")
+    summary = cap.run(dash, bt, PCE_NOW, lambda key: PCE_MONTH)
+    snap = bt.execute("SELECT event_title, nowcast_value FROM tier1_nowcast_snapshots").fetchall()
+    assert [(r["event_title"], r["nowcast_value"]) for r in snap] == [("Core PCE Price Index m/m", pytest.approx(0.27564074403495))]
+    rows = _tier1(bt)
+    assert [(r["instrument"], r["predicted_direction"], r["source"]) for r in rows] == [
+        ("US30", "neutral", TIER1_FORMULA_SOURCE), ("XAUUSD", "neutral", TIER1_FORMULA_SOURCE)]
+    assert summary["skipped"] == []
+
+
+def test_run_cpi_yy_hotter_is_bearish_gold(conns):
+    dash, bt = conns
+    _track(dash, "XAUUSD", "US30")
+    _event(dash, "CPI y/y", YY_RELEASE, forecast="3.6%")
+    now = dt.datetime(2026, 11, 9, 6, 0, tzinfo=UTC)
+    cap.run(dash, bt, now, lambda key: CPI_YEAR)
+    assert [(r["instrument"], r["predicted_direction"]) for r in _tier1(bt)] == [
+        ("US30", "bearish"), ("XAUUSD", "bearish")]

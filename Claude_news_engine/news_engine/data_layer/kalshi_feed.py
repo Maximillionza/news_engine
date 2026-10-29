@@ -3,7 +3,8 @@ Thin, read-only HTTP client for Kalshi's free, unauthenticated public
 market-data API (external-api.kalshi.com/trade-api/v2) — confirmed live
 this session: no API key needed for GET /events, /markets. Mirrors
 data_layer/dukascopy_feed.py's shape: contains the third-party API's
-response structure to this one file, callers only ever see KalshiRead.
+response structure to this one file, callers only ever see KalshiRead
+(or, for B12's market-implied Tier 1, a whole KalshiLadder).
 
 READ-ONLY. This module never authenticates, never places or cancels an
 order, never touches Kalshi's trading endpoints — only the public market-
@@ -35,6 +36,28 @@ class KalshiRead:
     implied_direction: str      # 'higher' | 'lower' | 'in_line'
     implied_probability: float  # 0.0-1.0, the yes-price midpoint
     open_interest: float
+
+
+class KalshiFetchError(RuntimeError):
+    """get_ladder could not read Kalshi (HTTP, JSON or response-shape error) - a skip, not a 'no market'."""
+
+
+@dataclass(frozen=True)
+class KalshiStrike:
+    strike: float          # floor_strike as Kalshi lists it (KXPAYROLLS in jobs, the rest in the print's unit)
+    yes_bid: float         # 0.0-1.0
+    yes_ask: float         # 0.0-1.0; 0 means nobody is offering
+    open_interest: float
+
+
+@dataclass(frozen=True)
+class KalshiLadder:
+    event_ticker: str
+    strikes: tuple[KalshiStrike, ...]   # ascending by strike
+
+
+# How a series tickets its events (live-verified 2026-10-28, see get_ladder).
+LADDER_TICKETING: tuple[str, ...] = ("reference_month", "meeting_month", "release_date")
 
 
 _MONTH_ABBREVIATIONS = [
@@ -220,3 +243,60 @@ def get_market_read_by_date(series_ticker: str, event_date: dt.date, target_stri
     except Exception as exc:  # noqa: BLE001 — a failed fetch/parse must degrade to None, never crash the caller
         print(f"[kalshi_feed] WARNING: date-ticketed fetch failed for {series_ticker}: {exc}")
         return None
+
+
+def _month_before(release_utc: dt.datetime) -> dt.date:
+    """First day of the month before the release's (UTC) month: the reference month of a monthly print."""
+    first = release_utc.date().replace(day=1)
+    return (first - dt.timedelta(days=1)).replace(day=1)
+
+
+def get_ladder(series_ticker: str, ticketing: str, release_utc: dt.datetime) -> Optional[KalshiLadder]:
+    """
+    B12 (T10): the whole open strike ladder of the event that resolves on this release, for the
+    market-implied Tier 1 rule (webapp/tier1_market.py). How the event is found depends on how the
+    series tickets it (live-verified 2026-10-28):
+      reference_month - the month the print measures, i.e. the month before the release
+                        (KXPAYROLLS-26OCT settles on the Oct jobs report released 2026-11-06; KXISMPMI);
+      meeting_month   - the release's own month (KXFED-26DEC is the 2026-12-09 FOMC decision);
+      release_date    - the release date, with _resolve_event_ticker_by_date's +/-1 day tolerance
+                        (KXGDP-26OCT30 for a 2026-10-29 release; KXUSPPI, KXUSRETAIL).
+    Then GET /markets {event_ticker, status=open}.
+
+    Returns None when no event matches or the event has no open markets (no market = no call). Unlike
+    get_market_read it does NOT swallow failures: an HTTP, JSON or response-shape error raises
+    KalshiFetchError, because the capture reports an unreadable source as a skip, not as "no market".
+    """
+    if ticketing not in LADDER_TICKETING:
+        raise ValueError(f"ticketing={ticketing!r} is not valid -- must be one of: {', '.join(LADDER_TICKETING)}")
+    try:
+        if ticketing == "reference_month":
+            event_ticker = _resolve_event_ticker(series_ticker, _month_before(release_utc))
+        elif ticketing == "meeting_month":
+            event_ticker = _resolve_event_ticker(series_ticker, release_utc.date())
+        else:
+            event_ticker = _resolve_event_ticker_by_date(series_ticker, release_utc.date())
+        if event_ticker is None:
+            return None
+        resp = requests.get(
+            f"{KALSHI_BASE_URL}/markets",
+            params={"event_ticker": event_ticker, "status": "open"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        markets = resp.json().get("markets", [])
+        strikes = [
+            KalshiStrike(
+                strike=float(m["floor_strike"]),
+                yes_bid=float(m["yes_bid_dollars"]),
+                yes_ask=float(m["yes_ask_dollars"]),
+                open_interest=float(m["open_interest_fp"]),
+            )
+            for m in markets
+        ]
+    except (requests.RequestException, ValueError, KeyError, TypeError, AttributeError) as exc:
+        # ValueError covers unparseable JSON and non-numeric fields; Key/Type/AttributeError a changed shape.
+        raise KalshiFetchError(f"{series_ticker} ({ticketing}) ladder read failed: {exc}") from exc
+    if not strikes:
+        return None
+    return KalshiLadder(event_ticker=event_ticker, strikes=tuple(sorted(strikes, key=lambda s: s.strike)))

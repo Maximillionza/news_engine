@@ -115,7 +115,7 @@ def _print_prediction_dict(print_call) -> dict:
 def _tier1_prediction_dict(tier1_row, late_check_row=None) -> dict:
     """
     The shared tier1_prediction shape built from a Tier1PredictionRow — same extraction reasoning as _print_prediction_dict() above.
-    "tier" is derived from the row's source (B3 / T2); "late_check" is the newest late check
+    "tier" is derived from the row's source and value (B3 / T2, B12 FedWatch); "late_check" is the newest late check
     only when it was made on THIS row (a check on an older call of record is not shown).
     """
     late_check = None
@@ -130,7 +130,7 @@ def _tier1_prediction_dict(tier1_row, late_check_row=None) -> dict:
         "confidence": tier1_row.confidence,
         "source": tier1_row.source,
         "predicted_direction": tier1_row.predicted_direction,
-        "tier": tier1_row_tier(tier1_row.source),
+        "tier": tier1_row_tier(tier1_row.source, tier1_row.value),
         "late_check": late_check,
     }
 

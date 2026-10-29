@@ -7,6 +7,8 @@ import os
 import datetime as dt
 from unittest.mock import patch, MagicMock
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import data_layer.kalshi_feed as kalshi_feed
@@ -310,6 +312,120 @@ def test_resolve_event_ticker_by_date_fails_closed_with_no_match():
         assert result is None
         assert mock_get.call_count == 1  # never reached the /markets fetch
     print("PASS\n")
+
+
+# --- B12 T10: get_ladder (full strike ladder for the market-implied Tier 1 rule) ---------------------
+
+class _Router:
+    """Fake requests.get: answers /events and /markets from fixed bodies and records every call."""
+
+    def __init__(self, events, markets_by_event):
+        self.events = events
+        self.markets_by_event = markets_by_event
+        self.calls = []
+
+    def __call__(self, url, params=None, timeout=None):
+        self.calls.append((url, dict(params or {})))
+        if url.endswith("/events"):
+            return _fake_response({"events": [{"event_ticker": t} for t in self.events]})
+        body = {"markets": self.markets_by_event.get((params or {}).get("event_ticker"), [])}
+        return _fake_response(body)
+
+
+def _ladder_markets(strikes):
+    """strikes: list of (floor_strike, yes_bid, yes_ask, open_interest) - deliberately NOT in strike order."""
+    return [
+        {"floor_strike": s, "yes_bid_dollars": f"{bid:.4f}", "yes_ask_dollars": f"{ask:.4f}",
+         "open_interest_fp": f"{oi:.2f}", "strike_type": "greater"}
+        for s, bid, ask, oi in strikes
+    ]
+
+
+def test_get_ladder_reference_month_uses_the_month_before_release():
+    router = _Router(
+        ["KXPAYROLLS-26NOV", "KXPAYROLLS-26OCT"],
+        {"KXPAYROLLS-26OCT": _ladder_markets([(70000, 0.49, 0.51, 23497.53), (-25000, 0.91, 0.94, 3784.9),
+                                               (50000, 0.55, 0.59, 20239.13)])},
+    )
+    with patch.object(kalshi_feed.requests, "get", side_effect=router):
+        ladder = kalshi_feed.get_ladder("KXPAYROLLS", "reference_month",
+                                        dt.datetime(2026, 11, 6, 13, 30, tzinfo=dt.timezone.utc))
+    assert ladder.event_ticker == "KXPAYROLLS-26OCT"
+    assert router.calls[-1] == (kalshi_feed.KALSHI_BASE_URL + "/markets",
+                                {"event_ticker": "KXPAYROLLS-26OCT", "status": "open"})
+    assert [s.strike for s in ladder.strikes] == [-25000.0, 50000.0, 70000.0]
+    first = ladder.strikes[0]
+    assert (first.yes_bid, first.yes_ask, first.open_interest) == (0.91, 0.94, 3784.9)
+
+
+def test_get_ladder_meeting_month_uses_the_release_month():
+    router = _Router(["KXFED-26OCT", "KXFED-26DEC"],
+                     {"KXFED-26DEC": _ladder_markets([(4.0, 0.79, 0.82, 26971.19)])})
+    with patch.object(kalshi_feed.requests, "get", side_effect=router):
+        ladder = kalshi_feed.get_ladder("KXFED", "meeting_month",
+                                        dt.datetime(2026, 12, 9, 19, 0, tzinfo=dt.timezone.utc))
+    assert ladder.event_ticker == "KXFED-26DEC"
+    assert router.calls[-1][1]["event_ticker"] == "KXFED-26DEC"
+
+
+def test_get_ladder_release_date_tolerates_one_day():
+    router = _Router(["KXGDP-26OCT30"], {"KXGDP-26OCT30": _ladder_markets([(3.0, 0.53, 0.55, 21369.42)])})
+    with patch.object(kalshi_feed.requests, "get", side_effect=router):
+        ladder = kalshi_feed.get_ladder("KXGDP", "release_date",
+                                        dt.datetime(2026, 10, 29, 12, 30, tzinfo=dt.timezone.utc))
+    assert ladder.event_ticker == "KXGDP-26OCT30"
+
+
+def test_get_ladder_none_when_no_event_matches():
+    release = dt.datetime(2026, 11, 6, 13, 30, tzinfo=dt.timezone.utc)
+    router = _Router(["KXPAYROLLS-26SEP"], {})
+    with patch.object(kalshi_feed.requests, "get", side_effect=router):
+        assert kalshi_feed.get_ladder("KXPAYROLLS", "reference_month", release) is None
+    assert len(router.calls) == 1   # never reached /markets
+    # An event that resolves but has no open markets is also no ladder.
+    router = _Router(["KXPAYROLLS-26OCT"], {})
+    with patch.object(kalshi_feed.requests, "get", side_effect=router):
+        assert kalshi_feed.get_ladder("KXPAYROLLS", "reference_month", release) is None
+
+
+def test_get_ladder_raises_on_http_error():
+    release = dt.datetime(2026, 11, 6, 13, 30, tzinfo=dt.timezone.utc)
+    failing = MagicMock()
+    failing.raise_for_status.side_effect = kalshi_feed.requests.HTTPError("503 Service Unavailable")
+    with patch.object(kalshi_feed.requests, "get", return_value=failing):
+        with pytest.raises(kalshi_feed.KalshiFetchError):
+            kalshi_feed.get_ladder("KXPAYROLLS", "reference_month", release)
+    with patch.object(kalshi_feed.requests, "get", side_effect=kalshi_feed.requests.ConnectionError("down")):
+        with pytest.raises(kalshi_feed.KalshiFetchError):
+            kalshi_feed.get_ladder("KXPAYROLLS", "reference_month", release)
+    # Unparseable JSON and a market missing its strike are shape errors, not a silent None.
+    bad_json = MagicMock()
+    bad_json.raise_for_status.return_value = None
+    bad_json.json.side_effect = ValueError("Expecting value")
+    with patch.object(kalshi_feed.requests, "get", return_value=bad_json):
+        with pytest.raises(kalshi_feed.KalshiFetchError):
+            kalshi_feed.get_ladder("KXPAYROLLS", "reference_month", release)
+    router = _Router(["KXPAYROLLS-26OCT"], {"KXPAYROLLS-26OCT": [{"yes_bid_dollars": "0.5"}]})
+    with patch.object(kalshi_feed.requests, "get", side_effect=router):
+        with pytest.raises(kalshi_feed.KalshiFetchError):
+            kalshi_feed.get_ladder("KXPAYROLLS", "reference_month", release)
+    with pytest.raises(ValueError):
+        kalshi_feed.get_ladder("KXPAYROLLS", "weekly", release)
+
+
+def test_get_ladder_only_reads_events_and_markets():
+    cases = [
+        ("KXPAYROLLS", "reference_month", dt.datetime(2026, 11, 6, 13, 30, tzinfo=dt.timezone.utc),
+         ["KXPAYROLLS-26OCT"]),
+        ("KXFED", "meeting_month", dt.datetime(2026, 12, 9, 19, 0, tzinfo=dt.timezone.utc), ["KXFED-26DEC"]),
+        ("KXGDP", "release_date", dt.datetime(2026, 10, 29, 12, 30, tzinfo=dt.timezone.utc), ["KXGDP-26OCT30"]),
+    ]
+    allowed = {kalshi_feed.KALSHI_BASE_URL + "/events", kalshi_feed.KALSHI_BASE_URL + "/markets"}
+    for series, ticketing, release, events in cases:
+        router = _Router(events, {events[0]: _ladder_markets([(1.0, 0.4, 0.5, 100.0)])})
+        with patch.object(kalshi_feed.requests, "get", side_effect=router):
+            assert kalshi_feed.get_ladder(series, ticketing, release) is not None
+        assert router.calls and {url for url, _ in router.calls} <= allowed
 
 
 if __name__ == "__main__":

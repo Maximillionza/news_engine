@@ -978,3 +978,82 @@ def test_honest_rates_show_percent_from_20(conns):
     assert board19["methods"]["tier1"]["directional"]["accuracy_shown"] is False
     assert board19["in_line_baseline"]["tier1"]["accuracy"] is None
     assert board19["in_line_baseline"]["tier1"]["accuracy_shown"] is False
+
+
+def test_core_pce_without_snapshot_keeps_its_hand_logged_call(conns):
+    # B12: Core PCE moved to formula, but its past LLM-logged calls must still score and read as judgment.
+    dash, bt = conns
+    _event(dash, "Core PCE Price Index m/m", _t(9, 30), "0.2%", "0.4%")
+    bs.record_tier1_prediction(bt, "Core PCE Price Index m/m", "XAUUSD", _t(9, 30), "hot", "Likely",
+                               "https://www.clevelandfed.org/indicators-and-data/inflation-nowcasting", "bearish",
+                               logged_at_utc=_t(9, 30) - dt.timedelta(days=3))
+    row = svc.build_rows(dash, bt, event_title="Core PCE Price Index m/m")[-1]
+    assert row.tier1.note == "hand-logged" and row.tier1_tier == "judgment"
+    _snap(bt, "Core PCE Price Index m/m", _t(9, 30), 0.4)
+    row = svc.build_rows(dash, bt, event_title="Core PCE Price Index m/m")[-1]
+    assert row.tier1_tier == "formula"
+
+
+def test_kalshi_rows_label_market_implied_on_stats(conns):
+    # B12: a Kalshi capture row is the NFP call of record; gold bearish = USD up = hotter, side +1.
+    dash, bt = conns
+    _event(dash, "Non-Farm Employment Change", _t(11, 6), "50K", "120K")
+    bs.record_tier1_prediction(bt, "Non-Farm Employment Change", "XAUUSD", _t(11, 6),
+                               "Kalshi KXPAYROLLS-26OCT implied median 70.0000 vs forecast 50K: hotter than forecast",
+                               "Likely", "Kalshi market-implied", "bearish",
+                               logged_at_utc=_t(11, 6) - dt.timedelta(days=2))
+    row = svc.build_rows(dash, bt, event_title="Non-Farm Employment Change")[-1]
+    assert row.tier1_tier == "market_implied"
+    assert row.tier1.side == 1 and row.tier1.note == "hand-logged" and row.tier1.verdict == "right"
+    assert row.detail.hand_logged["source"] == "Kalshi market-implied"
+
+
+def _kalshi_row(bt, title, when, value, direction):
+    bs.record_tier1_prediction(bt, title, "XAUUSD", when, value, "Likely", "Kalshi market-implied", direction,
+                               logged_at_utc=when - dt.timedelta(days=2))
+
+
+def test_kalshi_rows_for_titles_outside_the_shared_map_are_scored_with_the_series_sign(conns):
+    # B12 review: Federal Funds Rate and Advance GDP q/q have no EVENT_SURPRISE_DIRECTION entry, so the shared
+    # reverse map gave side None and every Kalshi row went unscored. The row's own MARKET_SERIES sign is used.
+    dash, bt = conns
+    assert "Federal Funds Rate" not in EVENT_SURPRISE_DIRECTION and "Advance GDP q/q" not in EVENT_SURPRISE_DIRECTION
+    _event(dash, "Federal Funds Rate", _t(12, 9), "4.00%", "4.25%")
+    _kalshi_row(bt, "Federal Funds Rate", _t(12, 9),
+                "Kalshi KXFED-26DEC implied median 4.2500 vs forecast 4.00%: hotter than forecast", "bearish")
+    fed = svc.build_rows(dash, bt, event_title="Federal Funds Rate")[-1]
+    assert fed.tier1_tier == "market_implied" and fed.tier1.note == "hand-logged"
+    assert fed.tier1.side == 1 and fed.tier1.verdict == "right"       # gold bearish = USD up = higher rate
+    assert fed.tier1.leans["XAUUSD"] == "sell"
+    assert fed.news is None                                           # Ruling 3 unchanged: no News call
+
+    _event(dash, "Advance GDP q/q", _t(10, 29), "3.2%", "3.5%")
+    _kalshi_row(bt, "Advance GDP q/q", _t(10, 29),
+                "Kalshi KXGDP-26OCT30 implied median 3.0735 vs forecast 3.2%: cooler than forecast", "bullish")
+    gdp = svc.build_rows(dash, bt, event_title="Advance GDP q/q")[-1]
+    assert gdp.tier1.side == -1 and gdp.tier1.verdict == "wrong"      # called cooler, printed hotter
+    assert gdp.tier1.leans["XAUUSD"] == "buy"
+    board = svc.build_scoreboard([fed, gdp])["methods"]["tier1"]
+    assert board["scored"] == 2 and board["right"] == 1
+
+
+def test_neutral_kalshi_row_is_still_no_call(conns):
+    dash, bt = conns
+    _event(dash, "Federal Funds Rate", _t(12, 9), "4.25%", "4.25%")
+    _kalshi_row(bt, "Federal Funds Rate", _t(12, 9),
+                "Kalshi KXFED-26DEC implied median 4.2500 vs forecast 4.25%: in line with forecast", "neutral")
+    row = svc.build_rows(dash, bt, event_title="Federal Funds Rate")[-1]
+    assert row.tier1.side is None and row.tier1.verdict is None and row.tier1.leans == {}
+
+
+def test_judgment_fedwatch_row_keeps_the_shared_map(conns):
+    # Only the Kalshi source reads the series sign; a pre-B12 FedWatch row (judgment-written) is unchanged:
+    # Federal Funds Rate has no shared-map entry, so it stays unscored.
+    dash, bt = conns
+    _event(dash, "Federal Funds Rate", _t(12, 9), "4.00%", "4.25%")
+    bs.record_tier1_prediction(bt, "Federal Funds Rate", "XAUUSD", _t(12, 9), "CME FedWatch: ~85% hike priced",
+                               "Likely", "https://fxstreet.com/x", "bearish",
+                               logged_at_utc=_t(12, 9) - dt.timedelta(days=2))
+    row = svc.build_rows(dash, bt, event_title="Federal Funds Rate")[-1]
+    assert row.tier1_tier == "market_implied"
+    assert row.tier1.side is None and row.tier1.verdict is None

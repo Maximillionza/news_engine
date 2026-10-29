@@ -148,7 +148,8 @@ def compute_history_stats(rows: list[HistoryRow]) -> HistoryStats:
     return HistoryStats(overall=overall, by_event_title=by_title)
 
 
-def _implied_surprise_direction(event_title: str, instrument: str, direction: str) -> Optional[str]:
+def _implied_surprise_direction(event_title: str, instrument: str, direction: str,
+                                surprise_direction: Optional[str] = None) -> Optional[str]:
     """
     Reverses score_bundle()'s instrument-mapping (see
     scoring/probability_engine.py's _map_to_instrument_score()) to recover
@@ -162,8 +163,16 @@ def _implied_surprise_direction(event_title: str, instrument: str, direction: st
     entry — should not happen in practice (a resolved row's
     surprise_direction can only be non-None when classify_surprise()
     found one), but never fabricates a guess if it somehow does.
+
+    surprise_direction ("higher_bullish" / "higher_bearish"), when given,
+    replaces the EVENT_SURPRISE_DIRECTION lookup -- the same optional
+    override stats_methods.market_lean has (B12). Stats passes it for a
+    Kalshi market-implied Tier 1 row, so the row is read back with the
+    sign it was written with (webapp.tier1_market.MARKET_SERIES), which
+    also covers Federal Funds Rate and Advance GDP q/q, the two titles the
+    shared map leaves out. Every existing caller omits it: unchanged.
     """
-    surprise_map = EVENT_SURPRISE_DIRECTION.get(event_title)
+    surprise_map = surprise_direction if surprise_direction is not None else EVENT_SURPRISE_DIRECTION.get(event_title)
     if surprise_map is None:
         return None
     # usd_relationship comes from webapp.symbols.classify_symbol() (2026-09-13),
@@ -326,7 +335,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                     tier1_row = tier1_by_occurrence.get((event.event_title, instrument, event_time.isoformat()))
                     fallback_tier1_conflict = compute_tier1_sentiment_conflict(
                         prediction.direction, tier1_row.predicted_direction if tier1_row is not None else None,
-                        tier1_row_tier(tier1_row.source) if tier1_row is not None else None,
+                        tier1_row_tier(tier1_row.source, tier1_row.value) if tier1_row is not None else None,
                     )
 
                     fallback_outcome: Optional[str] = None
@@ -466,7 +475,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                 tier1_row = tier1_by_occurrence.get((event.event_title, instrument, event_time.isoformat()))
                 text_tier1_conflict = compute_tier1_sentiment_conflict(
                     prediction.direction, tier1_row.predicted_direction if tier1_row is not None else None,
-                    tier1_row_tier(tier1_row.source) if tier1_row is not None else None,
+                    tier1_row_tier(tier1_row.source, tier1_row.value) if tier1_row is not None else None,
                 )
 
                 text_outcome: Optional[str] = None

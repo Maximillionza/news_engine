@@ -82,3 +82,15 @@ def test_news_side_pre_registered_threshold():
     assert news_side(0.5) == 1 and news_side(-1.0) == -1
     assert news_side(None) is None
     assert all(news_side(i / 100) != 0 for i in range(-100, 101))     # never 'in line'
+
+
+def test_market_lean_override_and_default_unchanged():
+    # B12: Federal Funds Rate has no EVENT_SURPRISE_DIRECTION entry, so the default stays "mixed"; the Kalshi
+    # phase passes its own higher = USD-bullish sign.
+    assert market_lean("Federal Funds Rate", 1, "XAUUSD") == "mixed"
+    assert market_lean("Federal Funds Rate", 1, "XAUUSD", surprise_direction="higher_bullish") == "sell"
+    assert market_lean("Federal Funds Rate", -1, "USDJPY", surprise_direction="higher_bullish") == "sell"
+    assert market_lean("Federal Funds Rate", 0, "XAUUSD", surprise_direction="higher_bullish") == "mixed"
+    # The override replaces the shared map, it does not merge with it.
+    assert market_lean("CPI m/m", 1, "XAUUSD", surprise_direction="higher_bearish") == "buy"
+    assert market_lean("CPI m/m", 1, "XAUUSD") == "sell"
