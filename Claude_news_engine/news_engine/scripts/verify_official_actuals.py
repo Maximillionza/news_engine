@@ -27,7 +27,15 @@ write that title:
     comparison is revision-blind;
   - verified = at least GATE_MIN_COMPARISONS comparisons and agreement >=
     VERIFY_AGREEMENT_THRESHOLD (B8's 0.8); fewer comparisons = unverified, lower
-    agreement = suspect; a publisher error = unavailable / key_inactive.
+    agreement = suspect; a publisher error = unavailable / key_inactive;
+  - titles that read the same published series (Advance/Prelim/Final GDP q/q,
+    Prelim/Revised Productivity, ...) are scored on the POOLED comparisons of
+    all of them: the mapping (series, units, formatting) is what the gate
+    proves, and it is identical for every such title. Each title's comparisons
+    still use its own period and re-estimate rule; a title with no history of
+    its own (Advance GDP before its first gated release) inherits the status
+    of its series. The title's own counts stay in matches/comparisons, the
+    pooled ones are series_matches/series_comparisons.
 
 READ-ONLY: the DB is opened `mode=ro`, and only HTTP GETs/POSTs to the
 official APIs and FRED are made. `--write-results` writes the committed
@@ -52,7 +60,7 @@ import os
 import sqlite3
 import sys
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping, Optional, Protocol
 
@@ -60,7 +68,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import LOCAL_TZ, UTC_TZ
 from data_layer.fred_history import FredClient, FredFetchError, FredMaintenanceError, InitialRelease, transform_at
-from data_layer.official_actuals.coverage import GATE_RESULTS_PATH
+from data_layer.official_actuals.coverage import GATE_RESULTS_PATH, titles_sharing_series
 from data_layer.official_actuals.fetch import fetch_for_specs, series_key
 from data_layer.official_actuals.http import Fetcher, KeyInactiveError, requests_fetcher
 from data_layer.official_actuals.keys import Keys, load_keys
@@ -125,6 +133,18 @@ class TitleGate:
     # Rows compared with another period than expected_period, or skipped, per the twin's first prints.
     # Printed in the report only; not part of gate_results.json.
     period_notes: list[str] = field(default_factory=list)
+    # Pooled over every gated title reading the same series (status is decided on these); None = own counts.
+    series_matches: Optional[int] = None
+    series_comparisons: Optional[int] = None
+    pooled_with: list[str] = field(default_factory=list)     # the other titles of the series, sorted
+
+    @property
+    def pooled_matches(self) -> int:
+        return self.matches if self.series_matches is None else self.series_matches
+
+    @property
+    def pooled_comparisons(self) -> int:
+        return self.comparisons if self.series_comparisons is None else self.series_comparisons
 
 
 def _when(row: sqlite3.Row) -> dt.datetime:
@@ -285,14 +305,45 @@ def _title_rows(conn: sqlite3.Connection, title: str) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def pool_by_series(results: Mapping[str, TitleGate]) -> dict[str, TitleGate]:
+    """
+    Re-scores every gated title on the comparisons pooled across the titles
+    reading its series (series_key). Titles whose publisher failed
+    (unavailable / key_inactive) are neither pooled nor changed; a series with
+    a single gated title keeps its own status.
+    """
+    groups: dict[str, list[str]] = {}
+    for title, gate in results.items():
+        if gate.status in ("unavailable", "key_inactive") or title not in OFFICIAL_SPECS:
+            continue
+        groups.setdefault(series_key(OFFICIAL_SPECS[title]), []).append(title)
+    out = dict(results)
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        matches = sum(results[t].matches for t in members)
+        comparisons = sum(results[t].comparisons for t in members)
+        for title in members:
+            out[title] = replace(
+                results[title], status=_status(matches, comparisons), series_matches=matches,
+                series_comparisons=comparisons, pooled_with=sorted(t for t in members if t != title))
+    return out
+
+
 def run_gate(conn: sqlite3.Connection, now: dt.datetime, fetcher: Fetcher, keys: Keys,
              fred_client: Optional[FredClient], titles: Optional[list[str]] = None) -> dict[str, TitleGate]:
-    """One fetch for every wanted title, then `gate_title` per title; a publisher error marks only its titles."""
+    """
+    One fetch for every wanted title, then `gate_title` per title, then the
+    series pooling; a publisher error marks only its titles. Titles sharing a
+    wanted title's series are gated too (for the pool) but only wanted titles
+    are returned.
+    """
     wanted = [t for t in (titles or list(OFFICIAL_SPECS)) if t in OFFICIAL_SPECS]
-    outcome = fetch_for_specs([OFFICIAL_SPECS[t] for t in wanted], GATE_START, fetcher, keys)
+    gated = sorted({s for t in wanted for s in titles_sharing_series(OFFICIAL_SPECS[t])} | set(wanted))
+    outcome = fetch_for_specs([OFFICIAL_SPECS[t] for t in gated], GATE_START, fetcher, keys)
     twin = TwinReader(fred_client) if fred_client is not None else None
     results: dict[str, TitleGate] = {}
-    for title in wanted:
+    for title in gated:
         spec = OFFICIAL_SPECS[title]
         key = series_key(spec)
         if key not in outcome.data:
@@ -302,7 +353,8 @@ def run_gate(conn: sqlite3.Connection, now: dt.datetime, fetcher: Fetcher, keys:
             results[title] = TitleGate(status, 0, 0, 0, "none", [reason])
             continue
         results[title] = gate_title(title, spec, _title_rows(conn, title), outcome.data[key], twin, now)
-    return results
+    pooled = pool_by_series(results)
+    return {title: pooled[title] for title in wanted}
 
 
 def results_to_json(results: Mapping[str, TitleGate], now: dt.datetime) -> dict:
@@ -314,10 +366,17 @@ def results_to_json(results: Mapping[str, TitleGate], now: dt.datetime) -> dict:
             title: {
                 "status": g.status, "matches": g.matches, "comparisons": g.comparisons,
                 "revision_explained": g.revision_explained, "identity": g.identity, "mismatches": list(g.mismatches),
+                "series_matches": g.pooled_matches, "series_comparisons": g.pooled_comparisons,
             }
             for title, g in results.items()
         },
     }
+
+
+def _agreement(g: TitleGate) -> str:
+    """`m/n`, plus the pooled series counts when other titles share the series."""
+    own = f"{g.matches}/{g.comparisons}"
+    return f"{own} (series {g.pooled_matches}/{g.pooled_comparisons})" if g.pooled_with else own
 
 
 def coverage_markdown(results: Mapping[str, TitleGate]) -> str:
@@ -330,7 +389,7 @@ def coverage_markdown(results: Mapping[str, TitleGate]) -> str:
         g = results[title]
         spec = OFFICIAL_SPECS.get(title)
         source, series = (spec.source, spec.series) if spec is not None else ("?", "?")
-        lines.append(f"| {title} | {source} | {series} | {g.status} | {g.matches}/{g.comparisons} | {g.identity} |")
+        lines.append(f"| {title} | {source} | {series} | {g.status} | {_agreement(g)} | {g.identity} |")
     return "\n".join(lines) + "\n"
 
 
@@ -340,8 +399,10 @@ def format_report(results: Mapping[str, TitleGate], now: dt.datetime) -> str:
              "status counts: " + ", ".join(f"{s} {n}" for s, n in sorted(counts.items()))]
     for title in sorted(results):
         g = results[title]
-        lines.append(f"  {title}: {g.status} (agreement {g.matches}/{g.comparisons}, "
+        lines.append(f"  {title}: {g.status} (agreement {_agreement(g)}, "
                      f"revision explained {g.revision_explained}, identity {g.identity})")
+        if g.pooled_with:
+            lines.append(f"      pooled with: {', '.join(g.pooled_with)}")
         lines.extend(f"      {m}" for m in g.mismatches)
         lines.extend(f"      note: {n}" for n in g.period_notes)
     return "\n".join(lines)

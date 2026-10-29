@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
+from data_layer import fred_history as fh
 from data_layer.calendar_feed import EconomicEvent, classify_surprise
 from data_layer.official_actuals import bls, eia
 from data_layer.official_actuals.coverage import GateResult
@@ -21,7 +22,9 @@ from data_layer.official_actuals.fetch import FetchOutcome, series_key
 from data_layer.official_actuals.http import KeyInactiveError, SourceRateLimited
 from data_layer.official_actuals.registry import OFFICIAL_SPECS
 from scripts import backfill_official_actuals as bf
+from tests.test_fred_history import FakeRequests, _init_obs
 from tests.test_official_adapters import _fixture
+from webapp import actuals_backfill as ab
 from webapp import store as ws
 
 UTC = dt.timezone.utc
@@ -285,3 +288,103 @@ def test_main_exit_codes(tmp_path, monkeypatch, capsys):
     assert bf.main(["--db", str(db)]) == 0
     out = capsys.readouterr().out
     assert "database not found" in out and "report folder not found" in out
+
+
+# ---------------------------------------------------------------- --fred-backfill (B8 FRED/ALFRED pass)
+
+JOLTS_OLD = dt.datetime(2026, 9, 1, 14, 0, tzinfo=UTC)
+JOLTS_NEW = dt.datetime(2026, 9, 29, 14, 0, tzinfo=UTC)
+
+
+def _jolts_backlog(conn) -> tuple[int, int]:
+    """Old row: revised since release officially; new row: official would-fill."""
+    return (_row(conn, JOLTS, JOLTS_OLD, "7.20M", "7.10M"), _row(conn, JOLTS, JOLTS_NEW, "7.20M", "7.10M"))
+
+
+def _jolts_official():
+    return _fetch(_data(**{JOLTS: {D(2026, 7, 1): 7000.0, D(2026, 8, 1): 7230.0}}))
+
+
+def _fred_client(monkeypatch, june: float = 7100.0):
+    """FRED JTSJOL as first published on 2026-09-01 (July first print 7.27M) and 2026-09-29."""
+    fake = FakeRequests(
+        initial={"JTSJOL": [_init_obs(D(2026, 7, 1), D(2026, 9, 1)), _init_obs(D(2026, 8, 1), D(2026, 9, 29))]},
+        vintages={("JTSJOL", "2026-09-01"): {D(2026, 6, 1): june, D(2026, 7, 1): 7270.0},
+                  ("JTSJOL", "2026-09-29"): {D(2026, 7, 1): 7100.0, D(2026, 8, 1): 7230.0}},
+    )
+    monkeypatch.setattr(fh, "requests", fake)
+    return fh.FredClient("KEY", pace_seconds=0)
+
+
+def test_fred_lookback_reaches_since():
+    assert bf.fred_lookback_days(NOW, D(2026, 7, 28)) == 94      # 93.5 days back, rounded up
+    assert NOW - dt.timedelta(days=bf.fred_lookback_days(NOW, D(2026, 7, 28))) <= \
+        dt.datetime(2026, 7, 28, tzinfo=UTC)
+    assert bf.fred_lookback_days(NOW, NOW.date()) == 1
+    assert bf.fred_lookback_days(NOW, D(2026, 7, 28)) > ab.BACKFILL_LOOKBACK_DAYS   # why the hourly pass never gets there
+
+
+def test_fred_pass_dry_run_fills_revised_rows_on_a_copy_only(conn, monkeypatch):
+    old, new = _jolts_backlog(conn)
+    before = _snapshot(conn)
+    report = bf.run_backlog(conn, NOW, _jolts_official(), _gate(JOLTS))
+    assert _counts(report, JOLTS) == {"revised since release": 1, "would fill": 1}
+    result = bf.run_fred_pass(conn, NOW, _fred_client(monkeypatch), bf.DEFAULT_SINCE, report, apply=False)
+    assert result.error is None
+    # Only the old row: the new one is the official pass's would-fill (applied to the copy first).
+    assert result.fills == ["JOLTS Job Openings 2026-09-01 16:00 SAST (stored 2026-09-01T14:00:00+00:00) = 7.27M (fred)"]
+    assert result.still_empty == []
+    assert _snapshot(conn) == before                                  # dry run: nothing written to the DB
+    text = bf.format_fred_pass(result, apply=False)
+    assert "would fill 1" in text and "still empty after both passes (official refusals): 0" in text
+
+
+def test_fred_pass_lists_rows_still_empty_when_ff_previous_disagrees(conn, monkeypatch):
+    old, _ = _jolts_backlog(conn)
+    report = bf.run_backlog(conn, NOW, _jolts_official(), _gate(JOLTS))
+    result = bf.run_fred_pass(conn, NOW, _fred_client(monkeypatch, june=6900.0), bf.DEFAULT_SINCE, report, False)
+    assert result.fills == []
+    assert result.still_empty == [
+        "JOLTS Job Openings 2026-09-01 16:00 SAST (stored 2026-09-01T14:00:00+00:00): revised since release"]
+    assert any("previous does not match FRED" in r for r in result.not_filled)
+
+
+def test_fred_pass_apply_writes_first_writer_wins_and_rerun_writes_zero(conn, monkeypatch):
+    old, new = _jolts_backlog(conn)
+    report = bf.run_backlog(conn, NOW, _jolts_official(), _gate(JOLTS), apply=True)
+    result = bf.run_fred_pass(conn, NOW, _fred_client(monkeypatch), bf.DEFAULT_SINCE, report, apply=True)
+    assert len(result.fills) == 1
+    assert (_get(conn, old)["actual"], _get(conn, old)["source"]) == ("7.27M", "fred")
+    assert (_get(conn, new)["actual"], _get(conn, new)["source"]) == ("7.23M", "bls")   # official pass, untouched
+    again = bf.run_backlog(conn, NOW, _jolts_official(), _gate(JOLTS), apply=True)
+    assert bf.run_fred_pass(conn, NOW, _fred_client(monkeypatch), bf.DEFAULT_SINCE, again, apply=True).fills == []
+
+
+def test_fred_pass_failure_is_reported_by_class_name(conn, monkeypatch):
+    _jolts_backlog(conn)
+    report = bf.run_backlog(conn, NOW, _jolts_official(), _gate(JOLTS))
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("https://example.invalid/?api_key=SECRET")
+
+    monkeypatch.setattr(bf, "backfill_missing_actuals", boom)
+    result = bf.run_fred_pass(conn, NOW, _fred_client(monkeypatch), bf.DEFAULT_SINCE, report, apply=False)
+    assert result.error == "RuntimeError"
+    assert "SECRET" not in bf.format_fred_pass(result, apply=False)
+    assert len(result.still_empty) == 1
+
+
+def test_main_fred_backfill_dry_run_and_title_conflict(tmp_path, monkeypatch, capsys):
+    db, row_id, uris = _main_env(tmp_path, monkeypatch)
+    monkeypatch.setattr(bf, "_default_fred_client", lambda env_file: _fred_client(monkeypatch))
+    assert bf.main(["--db", str(db), "--fred-backfill"]) == 0
+    assert uris[0].endswith("mode=ro") and set(uris[1:]) <= {":memory:"}     # the FRED dry run uses a copy
+    assert _actual(db, row_id) is None
+    out = capsys.readouterr().out
+    assert "FRED/ALFRED pass" in out and "still empty after both passes" in out
+    with pytest.raises(SystemExit) as exc:
+        bf.main(["--db", str(db), "--fred-backfill", "--title", CPI])
+    assert exc.value.code == 2
+    monkeypatch.setattr(bf, "_default_fred_client", lambda env_file: None)
+    assert bf.main(["--db", str(db), "--fred-backfill"]) == 0
+    assert "FRED/ALFRED pass skipped: no FRED key." in capsys.readouterr().out

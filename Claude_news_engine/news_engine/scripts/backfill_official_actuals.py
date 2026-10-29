@@ -8,9 +8,19 @@ older rows of revised series never relabelled as first prints, FF's `previous`
 on the next release must agree) and store.fill_actual_if_missing (first writer
 wins, never overwrites). Every row ends in exactly one outcome per title.
 
-DRY RUN BY DEFAULT: the database is opened `mode=ro` and nothing is written.
-`--apply` opens it read-write and fills; a rerun then reports `filled` 0. The
-controller backs up dashboard.db before an --apply (no backup is made here).
+Official APIs serve today's revised numbers, so an older row of a revised
+series (JOLTS, Trade Balance, ...) is never filled from them. `--fred-backfill`
+then runs B8's FRED/ALFRED backfill (webapp.actuals_backfill, release-day
+vintage, FF-previous check, first writer wins) once over the same window: the
+hourly B8 pass only looks back BACKFILL_LOOKBACK_DAYS (45), so it never
+reaches the older backlog. The report ends with the rows still empty after
+both passes.
+
+DRY RUN BY DEFAULT: the database is opened `mode=ro` and nothing is written
+(the FRED pass of a dry run runs on an in-memory copy that first receives the
+official would-fills). `--apply` opens it read-write and fills; a rerun then
+reports `filled` 0. The controller backs up dashboard.db before an --apply (no
+backup is made here).
 
 API keys come from `--env-file` (or the app's .env) and are never printed.
 Times are shown in SAST (UTC+2) with the stored UTC value beside them.
@@ -18,13 +28,15 @@ Times are shown in SAST (UTC+2) with the stored UTC value beside them.
 Usage:
     python scripts/backfill_official_actuals.py --db <dashboard.db> --env-file <.env>
     python scripts/backfill_official_actuals.py ... --title "CPI m/m" --since 2026-09-01
-    python scripts/backfill_official_actuals.py ... --apply --report backfill-report.txt
-Exit codes: 0 ok, 2 the database does not exist, 4 the --report folder does not exist.
+    python scripts/backfill_official_actuals.py ... --fred-backfill                # + the FRED/ALFRED pass
+    python scripts/backfill_official_actuals.py ... --apply --fred-backfill --report backfill-report.txt
+Exit codes: 0 ok, 2 the database does not exist (or bad arguments), 4 the --report folder does not exist.
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import math
 import os
 import sqlite3
 import sys
@@ -37,6 +49,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import LOCAL_TZ
 from data_layer.calendar_feed import EconomicEvent, classify_surprise
+from data_layer.fred_history import FredClient
 from data_layer.official_actuals.coverage import (
     GateResult, coverage_for, enabled_titles, later_release_for, load_gate_results,
 )
@@ -45,6 +58,7 @@ from data_layer.official_actuals.http import KeyInactiveError, requests_fetcher
 from data_layer.official_actuals.keys import load_keys
 from data_layer.official_actuals.registry import OFFICIAL_SPECS, OfficialSpec, decide_fill
 from ops.health import ACTUALS_SLA_AFTER
+from webapp.actuals_backfill import backfill_missing_actuals
 import webapp.store as store
 
 _UTC = dt.timezone.utc
@@ -53,8 +67,12 @@ DEFAULT_SINCE = dt.date(2026, 7, 28)
 OUTCOMES = ("filled", "would fill", "already filled", "no actual expected", "proprietary", "not mapped",
             "gate disabled", "key inactive", "source error", "awaiting publication",
             "revised since release", "disagrees with FF previous")
-LIMITATION = ("Official APIs serve today's revised numbers; older rows of revised series are left to the "
-              "FRED/ALFRED backfill.")
+LIMITATION = ("Official APIs serve today's revised numbers, so older rows of revised series are not filled from "
+              "them. --fred-backfill fills those from the release-day ALFRED vintage over the same window; the "
+              "hourly B8 backfill only reaches back 45 days.")
+# The one-off FRED pass covers the whole backlog window, so it gets more wall-clock than the hourly 300 s.
+FRED_PASS_BUDGET_SECONDS = 900
+FRED_PACE_SECONDS = 0.6          # FRED allows 120 requests/min
 
 FetchFn = Callable[[list[OfficialSpec], dt.date], FetchOutcome]
 
@@ -63,6 +81,8 @@ FetchFn = Callable[[list[OfficialSpec], dt.date], FetchOutcome]
 class BacklogReport:
     per_title: dict[str, Counter] = field(default_factory=dict)     # title -> outcome -> count
     details: list[str] = field(default_factory=list)                # one line per fill / would-fill, SAST + stored UTC
+    planned: dict[int, str] = field(default_factory=dict)           # row id -> actual a dry run would write
+    refused: dict[int, str] = field(default_factory=dict)           # row id -> "title SAST: outcome" (decide_fill no)
 
     def add(self, title: str, outcome: str) -> None:
         self.per_title.setdefault(title, Counter())[outcome] += 1
@@ -157,11 +177,13 @@ def run_backlog(conn: sqlite3.Connection, now: dt.datetime, fetch: FetchFn, gate
         if decision.actual is None:
             label = _decision_outcome(decision.reason)
             report.add(title, label)
+            report.refused[row["id"]] = f"{title} {_sast(row['event_time_utc'])}: {label}"
             if not decision.reason.startswith(label):
                 report.details.append(f"{title} {_sast(row['event_time_utc'])}: {decision.reason}")
             continue
         if not apply:
             report.add(title, "would fill")
+            report.planned[row["id"]] = decision.actual
             report.details.append(f"would fill {title} {_sast(row['event_time_utc'])} = {decision.actual} ({spec.source})")
             continue
         event = EconomicEvent(title, "USD", row["impact"] or "High", release,
@@ -172,6 +194,76 @@ def run_backlog(conn: sqlite3.Connection, now: dt.datetime, fetch: FetchFn, gate
         else:
             report.add(title, "already filled")      # someone wrote it between the select and the write
     return report
+
+
+@dataclass
+class FredPassResult:
+    lookback_days: int
+    fills: list[str] = field(default_factory=list)          # "title SAST (stored UTC) = actual (fred)"
+    not_filled: list[str] = field(default_factory=list)     # B8's skip reasons
+    still_empty: list[str] = field(default_factory=list)    # official refusals the FRED pass did not fill either
+    error: Optional[str] = None                             # exception class name only (messages can carry URLs)
+
+
+def fred_lookback_days(now: dt.datetime, since: dt.date) -> int:
+    """Whole days from `now` back to at least 00:00 UTC of `since` (B8 takes an integer lookback)."""
+    start = dt.datetime.combine(since, dt.time(0), tzinfo=_UTC)
+    return max(1, math.ceil((now - start).total_seconds() / 86400))
+
+
+def run_fred_pass(conn: sqlite3.Connection, now: dt.datetime, client: FredClient, since: dt.date,
+                  report: BacklogReport, apply: bool) -> FredPassResult:
+    """
+    B8's FRED/ALFRED backfill once over [since, now - 1 h] (its own rules: mapped
+    titles, release-day vintage, FF previous must match, first writer wins).
+    Dry run: on an in-memory copy of `conn` that first receives the official
+    pass's would-fills, so the counts match what an --apply would write.
+    """
+    result = FredPassResult(fred_lookback_days(now, since))
+    target = conn
+    if not apply:
+        target = sqlite3.connect(":memory:")
+        conn.backup(target)
+        target.row_factory = sqlite3.Row
+        for row_id, actual in report.planned.items():
+            target.execute("UPDATE event_history SET actual = ? WHERE id = ? AND actual IS NULL", (actual, row_id))
+        target.commit()
+    try:
+        empty = {r["id"] for r in target.execute(
+            "SELECT id FROM event_history WHERE country = 'USD' AND actual IS NULL")}
+        try:
+            fill_report = backfill_missing_actuals(target, client, now, lookback_days=result.lookback_days,
+                                                   budget_seconds=FRED_PASS_BUDGET_SECONDS)
+            result.not_filled = list(fill_report.skip_reasons)
+        except Exception as exc:  # noqa: BLE001 - class name only: messages can carry URLs
+            result.error = type(exc).__name__
+        filled_ids: set[int] = set()
+        for row in target.execute(
+                "SELECT id, event_title, event_time_utc, actual FROM event_history "
+                "WHERE country = 'USD' AND actual IS NOT NULL ORDER BY event_time_utc, id"):
+            if row["id"] in empty:
+                filled_ids.add(row["id"])
+                result.fills.append(f"{row['event_title']} {_sast(row['event_time_utc'])} = {row['actual']} (fred)")
+        result.still_empty = [text for row_id, text in report.refused.items() if row_id not in filled_ids]
+    finally:
+        if target is not conn:
+            target.close()
+    return result
+
+
+def format_fred_pass(result: FredPassResult, apply: bool) -> str:
+    verb = "filled" if apply else "would fill"
+    lines = [f"FRED/ALFRED pass (B8 rules, release-day vintage, lookback {result.lookback_days} days): "
+             f"{verb} {len(result.fills)}"]
+    if result.error is not None:
+        lines.append(f"  WARNING: FRED pass failed: {result.error}")
+    lines.extend(f"  {verb} {f}" for f in result.fills)
+    if result.not_filled:
+        lines.append("  not filled by FRED (B8 reason, stored UTC):")
+        lines.extend(f"    {r}" for r in result.not_filled)
+    lines.append(f"still empty after both passes (official refusals): {len(result.still_empty)}")
+    lines.extend(f"  {r}" for r in result.still_empty)
+    return "\n".join(lines)
 
 
 def format_report(report: BacklogReport, apply: bool) -> str:
@@ -195,6 +287,12 @@ def _default_fetch(env_file: Optional[Path]) -> FetchFn:
     return lambda specs, since: fetch_for_specs(specs, since, fetcher, keys)
 
 
+def _default_fred_client(env_file: Optional[Path]) -> Optional[FredClient]:
+    """A paced FRED client, or None without a FRED key (the key is never printed)."""
+    key = load_keys(env_file).fred
+    return FredClient(key, pace_seconds=FRED_PACE_SECONDS) if key else None
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Backfill official-publisher actuals (dry run unless --apply).")
     parser.add_argument("--db", default=str(store.DB_PATH), help="dashboard.db path (read-only unless --apply)")
@@ -203,8 +301,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="first release date (UTC, YYYY-MM-DD; default %(default)s)")
     parser.add_argument("--title", action="append", help="restrict to this FF title (repeatable)")
     parser.add_argument("--apply", action="store_true", help="write the fills (default: dry run)")
+    parser.add_argument("--fred-backfill", action="store_true",
+                        help="then run B8's FRED/ALFRED backfill once over the same window (every FRED-mapped "
+                             "title; not combinable with --title)")
     parser.add_argument("--report", help="also write the report to this file")
     args = parser.parse_args(argv)
+    if args.fred_backfill and args.title:
+        parser.error("--fred-backfill covers every FRED-mapped title; do not combine it with --title")
 
     db_path = Path(args.db)
     if not db_path.is_file():
@@ -214,17 +317,28 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"report folder not found: {Path(args.report).resolve().parent} - nothing done.")
         return 4
 
-    fetch = _default_fetch(Path(args.env_file) if args.env_file else None)
+    env_file = Path(args.env_file) if args.env_file else None
+    fetch = _default_fetch(env_file)
     now = dt.datetime.now(_UTC)
     uri = f"file:{db_path.resolve().as_posix()}?mode={'rw' if args.apply else 'ro'}"
     conn = sqlite3.connect(uri, uri=True)
     conn.row_factory = sqlite3.Row
+    fred_text: Optional[str] = None
     try:
         report = run_backlog(conn, now, fetch, load_gate_results(), args.since, args.apply, args.title)
+        if args.fred_backfill:
+            client = _default_fred_client(env_file)
+            if client is None:
+                fred_text = "FRED/ALFRED pass skipped: no FRED key."
+            else:
+                fred_text = format_fred_pass(run_fred_pass(conn, now, client, args.since, report, args.apply),
+                                             args.apply)
     finally:
         conn.close()
 
     text = format_report(report, args.apply)
+    if fred_text is not None:
+        text += "\n" + fred_text
     print(text)
     if args.report:
         with open(args.report, "w", encoding="utf-8", newline="\n") as handle:

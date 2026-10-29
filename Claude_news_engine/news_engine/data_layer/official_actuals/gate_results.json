@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-10-28T23:40:49.799204+00:00",
+  "generated_at_utc": "2026-10-29T05:22:14.310335+00:00",
   "threshold": 0.8,
   "titles": {
     "10-y Bond Auction": {
@@ -8,6 +8,8 @@
       "matches": 2,
       "mismatches": [],
       "revision_explained": 0,
+      "series_comparisons": 2,
+      "series_matches": 2,
       "status": "verified"
     },
     "30-y Bond Auction": {
@@ -16,6 +18,8 @@
       "matches": 2,
       "mismatches": [],
       "revision_explained": 0,
+      "series_comparisons": 2,
+      "series_matches": 2,
       "status": "verified"
     },
     "Advance GDP Price Index q/q": {
@@ -24,6 +28,8 @@
       "matches": 0,
       "mismatches": [],
       "revision_explained": 0,
+      "series_comparisons": 1,
+      "series_matches": 1,
       "status": "unverified"
     },
     "Advance GDP q/q": {
@@ -32,7 +38,9 @@
       "matches": 0,
       "mismatches": [],
       "revision_explained": 0,
-      "status": "unverified"
+      "series_comparisons": 3,
+      "series_matches": 3,
+      "status": "verified"
     },
     "Average Hourly Earnings m/m": {
       "comparisons": 20,
@@ -40,6 +48,8 @@
       "matches": 20,
       "mismatches": [],
       "revision_explained": 6,
+      "series_comparisons": 20,
+      "series_matches": 20,
       "status": "verified"
     },
     "Building Permits": {
@@ -51,6 +61,8 @@
         "2026-10-20 14:30 SAST (2026-10-20T12:30:00+00:00) previous: stored 1.39M vs official 1.40M (period 2026-08-01)"
       ],
       "revision_explained": 1,
+      "series_comparisons": 4,
+      "series_matches": 2,
       "status": "suspect"
     },
     "Business Inventories m/m": {
@@ -59,6 +71,8 @@
       "matches": 4,
       "mismatches": [],
       "revision_explained": 3,
+      "series_comparisons": 4,
+      "series_matches": 4,
       "status": "verified"
     },
     "CPI m/m": {
@@ -67,6 +81,8 @@
       "matches": 19,
       "mismatches": [],
       "revision_explained": 0,
+      "series_comparisons": 19,
+      "series_matches": 19,
       "status": "verified"
     },
     "CPI y/y": {
@@ -75,6 +91,8 @@
       "matches": 20,
       "mismatches": [],
       "revision_explained": 0,
+      "series_comparisons": 20,
+      "series_matches": 20,
       "status": "verified"
     },
     "Construction Spending m/m": {
@@ -83,6 +101,8 @@
       "matches": 3,
       "mismatches": [],
       "revision_explained": 2,
+      "series_comparisons": 3,
+      "series_matches": 3,
       "status": "verified"
     },
     "Core CPI m/m": {
@@ -94,6 +114,8 @@
         "2026-06-10 14:30 SAST (2026-06-10T12:30:00+00:00) previous: stored 0.2% vs official 0.4% (period 2026-04-01)"
       ],
       "revision_explained": 0,
+      "series_comparisons": 19,
+      "series_matches": 17,
       "status": "verified"
     },
     "Core CPI y/y": {
@@ -104,6 +126,8 @@
         "2026-01-13 15:30 SAST (2026-01-13T13:30:00+00:00) previous: stored 2.7% vs official 2.6% (period 2025-11-01)"
       ],
       "revision_explained": 0,
+      "series_comparisons": 16,
+      "series_matches": 15,
       "status": "verified"
     },
     "Core Durable Goods Orders m/m": {
@@ -112,6 +136,8 @@
       "matches": 2,
       "mismatches": [],
       "revision_explained": 1,
+      "series_comparisons": 2,
+      "series_matches": 2,
       "status": "verified"
     },
     "Core PCE Price Index m/m": {
@@ -120,6 +146,8 @@
       "matches": 18,
       "mismatches": [],
       "revision_explained": 7,
+      "series_comparisons": 18,
+      "series_matches": 18,
       "status": "verified"
     },
     "Core PPI m/m": {
@@ -130,6 +158,8 @@
         "2026-01-30 15:30 SAST (2026-01-30T13:30:00+00:00) previous: stored 0.2% vs official 0.3% (period 2025-11-01)"
       ],
       "revision_explained": 12,
+      "series_comparisons": 20,
+      "series_matches": 19,
       "status": "verified"
     },
     "Core Retail Sales m/m": {
@@ -138,6 +168,8 @@
       "matches": 20,
       "mismatches": [],
       "revision_explained": 13,
+      "series_comparisons": 20,
+      "series_matches": 20,
       "status": "verified"
     },
     "Crude Oil Inventories": {
@@ -146,6 +178,8 @@
       "matches": 9,
       "mismatches": [],
       "revision_explained": 0,
+      "series_comparisons": 9,
+      "series_matches": 9,
       "status": "verified"
     },
     "Durable Goods Orders m/m": {
@@ -156,6 +190,8 @@
         "2026-10-27 14:30 SAST (2026-10-27T12:30:00+00:00) previous: stored 0.0% vs official 0.1% (period 2026-08-01)"
       ],
       "revision_explained": 1,
+      "series_comparisons": 2,
+      "series_matches": 1,
       "status": "suspect"
     },
     "Employment Cost Index q/q": {
@@ -164,6 +200,8 @@
       "matches": 0,
       "mismatches": [],
       "revision_explained": 0,
+      "series_comparisons": 0,
+      "series_matches": 0,
       "status": "unverified"
     },
     "Factory Orders m/m": {
@@ -172,6 +210,8 @@
       "matches": 3,
       "mismatches": [],
       "revision_explained": 2,
+      "series_comparisons": 3,
+      "series_matches": 3,
       "status": "verified"
     },
     "Federal Funds Rate": {
@@ -180,6 +220,8 @@
       "matches": 2,
       "mismatches": [],
       "revision_explained": 0,
+      "series_comparisons": 2,
+      "series_matches": 2,
       "status": "verified"
     },
     "Final GDP Price Index q/q": {
@@ -188,6 +230,8 @@
       "matches": 1,
       "mismatches": [],
       "revision_explained": 1,
+      "series_comparisons": 1,
+      "series_matches": 1,
       "status": "unverified"
     },
     "Final GDP q/q": {
@@ -196,7 +240,9 @@
       "matches": 1,
       "mismatches": [],
       "revision_explained": 1,
-      "status": "unverified"
+      "series_comparisons": 3,
+      "series_matches": 3,
+      "status": "verified"
     },
     "Housing Starts": {
       "comparisons": 4,
@@ -204,6 +250,8 @@
       "matches": 4,
       "mismatches": [],
       "revision_explained": 3,
+      "series_comparisons": 4,
+      "series_matches": 4,
       "status": "verified"
     },
     "Import Prices m/m": {
@@ -212,6 +260,8 @@
       "matches": 19,
       "mismatches": [],
       "revision_explained": 14,
+      "series_comparisons": 19,
+      "series_matches": 19,
       "status": "verified"
     },
     "JOLTS Job Openings": {
@@ -220,6 +270,8 @@
       "matches": 3,
       "mismatches": [],
       "revision_explained": 2,
+      "series_comparisons": 3,
+      "series_matches": 3,
       "status": "verified"
     },
     "Natural Gas Storage": {
@@ -228,6 +280,8 @@
       "matches": 8,
       "mismatches": [],
       "revision_explained": 0,
+      "series_comparisons": 8,
+      "series_matches": 8,
       "status": "verified"
     },
     "New Home Sales": {
@@ -236,6 +290,8 @@
       "matches": 2,
       "mismatches": [],
       "revision_explained": 2,
+      "series_comparisons": 2,
+      "series_matches": 2,
       "status": "verified"
     },
     "Non-Farm Employment Change": {
@@ -244,6 +300,8 @@
       "matches": 20,
       "mismatches": [],
       "revision_explained": 19,
+      "series_comparisons": 20,
+      "series_matches": 20,
       "status": "verified"
     },
     "PPI m/m": {
@@ -252,6 +310,8 @@
       "matches": 20,
       "mismatches": [],
       "revision_explained": 18,
+      "series_comparisons": 20,
+      "series_matches": 20,
       "status": "verified"
     },
     "Personal Income m/m": {
@@ -260,6 +320,8 @@
       "matches": 2,
       "mismatches": [],
       "revision_explained": 1,
+      "series_comparisons": 2,
+      "series_matches": 2,
       "status": "verified"
     },
     "Personal Spending m/m": {
@@ -268,6 +330,8 @@
       "matches": 2,
       "mismatches": [],
       "revision_explained": 1,
+      "series_comparisons": 2,
+      "series_matches": 2,
       "status": "verified"
     },
     "Prelim GDP Price Index q/q": {
@@ -276,6 +340,8 @@
       "matches": 0,
       "mismatches": [],
       "revision_explained": 0,
+      "series_comparisons": 1,
+      "series_matches": 1,
       "status": "unverified"
     },
     "Prelim GDP q/q": {
@@ -284,6 +350,8 @@
       "matches": 2,
       "mismatches": [],
       "revision_explained": 2,
+      "series_comparisons": 3,
+      "series_matches": 3,
       "status": "verified"
     },
     "Prelim Nonfarm Productivity q/q": {
@@ -292,6 +360,8 @@
       "matches": 0,
       "mismatches": [],
       "revision_explained": 0,
+      "series_comparisons": 1,
+      "series_matches": 1,
       "status": "unverified"
     },
     "Prelim Unit Labor Costs q/q": {
@@ -300,6 +370,8 @@
       "matches": 0,
       "mismatches": [],
       "revision_explained": 0,
+      "series_comparisons": 1,
+      "series_matches": 1,
       "status": "unverified"
     },
     "Retail Sales m/m": {
@@ -310,6 +382,8 @@
         "2026-10-15 14:30 SAST (2026-10-15T12:30:00+00:00) previous: stored 1.2% vs official 1.3% (period 2026-08-01)"
       ],
       "revision_explained": 16,
+      "series_comparisons": 22,
+      "series_matches": 21,
       "status": "verified"
     },
     "Revised Nonfarm Productivity q/q": {
@@ -318,6 +392,8 @@
       "matches": 1,
       "mismatches": [],
       "revision_explained": 0,
+      "series_comparisons": 1,
+      "series_matches": 1,
       "status": "unverified"
     },
     "Revised Unit Labor Costs q/q": {
@@ -326,6 +402,8 @@
       "matches": 1,
       "mismatches": [],
       "revision_explained": 1,
+      "series_comparisons": 1,
+      "series_matches": 1,
       "status": "unverified"
     },
     "Trade Balance": {
@@ -334,6 +412,8 @@
       "matches": 3,
       "mismatches": [],
       "revision_explained": 2,
+      "series_comparisons": 3,
+      "series_matches": 3,
       "status": "verified"
     },
     "Unemployment Claims": {
@@ -342,6 +422,8 @@
       "matches": 84,
       "mismatches": [],
       "revision_explained": 57,
+      "series_comparisons": 84,
+      "series_matches": 84,
       "status": "verified"
     },
     "Unemployment Rate": {
@@ -350,6 +432,8 @@
       "matches": 20,
       "mismatches": [],
       "revision_explained": 0,
+      "series_comparisons": 20,
+      "series_matches": 20,
       "status": "verified"
     }
   }

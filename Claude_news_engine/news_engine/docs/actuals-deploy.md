@@ -51,21 +51,29 @@ Mapping: `bls` = `BLS_API_KEY`, `bea` = `BEA_API_KEY`, `census` = `CENSUS_API_KE
 
 ## 6. Backlog
 
-Dry run first. The database is opened read-only; official APIs are called with read-only requests:
+Two passes over the USD rows released since 2026-07-28 that still have no actual. First the official publishers, with the poller's rules. Then, with `--fred-backfill`, B8's FRED/ALFRED backfill runs once over the same window. The second pass is needed because the publishers serve today's revised numbers, so an older row of a revised series (JOLTS, Trade Balance, ...) is refused as `revised since release`, and the hourly B8 backfill only looks back 45 days, so it never reaches the older rows on its own. The FRED pass reads the release-day ALFRED vintage (the first print), writes only when FF's `previous` on the row matches FRED's prior period, never overwrites, and labels the source `fred`.
+
+Dry run first. The database is opened read-only (the FRED pass of a dry run works on an in-memory copy that first receives the official would-fills); the official APIs and FRED are called with read-only requests:
 
 ```
-python scripts/backfill_official_actuals.py --db webapp/dashboard.db
+python scripts/backfill_official_actuals.py --db webapp/dashboard.db --fred-backfill
 ```
 
-Expected at deploy (build-time live dry run, 2026-10-29, read-only): `would fill 25, already filled 64, no actual expected 76, proprietary 66, not mapped 15, gate disabled 6, revised since release 6`. The 25 are Crude Oil Inventories, Natural Gas Storage, 10-y and 30-y Bond Auctions and Federal Funds Rate rows (Fed 2026-09-16 and 2026-10-28, both `4.00%`), plus Core Durable Goods Orders m/m and New Home Sales of 2026-10-27. Rows of revised series (for example JOLTS, GDP) are reported as `revised since release` and left to the FRED/ALFRED backfill, because the publishers serve today's revised numbers, not the first print. Re-count before applying; the numbers move as new releases land.
+Expected at deploy (build-time live dry run, 2026-10-29 07:30 SAST, read-only):
+
+- Official pass: `would fill 26, already filled 64, no actual expected 76, proprietary 66, not mapped 15, gate disabled 5, revised since release 6`. The 26 are Crude Oil Inventories (9), Natural Gas Storage (8), 10-y and 30-y Bond Auctions (2 each), Federal Funds Rate (Fed 2026-09-16 and 2026-10-28, both `4.00%`), Core Durable Goods Orders m/m (`0.5%`) and New Home Sales (`676K`) of 2026-10-27, and Final GDP q/q of 2026-09-30 (`2.2%`, equal to ALFRED's 2026-09-30 vintage of A191RL1Q225SBEA; enabled by the pooled GDP gate, section 11). Final GDP q/q is filled only when the backlog is applied before the Advance GDP release (2026-10-29 14:30 SAST). After it, the row counts as `revised since release` and stays empty, because GDP has no FRED backfill mapping; `scripts/fill_missing_actuals.py` can fill it by hand.
+- FRED/ALFRED pass (lookback 94 days): `would fill 8`, the six `revised since release` rows plus Federal Budget Balance, which FF lists twice: JOLTS Job Openings 2026-09-01 `7.27M`, Construction Spending m/m 2026-09-01 `-0.5%`, Factory Orders m/m 2026-09-02 `0.9%`, Trade Balance 2026-09-03 `-88.6B`, New Home Sales 2026-09-24 `684K`, Core Durable Goods Orders m/m 2026-09-25 `0.3%`, and Federal Budget Balance 2026-09-11 19:58 and 20:00 SAST, both `-166.8B`.
+- `still empty after both passes (official refusals): 0`.
+
+Rows that stay empty after both passes, by design: proprietary titles (66 rows, `scripts/fill_missing_actuals.py`); gate-disabled titles (Durable Goods Orders m/m x2, Final GDP Price Index q/q, Revised Nonfarm Productivity q/q, Revised Unit Labor Costs q/q); and not-mapped titles FRED does not fill: Consumer Credit m/m (2, FF `previous` does not match FRED), Final Wholesale Inventories m/m (2, no FRED release within 3 days), Current Account, TIC Long-Term Purchases, Goods Trade Balance and Prelim Wholesale Inventories m/m (no FRED mapping). HPI m/m (2) got a FRED `HTTPError` in the build-time dry run, as did four other series, right after a gate run; a re-probe a minute later succeeded, so it was rate limiting. The report lists such lines under `not filled by FRED`, and a rerun retries them. Re-count before applying; the numbers move as new releases land.
 
 Then apply:
 
 ```
-python scripts/backfill_official_actuals.py --apply --db webapp/dashboard.db
+python scripts/backfill_official_actuals.py --apply --db webapp/dashboard.db --fred-backfill
 ```
 
-Rerun the same `--apply` command: it must print `filled 0` (every row is now `already filled`).
+Rerun the same `--apply` command: it must print `totals: filled 0` and `FRED/ALFRED pass ...: filled 0` (every row is now `already filled`; a FRED row that failed with `HTTPError` on the first apply may fill on the rerun instead, then run it once more).
 
 ## 7. Start exactly one copy
 
@@ -87,7 +95,8 @@ By 12:45Z (14:45 SAST) these titles must be filled, each with the source shown i
 - Personal Income m/m (source `bea`)
 - Personal Spending m/m (source `bea`)
 - Unemployment Claims (source `fred`)
-- Advance GDP q/q and Advance GDP Price Index q/q (source `bea`) are gate `unverified` (no comparable history yet), so they are gate-disabled: they stay empty and are listed as such by `actuals_sla`. That is not a failure; fill them with `scripts/fill_missing_actuals.py` or re-run the gate (section 10) after the release.
+- Advance GDP q/q (source `bea`). Gate `verified` on its series: Advance, Prelim and Final GDP q/q read the same BEA series (T10101:Q:A191RL) and are scored together, 3/3 (section 11). It is written once BEA's data holds Q3 2026 (period 2026-07-01), never before. FF's `previous` on this row (`1.5%`) is the stale Prelim print of Q2 (ALFRED: `2.2%` since 2026-09-30); that does not block the fill.
+- Advance GDP Price Index q/q (source `bea`) is gate `unverified` (1 comparison across its three titles), so it is gate-disabled: it stays empty and is listed as such by `actuals_sla`. That is not a failure; fill it with `scripts/fill_missing_actuals.py` or re-run the gate (section 10) after the release.
 
 Query (read-only):
 
@@ -95,7 +104,7 @@ Query (read-only):
 python -c "import sqlite3; c=sqlite3.connect('file:webapp/dashboard.db?mode=ro', uri=True); [print(r) for r in c.execute('SELECT event_title, event_time_utc, actual, source FROM event_history WHERE country=? AND event_time_utc LIKE ? ORDER BY event_title', ('USD', '2026-10-29T12:30%'))]"
 ```
 
-`actuals_sla` must be ok, or name exactly the gate-disabled titles.
+`actuals_sla` must be ok, or name exactly the gate-disabled titles (at this release: Advance GDP Price Index q/q).
 
 ## 9. Web fallback
 
@@ -113,14 +122,14 @@ Review the diff of `gate_results.json`, commit, merge and restart one copy: the 
 
 ## 11. Coverage and known limits
 
-Gate result per title (`Agreement` = comparisons that matched the stored actual or FF previous, including revision-explained ones; `Identity` = whether the official series equals its FRED twin over the last 6 periods, `none` when there is no twin):
+Gate result per title (`Agreement` = comparisons that matched the stored actual or FF previous, including revision-explained ones; `Identity` = whether the official series equals its FRED twin over the last 6 periods, `none` when there is no twin). Titles that read the same published series (Advance/Prelim/Final GDP q/q, the three GDP Price Index titles, Prelim/Revised Nonfarm Productivity and Unit Labor Costs) are scored on their pooled comparisons, because the mapping the gate proves is the same for all of them; each title still uses its own period and re-estimate rule. For those, `Agreement` shows the title's own count and, in brackets, the series count the status is based on. Gate run 2026-10-29 07:22 SAST (05:22Z), read-only:
 
 | Title | Source | Series | Gate status | Agreement | Identity |
 |---|---|---|---|---|---|
 | 10-y Bond Auction | treasury | Note:10-Year | verified | 2/2 | none |
 | 30-y Bond Auction | treasury | Bond:30-Year | verified | 2/2 | none |
-| Advance GDP Price Index q/q | bea | T10107:Q:A191RV | unverified | 0/0 | ok |
-| Advance GDP q/q | bea | T10101:Q:A191RL | unverified | 0/0 | ok |
+| Advance GDP Price Index q/q | bea | T10107:Q:A191RV | unverified | 0/0 (series 1/1) | ok |
+| Advance GDP q/q | bea | T10101:Q:A191RL | verified | 0/0 (series 3/3) | ok |
 | Average Hourly Earnings m/m | bls | CES0500000003 | verified | 20/20 | ok |
 | Building Permits | census | resconst:APERMITS:TOTAL | suspect | 2/4 | ok |
 | Business Inventories m/m | census | mtis:TOTBUS:MPCIM | verified | 4/4 | ok |
@@ -138,8 +147,8 @@ Gate result per title (`Agreement` = comparisons that matched the stored actual 
 | Employment Cost Index q/q | bls | CIS1010000000000Q | unverified | 0/0 | none |
 | Factory Orders m/m | census | m3:MTM:MPCNO | verified | 3/3 | ok |
 | Federal Funds Rate | fed | fomc_upper | verified | 2/2 | none |
-| Final GDP Price Index q/q | bea | T10107:Q:A191RV | unverified | 1/1 | ok |
-| Final GDP q/q | bea | T10101:Q:A191RL | unverified | 1/1 | ok |
+| Final GDP Price Index q/q | bea | T10107:Q:A191RV | unverified | 1/1 (series 1/1) | ok |
+| Final GDP q/q | bea | T10101:Q:A191RL | verified | 1/1 (series 3/3) | ok |
 | Housing Starts | census | resconst:ASTARTS:TOTAL | verified | 4/4 | ok |
 | Import Prices m/m | bls | EIUIR | verified | 19/19 | ok |
 | JOLTS Job Openings | bls | JTS000000000000000JOL | verified | 3/3 | ok |
@@ -149,13 +158,13 @@ Gate result per title (`Agreement` = comparisons that matched the stored actual 
 | PPI m/m | bls | WPSFD4 | verified | 20/20 | ok |
 | Personal Income m/m | bea | T20600:M:A065RC | verified | 2/2 | ok |
 | Personal Spending m/m | bea | T20600:M:DPCERC | verified | 2/2 | ok |
-| Prelim GDP Price Index q/q | bea | T10107:Q:A191RV | unverified | 0/0 | ok |
-| Prelim GDP q/q | bea | T10101:Q:A191RL | verified | 2/2 | ok |
-| Prelim Nonfarm Productivity q/q | bls | PRS85006092 | unverified | 0/0 | ok |
-| Prelim Unit Labor Costs q/q | bls | PRS85006112 | unverified | 0/0 | ok |
+| Prelim GDP Price Index q/q | bea | T10107:Q:A191RV | unverified | 0/0 (series 1/1) | ok |
+| Prelim GDP q/q | bea | T10101:Q:A191RL | verified | 2/2 (series 3/3) | ok |
+| Prelim Nonfarm Productivity q/q | bls | PRS85006092 | unverified | 0/0 (series 1/1) | ok |
+| Prelim Unit Labor Costs q/q | bls | PRS85006112 | unverified | 0/0 (series 1/1) | ok |
 | Retail Sales m/m | census | marts:44X72:MPCSM | verified | 21/22 | ok |
-| Revised Nonfarm Productivity q/q | bls | PRS85006092 | unverified | 1/1 | ok |
-| Revised Unit Labor Costs q/q | bls | PRS85006112 | unverified | 1/1 | ok |
+| Revised Nonfarm Productivity q/q | bls | PRS85006092 | unverified | 1/1 (series 1/1) | ok |
+| Revised Unit Labor Costs q/q | bls | PRS85006112 | unverified | 1/1 (series 1/1) | ok |
 | Trade Balance | census | ftd:BOPGS:BAL | verified | 3/3 | ok |
 | Unemployment Claims | fred | ICSA | verified | 84/84 | ok |
 | Unemployment Rate | bls | LNS14000000 | verified | 20/20 | ok |
@@ -164,7 +173,7 @@ Known limits:
 
 - Proprietary titles have no free release-time source and are never polled: ISM, University of Michigan, S&P Global and Flash/Final PMIs, regional Fed surveys, CB Consumer Confidence and Leading Index, Chicago PMI, NAHB, NFIB, API, Challenger, ADP, Existing and Pending Home Sales, S&P/CS HPI, RCM/TIPP, Omdia. They are amber in `actuals_sla` and stay on `scripts/fill_missing_actuals.py`.
 - Official data but no ACT adapter (red in `actuals_sla`): Industrial Production, Capacity Utilization, Consumer Credit, Federal Budget Balance, HPI, Current Account, TIC Long-Term Purchases, Final and Prelim Wholesale Inventories, Goods Trade Balance. Census codes for the wholesale and advance goods trade programs were unresolved in the build.
-- Gate `suspect` (Building Permits, Durable Goods Orders m/m) and `unverified` titles are not polled until a gate re-run verifies them.
+- Gate `suspect` (Building Permits, Durable Goods Orders m/m) and `unverified` titles (the GDP Price Index titles, Productivity, Unit Labor Costs, Employment Cost Index) are not polled until a gate re-run verifies them.
 - DOL's national claims data lags FF by weeks, so Unemployment Claims use FRED `ICSA`.
 - The Census key must be active; an inactive key shows as `key inactive` and writes nothing.
 - Benchmark revisions: the latest release of a series is filled with today's value, which is the first print unless the series was benchmark-revised since.

@@ -16,6 +16,7 @@ from typing import Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data_layer.fred_history import FredFetchError, InitialRelease
+from data_layer.official_actuals.fetch import FetchOutcome
 from data_layer.official_actuals.http import HttpResponse
 from data_layer.official_actuals.keys import Keys
 from data_layer.official_actuals.registry import OFFICIAL_SPECS
@@ -284,9 +285,80 @@ def test_results_json_exact_keys():
     assert payload["generated_at_utc"] == NOW.isoformat()
     assert payload["threshold"] == 0.8
     for entry in payload["titles"].values():
-        assert set(entry) == {"status", "matches", "comparisons", "revision_explained", "identity", "mismatches"}
+        assert set(entry) == {"status", "matches", "comparisons", "revision_explained", "identity", "mismatches",
+                              "series_matches", "series_comparisons"}
+    assert (payload["titles"]["CPI m/m"]["series_matches"], payload["titles"]["CPI m/m"]["series_comparisons"]) == (4, 4)
     md = verify.coverage_markdown(results)
     assert "| CPI m/m | bls | CUSR0000SA0 | verified | 4/4 | ok |" in md
+
+
+def test_pool_by_series_scores_titles_sharing_a_series_together():
+    results = {
+        "Advance GDP q/q": verify.TitleGate("unverified", 0, 0, 0, "ok", []),
+        "Prelim GDP q/q": verify.TitleGate("verified", 2, 2, 2, "ok", []),
+        "Final GDP q/q": verify.TitleGate("unverified", 1, 1, 1, "ok", []),
+        "Advance GDP Price Index q/q": verify.TitleGate("unverified", 0, 0, 0, "ok", []),
+        "Final GDP Price Index q/q": verify.TitleGate("unverified", 1, 1, 1, "ok", []),
+        "Prelim Nonfarm Productivity q/q": verify.TitleGate("unavailable", 0, 0, 0, "none", ["bls: X"]),
+        "Revised Nonfarm Productivity q/q": verify.TitleGate("verified", 2, 2, 0, "ok", []),
+        "CPI m/m": verify.TitleGate("unverified", 1, 1, 0, "ok", []),
+    }
+    pooled = verify.pool_by_series(results)
+    for title in ("Advance GDP q/q", "Prelim GDP q/q", "Final GDP q/q"):
+        assert pooled[title].status == "verified"
+        assert (pooled[title].series_matches, pooled[title].series_comparisons) == (3, 3)
+    # Own counts are kept beside the pooled ones.
+    assert (pooled["Advance GDP q/q"].matches, pooled["Advance GDP q/q"].comparisons) == (0, 0)
+    assert pooled["Advance GDP q/q"].pooled_with == ["Final GDP q/q", "Prelim GDP q/q"]
+    # 1 pooled comparison is still too few.
+    assert pooled["Advance GDP Price Index q/q"].status == "unverified"
+    assert pooled["Final GDP Price Index q/q"].status == "unverified"
+    assert pooled["Final GDP Price Index q/q"].series_comparisons == 1
+    # A failed publisher is neither pooled nor changed; its sibling keeps its own status.
+    assert pooled["Prelim Nonfarm Productivity q/q"] == results["Prelim Nonfarm Productivity q/q"]
+    assert pooled["Revised Nonfarm Productivity q/q"].status == "verified"
+    assert pooled["Revised Nonfarm Productivity q/q"].series_comparisons is None
+    # A title alone on its series is untouched.
+    assert pooled["CPI m/m"] == results["CPI m/m"]
+    assert pooled["CPI m/m"].pooled_matches == 1 and pooled["CPI m/m"].pooled_comparisons == 1
+
+
+def test_pooled_suspect_drags_every_title_of_the_series(tmp_path):
+    results = {
+        "Prelim GDP q/q": verify.TitleGate("verified", 2, 2, 0, "ok", []),
+        "Final GDP q/q": verify.TitleGate("suspect", 0, 2, 0, "ok", ["x", "y"]),
+    }
+    pooled = verify.pool_by_series(results)
+    assert pooled["Prelim GDP q/q"].status == "suspect"          # 2/4 < 0.8
+    assert pooled["Final GDP q/q"].status == "suspect"
+
+
+def test_run_gate_pools_advance_gdp_with_prelim_and_final(tmp_path, monkeypatch):
+    # Advance GDP has no released row of its own yet; Prelim and Final prove the shared BEA series.
+    conn = _db(tmp_path)
+    _row(conn, "Prelim GDP q/q", _t(2026, 8, 27), "2.2%", "2.2%", "2.2%")
+    _row(conn, "Final GDP q/q", _t(2026, 9, 25), "2.2%", "2.2%", "2.2%")
+    _row(conn, "Advance GDP q/q", _t(2026, 10, 29), "1.5%", "2.2%", None)        # after NOW: not released
+    spec = OFFICIAL_SPECS["Advance GDP q/q"]
+    calls: list = []
+
+    def fake_fetch(specs, since, fetcher, keys):
+        calls.append(sorted({verify.series_key(s) for s in specs}))
+        return FetchOutcome({verify.series_key(spec): _gdp_series()}, {}, {})
+
+    monkeypatch.setattr(verify, "fetch_for_specs", fake_fetch)
+    keys = Keys(bls="K", bea="K", census="K", eia="K", fred="K")
+    results = verify.run_gate(conn, NOW, None, keys, None, titles=["Advance GDP q/q"])
+    assert list(results) == ["Advance GDP q/q"]                    # siblings gated for the pool, not returned
+    gate = results["Advance GDP q/q"]
+    assert (gate.matches, gate.comparisons) == (0, 0)
+    assert (gate.series_matches, gate.series_comparisons) == (4, 4)
+    assert gate.status == "verified"
+    assert gate.pooled_with == ["Final GDP q/q", "Prelim GDP q/q"]
+    assert calls == [[verify.series_key(spec)]]                    # one series, one fetch
+    payload = verify.results_to_json(results, NOW)["titles"]["Advance GDP q/q"]
+    assert (payload["matches"], payload["series_matches"], payload["status"]) == (0, 4, "verified")
+    assert "| Advance GDP q/q | bea | T10101:Q:A191RL | verified | 0/0 (series 4/4) | none |" in         verify.coverage_markdown(results)
 
 
 def _write_env(path):
