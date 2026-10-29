@@ -24,7 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional
 
-from data_layer.official_actuals.registry import OFFICIAL_SPECS, is_ff_number
+from data_layer.official_actuals.fetch import series_key
+from data_layer.official_actuals.registry import OFFICIAL_SPECS, OfficialSpec, is_ff_number
 
 GATE_RESULTS_PATH = Path(__file__).resolve().parent / "gate_results.json"
 
@@ -141,3 +142,27 @@ def missing_numeric_rows(conn: sqlite3.Connection, start_utc: dt.datetime, end_u
         if coverage_for(r["event_title"]) != "no_actual_expected"
         and (is_ff_number(r["forecast"]) or is_ff_number(r["previous"]))
     ]
+
+
+def titles_sharing_series(spec: OfficialSpec) -> list[str]:
+    """Registry titles that read the same published series (e.g. CPI m/m and Core CPI m/m do not; Prelim/Final GDP do)."""
+    key = series_key(spec)
+    return sorted(t for t, s in OFFICIAL_SPECS.items() if series_key(s) == key)
+
+
+def later_release_for(conn: sqlite3.Connection, spec: OfficialSpec, event_time: dt.datetime,
+                      now: dt.datetime) -> tuple[bool, Optional[str]]:
+    """
+    (has a later release, its `previous`): the next USD row of this title, or of any title sharing the
+    series, that is already out at `now`. A future row (next month's) does not count: it is not a release
+    yet. Shared by the release poller and the backlog backfill so both apply the same revision rule.
+    """
+    titles = titles_sharing_series(spec)
+    marks = ",".join("?" for _ in titles)
+    row = conn.execute(
+        f"SELECT previous FROM event_history WHERE country = 'USD' AND event_title IN ({marks}) "
+        "AND julianday(event_time_utc) > julianday(?) AND julianday(event_time_utc) <= julianday(?) "
+        "ORDER BY event_time_utc LIMIT 1",
+        (*titles, event_time.isoformat(), now.isoformat()),
+    ).fetchone()
+    return (True, row["previous"]) if row is not None else (False, None)

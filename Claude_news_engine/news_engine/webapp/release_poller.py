@@ -37,7 +37,7 @@ from typing import Callable, Optional
 from config.settings import LOCAL_TZ
 from data_layer.calendar_feed import EconomicEvent, classify_surprise
 from data_layer.official_actuals import keys as official_keys
-from data_layer.official_actuals.coverage import enabled_titles, load_gate_results
+from data_layer.official_actuals.coverage import enabled_titles, later_release_for, load_gate_results
 from data_layer.official_actuals.fetch import FetchOutcome, fetch_for_specs, series_key
 from data_layer.official_actuals.http import requests_fetcher
 from data_layer.official_actuals.registry import OFFICIAL_SPECS, OfficialSpec, decide_fill
@@ -153,28 +153,6 @@ def _candidate_rows(conn: sqlite3.Connection, enabled: frozenset[str], start: dt
     ).fetchall()
 
 
-def _titles_sharing(spec: OfficialSpec) -> list[str]:
-    key = series_key(spec)
-    return sorted(t for t, s in OFFICIAL_SPECS.items() if series_key(s) == key)
-
-
-def _later_release(conn: sqlite3.Connection, spec: OfficialSpec, event_time: dt.datetime,
-                   now: dt.datetime) -> tuple[bool, Optional[str]]:
-    """
-    (has a later release, its `previous`): the next USD row of this title, or of any title sharing the
-    series, that is already out. A future row (next month's) does not count: it is not a release yet.
-    """
-    titles = _titles_sharing(spec)
-    marks = ",".join("?" for _ in titles)
-    row = conn.execute(
-        f"SELECT previous FROM event_history WHERE country = 'USD' AND event_title IN ({marks}) "
-        "AND julianday(event_time_utc) > julianday(?) AND julianday(event_time_utc) <= julianday(?) "
-        "ORDER BY event_time_utc LIMIT 1",
-        (*titles, event_time.isoformat(), now.isoformat()),
-    ).fetchone()
-    return (True, row["previous"]) if row is not None else (False, None)
-
-
 # ---------------------------------------------------------------- one tick
 
 @dataclass
@@ -275,7 +253,7 @@ def run_tick(conn: sqlite3.Connection, ops_conn: sqlite3.Connection, now: dt.dat
             continue
         if item.catchup:
             state.catchup_done.add(item.key)
-        later_release, later_previous = _later_release(conn, item.spec, item.release, now)
+        later_release, later_previous = later_release_for(conn, item.spec, item.release, now)
         decision = decide_fill(
             item.spec, item.release, item.row["forecast"], item.row["previous"],
             outcome.data.get(series_key(item.spec), {}), later_release, later_previous,
