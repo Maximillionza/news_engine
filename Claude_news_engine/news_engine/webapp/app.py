@@ -17,7 +17,6 @@ from flask import Flask, jsonify, request, send_from_directory
 
 from data_layer.calendar_feed import get_last_successful_fetch_age_seconds
 from webapp.scheduler import start_scheduler
-from webapp.actuals_sync import start_actuals_sync
 from webapp.store import (
     get_connection, get_latest_two, get_history,
     add_tracked_symbol, remove_tracked_symbol, list_tracked_symbols,
@@ -777,10 +776,9 @@ if __name__ == "__main__":
     _INSTANCE_LOCK = claim_or_exit("webapp", port=5001)
     _ensure_defaults()
     start_scheduler(_get_tracked_symbols)
-    start_actuals_sync()
     # dashboard-review-2026-09-11.md: Flask's own dev server is
     # single-threaded by default and shares this process with the
-    # scheduler + actuals-sync background threads, all contending for
+    # scheduler + release-poller background threads, all contending for
     # SQLite file locks — not meant for anything beyond local
     # development. waitress is a real, pure-Python WSGI server (no
     # platform-specific build step, matters on Windows) and threads

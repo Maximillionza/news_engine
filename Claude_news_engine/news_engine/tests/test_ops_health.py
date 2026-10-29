@@ -24,7 +24,7 @@ NOW = dt.datetime(2026, 10, 20, 10, 0, tzinfo=UTC)
 EXPECTED_KEYS = [
     "shock_poll", "outcome_confirm", "reaction_incremental", "reaction_baselines",
     "tier1_capture_daily", "tier1_capture_weekly", "tier1_research", "nowcast_live",
-    "shock_reality_check", "article_accumulator", "calendar_refresh", "macro_calendar",
+    "shock_reality_check", "article_accumulator", "calendar_refresh", "actuals_sla", "macro_calendar",
     "classifier:ollama", "classifier:claude",
     "feed:reuters_business", "feed:cnbc_top_news", "feed:cnbc_economy", "feed:investing_com_forex",
 ]
@@ -505,3 +505,147 @@ def test_shock_reality_check_status_unchanged_by_grading_run(c):
     assert (after.status, after.last_success_utc, after.age_seconds) == (
         before.status, before.last_success_utc, before.age_seconds)
     assert "graded 0: all quiet" in after.detail
+
+
+# ---------------------------------------------------------------------------
+# ACT: actuals_sla -- numeric USD releases still without an actual 15 minutes after release
+# ---------------------------------------------------------------------------
+PCE = "Core PCE Price Index m/m"          # official (BEA); the gate decides whether it is polled
+VERIFIED = health.coverage.GateResult("verified", 5, 5, "ok")
+SUSPECT = health.coverage.GateResult("suspect", 1, 5, "ok")
+
+
+def _numeric_event(c, title: str, when: dt.datetime, forecast: str | None = "0.3%", previous: str | None = "0.2%") -> None:
+    c.dash.execute(
+        "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, surprise_direction, "
+        "recorded_at_utc, updated_at_utc, source, impact, country) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (title, when.isoformat(), forecast, previous, None, None, when.isoformat(), when.isoformat(), "live", "High", "USD"))
+    c.dash.commit()
+
+
+def _sla(c, gate: dict, now: dt.datetime = NOW) -> health.HealthItem:
+    conns = {"dash": c.dash, "bt": c.bt, "alerts": c.alerts, "ops": c.ops}
+    return health._actuals_sla_check(now, conns, gate)
+
+
+def _heartbeat(c, age: dt.timedelta = dt.timedelta(minutes=1)) -> None:
+    ops_state.record_job_run(c.ops, "actuals_poller", NOW - age, 0)
+
+
+def test_sla_ok_when_nothing_overdue(c):
+    _heartbeat(c)
+    _numeric_event(c, PCE, NOW - dt.timedelta(minutes=10))          # inside the 15 minute grace
+    _numeric_event(c, PCE, NOW - dt.timedelta(hours=25))            # outside the 24 h lookback
+    item = _sla(c, {PCE: VERIFIED})
+    assert item.status == "ok"
+    assert item.detail == ""
+    assert item.expected_every_seconds == 900
+
+
+def test_sla_red_lists_title_time_minutes_and_reason(c):
+    _heartbeat(c)
+    _numeric_event(c, PCE, dt.datetime(2026, 10, 20, 8, 30, tzinfo=UTC))
+    item = _sla(c, {PCE: SUSPECT})
+    assert item.status == "red"
+    assert item.detail == f"1 overdue: {PCE} 10:30 SAST, 90 min late (gate: suspect)"
+
+
+def test_sla_gate_not_run_when_the_title_has_no_gate_result(c):
+    _heartbeat(c)
+    _numeric_event(c, PCE, NOW - dt.timedelta(minutes=30))
+    assert "(gate: not run)" in _sla(c, {}).detail
+
+
+def test_sla_proprietary_only_is_amber(c):
+    _heartbeat(c)
+    _numeric_event(c, "ISM Services PMI", NOW - dt.timedelta(hours=1))
+    item = _sla(c, {})
+    assert item.status == health.SLA_PROPRIETARY_STATUS == "amber"
+    assert "(proprietary)" in item.detail
+    # one gap that can be fixed makes the whole item red
+    _numeric_event(c, "Industrial Production m/m", NOW - dt.timedelta(minutes=40))
+    mixed = _sla(c, {})
+    assert mixed.status == "red"
+    assert "(not mapped)" in mixed.detail and "(proprietary)" in mixed.detail
+
+
+def test_sla_excludes_no_actual_expected_and_text_only(c):
+    _heartbeat(c)
+    _numeric_event(c, "FOMC Member Waller Speaks", NOW - dt.timedelta(hours=2), forecast="1.0%")
+    _numeric_event(c, PCE, NOW - dt.timedelta(hours=2), forecast=None, previous=None)
+    assert _sla(c, {PCE: VERIFIED}).status == "ok"
+
+
+def test_sla_lists_oldest_first_three_then_a_count(c):
+    _heartbeat(c)
+    for minutes in (30, 50, 40, 60):
+        _numeric_event(c, PCE, NOW - dt.timedelta(minutes=minutes))
+    detail = _sla(c, {PCE: VERIFIED}).detail
+    assert detail.startswith("4 overdue: ") and detail.endswith(" and 1 more")
+    assert detail.index("60 min late") < detail.index("50 min late") < detail.index("40 min late")
+
+
+def _reason(c, gate: dict, minutes: int = 30, poller_age: dt.timedelta | None = dt.timedelta(minutes=1)) -> str:
+    if poller_age is not None:
+        _heartbeat(c, poller_age)
+    release = NOW - dt.timedelta(minutes=minutes)
+    _numeric_event(c, PCE, release)
+    return _sla(c, gate).detail
+
+
+def test_sla_reason_key_inactive(c):
+    ops_state.record_source_status(c.ops, "bea", False, NOW - dt.timedelta(minutes=5), "KeyInactiveError")
+    assert _reason(c, {PCE: VERIFIED}).endswith("(key inactive)")
+
+
+def test_sla_reason_poller_not_running(c):
+    assert _reason(c, {PCE: VERIFIED}, poller_age=None).endswith("(poller not running)")
+
+
+def test_sla_reason_poller_stale_heartbeat(c):
+    assert _reason(c, {PCE: VERIFIED}, poller_age=dt.timedelta(minutes=11)).endswith("(poller not running)")
+
+
+def test_sla_reason_source_down(c):
+    ops_state.record_source_status(c.ops, "bea", False, NOW - dt.timedelta(minutes=5), "SourceRateLimited")
+    assert _reason(c, {PCE: VERIFIED}).endswith("(source down)")
+
+
+def test_sla_source_error_before_the_release_or_after_a_good_call_is_not_down(c):
+    ops_state.record_source_status(c.ops, "bea", False, NOW - dt.timedelta(minutes=50), "SourceRateLimited")
+    assert _reason(c, {PCE: VERIFIED}).endswith("(awaiting publication)")        # error predates the release
+    ops_state.record_source_status(c.ops, "bea", False, NOW - dt.timedelta(minutes=20), "SourceRateLimited")
+    ops_state.record_source_status(c.ops, "bea", True, NOW - dt.timedelta(minutes=2))
+    assert _sla(c, {PCE: VERIFIED}).detail.endswith("(awaiting publication)")     # a later ok call wins
+
+
+def test_sla_reason_awaiting_publication(c):
+    assert _reason(c, {PCE: VERIFIED}).endswith("(awaiting publication)")
+
+
+def test_overdue_reason_priority_is_not_mapped_then_proprietary_then_gate():
+    sources: dict = {}
+    args = (NOW - dt.timedelta(minutes=30), NOW, {}, sources, None)
+    assert health.overdue_reason("Industrial Production m/m", *args) == "not mapped"
+    assert health.overdue_reason("ISM Services PMI", *args) == "proprietary"
+    assert health.overdue_reason(PCE, *args) == "gate: not run"
+
+
+def test_health_notice_includes_overdue_actuals(c, monkeypatch):
+    _heartbeat(c)
+    _numeric_event(c, PCE, dt.datetime(2026, 10, 20, 8, 30, tzinfo=UTC))
+    conns = {"dash": c.dash, "bt": c.bt, "alerts": c.alerts, "ops": c.ops}
+    monkeypatch.setattr(health, "build_health", lambda now, **kw: [health._actuals_sla_check(now, conns, {PCE: SUSPECT})])
+    send = MagicMock(return_value=True)
+    assert health.maybe_send_health_notice(NOW, send=send, connections=_conn_tuple(c)) is True
+    send.assert_called_once()
+    assert f"Actuals within 15 min: 1 overdue: {PCE} 10:30 SAST, 90 min late (gate: suspect)" in send.call_args.args[0]
+
+
+def test_sla_check_failure_is_amber_and_isolated(c, monkeypatch):
+    _fresh_jobs(c)
+    monkeypatch.setattr(health.coverage, "missing_numeric_rows", MagicMock(side_effect=RuntimeError("boom")))
+    items = _build(c)
+    assert items["actuals_sla"].status == "amber"
+    assert items["actuals_sla"].detail.startswith("check failed")
+    assert items["shock_poll"].status == "ok"

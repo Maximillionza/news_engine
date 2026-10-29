@@ -31,8 +31,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from config.settings import EVENT_SURPRISE_DIRECTION
-
 DB_PATH = Path(__file__).parent / "dashboard.db"
 # Rows get_event_history() returns by default: the window the accumulator's trend prior and the History trend text read.
 EVENT_HISTORY_WINDOW = 6
@@ -200,7 +198,7 @@ def _migrate_add_country_column(conn: sqlite3.Connection) -> None:
     title with a US one (e.g. Australia's own "CPI m/m", the UK's own
     "Retail Sales m/m"/"Unemployment Rate") could be — and, confirmed live,
     WERE — silently miscounted as USD candidates by any title-only lookup
-    (get_events_with_stale_missing_actual(), and more seriously
+    (the since-retired stale-actuals web queue, and more seriously
     scoring.probability_engine.get_precursor_events_for(), which feeds
     directly into automated scoring with no human review). New rows are
     populated at INSERT time from the real EconomicEvent.country the
@@ -591,72 +589,6 @@ def get_resolved_event_history(conn: sqlite3.Connection, limit: int = 200) -> li
         "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source, impact, country "
         "FROM event_history WHERE actual IS NOT NULL ORDER BY event_time_utc DESC LIMIT ?",
         (limit,),
-    ).fetchall()
-    return [EventHistoryRow(**dict(row)) for row in rows]
-
-
-def get_events_with_stale_missing_actual(
-    conn: sqlite3.Connection, now: dt.datetime, grace_period_hours: float = 1.0,
-) -> list[EventHistoryRow]:
-    """
-    Every event_history row whose actual is still NULL and whose
-    event_time_utc is more than grace_period_hours in the past — a real
-    candidate for the actuals-fallback enrichment pass. The grace period
-    exists because Forex Factory's feed genuinely takes some time to
-    publish an actual after release; searching too early would find
-    nothing real and waste an agent's WebSearch budget. Lowered from 6h to
-    1h (2026-09-02): FF has proven consistently unreliable at posting
-    actuals promptly, and 6h left real gaps sitting unflagged for most of
-    a trading session before an agent would even see them as candidates —
-    1h is a tighter, still-reasonable margin past a genuine publish delay.
-
-    Also excludes rows that are structurally text-only (forecast IS NULL
-    AND previous IS NULL — e.g. "RBA Gov Bullock Speaks") using the same
-    "never publishes a comparable number" concept get_text_only_resolved_
-    events() encodes, just checked against `previous` instead of `actual`
-    since `actual` is already guaranteed NULL by this query's own WHERE
-    clause. Without this, a text-only event with an ever-NULL actual would
-    perpetually re-qualify as a "stale missing actual" candidate — pure
-    noise for the enrichment pass, since it will never have a number to go
-    find.
-
-    Also excludes titles absent from config.settings.EVENT_SURPRISE_DIRECTION.
-    The scheduler (webapp/scheduler.py's run_scoring_cycle) now scopes
-    event_history writes to calendar_events — USD, Low+ — not the full,
-    unfiltered global FF feed, so a foreign-market event (German bond
-    auctions, BRC Retail Sales Monitor, Cash Rate, ...) never gets an
-    event_history row at all any more. This filter's remaining purpose is
-    USD titles classify_surprise() still has no mapping for — even if an
-    agent researched and filled one of those in, it would land with
-    surprise_direction still NULL (classify_surprise() returns None for
-    any title outside EVENT_SURPRISE_DIRECTION), so it can never count
-    toward a trend or the History tab. Without this filter those titles
-    are guaranteed-wasted WebSearch budget for the enrichment pass.
-
-    Deliberately does NOT filter on country = 'USD' (2026-09-03): unlike
-    scoring.probability_engine.get_precursor_events_for() (fully
-    automated, no human review), a human researches this list's
-    candidates via WebSearch before anything gets written — a legacy row
-    with country still NULL (pre-migration, genuinely unresolved either
-    way) stays a legitimate candidate for that manual review rather than
-    being silently dropped. Title-only filtering already excludes the
-    unambiguous country-prefixed foreign titles; a bare shared title
-    (e.g. a stale legacy "CPI m/m" row that turns out to be foreign) is
-    something the researching agent catches during WebSearch, same as
-    any other cross-check in that workflow.
-    """
-    cutoff = (now - dt.timedelta(hours=grace_period_hours)).isoformat()
-    known_titles = list(EVENT_SURPRISE_DIRECTION.keys())
-    if not known_titles:
-        return []
-    placeholders = ",".join("?" for _ in known_titles)
-    rows = conn.execute(
-        "SELECT event_title, event_time_utc, forecast, previous, actual, surprise_direction, source, country "
-        "FROM event_history WHERE actual IS NULL AND event_time_utc < ? "
-        "AND NOT (forecast IS NULL AND previous IS NULL) "
-        f"AND event_title IN ({placeholders}) "
-        "ORDER BY event_time_utc DESC",
-        (cutoff, *known_titles),
     ).fetchall()
     return [EventHistoryRow(**dict(row)) for row in rows]
 

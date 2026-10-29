@@ -1,13 +1,17 @@
 """
 Agent-run enrichment pass: fills in real, cited `actual` values for
-events Forex Factory's feed has left blank past a grace period.
+events that still have none. Since ACT (2026-10-28) the engine's release
+poller fills every numeric release the official publishers cover; this
+manual tool is what remains for proprietary releases (ISM, UoM, PMIs, ...)
+and anything the poller cannot reach. The cloud web-fallback queue that
+used to feed it is retired.
 
 This is NOT a live-service feature — WebSearch is only callable by an
 agent session, not by webapp/scheduler.py's background loop. The
 workflow is:
   1. An agent runs `python scripts/fill_missing_actuals.py --list` to
-     see stale-missing-actual candidates (webapp.store's
-     get_events_with_stale_missing_actual()).
+     see the numeric USD releases of the last 92 days with no actual
+     (data_layer.official_actuals.coverage.missing_numeric_rows()).
   2. The agent researches each one via WebSearch, same citation
      standard as data_layer/historical_events.py's backfill facts —
      real data or absent, never guessed.
@@ -30,9 +34,12 @@ from dataclasses import dataclass, field
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.settings import UTC_TZ
+from config.settings import LOCAL_TZ, UTC_TZ
 from data_layer.calendar_feed import classify_surprise, EconomicEvent
+from data_layer.official_actuals.coverage import missing_numeric_rows
 import webapp.store as store
+
+LIST_LOOKBACK = dt.timedelta(days=92)   # how far back --list looks for releases with no actual
 
 # Populated by an agent session after WebSearch research — see module
 # docstring. Each tuple: (event_title, event_time_utc, actual, source_note).
@@ -77,15 +84,22 @@ def run(facts: list[tuple[str, dt.datetime, str, str]], conn, now: dt.datetime |
     return report
 
 
+def list_missing(conn, now: dt.datetime) -> int:
+    """Print the numeric USD releases of the last 92 days still without an actual (SAST); returns the count."""
+    rows = missing_numeric_rows(conn, now - LIST_LOOKBACK, now)
+    print(f"[fill_missing_actuals] {len(rows)} numeric release(s) with no actual since {(now - LIST_LOOKBACK).date()}:")
+    for r in rows:
+        released = dt.datetime.fromisoformat(r["event_time_utc"]).astimezone(LOCAL_TZ).strftime("%Y-%m-%d %H:%M SAST")
+        print(f"  {r['event_title']} @ {released} (forecast={r['forecast']}, previous={r['previous']})")
+    return len(rows)
+
+
 if __name__ == "__main__":
     conn = store.get_connection()
     now = dt.datetime.now(UTC_TZ)
 
     if "--list" in sys.argv:
-        stale = store.get_events_with_stale_missing_actual(conn, now)
-        print(f"[fill_missing_actuals] {len(stale)} event(s) with a stale missing actual:")
-        for r in stale:
-            print(f"  {r.event_title} @ {r.event_time_utc} (forecast={r.forecast}, previous={r.previous})")
+        list_missing(conn, now)
     elif not FACTS:
         print("[fill_missing_actuals] FACTS is empty — nothing to write. "
               "Run with --list to see candidates, research them via WebSearch, "

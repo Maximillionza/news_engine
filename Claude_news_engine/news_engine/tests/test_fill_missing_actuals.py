@@ -79,6 +79,31 @@ def test_run_skips_an_occurrence_with_no_matching_event_history_row():
     print("PASS\n")
 
 
+def test_list_uses_missing_numeric_rows(capsys):
+    print("=== fill_missing_actuals: --list prints the numeric rows still missing an actual (92 days), no speeches ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = store.get_connection(Path(tmp) / "test.db")
+        now = dt.datetime(2026, 10, 29, 12, 0, tzinfo=UTC_TZ)
+
+        def add(title, when, forecast="0.3%", previous="0.2%"):
+            event = _fake_event(title, when)
+            event.forecast, event.previous = forecast, previous
+            store.upsert_event_history(conn, event, None, now)
+
+        add("ISM Services PMI", dt.datetime(2026, 10, 5, 14, 0, tzinfo=UTC_TZ))
+        add("FOMC Member Waller Speaks", now - dt.timedelta(days=2), forecast="1.0%")
+        add("CPI m/m", now - dt.timedelta(days=100))
+        add("PPI m/m", now - dt.timedelta(days=3), forecast=None, previous=None)
+
+        count = fill.list_missing(conn, now)
+        out = capsys.readouterr().out
+        assert count == 1
+        assert "ISM Services PMI" in out and "2026-10-05 16:00 SAST" in out
+        assert "Waller" not in out and "CPI m/m" not in out and "PPI m/m" not in out
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_run_writes_a_real_supplied_actual_with_web_fallback_source()
     test_run_skips_an_occurrence_that_already_has_a_real_actual()

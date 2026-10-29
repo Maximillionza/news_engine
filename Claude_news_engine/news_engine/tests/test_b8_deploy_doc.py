@@ -9,14 +9,11 @@ DOC = APP / "docs" / "b8-deploy.md"
 EXPECTED = {
     "data_layer/calendar_feed.py:383": 'actual=item.get("actual") or None',
     "webapp/scheduler.py:205-209": "get_actual_from_fred(",
-    "webapp/store.py:34": "EVENT_SURPRISE_DIRECTION",
-    "webapp/store.py:623-649": "EVENT_SURPRISE_DIRECTION",
     "config/settings.py:153": "FRED_SERIES_ID_BY_EVENT_TITLE",
     "config/settings.py:443": "JOLTS Job Openings",
-    "webapp/actuals_sync.py:40": "MAX_CANDIDATE_AGE_HOURS",
     # Section 1: the trend-window readers the seed and fills change.
     "scoring/backtest_accumulator.py:332": "get_event_history(conn, event_title)",
-    "webapp/app.py:147": "get_event_history(conn, title)",
+    "webapp/app.py:146": "get_event_history(conn, title)",
     "scoring/probability_engine.py:512": "get_event_history(conn, precursor_title, limit=6)",
 }
 

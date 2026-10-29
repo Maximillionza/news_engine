@@ -699,29 +699,6 @@ def test_get_connection_memory_path_never_cached_stays_isolated_per_call():
     print("PASS\n")
 
 
-def test_get_events_with_stale_missing_actual_respects_grace_period():
-    print("=== webapp/store: get_events_with_stale_missing_actual only returns events past the grace period with actual still None ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        conn = store.get_connection(db_path)
-        now = dt.datetime(2026, 8, 14, 12, 0, tzinfo=UTC_TZ)
-
-        recent_event = _fake_event(title="CPI m/m", event_time_utc=now - dt.timedelta(hours=2))  # too recent
-        stale_event = _fake_event(title="PPI m/m", event_time_utc=now - dt.timedelta(hours=48))  # past grace period
-        resolved_event = _fake_event(title="Retail Sales m/m", event_time_utc=now - dt.timedelta(hours=48))
-        resolved_event.actual = "0.3%"
-
-        store.upsert_event_history(conn, recent_event, None, now)
-        store.upsert_event_history(conn, stale_event, None, now)
-        store.upsert_event_history(conn, resolved_event, "higher_bullish", now)
-
-        stale = store.get_events_with_stale_missing_actual(conn, now, grace_period_hours=6)
-        titles = {r.event_title for r in stale}
-        assert titles == {"PPI m/m"}  # recent_event too fresh, resolved_event already has an actual
-        conn.close()
-    print("PASS\n")
-
-
 def test_upsert_event_history_seeded_source_survives_a_later_live_upsert_with_real_actual():
     print("=== webapp/store: a 'seeded' row's source stays 'seeded' even when a later 'live' upsert supplies its own (redundant) real actual ===")
     with tempfile.TemporaryDirectory() as tmp:
@@ -766,54 +743,6 @@ def test_upsert_event_history_does_not_overwrite_an_already_stored_real_actual()
         assert rows[0].actual == "0.2%"  # unchanged — the FIRST real actual
         assert rows[0].surprise_direction == "in_line"  # unchanged
         assert rows[0].source == "fred"  # unchanged, never relabeled 'live'
-        conn.close()
-    print("PASS\n")
-
-
-def test_get_events_with_stale_missing_actual_excludes_text_only_events():
-    print("=== webapp/store: get_events_with_stale_missing_actual excludes structurally text-only events (forecast AND previous both NULL) past the grace period ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        conn = store.get_connection(db_path)
-        now = dt.datetime(2026, 8, 14, 12, 0, tzinfo=UTC_TZ)
-
-        numeric_stale = _fake_event(title="PPI m/m", event_time_utc=now - dt.timedelta(hours=48), forecast="0.2%")
-        text_only_stale = EconomicEvent(
-            title="RBA Gov Bullock Speaks", country="USD", impact="High",
-            event_time_utc=now - dt.timedelta(hours=48), forecast=None, actual=None,
-        )
-        text_only_stale.previous = None
-
-        store.upsert_event_history(conn, numeric_stale, None, now)
-        store.upsert_event_history(conn, text_only_stale, None, now)
-
-        stale = store.get_events_with_stale_missing_actual(conn, now, grace_period_hours=6)
-        titles = {r.event_title for r in stale}
-        assert titles == {"PPI m/m"}  # text-only event excluded — it will never publish a comparable actual
-        conn.close()
-    print("PASS\n")
-
-
-def test_get_events_with_stale_missing_actual_excludes_titles_outside_event_surprise_direction():
-    print("=== webapp/store: get_events_with_stale_missing_actual excludes titles absent from EVENT_SURPRISE_DIRECTION even when otherwise a genuine numeric stale-missing-actual candidate ===")
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "test.db"
-        conn = store.get_connection(db_path)
-        now = dt.datetime(2026, 8, 14, 12, 0, tzinfo=UTC_TZ)
-
-        from config.settings import EVENT_SURPRISE_DIRECTION
-        assert "PPI m/m" in EVENT_SURPRISE_DIRECTION
-        assert "German 10-y Bond Auction" not in EVENT_SURPRISE_DIRECTION
-
-        covered_stale = _fake_event(title="PPI m/m", event_time_utc=now - dt.timedelta(hours=48), forecast="0.2%")
-        uncovered_stale = _fake_event(title="German 10-y Bond Auction", event_time_utc=now - dt.timedelta(hours=48), forecast="1.9%")
-
-        store.upsert_event_history(conn, covered_stale, None, now)
-        store.upsert_event_history(conn, uncovered_stale, None, now)
-
-        stale = store.get_events_with_stale_missing_actual(conn, now, grace_period_hours=6)
-        titles = {r.event_title for r in stale}
-        assert titles == {"PPI m/m"}  # uncovered_stale is numeric and past grace period, but classify_surprise() can never resolve it — must be excluded
         conn.close()
     print("PASS\n")
 
@@ -1003,11 +932,8 @@ if __name__ == "__main__":
     test_get_connection_fresh_db_has_source_column_no_error()
     test_get_connection_skips_migration_on_second_open_of_same_path()
     test_get_connection_memory_path_never_cached_stays_isolated_per_call()
-    test_get_events_with_stale_missing_actual_respects_grace_period()
     test_upsert_event_history_seeded_source_survives_a_later_live_upsert_with_real_actual()
     test_upsert_event_history_does_not_overwrite_an_already_stored_real_actual()
-    test_get_events_with_stale_missing_actual_excludes_text_only_events()
-    test_get_events_with_stale_missing_actual_excludes_titles_outside_event_surprise_direction()
     test_infer_event_time_of_day_returns_none_without_resolved_history()
     test_infer_event_time_of_day_uses_most_recent_resolved_occurrence()
     test_upsert_macro_calendar_event_round_trips()

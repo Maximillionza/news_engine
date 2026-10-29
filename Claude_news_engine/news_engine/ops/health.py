@@ -25,15 +25,19 @@ import datetime as dt
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Mapping, Optional
 
 from alerting import notify_telegram
 from alerting import store as alerting_store
 from alerting.source_backoff import in_backoff, is_drop_candidate
 from config.settings import CLASSIFIER_PROVIDER_ORDER, CLAUDE_COOLDOWN_MINUTES, LOCAL_TZ, OLLAMA_COOLDOWN_MINUTES
+from data_layer.official_actuals import coverage
+from data_layer.official_actuals.coverage import GateResult
+from data_layer.official_actuals.registry import OFFICIAL_SPECS
 from data_layer.rss_sources import FREE_PREVIEW_FEEDS
 from data_layer.tier1_events import TIER1_FORMULA, TIER1_FORMULA_SOURCE, TIER1_JUDGMENT, tier1_titles
 from ops import state as ops_state
+from ops.state import SourceStatus
 from scoring import backtest_store
 from webapp import store as webapp_store
 
@@ -106,6 +110,14 @@ _JOBS: dict[str, _JobSpec] = {spec.key: spec for spec in (
         ("dash", "SELECT fetched_at_utc FROM calendar_snapshot ORDER BY julianday(fetched_at_utc) DESC LIMIT 1"),
     )),
 )}
+# ACT: a numeric USD release with no actual this long after its release time is an SLA miss.
+ACTUALS_SLA_AFTER = dt.timedelta(minutes=15)
+ACTUALS_SLA_LOOKBACK = dt.timedelta(hours=24)
+POLLER_STALE_AFTER = dt.timedelta(minutes=10)
+# Gaps that can never be fixed for free (private publishers) are listed but do not trigger the daily notice.
+# Set to "red" to make them page like any other miss.
+SLA_PROPRIETARY_STATUS = "amber"
+_ACTUALS_SLA_LABEL = "Actuals within 15 min"
 _MACRO = _JobSpec("macro_calendar", "Macro calendar (FRED)", 29 * _D, 30 * _D, 31 * _D)
 _TIER1_RESEARCH_LABEL = "Tier 1 research (judgment calls)"
 _NOWCAST_LIVE_LABEL = "Tier 1 live nowcast (formula)"
@@ -383,6 +395,63 @@ def _feed_check(name: str, now: dt.datetime, conns: dict[str, sqlite3.Connection
     return HealthItem(key, label, status, last, age, expected, detail)
 
 
+def overdue_reason(
+    title: str, release_utc: dt.datetime, now: dt.datetime, gate: Mapping[str, GateResult],
+    sources: Mapping[str, SourceStatus], poller_last_tick: Optional[dt.datetime],
+) -> str:
+    """Why an overdue release has no actual yet; the first matching reason wins."""
+    kind = coverage.coverage_for(title)
+    if kind == "not_mapped":
+        return "not mapped"
+    if kind == "proprietary":
+        return "proprietary"
+    result = gate.get(title)
+    if result is None:
+        return "gate: not run"
+    if result.status != "verified":
+        return f"gate: {result.status}"
+    status = sources.get(OFFICIAL_SPECS[title].source)
+    last_error = status.last_error_utc if status is not None else None
+    last_ok = status.last_ok_utc if status is not None else None
+    # An error counts only while no later good call has cleared it.
+    failing = last_error is not None and (last_ok is None or last_error > last_ok)
+    if failing and status.last_error == "KeyInactiveError":
+        return "key inactive"
+    if poller_last_tick is None or now - poller_last_tick > POLLER_STALE_AFTER:
+        return "poller not running"
+    if failing and last_error > release_utc:
+        return "source down"
+    return "awaiting publication"
+
+
+def _actuals_sla_check(
+    now: dt.datetime, conns: dict[str, sqlite3.Connection], gate: Optional[Mapping[str, GateResult]] = None,
+) -> HealthItem:
+    """ACT: lists numeric USD releases of the last 24 h still without an actual 15 minutes after release."""
+    ops = conns["ops"]
+    rows = coverage.missing_numeric_rows(conns["dash"], now - ACTUALS_SLA_LOOKBACK, now - ACTUALS_SLA_AFTER)
+    run = ops_state.get_job_runs(ops).get("actuals_poller")
+    last_tick = _as_utc(run.last_success_utc) if run is not None else None
+    age = (now - last_tick).total_seconds() if last_tick is not None else None
+    expected = int(ACTUALS_SLA_AFTER.total_seconds())
+    if not rows:
+        return HealthItem("actuals_sla", _ACTUALS_SLA_LABEL, "ok", last_tick, age, expected, "")
+    gate = gate if gate is not None else coverage.load_gate_results()
+    sources = ops_state.get_source_status(ops)
+    entries: list[str] = []
+    reasons: list[str] = []
+    for row in rows:
+        release = _parse_utc(row["event_time_utc"])
+        reason = overdue_reason(row["event_title"], release, now, gate, sources, last_tick)
+        reasons.append(reason)
+        late = int((now - release).total_seconds() // 60)
+        sast = release.astimezone(LOCAL_TZ).strftime("%H:%M")
+        entries.append(f"{row['event_title']} {sast} SAST, {late} min late ({reason})")
+    status = "red" if any(r != "proprietary" for r in reasons) else SLA_PROPRIETARY_STATUS
+    return HealthItem("actuals_sla", _ACTUALS_SLA_LABEL, status, last_tick, age, expected,
+                      _list_detail(f"{len(entries)} overdue", entries))
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -418,6 +487,8 @@ def build_health(
          int(_JOBS["shock_reality_check"].expected.total_seconds()), lambda: _shock_reality_check_check(now, conns)),
         job("article_accumulator"),
         job("calendar_refresh"),
+        ("actuals_sla", _ACTUALS_SLA_LABEL, int(ACTUALS_SLA_AFTER.total_seconds()),
+         lambda: _actuals_sla_check(now, conns)),
         (_MACRO.key, _MACRO.label, int(_MACRO.expected.total_seconds()),
          lambda: _macro_calendar_check(now, conns, marker, failure_marker)),
     ]
