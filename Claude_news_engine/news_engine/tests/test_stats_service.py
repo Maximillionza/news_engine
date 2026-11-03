@@ -1185,7 +1185,9 @@ def test_floor_leaves_combined_unchanged():
 def test_scoreboard_no_call_counts_floor_rows():
     row = _floor_row(lambda bt: _acc_call(bt, "CPI m/m", _t(10), "bearish", 0.9, _pre(), signal=1))
     board = svc.build_scoreboard([row])
-    assert board["methods"]["news"]["no_call"] == 1 and board["methods"]["news"]["scored"] == 0
+    news = board["methods"]["news"]
+    assert news["no_call"] == 1 and news["scored"] == 0
+    assert news["no_call_floor"] == 1 and news["no_call_weak_lean"] == 0
 
 
 def test_news_low_trust_true_for_fomc_and_cpi_only(conns):

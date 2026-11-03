@@ -281,7 +281,7 @@ export function scoreboardHtml(sb, unit) {
     const pct = m.accuracy_shown ? ` (${Math.round(m.accuracy * 100)}%)` : "";
     const miss = m.mean_miss == null ? "" : `<div class="meta-text-sm">mean miss ${Number(m.mean_miss).toFixed(2)}${u}</div>`;
     const noCall = key === "news" && m.no_call != null
-      ? `<div class="meta-text-sm">no call on ${Number(m.no_call)} of ${Number(m.scored || 0) + Number(m.no_call)} graded releases (|lean| under 0.2)</div>` : "";
+      ? `<div class="meta-text-sm">no call on ${Number(m.no_call)} of ${Number(m.scored || 0) + Number(m.no_call)} graded releases (${Number(m.no_call_weak_lean || 0)} weak lean, ${Number(m.no_call_floor || 0)} too few articles)</div>` : "";
     return `<tr><td>${METHOD_LABEL[key]}</td><td>${m.right} of ${m.scored}${pct}${populationLines(m)}${noCall}${miss}</td>`
       + `<td>${rateText(m.directional)}</td></tr>`;
   }).join("");

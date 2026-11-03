@@ -420,7 +420,7 @@ test("news brief card uses the call word, never in line", () => {
 test("scoreboard shows directional-only, the News no-call count and the always-in-line baseline with n", () => {
   const sb = { methods: {
     tier1: { scored: 8, right: 5, accuracy: 0.625, accuracy_shown: false, mean_miss: null, directional: { scored: 2, right: 1, accuracy: null, accuracy_shown: false } },
-    news: { scored: 8, right: 5, accuracy: null, accuracy_shown: false, mean_miss: null, no_call: 23,
+    news: { scored: 8, right: 5, accuracy: null, accuracy_shown: false, mean_miss: null, no_call: 23, no_call_weak_lean: 17, no_call_floor: 6,
       directional: { scored: 6, right: 4, accuracy: null, accuracy_shown: false } },
     combined: { scored: 25, right: 15, accuracy: 0.6, accuracy_shown: true, mean_miss: null,
       directional: { scored: 25, right: 15, accuracy: 0.6, accuracy_shown: true } } },
@@ -429,7 +429,7 @@ test("scoreboard shows directional-only, the News no-call count and the always-i
       combined: { scored: 25, right: 10, accuracy: 0.4, accuracy_shown: true } },
     min_for_percent: 20, footnote: "Weights fixed at 70/30." };
   const html = scoreboardHtml(sb, "%");
-  for (const t of ["Directional only", "1 of 2", "4 of 6", "15 of 25 (60%)", "no call on 23 of 31 graded releases",
+  for (const t of ["Directional only", "1 of 2", "4 of 6", "15 of 25 (60%)", "no call on 23 of 31 graded releases (17 weak lean, 6 too few articles)",
     "Always in line (baseline)", "6 of 19", "2 of 8", "10 of 25 (40%)", "Weights fixed at 70/30."]) {
     assert.ok(html.includes(t), t);
   }

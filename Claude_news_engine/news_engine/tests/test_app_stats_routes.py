@@ -236,7 +236,7 @@ def test_scoreboard_route_serves_live_reconstructed_and_with_news_counts(full_cl
             "directional": directional,
         }
         if name == "news":
-            expected["no_call"] = 0
+            expected.update(no_call=0, no_call_weak_lean=0, no_call_floor=0)
         assert data["methods"][name] == expected
     assert data["methods"]["combined"] == {
         "scored": 1, "right": 1, "accuracy": None, "accuracy_shown": False, "mean_miss": pytest.approx(0.0),
@@ -253,7 +253,7 @@ def test_scoreboard_route_serves_the_honest_baselines_exactly(full_client):
     assert set(data["in_line_baseline"]) == {"tier1", "news", "combined"}
     base = {"mean_miss", "by_kind", "directional"} | rate_keys
     assert set(data["methods"]["tier1"]) == base
-    assert set(data["methods"]["news"]) == base | {"no_call"}
+    assert set(data["methods"]["news"]) == base | {"no_call", "no_call_weak_lean", "no_call_floor"}
     assert set(data["methods"]["combined"]) == base | {"with_news"}
     for name in ("tier1", "news", "combined"):
         assert set(data["methods"][name]["directional"]) == rate_keys

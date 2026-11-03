@@ -522,8 +522,9 @@ def build_scoreboard(rows: list[StatsRow]) -> dict:
     B9 ST2 (honest baselines, each with n, % hidden under 20), over the SAME graded calls as above:
     `directional` is accuracy on releases whose actual came in higher or lower (in-line actuals left out);
     top-level `in_line_baseline[name]` is how often an "always in line" guess would have been right on that
-    method's graded releases; `methods.news.no_call` counts scored releases where News abstained (|lean| under
-    the pre-registered threshold). An abstention is never graded, so it is in none of the other counts.
+    method's graded releases; `methods.news.no_call` counts scored releases where News abstained, split into
+    `no_call_weak_lean` (|lean| under the pre-registered threshold) and `no_call_floor` (fewer signal-bearing
+    articles than the evidence floor). An abstention is never graded, so it is in none of the other counts.
     """
     methods = {}
     in_line_baseline = {}
@@ -568,6 +569,9 @@ def build_scoreboard(rows: list[StatsRow]) -> dict:
         in_line_baseline[name] = _rate(scored, base_right)
         if name == "combined":
             methods[name]["with_news"] = with_news
-    methods["news"]["no_call"] = sum(
-        1 for r in rows if r.status == "scored" and r.news is not None and r.news.side is None)
+    abstained = [r for r in rows if r.status == "scored" and r.news is not None and r.news.side is None]
+    floor = sum(1 for r in abstained if str(r.news_no_call_reason or "").startswith("too few"))
+    methods["news"]["no_call"] = len(abstained)
+    methods["news"]["no_call_floor"] = floor                       # abstained on the evidence floor (FIX A3)
+    methods["news"]["no_call_weak_lean"] = len(abstained) - floor  # abstained on |lean| under the threshold
     return {"methods": methods, "min_for_percent": MIN_SCORED_FOR_PERCENT, "in_line_baseline": in_line_baseline}
