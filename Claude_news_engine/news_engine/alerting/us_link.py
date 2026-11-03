@@ -19,10 +19,11 @@ on a Russian data centre -- was alerting High with firm buy/sell leans
     unrest, a strike on a local site, a local company's outage).
 
 An LLM-classified alert gets both fields from the classifier, best-effort
-(alerting/llm_classify.py). A hard-rule hit never sees the LLM, so its
-fields come from the fixed _RULE_COUNTRY_US_LINK map below. "none" caps the
-alert at Medium with no buy/sell lean (cap_severity / cap_note); unknown
-(None) keeps today's behaviour.
+(alerting/llm_classify.py). A hard-rule hit that fires never sees the LLM,
+so its fields come from the fixed _RULE_COUNTRY_US_LINK map below; a phrase
+the map leaves unknown does not fire and goes to the classifier (FIX C1).
+"none" caps the alert at Medium with no buy/sell lean (cap_severity /
+cap_note); unknown (None) from the classifier keeps today's behaviour.
 """
 from __future__ import annotations
 
@@ -49,7 +50,10 @@ _UNKNOWN: tuple[Optional[str], Optional[str]] = (None, None)
 
 # One deliberate entry per taxonomy.HARD_RULE_PATTERNS phrase (a test pins the
 # key set). (None, None) where the phrase does not name the actor: a tanker or
-# pipeline attack, a war, a default or a downgrade can be anywhere.
+# pipeline attack, a war, a default or a downgrade can be anywhere. FIX C1: such
+# a phrase no longer fires on its own, triage.rule_guard_reason sends it to the
+# classifier, which can cap it. Only linked phrases fire, and no entry is "none",
+# so a fired hard rule is never capped.
 # Deliberate deviation from the B2 brief's example: unscheduled rate cut/hike
 # is NOT mapped to ("US", "direct") -- the phrase does not name the Fed, and
 # US/direct would give USD pairs a firm buy/sell lean on, say, a Turkish
