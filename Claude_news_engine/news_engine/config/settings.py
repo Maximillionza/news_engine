@@ -659,7 +659,7 @@ PRINT_SURPRISE_LEXICON = {
 # Minutes' top-3 contributing articles for XAUUSD.
 #
 # An article is kept if its title+summary contains ANY keyword below
-# (case-insensitive substring match), for its event's title. Same
+# (case-insensitive whole-word match, FIX 2026-11-03), for its event's title. Same
 # fail-open contract as PRINT_SURPRISE_LEXICON: an event title with NO
 # entry here gets NO filtering at all — guessing a keyword list for an
 # event nobody's curated risks silently dropping genuinely relevant
@@ -687,7 +687,7 @@ _CPI_RELEVANCE_KEYWORDS = [
 # row) — both names kept so historical Powell-era coverage and current
 # Warsh-era coverage both match, same "never drop real coverage" reasoning
 # as everything else in this dict.
-# B6 (2026-10-22): keyword list unchanged; the Fed co-term and title subject rules live in data_layer/subject_rules.py.
+# B6 (2026-10-22), FIX (2026-11-03): keyword lists unchanged; the Fed co-term, other-asset and US-subject rules live in data_layer/subject_rules.py.
 _FOMC_RELEVANCE_KEYWORDS = [
     "fomc", "federal reserve", "federal funds rate", "fed rate", "fed chair",
     "fed meeting", "fed minutes", "interest rate decision", "monetary policy",

@@ -34,8 +34,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import UTC_TZ, PRE_EVENT_WINDOW_HOURS
 from data_layer.calendar_feed import EconomicEvent
-from data_layer.event_context import EXCLUSION_REASONS, build_event_news_bundle
+from data_layer.event_context import EXCLUSION_REASONS, _is_relevant, build_event_news_bundle
 from data_layer.news_feed import NewsArticle
+from scoring.backtest_accumulator import _build_article_contribution_rows
 
 EVENT_TIME = dt.datetime(2026, 8, 19, 18, 0, tzinfo=UTC_TZ)
 
@@ -90,7 +91,8 @@ def test_relevance_keyword_match_is_case_insensitive_and_checks_summary_too():
     # FOMC named only in the summary) is now correctly excluded as
     # off_subject: the FOMC title rule needs the headline itself to name the
     # Fed, the dollar or US rates (data_layer/subject_rules.py).
-    matches_via_summary = _article("Markets steady ahead of release", "Traders await the RETAIL SALES report")
+    # FIX (2026-11-03): the title now needs a US marker in every family.
+    matches_via_summary = _article("US markets steady ahead of release", "Traders await the RETAIL SALES report")
     source = _StubSource([matches_via_summary])
     bundle = _build(_event("Retail Sales m/m"), source)
     assert len(bundle.articles) == 1
@@ -262,14 +264,24 @@ def test_single_stock_blurb_dropped_even_without_percent_figure_or_ahead_of_open
 def test_single_stock_blurb_filter_does_not_drop_genuine_macro_headlines():
     print("=== event_context: the single-stock-blurb filter doesn't false-positive on real macro coverage that happens to mention stocks/markets ===")
     genuinely_on_topic = [
-        _article("Gold miners rally as Fed signals rate cut", "FOMC statement points to a dovish pivot"),
-        _article("Wall Street closes lower as oil prices jump, indexes notch monthly gains", "ISM Manufacturing PMI data weighed on sentiment"),
-        _article("S&P 500 falls as CPI data disappoints", "Consumer price index came in hotter than forecast"),
+        _article("Apple rises as Fed signals rate cut", "FOMC statement points to a dovish pivot"),
+        _article("Factories and Wall Street slump as oil prices jump, indexes notch monthly gains", "ISM Manufacturing PMI data weighed on sentiment"),
+        _article("US retailers fall as CPI data disappoints", "Consumer price index came in hotter than forecast"),
     ]
     for article in genuinely_on_topic:
         source = _StubSource([article])
         bundle = _build(_event("FOMC Statement" if "FOMC" in article.summary else "ISM Manufacturing PMI" if "ISM" in article.summary else "CPI m/m"), source)
-        assert len(bundle.articles) == 1, f"should NOT have been dropped: {article.title!r}"
+        assert "single_stock_blurb" not in [r for _, r in bundle.excluded], f"should NOT be a blurb: {article.title!r}"
+    # FIX (2026-11-03): the three headlines this test used to keep lead with another asset, so the
+    # every-path lead rule now drops them. Not as blurbs: with the reason that says what they are.
+    asset_led = [
+        ("FOMC Statement", _article("Gold miners rally as Fed signals rate cut", "FOMC statement points to a dovish pivot")),
+        ("ISM Manufacturing PMI", _article("Wall Street closes lower as oil prices jump, indexes notch monthly gains", "ISM Manufacturing PMI data weighed on sentiment")),
+        ("CPI m/m", _article("S&P 500 falls as CPI data disappoints", "Consumer price index came in hotter than forecast")),
+    ]
+    for event_title, article in asset_led:
+        bundle = _build(_event(event_title), _StubSource([article]))
+        assert [(a.title, r) for a, r in bundle.excluded] == [(article.title, "other_asset_lead")]
     print("PASS\n")
 
 
@@ -285,7 +297,7 @@ def test_bundle_excluded_carries_reasons_not_articles():
     gold = _article("Gold edges up as October rate hike bets ease, stronger dollar cap gains", "Traders trimmed bets on a Federal Reserve hike")
     bundle = _build(_event("FOMC Statement"), _StubSource([fed, ecb, gold]))
     assert [a.title for a in bundle.articles] == [fed.title]
-    assert sorted(r for _, r in bundle.excluded) == ["foreign_cb", "off_subject"]
+    assert sorted(r for _, r in bundle.excluded) == ["foreign_cb", "other_asset_lead"]
     print("PASS\n")
 
 
@@ -302,7 +314,10 @@ def test_off_topic_not_in_excluded():
 
 def test_exclusion_reason_vocabulary():
     print("=== event_context: B6 -- the exclusion-reason vocabulary is fixed ===")
-    assert EXCLUSION_REASONS == ("single_stock_blurb", "foreign_cb", "no_fed_coterm", "off_subject", "duplicate_url")
+    assert EXCLUSION_REASONS == (
+        "single_stock_blurb", "foreign_cb", "no_fed_coterm", "other_asset_lead", "off_subject", "no_us_subject",
+        "duplicate_url",
+    )
     print("PASS\n")
 
 
@@ -331,6 +346,47 @@ def test_url_dedup_runs_after_relevance():
     print("PASS\n")
 
 
+# --- FIX (2026-11-03), audit B3 / B4: whole-word keywords and the two new reason codes. ---
+
+def _relevant(title, keywords):
+    return _is_relevant(_article(title), keywords)
+
+
+def test_keyword_matching_is_whole_word():
+    print("=== event_context: FIX -- keywords match whole words, tolerating a plural or possessive ===")
+    ism = ["ism", "institute for supply management"]
+    assert _relevant("Investor optimism returns", ism) is False
+    assert _relevant("Prices are dropping fast", ["ppi", "producer prices"]) is False
+    assert _relevant("ISM manufacturing index rises", ism) is True
+    assert _relevant("ISM's gauge slips", ism) is True
+    assert _relevant("ISM\u2019s gauge slips", ism) is True
+    assert _relevant("Fed rate hikes are coming", ["rate hike"]) is True
+    assert _relevant("U.S. data", ["u.s."]) is True
+    assert _relevant("CPI m/m rose", ["m/m"]) is True
+    # The summary still counts.
+    assert _is_relevant(_article("Markets steady", "ISM survey due"), ism) is True
+    print("PASS\n")
+
+
+def test_new_reasons_reach_the_evidence_rows():
+    print("=== event_context: FIX -- no_us_subject and other_asset_lead land in the evidence rows ===")
+    assert EXCLUSION_REASONS == (
+        "single_stock_blurb", "foreign_cb", "no_fed_coterm", "other_asset_lead", "off_subject", "no_us_subject",
+        "duplicate_url",
+    )
+    kept = _article("US jobless claims fall to 194,000")
+    westpac = _article("Westpac's latest job cuts not AI-driven, spokesperson says - Reuters")
+    gold = _article("Gold edges up as jobless claims rise")
+    bundle = _build(_event("Unemployment Claims"), _StubSource([kept, westpac, gold]))
+    assert [a.title for a in bundle.articles] == [kept.title]
+    rows = _build_article_contribution_rows([], bundle.excluded)
+    assert [(r["title"], r["status"], r["reason"]) for r in rows] == [
+        (westpac.title, "excluded", "no_us_subject"),
+        (gold.title, "excluded", "other_asset_lead"),
+    ]
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_off_topic_article_is_dropped_for_an_event_with_configured_keywords()
     test_relevance_keyword_match_is_case_insensitive_and_checks_summary_too()
@@ -351,4 +407,6 @@ if __name__ == "__main__":
     test_off_topic_not_in_excluded()
     test_exclusion_reason_vocabulary()
     test_url_dedup_runs_after_relevance()
+    test_keyword_matching_is_whole_word()
+    test_new_reasons_reach_the_evidence_rows()
     print("All event_context tests passed.")

@@ -40,7 +40,7 @@ from scoring.backtest_store import DB_PATH
 SAST = dt.timezone(dt.timedelta(hours=2))
 NONZERO_SENTIMENT = 0.05   # abs(usd_sentiment) at or above this counts as a real vote
 EXAMPLES_PER_REASON = 5
-_REASONS = ("foreign_cb", "no_fed_coterm", "off_subject")
+_REASONS = ("foreign_cb", "no_fed_coterm", "other_asset_lead", "off_subject", "no_us_subject")
 _COUNT_KEYS = ("rows", "rows_with_contributions", "contributions", "unique_contributions", "removed_unique",
                "removed_nonzero", "rows_touched", "rows_all_removed", "occurrences_touched", "same_url_pairs")
 

@@ -17,7 +17,7 @@ A hawkish foreign central bank is USD-NEGATIVE, but the lexicon and FinBERT
 read "rates must rise" as hawkish and therefore USD-positive: the sign is
 inverted, not just noisy.
 
-Three rules, applied in this order by b6_exclusion_reason():
+Five rules, applied in this order by b6_exclusion_reason():
 
 1. foreign_cb (every event title): a foreign central bank or one of its
    officials is named in the title; or in the summary when the title names
@@ -26,11 +26,17 @@ Three rules, applied in this order by b6_exclusion_reason():
    'monetary policy', 'central bank', ...) also fire on any other central
    bank, so the title or summary must also name the Fed (fed, fomc, federal
    reserve, a Fed official, ...).
-3. off_subject (FOMC and CPI families, owner decision 8: a title filter,
+3. other_asset_lead (every event title, FIX 2026-11-03, audit B1 stopgap):
+   the title LEADS with another asset or a foreign currency, so its tone is
+   about that asset, not the dollar. Applied on every path, so a Fed mention
+   no longer rescues it. Titles in OWN_ASSET_TITLES keep their own asset.
+4. off_subject (FOMC and CPI families, owner decision 8: a title filter,
    not the LLM tier): the TITLE must name the dollar, the Fed, US rates /
    Treasury yields, or (CPI family) US inflation / CPI / the BLS.
+5. no_us_subject (every other family, FIX 2026-11-03, audit B4): the TITLE
+   must carry a US marker, see names_us_subject().
 
-Limits, stated plainly: the subject rule reads the title only, so a US
+Limits, stated plainly: the subject rules read the title only, so a US
 article with a vague headline is dropped and a foreign article with a
 US-sounding headline passes. FinBERT and the lexicon still read tone, not
 subject: an article that passes these rules but is really about another
@@ -43,12 +49,13 @@ K-series, shock-alert country tagging) can reuse the same lists.
 """
 from __future__ import annotations
 
+import functools
 import re
 
 from config.settings import FED_OFFICIAL_SURNAMES, RELEVANCE_FAMILY_BY_TITLE
 
-# Families the Fed co-term and title subject rules apply to. Every other
-# family (jobs, ppi, ism, retail_sales, gdp, other) only gets foreign_cb.
+# Families the Fed co-term and tuned off_subject rules apply to. Every other
+# family (jobs, ppi, ism, retail_sales, gdp, other) gets no_us_subject instead.
 SUBJECT_RULE_FAMILIES: tuple[str, ...] = ("fomc", "cpi")
 
 # Foreign central banks and their officials. Bare "Bailey" / "Pill" are NOT
@@ -135,14 +142,36 @@ _DOLLAR_PATTERN = re.compile(r"\b(?:dollar|usd|greenback|dxy)\b", re.IGNORECASE)
 
 # A title that LEADS with another asset is about that asset, even when it
 # mentions the dollar later ("Gold edges up as ..., stronger dollar cap
-# gains"). Only applied to the dollar path: a title that names the Fed is
-# kept whatever it leads with ("Gold miners rally as Fed signals rate cut").
+# gains"). This older list only guards the dollar path in _fomc_subject(),
+# where a bare "Asian" / "European" / "Global" lead also disqualifies a
+# dollar mention; the every-path rule is _NON_USD_LEAD_PATTERN below.
 _OTHER_ASSET_LEAD_PATTERN = re.compile(
     r"^\W*(?:gold|silver|platinum|oil|crude|brent|wti|copper|bitcoin|crypto\w*|"
     r"stocks?|equities|shares|wall st(?:reet)?|s&p(?: 500)?|nasdaq|dow|yen|euro|"
     r"sterling|pound|yuan|asian|european|global)\b",
     re.IGNORECASE,
 )
+
+# FIX (2026-11-03), audit B1 stopgap: every path, a Fed or US mention does not
+# rescue the title ("Gold miners rally as Fed signals rate cut", "Yen falls as
+# US yields rise"). An optional qualifier may come first ("Spot gold", "U.S.
+# crude", "Asian shares"); a bare "Asian" or "Global" lead does not count here.
+_NON_USD_LEAD_PATTERN = re.compile(
+    r"^\W*(?:(?:spot|u\.?s\.?|asian|european|global|japanese|chinese|london)\s+)?"
+    r"(?:gold|silver|platinum|copper|oil|crude|brent|wti|natural gas|natgas|bitcoin|crypto\w*|"
+    r"stocks?|equities|shares|wall st(?:reet)?|s&p(?: 500)?|nasdaq|dow|nikkei|ftse|dax|"
+    r"pound|sterling|euro|yen|yuan|aussie|loonie|kiwi|franc|rupee|peso|lira|"
+    r"asia fx|asian currencies)\b",
+    re.IGNORECASE,
+)
+
+# Event titles whose own subject IS an asset: a headline naming that asset is
+# on topic, so it skips the lead and US-subject rules. Rule level only: neither
+# title has a keyword list, so both still fail closed in event_context.
+OWN_ASSET_TITLES: dict[str, re.Pattern[str]] = {
+    "Crude Oil Inventories": re.compile(r"\b(?:oil|crude|brent|wti|gasoline)\b", re.IGNORECASE),
+    "Natural Gas Storage": re.compile(r"\b(?:natural gas|natgas|gas)\b", re.IGNORECASE),
+}
 
 # CPI family extras: US inflation (US marker, optional 's, then within 0-2
 # words inflation / CPI / consumer prices), the BLS, or a bare CPI mention
@@ -173,6 +202,27 @@ _FOREIGN_CPI_GUARD_PATTERN = re.compile(
     )
     + r")(?![a-z])",
     re.IGNORECASE,
+)
+
+# US-subject rule (FIX 2026-11-03, audit B4). A hard marker is US on its own;
+# US / U.S. / USA / America(n) and the Fed are read by names_us_marker() and
+# names_fed(). Acronyms are case-sensitive where the lower-case word is
+# something else ("Bea", and "Earthquake jolts ..." for JOLTS below).
+# "Wall Street" also leads titles, but _NON_USD_LEAD_PATTERN runs first, so
+# here it only ever counts when it does not lead.
+_US_BODY_PATTERN = re.compile(
+    r"\b(?:BLS|BEA)\b"
+    r"|(?i:\b(?:bureau of labor statistics|labor department|labor dept|commerce department|"
+    r"bureau of economic analysis|census bureau|wall street)\b)"
+)
+# A soft marker is usually US but also appears in foreign headlines ("Canada
+# jobless claims", "UK Treasury"), so it needs _FOREIGN_CPI_GUARD_PATTERN to
+# stay silent. The dollar is soft too, see names_us_subject().
+_US_SOFT_MARKER_PATTERN = re.compile(
+    r"\b(?:ADP|JOLTS|PCE|ISM|UoM)\b"
+    r"|(?i:\b(?:treasury|treasuries|census|(?:non-?farm\s+)?payrolls?|jobless claims|initial claims|"
+    r"unemployment claims|personal consumption expenditures|institute for supply management|"
+    r"university of michigan|umich)\b)"
 )
 
 
@@ -209,6 +259,43 @@ def names_us_marker(text: str) -> bool:
     return bool(_US_MARKER_PATTERN.search(_normalise(text)))
 
 
+def leads_with_other_asset(title: str) -> bool:
+    """True when the title leads with another asset or a foreign currency ("Gold edges up", "U.S. crude falls")."""
+    return bool(_NON_USD_LEAD_PATTERN.search(_normalise(title)))
+
+
+def names_us_subject(title: str) -> bool:
+    """
+    True when the title carries a US marker: a hard one, or a soft one with
+    no foreign place or currency beside it. A foreign name does not beat a
+    hard marker ("Canada slaps tariffs on US goods" passes), and a US company
+    with no marker fails: the rule reads the title, it holds no company list.
+    """
+    title = _normalise(title)
+    if names_us_marker(title) or names_fed(title) or _US_BODY_PATTERN.search(title):
+        return True
+    without_foreign_dollars = _FOREIGN_DOLLAR_PATTERN.sub(" ", title)
+    soft_marker = _US_SOFT_MARKER_PATTERN.search(title) or _DOLLAR_PATTERN.search(without_foreign_dollars)
+    return bool(soft_marker) and not _FOREIGN_CPI_GUARD_PATTERN.search(title)
+
+
+def news_low_trust(event_title: str) -> bool:
+    """True for the FOMC and CPI families, whose News lean is article tone, not policy stance."""
+    return title_family(event_title) in SUBJECT_RULE_FAMILIES
+
+
+@functools.lru_cache(maxsize=None)
+def keyword_pattern(keywords: tuple[str, ...]) -> re.Pattern[str]:
+    """
+    Whole-word match for a keyword list, on lower-cased _normalise()d text.
+    Lookarounds, not word boundaries, so "u.s." and "m/m" work; a plural or
+    possessive is tolerated so "rate hike" still finds "rate hikes" and "ism"
+    finds "ism's". An empty list matches nothing (fail closed).
+    """
+    alternatives = "|".join(re.escape(keyword) for keyword in sorted(keywords, key=len, reverse=True))
+    return re.compile(r"(?<![a-z0-9])(?:" + (alternatives or r"(?!)") + r")(?:'?s)?(?![a-z0-9])")
+
+
 def _fomc_subject(title: str) -> bool:
     if names_fed(title) or _US_RATES_PATTERN.search(title):
         return True
@@ -235,8 +322,10 @@ def passes_subject_rule(title: str, family: str) -> bool:
 def b6_exclusion_reason(title: str, summary: str, event_title: str) -> str | None:
     """
     Why an article that matched an event's keywords must not vote on it:
-    "foreign_cb" -> "no_fed_coterm" (FOMC family) -> "off_subject" (FOMC
-    and CPI families). None = the article is kept.
+    "foreign_cb" -> "no_fed_coterm" (FOMC family) -> "other_asset_lead" ->
+    "off_subject" (FOMC and CPI families) -> "no_us_subject" (every other
+    family). None = the article is kept. A title in OWN_ASSET_TITLES that
+    names its own asset skips the last three.
     """
     family = title_family(event_title)
     title = _normalise(title)
@@ -252,6 +341,15 @@ def b6_exclusion_reason(title: str, summary: str, event_title: str) -> str | Non
     if family == "fomc" and not names_fed(f"{title} {summary}"):
         return "no_fed_coterm"
 
+    own_asset = OWN_ASSET_TITLES.get(event_title)
+    if own_asset is not None and own_asset.search(title):
+        return None
+
+    if leads_with_other_asset(title):
+        return "other_asset_lead"
+
     if not passes_subject_rule(title, family):
         return "off_subject"
+    if family not in SUBJECT_RULE_FAMILIES and not names_us_subject(title):
+        return "no_us_subject"
     return None

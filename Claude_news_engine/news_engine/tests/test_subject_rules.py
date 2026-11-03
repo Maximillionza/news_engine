@@ -4,9 +4,10 @@ Tests for data_layer/subject_rules.py -- pure functions, no network, no DB.
 B6 (2026-10-22), audit AUD-P0-1 / AS-04: foreign central-bank headlines
 (ECB, BoE, BoJ, RBA, ...) were scored as US-dollar news for FOMC and CPI
 events, and off-subject titles (a gold-led headline that merely mentions
-the dollar) voted on FOMC. These tests pin the three rules in order:
+the dollar) voted on FOMC. These tests pin the rules in order:
 foreign_cb (every event title) -> no_fed_coterm (FOMC family) ->
-off_subject (FOMC and CPI families, title only).
+other_asset_lead (every event title, FIX 2026-11-03) -> off_subject (FOMC
+and CPI families, title only) -> no_us_subject (every other family, FIX).
 """
 import sys
 import os
@@ -20,7 +21,11 @@ from config.settings import CPI_FAMILY_TITLES, FOMC_FAMILY_TITLES
 from data_layer.subject_rules import (
     b6_exclusion_reason,
     foreign_cb_match,
+    keyword_pattern,
+    leads_with_other_asset,
     names_us_marker,
+    names_us_subject,
+    news_low_trust,
     passes_subject_rule,
     title_family,
 )
@@ -113,7 +118,7 @@ def test_generic_fomc_term_needs_fed_coterm():
 
 def test_gold_led_dollar_title_not_scored_for_fomc():
     title = "Gold edges up as October rate hike bets ease, stronger dollar cap gains"
-    assert b6_exclusion_reason(title, "Traders trimmed bets on a Federal Reserve hike", "FOMC Meeting Minutes") == "off_subject"
+    assert b6_exclusion_reason(title, "Traders trimmed bets on a Federal Reserve hike", "FOMC Meeting Minutes") == "other_asset_lead"
     assert b6_exclusion_reason(title, "", "FOMC Meeting Minutes") == "no_fed_coterm"
 
 
@@ -145,25 +150,26 @@ def test_subject_rule_rejects_off_subject():
 
 
 def test_bare_cpi_rejects_foreign_currency_and_city_leads():
-    # Live title from scoring/backtest_log.db, plus nickname/city variants.
+    # Live title from scoring/backtest_log.db, plus nickname variants: since FIX the lead rule takes them first.
     for title in (
         "Aussie dollar eyes longest weekly winning streak since 2021 on hot CPI",
-        "Tokyo CPI accelerates in October",
         "Loonie firms as CPI beats",
         "Yen slips after CPI miss",
         "Sterling jumps on CPI surprise",
         "Rupee steady ahead of CPI data",
     ):
-        assert b6_exclusion_reason(title, "", "CPI m/m") == "off_subject", title
-    # The US-marker and dollar paths still win over a foreign currency mention.
-    assert b6_exclusion_reason("Yen slides as US CPI runs hot", "", "CPI m/m") is None
+        assert b6_exclusion_reason(title, "", "CPI m/m") == "other_asset_lead", title
+    assert b6_exclusion_reason("Tokyo CPI accelerates in October", "", "CPI m/m") == "off_subject"
+    # FIX: a US marker no longer rescues a currency-led title; a dollar-led title with a currency later stays.
+    assert b6_exclusion_reason("Yen slides as US CPI runs hot", "", "CPI m/m") == "other_asset_lead"
     assert b6_exclusion_reason("Dollar firms vs yen after CPI beat", "", "CPI m/m") is None
     assert b6_exclusion_reason("CPI preview: core seen at 0.3%", "", "CPI m/m") is None
 
 
 def test_currency_nicknames_do_not_change_foreign_cb():
     # The CPI guard markers are not foreign places for the central-bank rule.
-    assert b6_exclusion_reason("Yen traders eye central bank minutes", "", "Retail Sales m/m") is None
+    assert foreign_cb_match("Yen traders eye central bank minutes") is None
+    assert b6_exclusion_reason("Yen traders eye central bank minutes", "", "Retail Sales m/m") == "other_asset_lead"
 
 
 def test_us_marker_is_case_sensitive():
@@ -178,7 +184,7 @@ def test_foreign_dollar_is_not_the_dollar():
     assert not passes_subject_rule("Australian dollar jumps as rate hike bets build", "fomc")
 
 
-def test_other_titles_only_get_foreign_cb():
+def test_other_titles_skip_the_tuned_title_rule():
     assert b6_exclusion_reason("US payrolls jump 250,000; rate cut bets fade", "", "Non-Farm Employment Change") is None
     assert b6_exclusion_reason("BoE's Bailey says UK hiring slows", "", "Non-Farm Employment Change") == "foreign_cb"
     assert passes_subject_rule("AI chip stocks slump", "jobs") is True
@@ -199,3 +205,157 @@ def test_audit_probe1_now_drops_all():
     assert len(lines) == 4
     for line in lines:
         assert line.startswith("DROP"), line
+
+
+# --- FIX (2026-11-03), audit B3 / B4 / B1 stopgap: US-subject rule for every family, other-asset lead on every path. ---
+
+def test_us_subject_real_cases():
+    westpac = "Westpac's latest job cuts not AI-driven, spokesperson says - Reuters"
+    assert b6_exclusion_reason(westpac, "", "Unemployment Claims") == "no_us_subject"
+    assert b6_exclusion_reason("Venezuela oilfield hiring picks up", "", "Unemployment Claims") == "no_us_subject"
+    assert b6_exclusion_reason("US jobless claims fall to 194,000", "", "Unemployment Claims") is None
+    philippine = "'Godzilla El Ni\u00f1o' is wreaking havoc with Philippine central bank's inflation forecasts"
+    assert b6_exclusion_reason(philippine, "", "PPI m/m") == "foreign_cb"
+
+
+def test_soft_marker_needs_no_foreign_place():
+    assert b6_exclusion_reason("Canada jobless claims rise", "", "Unemployment Claims") == "no_us_subject"
+    assert b6_exclusion_reason("Jobless claims rise to 230,000", "", "Unemployment Claims") is None
+    assert b6_exclusion_reason("UK consumer confidence falls", "", "Prelim UoM Consumer Sentiment") == "no_us_subject"
+    assert b6_exclusion_reason("University of Michigan sentiment slips", "", "Prelim UoM Consumer Sentiment") is None
+    assert b6_exclusion_reason("PCE inflation eases", "", "Core PCE Price Index m/m") is None
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Gold edges up as rate hike bets ease",
+        "Pound edges up as dollar softens",
+        "Gold miners rally as Fed signals rate cut",
+        "U.S. crude falls below $80 as oil prices sink",
+        "Wall Street ends higher as tech rebounds",
+    ],
+)
+def test_other_asset_lead_on_every_path(title):
+    assert b6_exclusion_reason(title, "", "CPI m/m") == "other_asset_lead"
+    assert b6_exclusion_reason(title, "", "Unemployment Claims") == "other_asset_lead"
+    assert b6_exclusion_reason(title, "Fed officials meet next week", "FOMC Statement") == "other_asset_lead"
+    # The empty-summary case stops one rule earlier unless the title names the Fed; either way it is out.
+    assert b6_exclusion_reason(title, "", "FOMC Statement") in ("no_fed_coterm", "other_asset_lead")
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Spot gold slips", "US stocks fall", "U.S. stocks fall", "Asian shares rise", "European equities drop",
+        "Global stocks slide", "Japanese yen weakens", "Chinese yuan firms", "London copper rises",
+        "Silver climbs", "Platinum drops", "Brent settles lower", "WTI gains", "Natural gas surges", "Natgas slides",
+        "Bitcoin jumps", "Crypto rally fades", "Cryptocurrencies slump", "Wall St opens lower", "S&P 500 record",
+        "S&P slips", "Nasdaq jumps", "Dow drops", "Nikkei jumps", "FTSE 100 falls", "DAX rises", "Sterling slips",
+        "Euro firms", "Yuan steadies", "Aussie gains", "Loonie weakens", "Kiwi rises", "Franc firms", "Rupee falls",
+        "Peso slides", "Lira hits low", "Asia FX weak", "Asian currencies fall", "\u2018Gold rush\u2019 continues",
+    ],
+)
+def test_lead_pattern_covers_each_asset(title):
+    assert leads_with_other_asset(title) is True
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Dollar rises after hot CPI", "Treasury yields climb", "US CPI rises", "Golden Week trade slows",
+        "Oilfield hiring picks up", "Downtown retail sales slip", "Shareholders revolt", "Europe stumbles",
+        "Fed lifts gold outlook", "Dollar firms vs yen after CPI beat",
+    ],
+)
+def test_lead_pattern_leaves_other_leads(title):
+    assert leads_with_other_asset(title) is False
+
+
+def test_dollar_headline_kept_in_every_family():
+    assert b6_exclusion_reason("Dollar rises after hot CPI", "", "CPI m/m") is None
+    assert b6_exclusion_reason("Dollar rises after hot PPI", "", "PPI m/m") is None
+    assert b6_exclusion_reason("Greenback rises after hot PPI", "", "PPI m/m") is None
+    assert b6_exclusion_reason("Aussie dollar rises on hot CPI", "", "CPI m/m") is not None
+    # A foreign dollar is not the dollar for the soft marker either.
+    assert b6_exclusion_reason("Canadian dollar firms on hot PPI", "", "PPI m/m") == "no_us_subject"
+
+
+def test_wall_street_marker_only_when_not_leading():
+    assert b6_exclusion_reason("Jobs report lifts Wall Street", "", "Non-Farm Employment Change") is None
+    assert b6_exclusion_reason("Wall Street cheers jobs report", "", "Non-Farm Employment Change") == "other_asset_lead"
+
+
+def test_own_asset_title_keeps_its_headlines():
+    assert b6_exclusion_reason("Oil jumps as EIA reports crude draw", "", "Crude Oil Inventories") is None
+    assert b6_exclusion_reason("Oil jumps as EIA reports crude draw", "", "CPI m/m") == "other_asset_lead"
+    assert b6_exclusion_reason("Natural gas prices fall after storage build", "", "Natural Gas Storage") is None
+    # The exemption is per asset: a gold headline is still another asset for the crude title,
+    # and a foreign central bank still goes first.
+    assert b6_exclusion_reason("Gold rises as dollar slips", "", "Crude Oil Inventories") == "other_asset_lead"
+    assert b6_exclusion_reason("ECB warns on oil prices", "", "Crude Oil Inventories") == "foreign_cb"
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "U.S. factory orders rise", "US data due", "USA jobs plan", "America adds jobs", "American shoppers pull back",
+        "United States hiring slows", "Fed sees slower hiring", "FOMC minutes due", "Warsh speaks on jobs",
+        "BLS delays report", "Bureau of Labor Statistics delays report", "Labor Department says layoffs rose",
+        "Labor Dept says layoffs rose", "Commerce Department revises figures", "BEA revises figures",
+        "Bureau of Economic Analysis revises figures", "Census Bureau delays data",
+        "Hiring slows, Wall Street fears",
+    ],
+)
+def test_hard_markers_pass_even_with_a_foreign_name(title):
+    assert names_us_subject(title) is True
+    assert names_us_subject(f"{title} as Canada watches") is True
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Treasury sells bills", "Treasuries slip", "Census shows growth", "Dollar slips", "Greenback slips",
+        "Payrolls jump", "Non-farm payrolls jump", "Nonfarm payrolls jump", "Jobless claims fall", "Initial claims fall",
+        "Unemployment claims fall", "ADP report beats", "JOLTS openings fall", "PCE cools",
+        "Personal consumption expenditures cool", "ISM slips", "Institute for Supply Management survey slips",
+        "University of Michigan survey slips", "UMich survey slips", "UoM survey slips",
+    ],
+)
+def test_soft_markers_pass_until_a_foreign_place_is_named(title):
+    assert names_us_subject(title) is True
+    assert names_us_subject(f"{title} in Canada") is False
+
+
+def test_us_subject_ignores_lookalikes():
+    for title in (
+        "Earthquake jolts Japanese coast",     # lower-case "jolts" is a verb, not the JOLTS survey
+        "Inflation Jolts Markets",
+        "Layoffs tell us nothing new",         # the pronoun
+        "Bea Arthur tribute sale lifts store sales",
+        "Optimism grows on hiring",
+        "Australian dollar firms",
+    ):
+        assert names_us_subject(title) is False, title
+
+
+def test_curly_apostrophe_reaches_the_new_rules():
+    assert b6_exclusion_reason("Westpac\u2019s job cuts widen", "", "Unemployment Claims") == "no_us_subject"
+    assert b6_exclusion_reason("America\u2019s job cuts widen", "", "Unemployment Claims") is None
+
+
+def test_news_low_trust_is_fomc_and_cpi_only():
+    assert news_low_trust("FOMC Statement") is True
+    assert news_low_trust("Core CPI m/m") is True
+    assert news_low_trust("PPI m/m") is False
+    assert news_low_trust("Core PCE Price Index m/m") is False
+
+
+def test_keyword_pattern_edges():
+    pattern = keyword_pattern(("rate", "rate hike", "m/m", "u.s."))
+    assert pattern is keyword_pattern(("rate", "rate hike", "m/m", "u.s."))   # lru_cache
+    assert pattern.search("a rate hike's cost").group(0) == "rate hike's"     # longest alternative first
+    assert pattern.search("the u.s. data") is not None
+    assert pattern.search("corporate news") is None
+    assert pattern.search("rate2 table") is None
+    assert keyword_pattern(()).search("anything at all") is None              # an empty list matches nothing
