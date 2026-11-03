@@ -429,6 +429,39 @@ def test_poller_ehs_after_3_days_waits(conns):
     assert state.catchup_due is False                                     # and the catch-up pass still ends
 
 
+def test_poller_ehs_steady_state_fills_after_handover(conns):
+    """Engine running continuously (no restart, no wake): FRED posting late must still fill inside the 3 days."""
+    dash, ops = conns
+    row = _row(dash, EHS, EHS_RELEASE, forecast="3.95M", previous="3.98M")
+    fetch = FakeFetch(_outcome(EHS, {D(2026, 8, 1): 3930000.0, D(2026, 9, 1): 3990000.0}))
+    state = poller.PollerState(catchup_due=False)
+    now = EHS_RELEASE + dt.timedelta(hours=3)
+    # the sleep planner must wake for the row too (not idle-sleep past it)
+    assert poller.next_sleep_seconds(dash, now, state, frozenset({EHS})) == poller.MIN_SLEEP_SECONDS
+    report = _tick(dash, ops, now, state, fetch, enabled=frozenset({EHS}))
+    assert _get(dash, row)["actual"] == "3.99M"
+    assert report.filled == [(EHS, EHS_RELEASE.isoformat(), "3.99M", "fred")]
+
+
+def test_poller_ehs_slow_cadence_and_stops_after_3_days(conns):
+    dash, ops = conns
+    _row(dash, EHS, EHS_RELEASE, forecast="3.95M", previous="3.98M")
+    fetch = FakeFetch(_outcome(EHS, {}))                                  # FRED has nothing yet
+    state = poller.PollerState(catchup_due=False)
+    now = EHS_RELEASE + dt.timedelta(hours=5)
+    _tick(dash, ops, now, state, fetch, enabled=frozenset({EHS}))
+    assert len(fetch.calls) == 1
+    _tick(dash, ops, now + dt.timedelta(seconds=60), state, fetch, enabled=frozenset({EHS}))
+    assert len(fetch.calls) == 1                                          # slow cadence: not again within 5 min
+    assert poller.next_sleep_seconds(dash, now + dt.timedelta(seconds=60), state, frozenset({EHS})) == 240
+    _tick(dash, ops, now + dt.timedelta(seconds=poller.SLOW_POLL_SECONDS), state, fetch, enabled=frozenset({EHS}))
+    assert len(fetch.calls) == 2
+    closed = EHS_RELEASE + dt.timedelta(days=3, minutes=1)
+    _tick(dash, ops, closed, state, fetch, enabled=frozenset({EHS}))
+    assert len(fetch.calls) == 2                                          # window closed: no poll
+    assert poller.next_sleep_seconds(dash, closed, state, frozenset({EHS})) == poller.IDLE_SLEEP_SECONDS
+
+
 def test_poller_window_does_not_touch_titles_without_one(conns):
     dash, ops = conns
     row = _row(dash, PCE, RELEASE, forecast="0.3%", previous="0.2%")

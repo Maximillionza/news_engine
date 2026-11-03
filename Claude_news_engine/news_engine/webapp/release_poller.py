@@ -139,6 +139,18 @@ def note_wake(state: PollerState, now: dt.datetime, planned_sleep_seconds: float
 
 # ---------------------------------------------------------------- rows
 
+def _first_print_span(spec: Optional[OfficialSpec]) -> Optional[dt.timedelta]:
+    """How long after the release the spec's first print can still be read (None: no such window)."""
+    if spec is None or spec.first_print_window_days is None:
+        return None
+    return min(dt.timedelta(days=spec.first_print_window_days), CATCHUP_LOOKBACK)
+
+
+def _longest_first_print_span() -> dt.timedelta:
+    spans = [_first_print_span(spec) for spec in OFFICIAL_SPECS.values()]
+    return max([HANDOVER_AFTER, *(span for span in spans if span is not None)])
+
+
 def _candidate_rows(conn: sqlite3.Connection, enabled: frozenset[str], start: dt.datetime,
                     end: dt.datetime) -> list[sqlite3.Row]:
     """USD rows of enabled titles with no actual and an event time in (about) [start, end], oldest first."""
@@ -183,7 +195,9 @@ def run_tick(conn: sqlite3.Connection, ops_conn: sqlite3.Connection, now: dt.dat
     if state.bls_day != today:
         state.bls_day, state.bls_calls = today, 0
 
-    window_start = now - (CATCHUP_LOOKBACK if state.catchup_due else HANDOVER_AFTER)
+    # Rows of a first-print-window spec (Existing Home Sales) stay candidates until their window closes, catch-up
+    # pass or not: FRED/ALFRED backfill has no path for them, so the poller is the only thing that can fill them.
+    window_start = now - (CATCHUP_LOOKBACK if state.catchup_due else _longest_first_print_span())
     due: list[_Due] = []
     catchup_blocked = False
     for row in _candidate_rows(conn, enabled, window_start, now):
@@ -199,7 +213,13 @@ def run_tick(conn: sqlite3.Connection, ops_conn: sqlite3.Connection, now: dt.dat
             report.waiting.append((row["event_title"], row["event_time_utc"], "first-print window closed"))
             continue
         catchup = age > HANDOVER_AFTER
-        if catchup:
+        if catchup and spec.first_print_window_days is not None:
+            # Inside its window: a slow poll, not a catch-up row (those are one-off and left to the backfill).
+            last = state.last_polled.get(key)
+            if last is not None and (now - last).total_seconds() < SLOW_POLL_SECONDS:
+                continue
+            catchup = False
+        elif catchup:
             if not state.catchup_due or key in state.catchup_done:
                 continue
         elif not poll_due(release, state.last_polled.get(key), now):
@@ -297,12 +317,23 @@ def next_sleep_seconds(conn: sqlite3.Connection, now: dt.datetime, state: Poller
     horizon = now + dt.timedelta(seconds=IDLE_SLEEP_SECONDS)
     bls_calls = state.bls_calls if state.bls_day == now.astimezone(_UTC).date() else 0
     soonest: Optional[dt.datetime] = None
-    for row in _candidate_rows(conn, enabled, now - HANDOVER_AFTER, horizon):
+    for row in _candidate_rows(conn, enabled, now - _longest_first_print_span(), horizon):
         spec = OFFICIAL_SPECS.get(row["event_title"])
         release = _parse_utc(row["event_time_utc"])
         if spec is None or release > horizon:
             continue
         last = state.last_polled.get((row["event_title"], row["event_time_utc"]))
+        span = _first_print_span(spec)
+        if now - release > HANDOVER_AFTER:
+            # Past the 2 h hand-over only a first-print-window row is still ours: slow cadence until the window closes.
+            if span is None or now - release > span:
+                continue
+            ready = now if last is None else max(now, last + dt.timedelta(seconds=SLOW_POLL_SECONDS))
+            retry_at = state.retry_at.get(spec.source)
+            if retry_at is not None and retry_at > ready:
+                ready = retry_at
+            soonest = ready if soonest is None or ready < soonest else soonest
+            continue
         if last is None:
             ready = max(release, now)
         else:
