@@ -107,17 +107,28 @@ _COMMENTARY_RE = re.compile(
 )
 
 
+def _guard_text(title: str) -> str:
+    return title.lower().replace("\u2019", "'").replace("\u2018", "'")
+
+
+def _title_hits(title: str, hits: list[str]) -> list[str]:
+    text = _guard_text(title)
+    return [hit for hit in hits if hit in text]
+
+
 def rule_guard_reason(title: str, hits: list[str]) -> Optional[str]:
     """
     The first GUARD_REASONS entry that stops a hard-rule hit firing on its
     own; None = a clean rule hit. Reads the title only: a phrase found just
     in the summary (live alert 7) is "summary_only", and a denial or price
     word in a summary says nothing about the headline the owner reads.
-    "unknown_us_link" comes last: the phrase does not name a path into US
-    prices, so the classifier must judge it (alerting/us_link.py).
+    "unknown_us_link" comes last: the title's own phrases do not name a path
+    into US prices, so the classifier must judge it (alerting/us_link.py). A
+    summary phrase with a known link cannot vouch for them.
     """
-    text = title.lower().replace("\u2019", "'").replace("\u2018", "'")
-    if not any(hit in text for hit in hits):
+    text = _guard_text(title)
+    title_hits = _title_hits(title, hits)
+    if not title_hits:
         return "summary_only"
     if _DENIAL_RE.search(text):
         return "denial"
@@ -125,7 +136,7 @@ def rule_guard_reason(title: str, hits: list[str]) -> Optional[str]:
         return "price_report"
     if _COMMENTARY_RE.search(_MONTH_MAY_RE.sub(" ", text)):
         return "commentary"
-    if rule_country_us_link(hits)[1] is None:
+    if rule_country_us_link(title_hits)[1] is None:
         return "unknown_us_link"
     return None
 
@@ -133,7 +144,9 @@ def rule_guard_reason(title: str, hits: list[str]) -> Optional[str]:
 def triage_article(article: NewsArticle) -> TriageResult:
     """
     HARD_RULE_PATTERNS checked first. A clean hit -> rule_tier_hit=True,
-    severity decided as High by the caller, no LLM call needed. A hit
+    severity decided as High by the caller, no LLM call needed, and
+    matched_keywords holds the title's phrases only, because the caller
+    reads the link and polarity from them. A hit
     rule_guard_reason() stops -> rule_tier_hit=False with guard_reason set,
     returned here rather than falling through, because phrases such as
     "sovereign default" have no keyword entry and would otherwise vanish;
@@ -153,7 +166,8 @@ def triage_article(article: NewsArticle) -> TriageResult:
         if hits:
             reason = rule_guard_reason(article.title, hits)
             return TriageResult(
-                matched=True, category=category, rule_tier_hit=reason is None, matched_keywords=hits,
+                matched=True, category=category, rule_tier_hit=reason is None,
+                matched_keywords=_title_hits(article.title, hits) if reason is None else hits,
                 near_miss_score=None, guard_reason=reason,
             )
 

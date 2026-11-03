@@ -4,6 +4,7 @@ import datetime as dt
 
 from alerting import triage as triage_module
 from alerting.triage import triage_article
+from alerting.us_link import rule_country_us_link
 from data_layer.news_feed import NewsArticle
 
 UTC = dt.timezone.utc
@@ -259,9 +260,28 @@ def test_guards_read_the_title_not_the_summary():
     assert result.rule_tier_hit is True
 
 
+@pytest.mark.parametrize("headline,summary", [
+    (_LIVE_ID_5, "Traders fear a strait of hormuz closed scenario, analysts said"),
+    ("Tanker attacked near Yemen", "Iran denied the strait of hormuz closed claim"),
+])
+def test_summary_phrase_does_not_lend_a_us_link_to_the_title_phrase(headline, summary):
+    # The link is read from the title phrase alone, even when the summary holds a phrase with a known link.
+    _assert_guarded(triage_article(_article(headline, summary=summary)), "unknown_us_link")
+
+
+def test_clean_hit_keeps_only_the_title_phrases():
+    # "emergency rate decision" sorts first and has no known link; poll_once must not read it on a fired hit.
+    result = triage_article(_article("Fed chair resigns", summary="An emergency rate decision followed"))
+    assert result.rule_tier_hit is True
+    assert result.guard_reason is None
+    assert result.matched_keywords == ["fed chair resigns"]
+    assert rule_country_us_link(result.matched_keywords) == ("US", "direct")
+
+
 def test_rule_guard_reason_returns_the_first_reason_in_order():
     # A title that is both a denial and a price report, on an unknown-link phrase, reads as a denial.
     assert triage_module.rule_guard_reason("Oil prices jump, Iran denies tanker attacked", ["tanker attacked"]) == "denial"
     assert triage_module.rule_guard_reason("Tanker attacked in the Gulf", ["tanker attacked"]) == "unknown_us_link"
     assert triage_module.rule_guard_reason("Markets steady", ["tanker attacked"]) == "summary_only"
     assert triage_module.rule_guard_reason("Fed chair fired", ["fed chair fired"]) is None
+    assert triage_module.rule_guard_reason("Tanker attacked", ["strait of hormuz closed", "tanker attacked"]) == "unknown_us_link"
