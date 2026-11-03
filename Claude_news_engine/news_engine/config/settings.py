@@ -960,7 +960,8 @@ SURPRISE_SENSITIVITY = 3.0
 # MIN_PRIOR_SURPRISES_FOR_SIGMA priors, usd_surprise_score() keeps the
 # percent method above. The z is mapped with tanh(z * STANDARDIZED_SURPRISE_
 # SENSITIVITY) (1 sigma -> 0.46, 2 sigma -> 0.76, 3 sigma -> 0.91): untuned,
-# same caveat as SURPRISE_SENSITIVITY. Stats and classify_surprise() do not
+# same caveat as SURPRISE_SENSITIVITY. Stats and classify_surprise() (one
+# rounding step = in line, data_layer/surprise_side.py) do not
 # use any of this.
 MIN_PRIOR_SURPRISES_FOR_SIGMA = 6
 SURPRISE_SIGMA_MAX_HISTORY = 24
@@ -1130,13 +1131,6 @@ PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS = 7
 # "this is current" — it was burying a genuinely upcoming pending event
 # under an already-resolved one purely because the resolved one happened
 # to get recomputed more recently.
-
-# Below this relative (or, when forecast≈0, absolute) delta between actual
-# and forecast, classify_surprise() below calls it 'in_line' rather than
-# 'higher'/'lower' — a literal actual-vs-forecast comparison for event
-# history/trend display, distinct from usd_surprise_score()'s continuous
-# bullish/bearish-mapped magnitude used for instrument-score blending.
-EVENT_HISTORY_IN_LINE_TOLERANCE = 0.05
 
 # --- Free-tier API sources worth adding later (not yet implemented) ---
 # GDELT      — free, huge global news volume, good for a "how much is this

@@ -144,7 +144,7 @@ It prints `deleted: N seeded rows of run ...`. Repeat both for every recorded ke
 
 ## U2 root cause
 
-`data_layer/calendar_feed.py:383` reads `actual=item.get("actual") or None`, but the FairEconomy weekly JSON never carries an actual: 0 of 585 `source='live'` rows have one, and the snapshot of 2026-10-27 shows actual None on all 26 events including ones already released. Every actual therefore comes from a fallback, and both fallbacks are gated to a handful of mostly-High titles:
+`data_layer/calendar_feed.py:387` reads `actual=item.get("actual") or None`, but the FairEconomy weekly JSON never carries an actual: 0 of 585 `source='live'` rows have one, and the snapshot of 2026-10-27 shows actual None on all 26 events including ones already released. Every actual therefore comes from a fallback, and both fallbacks are gated to a handful of mostly-High titles:
 
 - The FRED fast path (`webapp/scheduler.py:205-209`) only covers the 10 titles in `config/settings.py:153` `FRED_SERIES_ID_BY_EVENT_TITLE`, and only while the release is still in FF's this-week feed.
 - The web fallback queue (retired by ACT, 2026-10-28) admitted only the 19 titles in `EVENT_SURPRISE_DIRECTION` within 48 h.
