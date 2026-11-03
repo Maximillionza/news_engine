@@ -375,6 +375,14 @@ def _news_print_call(bt, title, when, direction, confidence):
     bs.record_print_prediction_if_changed(
         bt, title, when, SimpleNamespace(direction=direction, confidence=confidence, article_count=7),
         now=when - dt.timedelta(days=1))
+    # FIX A3: the lean needs 3 signal-bearing articles, read from the final accumulator row.
+    pid = bs.record_prediction(bt, title, "XAUUSD", when, 0.5, "neutral", 0.5, 3, False,
+                               scored_at_utc=when - dt.timedelta(days=1))
+    bs.record_prediction_article_contributions(bt, pid, title, when, "XAUUSD", [
+        {"title": f"a{i}", "url": f"https://x/{i}", "source": "s", "source_type": "rss",
+         "published_utc": when.isoformat(), "status": "included", "reason": None, "usd_sentiment": 0.4,
+         "trust_weight": 1.0, "time_weight": 1.0, "combined_weight": 1.0, "weight_pct": 33.0, "matched_terms": []}
+        for i in range(3)])
 
 
 def test_engine_column_shows_the_st1_news_verdict_and_no_in_line_news_guess(conns):

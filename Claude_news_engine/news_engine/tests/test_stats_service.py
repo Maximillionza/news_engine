@@ -47,14 +47,45 @@ def _cpi_history(dash):
         _event(dash, "CPI m/m", _t(m), f, a)
 
 
-def _print_call(bt, title, when, direction, confidence, scored_at):
+def _evidence(bt, pred_id, title, when, signal=3, zero=0, excluded=0, same_incident=0, discounted=0):
+    """prediction_article_contributions rows for one prediction: `signal` included non-zero, `zero` included at 0."""
+    rows = []
+
+    def add(status, sentiment, reason=None):
+        i = len(rows)
+        rows.append({"title": f"a{i}", "url": f"https://x/{i}", "source": "s", "source_type": "rss",
+                     "published_utc": "2026-01-01T00:00:00+00:00", "status": status, "reason": reason,
+                     "usd_sentiment": sentiment, "trust_weight": 1.0, "time_weight": 1.0,
+                     "combined_weight": 1.0, "weight_pct": 10.0, "matched_terms": []})
+
+    for _ in range(signal):
+        add("included", 0.5)
+    for _ in range(discounted):
+        add("included", -0.4, "redundancy_discount")
+    for _ in range(zero):
+        add("included", 0.0)
+    for _ in range(excluded):
+        add("excluded", 0.9, "off_subject")
+    for _ in range(same_incident):
+        add("excluded", 0.9, "same_incident")
+    if rows:
+        bs.record_prediction_article_contributions(bt, pred_id, title, when, "XAUUSD", rows)
+
+
+def _print_call(bt, title, when, direction, confidence, scored_at, signal=3):
+    """A print call plus the final accumulator row that carries its evidence count (n is read from that row)."""
     bs.record_print_prediction_if_changed(
         bt, title, when, SimpleNamespace(direction=direction, confidence=confidence, article_count=7), now=scored_at,
     )
+    if signal is not None:
+        pid = bs.record_prediction(bt, title, "XAUUSD", when, 0.5, "neutral", 0.5, signal, False, scored_at_utc=scored_at)
+        _evidence(bt, pid, title, when, signal=signal)
 
 
-def _acc_call(bt, title, when, direction, probability, scored_at):
-    bs.record_prediction(bt, title, "XAUUSD", when, probability, direction, 0.5, 7, False, scored_at_utc=scored_at)
+def _acc_call(bt, title, when, direction, probability, scored_at, signal=3):
+    pid = bs.record_prediction(bt, title, "XAUUSD", when, probability, direction, 0.5, signal, False, scored_at_utc=scored_at)
+    _evidence(bt, pid, title, when, signal=signal)
+    return pid
 
 
 # --- plan tests ---------------------------------------------------------------------------------
@@ -472,23 +503,21 @@ def test_row_detail_carries_the_readings_behind_each_call(conns):
     assert d.combined_surprise == pytest.approx(0.7 * 0.2 + 0.3 * 0.05)
     assert d.weights == {"tier1": 0.7, "news": 0.3}
     assert d.hand_logged is None
-    assert d.news_article_count == 7                                     # the bounded print call's count
+    assert d.news_article_count == 3                                     # signal articles behind the accumulator row
     sep = rows[-2].detail                                                # reconstructed Tier 1, no news
     assert sep.nowcast_value == pytest.approx(0.4) and sep.news_lean is None and sep.news_surprise is None
     assert sep.combined_surprise == pytest.approx(0.1) and sep.news_article_count is None
 
 
-def test_row_detail_article_count_falls_back_to_the_bounded_accumulator_row(conns):
+def test_row_detail_article_count_uses_the_bounded_accumulator_row(conns):
     dash, bt = conns
     _cpi_history(dash)
     _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
-    bs.record_prediction(bt, "CPI m/m", "XAUUSD", _t(10), 0.8, "bearish", 0.5, 11, False,
-                         scored_at_utc=_t(10) - dt.timedelta(hours=6))
-    bs.record_prediction(bt, "CPI m/m", "XAUUSD", _t(10), 0.9, "bearish", 0.5, 99, False,
-                         scored_at_utc=_t(10) + dt.timedelta(hours=1))        # after the release: ignored
+    _acc_call(bt, "CPI m/m", _t(10), "bearish", 0.8, _t(10) - dt.timedelta(hours=6), signal=4)
+    _acc_call(bt, "CPI m/m", _t(10), "bearish", 0.9, _t(10) + dt.timedelta(hours=1), signal=9)   # after the release: ignored
     _print_call(bt, "CPI m/m", _t(10), "higher", 1.0, scored_at=_t(10) + dt.timedelta(minutes=5))   # ignored
     d = svc.build_rows(dash, bt, event_title="CPI m/m")[-1].detail
-    assert d.news_article_count == 11 and d.news_lean == pytest.approx(0.6)
+    assert d.news_article_count == 4 and d.news_lean == pytest.approx(0.6)
 
 
 def test_row_detail_for_a_hand_logged_call_carries_the_researched_value_and_no_nowcast(conns):
@@ -509,7 +538,7 @@ def test_row_detail_has_no_news_lean_for_a_title_without_a_surprise_map(conns):
     _print_call(bt, title, _t(9), "higher", 0.75, scored_at=_t(9) - dt.timedelta(days=1))
     d = svc.build_rows(dash, bt, event_title=title)[-1].detail
     assert d.news_lean is None and d.news_surprise is None
-    assert d.news_article_count == 7                                     # articles existed; they just give no call
+    assert d.news_article_count == 3                                     # articles existed; they just give no call
 
 
 def test_not_scoreable_row_still_has_a_detail_with_only_the_forecast_text(conns):
@@ -1057,3 +1086,111 @@ def test_judgment_fedwatch_row_keeps_the_shared_map(conns):
     row = svc.build_rows(dash, bt, event_title="Federal Funds Rate")[-1]
     assert row.tier1_tier == "market_implied"
     assert row.tier1.side is None and row.tier1.verdict is None
+
+
+# --- FIX A3: pre-registered evidence floor (3 signal-bearing articles) ---------------------------------------
+
+def _floor_row(bt_setup):
+    """CPI m/m Oct row with a hotter actual; bt_setup writes the accumulator row and its evidence."""
+    dash, bt = ws.get_connection(":memory:"), bs.get_connection(":memory:")
+    _cpi_history(dash)
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    _snap(bt, "CPI m/m", _t(10), 0.4)
+    bt_setup(bt)
+    return svc.build_rows(dash, bt, event_title="CPI m/m")[-1]
+
+
+def _pre(days=1):
+    return _t(10) - dt.timedelta(days=days)
+
+
+def test_news_count_ignores_non_article_components():
+    # Kalshi-only: probability moved, article_count 0, no article behind it.
+    row = _floor_row(lambda bt: bs.record_prediction(
+        bt, "CPI m/m", "XAUUSD", _t(10), 0.9, "bearish", 0.5, 0, False, scored_at_utc=_pre()))
+    assert row.detail.news_article_count == 0
+    assert row.news_call == "no_call" and row.news_no_call_reason == "too few articles (n=0)"
+
+
+def test_news_count_uses_included_nonzero_evidence_only():
+    def setup(bt):
+        pid = bs.record_prediction(bt, "CPI m/m", "XAUUSD", _t(10), 0.9, "bearish", 0.5, 9, False, scored_at_utc=_pre())
+        _evidence(bt, pid, "CPI m/m", _t(10), signal=2, zero=2, excluded=3, same_incident=1)
+    row = _floor_row(setup)
+    assert row.detail.news_article_count == 2
+    assert row.news_call == "no_call" and row.news_no_call_reason == "too few articles (n=2)"
+
+
+def test_news_count_counts_redundancy_discounted_rows():
+    def setup(bt):
+        pid = bs.record_prediction(bt, "CPI m/m", "XAUUSD", _t(10), 0.9, "bearish", 0.5, 3, False, scored_at_utc=_pre())
+        _evidence(bt, pid, "CPI m/m", _t(10), signal=1, discounted=2)
+    row = _floor_row(setup)
+    assert row.detail.news_article_count == 3 and row.news_call == "higher" and row.news_no_call_reason is None
+
+
+def test_news_count_old_row_reads_top_contributions():
+    def setup(bt):
+        bs.record_prediction(bt, "CPI m/m", "XAUUSD", _t(10), 0.9, "bearish", 0.5, 5, False, scored_at_utc=_pre(),
+                             top_contributions=[{"title": "a", "usd_sentiment": 0.4}, {"title": "b", "usd_sentiment": 0.0},
+                                                {"title": "c", "usd_sentiment": -0.2}])
+    row = _floor_row(setup)
+    assert row.detail.news_article_count == 2                    # the zero entry is not a signal
+    assert row.news_call == "no_call" and row.news_no_call_reason == "too few articles (n=2)"
+
+
+def test_news_count_old_row_with_three_signal_entries_can_call():
+    def setup(bt):
+        bs.record_prediction(bt, "CPI m/m", "XAUUSD", _t(10), 0.9, "bearish", 0.5, 8, False, scored_at_utc=_pre(),
+                             top_contributions=[{"title": t, "usd_sentiment": 0.3} for t in "abc"])
+    row = _floor_row(setup)
+    assert row.detail.news_article_count == 3 and row.news_call == "higher"
+
+
+def test_news_count_unknown_without_evidence():
+    row = _floor_row(lambda bt: bs.record_prediction(
+        bt, "CPI m/m", "XAUUSD", _t(10), 0.9, "bearish", 0.5, 6, False, scored_at_utc=_pre()))
+    assert row.detail.news_article_count is None
+    assert row.news_call == "no_call" and row.news_no_call_reason == "too few articles (n unknown)"
+
+
+def test_print_call_lean_still_needs_three_signal_articles():
+    row = _floor_row(lambda bt: _print_call(bt, "CPI m/m", _t(10), "higher", 0.8, _pre(), signal=2))
+    assert row.detail.news_lean == pytest.approx(0.8) and row.detail.news_article_count == 2
+    assert row.news_call == "no_call" and row.news_no_call_reason == "too few articles (n=2)"
+    row = _floor_row(lambda bt: _print_call(bt, "CPI m/m", _t(10), "higher", 0.8, _pre(), signal=3))
+    assert row.news_call == "higher" and row.news_no_call_reason is None
+
+
+def test_print_call_without_an_accumulator_row_has_unknown_n():
+    row = _floor_row(lambda bt: _print_call(bt, "CPI m/m", _t(10), "higher", 0.8, _pre(), signal=None))
+    assert row.news_call == "no_call" and row.news_no_call_reason == "too few articles (n unknown)"
+
+
+def test_weak_lean_keeps_its_own_reason_whatever_n_is():
+    row = _floor_row(lambda bt: _acc_call(bt, "CPI m/m", _t(10), "bearish", 0.55, _pre(), signal=1))
+    assert row.news_call == "no_call" and row.news_no_call_reason == "|lean| under 0.2"
+
+
+def test_floor_leaves_combined_unchanged():
+    few = _floor_row(lambda bt: _acc_call(bt, "CPI m/m", _t(10), "bearish", 0.9, _pre(), signal=2))
+    enough = _floor_row(lambda bt: _acc_call(bt, "CPI m/m", _t(10), "bearish", 0.9, _pre(), signal=3))
+    assert few.news_call == "no_call" and enough.news_call == "higher"
+    assert few.combined.surprise == pytest.approx(enough.combined.surprise)
+    assert few.combined.predicted == pytest.approx(enough.combined.predicted)
+    assert few.combined.note is None and enough.combined.note is None
+    assert few.news.predicted == pytest.approx(enough.news.predicted)      # the drawn number is unchanged too
+
+
+def test_scoreboard_no_call_counts_floor_rows():
+    row = _floor_row(lambda bt: _acc_call(bt, "CPI m/m", _t(10), "bearish", 0.9, _pre(), signal=1))
+    board = svc.build_scoreboard([row])
+    assert board["methods"]["news"]["no_call"] == 1 and board["methods"]["news"]["scored"] == 0
+
+
+def test_news_low_trust_true_for_fomc_and_cpi_only(conns):
+    dash, bt = conns
+    for title in ("CPI m/m", "FOMC Statement", "PPI m/m", "Core PCE Price Index m/m"):
+        _event(dash, title, _t(10), "0.3%", "0.4%")
+    low = {r.event_title: r.news_low_trust for r in svc.build_rows(dash, bt)}
+    assert low == {"CPI m/m": True, "FOMC Statement": True, "PPI m/m": False, "Core PCE Price Index m/m": False}

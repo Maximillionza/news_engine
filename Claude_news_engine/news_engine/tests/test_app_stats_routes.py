@@ -17,7 +17,7 @@ AS_OF = WHEN - dt.timedelta(hours=40)
 ROW_KEYS = {"event_title", "event_time_utc", "forecast", "actual", "forecast_text", "actual_text", "status",
             "tier1_tracked", "nowcast_as_of_utc", "pre_news_period", "tier1", "news", "combined", "detail",
             "impact", "impact_effective", "impact_inferred", "impact_bucket", "agreement", "tier1_tier",
-            "news_call"}
+            "news_call", "news_no_call_reason", "news_low_trust"}
 CALL_KEYS = {"predicted", "surprise", "verdict", "miss", "leans", "note", "kind"}
 DETAIL_KEYS = {"forecast_text", "nowcast_value", "nowcast_as_of_utc", "tier1_surprise", "news_lean", "news_scale",
                "news_surprise", "combined_surprise", "weights", "hand_logged", "news_article_count", "brent"}
@@ -64,6 +64,14 @@ def full_client(monkeypatch):
     bs.record_nowcast_snapshot(bt, "CPI m/m", WHEN, 0.4, AS_OF, "cleveland", "live")
     call = SimpleNamespace(direction="higher", confidence=0.5, article_count=7)
     assert bs.record_print_prediction_if_changed(bt, "CPI m/m", WHEN, call, now=WHEN - dt.timedelta(hours=2))
+    # n is read from the final accumulator row: three signal-bearing articles clear the evidence floor
+    pid = bs.record_prediction(bt, "CPI m/m", "XAUUSD", WHEN, 0.5, "neutral", 0.5, 3, False,
+                               scored_at_utc=WHEN - dt.timedelta(hours=2))
+    bs.record_prediction_article_contributions(bt, pid, "CPI m/m", WHEN, "XAUUSD", [
+        {"title": f"a{i}", "url": f"https://x/{i}", "source": "s", "source_type": "rss",
+         "published_utc": WHEN.isoformat(), "status": "included", "reason": None, "usd_sentiment": 0.4,
+         "trust_weight": 1.0, "time_weight": 1.0, "combined_weight": 1.0, "weight_pct": 33.0, "matched_terms": []}
+        for i in range(3)])
     monkeypatch.setattr(app_module, "_stats_connections", lambda: (dash, bt))
     return app_module.app.test_client()
 
@@ -83,6 +91,7 @@ def test_events_route_serves_every_field_the_tab_renders(client):
     assert set(row["tier1"]) == CALL_KEYS                       # side stays unserved
     assert row["tier1_tier"] == "formula" and row["agreement"] is None   # snapshot call; news is None
     assert row["news_call"] is None                             # no News MethodCall at all
+    assert row["news_no_call_reason"] is None and row["news_low_trust"] is True     # CPI family
     assert row["tier1"]["verdict"] == "right" and row["tier1"]["leans"]["XAUUSD"] == "sell"
     assert row["tier1"]["predicted"] == 0.4 and row["tier1"]["kind"] == "live"
     assert row["news"] is None                                  # no articles and no scale history
@@ -101,7 +110,8 @@ def test_events_route_serves_real_news_and_combined_calls(full_client):
     row = rows[0]
     assert set(row) == ROW_KEYS
     assert row["agreement"] in ("agree", "disagree")
-    assert row["news_call"] == "higher"                         # B9 ST1: lean 0.5 >= 0.2
+    assert row["news_call"] == "higher"                         # B9 ST1: lean 0.5 >= 0.2, 3 signal articles
+    assert row["news_no_call_reason"] is None and row["detail"]["news_article_count"] == 3
     tier1, news, combined = row["tier1"], row["news"], row["combined"]
     for call in (tier1, news, combined):
         assert set(call) == CALL_KEYS
@@ -125,7 +135,7 @@ def test_events_route_serves_real_news_and_combined_calls(full_client):
     assert detail["combined_surprise"] == pytest.approx(0.1)
     assert detail["weights"] == {"tier1": 0.7, "news": 0.3}
     assert detail["hand_logged"] is None
-    assert detail["news_article_count"] == 7
+    assert detail["news_article_count"] == 3
     assert set(detail["brent"]) == BRENT_KEYS
     assert detail["brent"] == {
         "snapshot_price": 90.0, "snapshot_price_date": "2026-10-12", "release_price": 92.0,

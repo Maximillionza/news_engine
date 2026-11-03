@@ -404,6 +404,7 @@ def test_predictions_route_flags_co_released_conflict_and_leaves_singleton_event
             # The solo event (no co-released siblings) is completely untouched.
             assert by_title["PPI m/m"]["article_prediction"]["direction"] == "bullish"
             assert by_title["PPI m/m"]["article_prediction_conflict"] is None
+            assert by_title["PPI m/m"]["news_low_trust"] is False
 
             # A co-released title at the SAME timestamp as the conflicting group, but
             # with no accumulator prediction of its own, must be left in its original
@@ -2073,6 +2074,7 @@ def test_predictions_downgrades_via_not_relevant_relevance_magnitude_pair():
                 assert downgrade["original_confidence"] == "Certain"
                 assert downgrade["displayed_confidence"] == "Likely"
                 assert event["relevance_magnitude_note"] == "not_relevant"
+                assert event["news_low_trust"] is True               # CPI family: FIX B1 low-trust note flag
     print("PASS\n")
 
 

@@ -133,6 +133,11 @@ test("Brent text is escaped and adds no weight or call", () => {
 test("Combined readings name the News call", () => {
   const lower = readingsHtml({ ...ROW, news_call: "lower" }, "combined");
   assert.ok(lower.includes("News call: lower"));
-  const none = readingsHtml({ ...ROW, news_call: "no_call" }, "combined");
-  assert.ok(none.includes("News call: none (|lean| under 0.2, pre-registered)"));
+  const none = readingsHtml({ ...ROW, news_call: "no_call", news_no_call_reason: "too few articles (n=2)" }, "combined");
+  assert.ok(none.includes("News call: none (too few articles (n=2))"));
+  const weak = readingsHtml({ ...ROW, news_call: "no_call", news_no_call_reason: "|lean| under 0.2" }, "combined");
+  assert.ok(weak.includes("News call: none (|lean| under 0.2, n=7)"));
+  assert.ok(lower.includes("News call: lower (n=7)"));
+  assert.ok(!lower.includes("article tone"));
+  assert.ok(readingsHtml({ ...ROW, news_call: "higher", news_low_trust: true }, "combined").includes("News = article tone, not policy stance"));
 });

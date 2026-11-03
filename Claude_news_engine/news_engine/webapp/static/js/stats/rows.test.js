@@ -5,7 +5,7 @@ import {
   tier1RowHtml, combinedRowHtml, sentimentRowHtml, verdictChip, leanText,
   pickNextRow, briefCardHtml, scoreboardHtml, filterRows, yearsPresent, disclaimerHtml, componentFor, orderTier1,
   toSast, emptyRowHtml, tier1BodyHtml, tier1Criteria, rowKey, CRITERIA, AGREEMENT_TITLE,
-  newsCallText,
+  newsCallText, NEWS_LOW_TRUST_NOTE,
 } from "./rows.js";
 
 const base = { event_title: "CPI m/m", event_time_utc: "2026-10-14T12:30:00+00:00", forecast: 0.3, forecast_text: "0.3%",
@@ -379,13 +379,17 @@ test("the combined call cell is unchanged by the marker", () => {
 test("newsCallText maps the three calls and is empty otherwise", () => {
   assert.equal(newsCallText("higher"), "calls higher");
   assert.equal(newsCallText("lower"), "calls lower");
-  assert.equal(newsCallText("no_call"), "no call (|lean| under 0.2)");
+  assert.equal(newsCallText("no_call"), "no call");
+  assert.equal(newsCallText("no_call", "too few articles (n=2)"), "no call (too few articles (n=2))");
+  assert.equal(newsCallText("no_call", "|lean| under 0.2"), "no call (|lean| under 0.2)");
+  assert.equal(newsCallText("higher", "ignored"), "calls higher");
   assert.equal(newsCallText(null), "");
   assert.equal(newsCallText("<b>"), "");
 });
 
 test("sentiment row shows the call word and a no-call chip", () => {
-  const none = sentimentRowHtml({ ...base, news: { predicted: 0.31, verdict: null, leans: {}, note: "scaled" }, news_call: "no_call" });
+  const none = sentimentRowHtml({ ...base, news: { predicted: 0.31, verdict: null, leans: {}, note: "scaled" }, news_call: "no_call",
+    news_no_call_reason: "|lean| under 0.2" });
   assert.ok(none.includes("no call (|lean| under 0.2)") && none.includes("No call"));
   const up = sentimentRowHtml({ ...base, news: { predicted: 0.35, verdict: "right", leans: {}, note: null }, news_call: "higher" });
   assert.ok(up.includes("calls higher") && up.includes("Right"));
@@ -398,6 +402,7 @@ test("an unsized news call shows a dash for the number but still names the call"
 
 test("combined row News cell names the call before the verdict chip", () => {
   const row = { ...base, news: { predicted: 0.3, verdict: null, leans: {}, note: null }, news_call: "no_call",
+    news_no_call_reason: "|lean| under 0.2",
     combined: { predicted: 0.4, verdict: "right", note: null, leans: {}, kind: null } };
   assert.ok(combinedRowHtml(row).includes("no call (|lean| under 0.2)"));
 });
@@ -433,4 +438,45 @@ test("scoreboard shows directional-only, the News no-call count and the always-i
 test("scoreboard without the new keys renders 0 of 0 for directional and no baseline numbers", () => {
   const html = scoreboardHtml(SB, "%");
   assert.ok(html.includes("0 of 0") && html.includes("Directional only") && html.includes("Always in line (baseline)"));
+});
+
+// ---- FIX A3 / B1: n beside every News word, the server's no-call reason, the low-trust note ----
+
+const withN = (n, extra = {}) => ({ ...base, detail: { news_article_count: n }, ...extra });
+const newsMc = { predicted: 0.35, verdict: "right", leans: {}, note: null };
+
+test("combined and sentiment rows show n beside a call and beside a weak-lean no-call", () => {
+  const up = withN(5, { news: newsMc, news_call: "higher" });
+  assert.ok(combinedRowHtml(up).includes("calls higher · n=5") && sentimentRowHtml(up).includes("calls higher · n=5"));
+  const weak = withN(5, { news: newsMc, news_call: "no_call", news_no_call_reason: "|lean| under 0.2" });
+  assert.ok(sentimentRowHtml(weak).includes("no call (|lean| under 0.2) · n=5"));
+});
+
+test("a too-few-articles no-call names n once, from the server reason", () => {
+  const few = withN(2, { news: newsMc, news_call: "no_call", news_no_call_reason: "too few articles (n=2)" });
+  const html = sentimentRowHtml(few);
+  assert.ok(html.includes("no call (too few articles (n=2))") && !html.includes("· n=2"));
+  const unknown = withN(null, { news: newsMc, news_call: "no_call", news_no_call_reason: "too few articles (n unknown)" });
+  assert.ok(combinedRowHtml(unknown).includes("no call (too few articles (n unknown))"));
+});
+
+test("an unrecoverable count reads n unknown beside a call", () => {
+  const up = withN(null, { news: newsMc, news_call: "higher" });
+  assert.ok(sentimentRowHtml(up).includes("calls higher · n unknown"));
+});
+
+test("the low-trust note shows only when the row says so", () => {
+  const on = withN(5, { news: newsMc, news_call: "higher", news_low_trust: true });
+  const off = withN(5, { news: newsMc, news_call: "higher", news_low_trust: false });
+  assert.equal(NEWS_LOW_TRUST_NOTE, "News = article tone, not policy stance");
+  assert.ok(combinedRowHtml(on).includes(NEWS_LOW_TRUST_NOTE) && sentimentRowHtml(on).includes(NEWS_LOW_TRUST_NOTE));
+  assert.ok(!combinedRowHtml(off).includes(NEWS_LOW_TRUST_NOTE) && !sentimentRowHtml(off).includes(NEWS_LOW_TRUST_NOTE));
+});
+
+test("the news brief card shows n and the note", () => {
+  const row = pend("CPI m/m", "2026-10-16T12:30:00+00:00", { news: { predicted: 0.3, leans: {} }, news_call: "higher",
+    detail: { news_article_count: 4 }, news_low_trust: true });
+  const html = briefCardHtml(row, "news", DISC);
+  assert.ok(html.includes("n=4") && html.includes(NEWS_LOW_TRUST_NOTE));
+  assert.ok(!briefCardHtml(row, "tier1", DISC).includes("n=4"));
 });

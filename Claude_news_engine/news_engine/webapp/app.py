@@ -294,7 +294,7 @@ def get_calendar_for_date(date_str: str):
             "title": event["title"], "event_time_utc": event["event_time_utc"],
             "impact": event.get("impact"), "forecast": event.get("forecast"),
             "previous": event.get("previous"), "actual": event.get("actual"),
-            "calls": calls, "estimated": False,
+            "calls": calls, "estimated": False, "news_low_trust": news_low_trust(event["title"]),
         })
 
     for row in macro_rows:
@@ -303,6 +303,7 @@ def get_calendar_for_date(date_str: str):
             "event_time_utc": row.display_time_utc or f"{row.event_date}T00:00:00+00:00",
             "impact": None, "forecast": None, "previous": None, "actual": None,
             "calls": {}, "estimated": row.confirmed_event_time_utc is None,
+            "news_low_trust": news_low_trust(row.event_title),
         })
 
     conn.close()
@@ -377,6 +378,7 @@ def get_print_call_history():
 from typing import Mapping  # noqa: E402
 from alerting import lean_grading  # noqa: E402
 from config.settings import LOCAL_TZ  # noqa: E402
+from data_layer.subject_rules import news_low_trust  # noqa: E402
 
 # B10 (2026-10-28) K13: the tab takes SAST calendar days, inclusive. Default: today and the 6 days before.
 SHOCK_RANGE_DEFAULT_DAYS = 7
@@ -549,6 +551,7 @@ def _stats_row_dict(r):
         "impact": r.impact, "impact_effective": r.impact_effective,
         "impact_inferred": r.impact_inferred, "impact_bucket": r.impact_bucket,
         "agreement": r.agreement, "tier1_tier": r.tier1_tier, "news_call": r.news_call,
+        "news_no_call_reason": r.news_no_call_reason, "news_low_trust": r.news_low_trust,
     }
 
 

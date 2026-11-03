@@ -3,7 +3,7 @@
 // Information-icon panel: lists the components behind a composite metric (nowcast, news lean,
 // Combined), and the click-through readings for one release (spec §5). Pure string builders.
 import { escapeHtml } from "../format.js";
-import { tier1Criteria, sastText, expectedWord, signedLean } from "./rows.js";
+import { tier1Criteria, sastText, expectedWord, signedLean, newsCountText, NEWS_LOW_TRUST_NOTE } from "./rows.js";
 
 export function componentsHtml(data) {
   const rows = (data.components || []).map((c) =>
@@ -68,11 +68,16 @@ function tier1Lines(row, d, unit, view) {
   return out;
 }
 
-const NEWS_CALL_LINE = {
-  higher: "News call: higher",
-  lower: "News call: lower",
-  no_call: "News call: none (|lean| under 0.2, pre-registered)",
-};
+// The no-call reason is the server's text ("|lean| under 0.2", "too few articles (n=2)"); n beside a call.
+function newsCallLine(row) {
+  if (row.news_call === "higher" || row.news_call === "lower") return `News call: ${row.news_call} (${newsCountText(row)})`;
+  if (row.news_call === "no_call") {
+    const count = newsCountText(row);
+    const parts = [row.news_no_call_reason, count].filter(Boolean);
+    return parts.length ? `News call: none (${parts.join(", ")})` : "News call: none";
+  }
+  return null;
+}
 
 function combinedLines(row, d, unit) {
   const out = [];
@@ -85,7 +90,9 @@ function combinedLines(row, d, unit) {
   } else {
     out.push("News: no news lean before the release");
   }
-  if (NEWS_CALL_LINE[row.news_call]) out.push(NEWS_CALL_LINE[row.news_call]);
+  const callLine = newsCallLine(row);
+  if (callLine) out.push(callLine);
+  if (row.news_low_trust) out.push(NEWS_LOW_TRUST_NOTE);
   if (d.combined_surprise == null || row.forecast == null) {
     out.push("Combined: n/a (Tier 1 has no number for this release)");
     return out;

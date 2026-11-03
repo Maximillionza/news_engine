@@ -8,6 +8,7 @@
 // docs/superpowers/specs/2026-09-11-frontend-rendering-refactor-design.md.
 
 import { directionLabel, directionClass, directionPct, tier1DirectionLabel } from "../format.js";
+import { NEWS_LOW_TRUST_NOTE } from "../stats/rows.js";
 
 export function buildArticlePredictionViewModel(pred, prevPred) {
   if (!pred) return null;
@@ -120,6 +121,9 @@ export function buildBreakdownPanelViewModel(prediction) {
   }
   if (prediction.print_prediction) {
     rows.push({ icon: "📊", text: `Print-direction lexicon: ${prediction.print_prediction.direction} (${Math.round(prediction.print_prediction.confidence * 100)}% conf.)` });
+  }
+  if (prediction.news_low_trust && (prediction.article_prediction || prediction.print_prediction)) {
+    rows.push({ icon: "ℹ️", text: NEWS_LOW_TRUST_NOTE });
   }
   if (prediction.trend_signal) {
     const lean = prediction.trend_signal.instrument_lean;

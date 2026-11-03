@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildArticlePredictionViewModel, buildTier1PredictionViewModel,
   buildTier1SentimentConflictViewModel, buildTier1ConfidenceDowngradeViewModel, buildEssenceArticleViewModel,
-  buildOtherEventsViewModel, buildOtherTrackedEventsViewModel, buildCardViewModel,
+  buildOtherEventsViewModel, buildOtherTrackedEventsViewModel, buildCardViewModel, buildBreakdownPanelViewModel,
 } from "./card-view-model.js";
 
 test("buildArticlePredictionViewModel returns null when no prediction exists (never fabricated)", () => {
@@ -237,4 +237,14 @@ test("buildCardViewModel: resolved branch exposes a pre-computed directionLabel"
   };
   const vm = buildCardViewModel(symbolEntry, {});
   assert.equal(vm.directionLabel, "BUY");
+});
+
+test("buildBreakdownPanelViewModel adds the low-trust note only for flagged events with an article-based row", () => {
+  const art = { direction: "bearish", probability: 0.7, article_count: 4 };
+  const flagged = buildBreakdownPanelViewModel({ article_prediction: art, news_low_trust: true });
+  assert.ok(flagged.rows.some((r) => r.text === "News = article tone, not policy stance"));
+  const plain = buildBreakdownPanelViewModel({ article_prediction: art, news_low_trust: false });
+  assert.ok(!plain.rows.some((r) => r.text.includes("article tone")));
+  const empty = buildBreakdownPanelViewModel({ news_low_trust: true });
+  assert.equal(empty.isEmpty, true);
 });
