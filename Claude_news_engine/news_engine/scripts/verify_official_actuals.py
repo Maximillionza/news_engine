@@ -40,7 +40,8 @@ write that title:
 READ-ONLY: the DB is opened `mode=ro`, and only HTTP GETs/POSTs to the
 official APIs and FRED are made. `--write-results` writes the committed
 data_layer/official_actuals/gate_results.json (sorted keys, LF), which the
-engine reads once at start; `--markdown` writes the coverage table. API keys
+engine reads once at start (with --title the run's titles are merged into the
+existing file instead of replacing it); `--markdown` writes the coverage table. API keys
 come from `--env-file` (or the app's .env) and are never printed.
 
 Times are shown in SAST (UTC+2) with the stored UTC value beside them.
@@ -67,6 +68,7 @@ from typing import Any, Mapping, Optional, Protocol
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import LOCAL_TZ, UTC_TZ
+from data_layer.calendar_feed import _parse_numeric
 from data_layer.fred_history import FredClient, FredFetchError, FredMaintenanceError, InitialRelease, transform_at
 from data_layer.official_actuals.coverage import GATE_RESULTS_PATH, titles_sharing_series
 from data_layer.official_actuals.fetch import fetch_for_specs, series_key
@@ -254,12 +256,39 @@ def released_period(spec: OfficialSpec, release_et: dt.date, expected: dt.date,
     return next(iter(periods)) if len(periods) == 1 else None
 
 
+def _within_tolerance(spec: OfficialSpec, stored: str, candidate: str) -> bool:
+    """True when `spec.gate_tolerance_pct` is set and the two numbers differ by at most that share of the stored one."""
+    if spec.gate_tolerance_pct is None:
+        return False
+    a, b = _parse_numeric(stored), _parse_numeric(candidate)
+    if a is None or b is None or a == 0:
+        return False
+    return abs(a - b) <= abs(a) * spec.gate_tolerance_pct / 100.0 + 1e-9
+
+
+def _first_print_vintages(releases: Optional[list[InitialRelease]]) -> dict[dt.date, dt.date]:
+    """period -> the day the twin first published it (the earliest vintage), from the twin's first prints."""
+    out: dict[dt.date, dt.date] = {}
+    for rel in releases or []:
+        if rel.period not in out or rel.vintage_date < out[rel.period]:
+            out[rel.period] = rel.vintage_date
+    return out
+
+
 def gate_title(title: str, spec: OfficialSpec, rows: list[sqlite3.Row], series: Mapping[dt.date, Any],
                twin: Optional[TwinSource], now: dt.datetime) -> TitleGate:
-    """Agreement of one title's official series with its stored actuals and FF `previous` strings."""
+    """
+    Agreement of one title's official series with its stored actuals and FF `previous` strings.
+
+    A `previous` is also explained by the prior period's own first print: some twins (AITGCBS, the advance goods
+    balance) keep only the release month in a vintage, so the prior month cannot be read from the release-day
+    vintage but is in the vintage where it was first published. A title with `gate_tolerance_pct` (monthly
+    revisions, no ALFRED) also counts a `previous` within that relative gap as a match, noted in `period_notes`.
+    """
     released = [r for r in rows if release_date_et(_when(r)) >= GATE_START and _when(r) < now]
     identity = _identity(spec, series, twin, _latest_template(rows), now)
     first_releases = _twin_first_releases(spec, twin, now)
+    first_print_day = _first_print_vintages(first_releases)
     matches = comparisons = explained = 0
     mismatches: list[str] = []
     notes: list[str] = []
@@ -281,7 +310,10 @@ def gate_title(title: str, spec: OfficialSpec, rows: list[sqlite3.Row], series: 
         if is_ff_number(row["previous"]):
             # A re-estimate's previous is the earlier estimate of the same period (a day-before vintage).
             prev_period = period if spec.reestimate else prior_period(spec, period, series.keys())
-            checks.append(("previous", row["previous"], prev_period, (release_et, release_et - dt.timedelta(days=1))))
+            vintages = (release_et, release_et - dt.timedelta(days=1))
+            if prev_period in first_print_day and first_print_day[prev_period] not in vintages:
+                vintages += (first_print_day[prev_period],)
+            checks.append(("previous", row["previous"], prev_period, vintages))
         for kind, stored, ref_period, vintages in checks:
             official = value_for(spec, series, ref_period) if ref_period is not None else None
             if official is None:
@@ -293,6 +325,10 @@ def gate_title(title: str, spec: OfficialSpec, rows: list[sqlite3.Row], series: 
             elif identity == "ok" and _explained_by_twin(spec, twin, stored, ref_period, vintages):
                 matches += 1
                 explained += 1
+            elif kind == "previous" and _within_tolerance(spec, stored, candidate):
+                matches += 1
+                notes.append(f"{_sast(when)} previous: stored {stored} vs official {candidate} accepted within the "
+                             f"{spec.gate_tolerance_pct:g}% tolerance (period {ref_period.isoformat()})")
             else:
                 mismatches.append(f"{_sast(when)} {kind}: stored {stored} vs official {candidate} "
                                   f"(period {ref_period.isoformat()})")
@@ -373,6 +409,25 @@ def results_to_json(results: Mapping[str, TitleGate], now: dt.datetime) -> dict:
     }
 
 
+def write_results(path: Path, payload: dict, merge: bool) -> None:
+    """
+    Writes the gate payload (sorted keys, LF). With `merge` (a run restricted by --title) the titles already in
+    the file are kept and the run's titles replace theirs, so one title's re-run cannot erase the others; an
+    unreadable old file is simply replaced.
+    """
+    out = dict(payload)
+    if merge:
+        try:
+            old_titles = json.loads(Path(path).read_text(encoding="utf-8"))["titles"]
+            if isinstance(old_titles, dict):
+                out["titles"] = {**old_titles, **payload["titles"]}
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    text = json.dumps(out, indent=2, sort_keys=True) + "\n"
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+
+
 def _agreement(g: TitleGate) -> str:
     """`m/n`, plus the pooled series counts when other titles share the series."""
     own = f"{g.matches}/{g.comparisons}"
@@ -433,10 +488,8 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     print(format_report(results, now))
     if args.write_results:
-        text = json.dumps(results_to_json(results, now), indent=2, sort_keys=True) + "\n"
-        with open(GATE_RESULTS_PATH, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text)
-        print(f"gate results written: {GATE_RESULTS_PATH}")
+        write_results(GATE_RESULTS_PATH, results_to_json(results, now), merge=bool(args.title))
+        print(f"gate results written{' (merged)' if args.title else ''}: {GATE_RESULTS_PATH}")
     if args.markdown:
         with open(args.markdown, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(coverage_markdown(results))

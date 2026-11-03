@@ -130,6 +130,19 @@ def test_get_actual_from_fred_returns_none_on_request_failure():
     print("PASS\n")
 
 
+def test_fred_actuals_warning_carries_no_url(capsys):
+    print("=== fred_actuals: the failure log names the exception class only: a requests error embeds the URL and key ===")
+    event_time = dt.datetime(2026, 8, 26, 12, 30, tzinfo=UTC_TZ)
+    leaky = ConnectionError("HTTPSConnectionPool: https://api.stlouisfed.org/fred/series/observations?api_key=SECRETKEY123")
+    with patch.object(fred_actuals, "FRED_API_KEY", "SECRETKEY123"), \
+         patch.object(fred_actuals.requests, "get", side_effect=leaky):
+        assert fred_actuals.get_actual_from_fred("Core PCE Price Index m/m", event_time) is None
+    out = capsys.readouterr().out
+    assert "ConnectionError" in out
+    assert "SECRETKEY123" not in out and "http" not in out.lower()
+    print("PASS\n")
+
+
 def test_get_actual_from_fred_returns_none_on_empty_observations():
     print("=== fred_actuals: no observations returned at all -> None, not an index-error crash ===")
     event_time = dt.datetime(2026, 8, 26, 12, 30, tzinfo=UTC_TZ)

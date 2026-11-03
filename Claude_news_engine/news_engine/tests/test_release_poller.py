@@ -396,3 +396,42 @@ def test_start_release_poller_starts_one_daemon_thread(tmp_path, monkeypatch):
     assert ran.wait(10)
     assert poller.start_release_poller(db, fetch=FakeFetch(), sleep=stop_sleep) is None      # only once
     thread.join(10)
+
+
+# ---------------------------------------------------------------- Existing Home Sales: first-print window (FIX Task 5)
+
+EHS = "Existing Home Sales"
+EHS_RELEASE = dt.datetime(2026, 10, 13, 14, 0, tzinfo=UTC)          # 10:00 ET
+
+
+def test_poller_ehs_within_3_days_fills(conns):
+    dash, ops = conns
+    row = _row(dash, EHS, EHS_RELEASE, forecast="3.95M", previous="3.98M")
+    fetch = FakeFetch(_outcome(EHS, {D(2026, 8, 1): 3930000.0, D(2026, 9, 1): 3990000.0}))
+    now = EHS_RELEASE + dt.timedelta(days=2)                              # catch-up pass after a restart
+    report = _tick(dash, ops, now, poller.PollerState(), fetch, enabled=frozenset({EHS}))
+    got = _get(dash, row)
+    assert got["actual"] == "3.99M" and got["source"] == "fred"
+    assert report.filled == [(EHS, EHS_RELEASE.isoformat(), "3.99M", "fred")]
+
+
+def test_poller_ehs_after_3_days_waits(conns):
+    dash, ops = conns
+    row = _row(dash, EHS, EHS_RELEASE, forecast="3.95M", previous="3.98M")
+    fetch = FakeFetch(_outcome(EHS, {D(2026, 8, 1): 3930000.0, D(2026, 9, 1): 3990000.0}))
+    now = EHS_RELEASE + dt.timedelta(days=4)
+    state = poller.PollerState()
+    report = _tick(dash, ops, now, state, fetch, enabled=frozenset({EHS}))
+    assert _get(dash, row)["actual"] is None
+    assert report.filled == []
+    assert report.waiting == [(EHS, EHS_RELEASE.isoformat(), "first-print window closed")]
+    assert fetch.calls == []                                              # nothing due: no publisher request
+    assert state.catchup_due is False                                     # and the catch-up pass still ends
+
+
+def test_poller_window_does_not_touch_titles_without_one(conns):
+    dash, ops = conns
+    row = _row(dash, PCE, RELEASE, forecast="0.3%", previous="0.2%")
+    fetch = FakeFetch(_outcome(PCE, {D(2026, 9, 1): 0.4}))
+    report = _tick(dash, ops, RELEASE + dt.timedelta(days=4), poller.PollerState(), fetch)
+    assert _get(dash, row)["actual"] == "0.4%" and report.filled

@@ -193,6 +193,11 @@ def run_tick(conn: sqlite3.Connection, ops_conn: sqlite3.Connection, now: dt.dat
         if spec is None or age < dt.timedelta(0) or age > CATCHUP_LOOKBACK:
             continue
         key = (row["event_title"], row["event_time_utc"])
+        if spec.first_print_window_days is not None and age > dt.timedelta(days=spec.first_print_window_days):
+            # A source with no vintages (Existing Home Sales) serves only today's value: past the window it is a
+            # revision, not the first print. The row stays empty (run_backlog does not apply the window: spec 6g).
+            report.waiting.append((row["event_title"], row["event_time_utc"], "first-print window closed"))
+            continue
         catchup = age > HANDOVER_AFTER
         if catchup:
             if not state.catchup_due or key in state.catchup_done:

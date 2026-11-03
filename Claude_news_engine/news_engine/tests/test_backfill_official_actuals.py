@@ -388,3 +388,17 @@ def test_main_fred_backfill_dry_run_and_title_conflict(tmp_path, monkeypatch, ca
     monkeypatch.setattr(bf, "_default_fred_client", lambda env_file: None)
     assert bf.main(["--db", str(db), "--fred-backfill"]) == 0
     assert "FRED/ALFRED pass skipped: no FRED key." in capsys.readouterr().out
+
+
+def test_backlog_ehs_fills_the_latest_row_only_and_ignores_the_poller_window(conn):
+    # Spec 6g: the one-off backlog may fill the latest row after the poller's 3-day window (no later release
+    # exists); the older rows keep the logged reason. Now is 16 days after the 2026-10-13 release.
+    ehs = "Existing Home Sales"
+    older = _row(conn, ehs, dt.datetime(2026, 9, 10, 14, 0, tzinfo=UTC), "4.00M", "4.06M")
+    latest = _row(conn, ehs, dt.datetime(2026, 10, 13, 14, 0, tzinfo=UTC), "3.95M", "3.98M")
+    fetch = _fetch(_data(**{ehs: {D(2026, 7, 1): 4060000.0, D(2026, 8, 1): 3930000.0, D(2026, 9, 1): 3990000.0}}))
+    report = bf.run_backlog(conn, NOW, fetch, _gate(ehs), since=D(2026, 9, 1), apply=True)
+    assert _counts(report, ehs) == {"filled": 1, "revised since release": 1}
+    assert _get(conn, latest)["actual"] == "3.99M" and _get(conn, latest)["source"] == "fred"
+    assert _get(conn, older)["actual"] is None
+    assert any("revised since release" in text for text in report.refused.values())

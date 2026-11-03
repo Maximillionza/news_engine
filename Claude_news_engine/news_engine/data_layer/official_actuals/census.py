@@ -30,11 +30,16 @@ also equal to the latest stored FF actual/previous in the live DB):
     Business Inventories m/m         mtis     TOTBUS:MPCIM    +FF
     Trade Balance                    ftd      BOPGS:BAL       +FF
     Factory Orders m/m               m3       MTM:MPCNO       +FF
+Advance programs, resolved 2026-11-03 (FIX Task 5). The Census series is the advance report; FRED mirrors it
+as AITGCBS and AMINVTS (the twins), whose ALFRED first prints equal FF's `previous` on the next release:
+    Goods Trade Balance              ftdadv   CBG:BAL         Sep -134904, Aug -132069 SA; ALFRED first prints
+                                     Aug -132636, Jul -118806, Jun -101461 equal FF -132.6B / -118.8B / -101.5B
+                                     (the earlier "no FF match" was a revision, not a wrong code)
+    Prelim Wholesale Inventories m/m mwtsadv  42:MPCIM        Sep 0.6, Aug 0.5 (revised); the ALFRED m/m of
+                                     AMINVTS inside each vintage is 1.3 / 0.7 / 0.6, equal to FF's `previous`
 Unresolved (left out of the registry; never guess a code):
     Final Wholesale Inventories m/m  mwts 42:MPCIM matches neither the stored FF values nor
                                      FRED WHLSLRIMSA (which equals mtis WHLSLR:IM instead)
-    Prelim Wholesale Inventories m/m mwtsadv 42:MPCIM: no FF match, no FRED twin
-    Goods Trade Balance              ftdadv CBG:BAL: no FF match (-132.1B vs stored -132.6B), no twin
 """
 from __future__ import annotations
 

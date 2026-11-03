@@ -24,9 +24,10 @@ the same month a year earlier.
 from __future__ import annotations
 
 import datetime as dt
+import re
 import time
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import requests
 
@@ -38,6 +39,11 @@ _REQUEST_TIMEOUT_SECONDS = 20
 # Levels fetched before the release period so the prior month and the
 # 12-month-ago point (y/y) are always inside the vintage window.
 _OBSERVATION_LOOKBACK_DAYS = 400
+# One retry for a timeout or a 5xx (FRED answered 503 / timed out during the 2026-10-28 gate run); nothing else retries.
+_RETRY_BACKOFF_SECONDS = 2.0
+_ERROR_TEXT_MAX_CHARS = 200
+_URL_IN_TEXT = re.compile(r"https?://\S+", re.IGNORECASE)
+_RequestTimeout = requests.Timeout
 
 
 class FredMaintenanceError(RuntimeError):
@@ -99,14 +105,17 @@ FRED_HISTORY_SPECS: dict[str, FredSeriesSpec] = {
     "Final Wholesale Inventories m/m": FredSeriesSpec("WHLSLRIMSA", "pch", "pct1"),
     "Construction Spending m/m": FredSeriesSpec("TTLCONS", "pch", "pct1"),
     "New Home Sales": FredSeriesSpec("HSN1F", "lin", "k0", 1.0),
-    "Existing Home Sales": FredSeriesSpec("EXHOSLUSM495S", "lin", "m2", 1e-6),
     "Trade Balance": FredSeriesSpec("BOPGSTB", "lin", "b1", 0.001),
+    # Census advance reports mirrored on FRED. AITGCBS vintages hold only the release month (older months are ".");
+    # AMINVTS is a level, so its m/m is computed inside each vintage.
+    "Goods Trade Balance": FredSeriesSpec("AITGCBS", "lin", "b1", 0.001),
+    "Prelim Wholesale Inventories m/m": FredSeriesSpec("AMINVTS", "pch", "pct1"),
     "Federal Budget Balance": FredSeriesSpec("MTSDS133FMS", "lin", "b1", 0.001),
     "Consumer Credit m/m": FredSeriesSpec("TOTALSL", "chg", "b1", 1.0),
     "HPI m/m": FredSeriesSpec("HPIPONM226S", "pch", "pct1"),
     "S&P/CS Composite-20 HPI y/y": FredSeriesSpec("SPCS20RNSA", "pc1", "pct1"),
     "Philly Fed Manufacturing Index": FredSeriesSpec("GACDFSA066MSFRBPHI", "lin", "num1"),
-    "Empire State Manufacturing Index": FredSeriesSpec("GACDINA066MSFRBNY", "lin", "num1"),
+    "Empire State Manufacturing Index": FredSeriesSpec("GACDISA066MSFRBNY", "lin", "num1"),
 }
 
 
@@ -126,6 +135,23 @@ class VintageReading:
     previous_first_print: Optional[str]      # prior period's own first print
 
 
+def _fred_error_text(resp: Any, api_key: str) -> str:
+    """
+    FRED's own `error_message` for a failed answer (e.g. "The series does not exist in ALFRED but may exist in
+    FRED."), with the key scrubbed and any URL removed, at most 200 characters; "" when the body has none.
+    """
+    try:
+        message = resp.json().get("error_message")
+    except Exception:  # noqa: BLE001 - a non-JSON error body simply has no message
+        return ""
+    if not isinstance(message, str):
+        return ""
+    if api_key:
+        message = message.replace(api_key, "")
+    message = _URL_IN_TEXT.sub("", message)
+    return " ".join(message.split())[:_ERROR_TEXT_MAX_CHARS]
+
+
 class FredClient:
     """Small caching ALFRED client. Pace between requests is the caller's choice."""
 
@@ -140,17 +166,33 @@ class FredClient:
         if self._pace_seconds > 0:
             self._sleep(self._pace_seconds)
         full = {**params, "api_key": self._api_key, "file_type": "json"}
-        try:
-            resp = requests.get(f"{FRED_BASE_URL}/series/observations", params=full, timeout=_REQUEST_TIMEOUT_SECONDS)
-        except Exception as exc:  # noqa: BLE001 — message carries only the class name: a requests error embeds the URL (and key)
-            raise FredTransportError(f"FRED request failed for {params.get('series_id')}: {type(exc).__name__}") from None
-        # Maintenance HTML arrives as HTTP 200, so test for it BEFORE the status check.
-        if is_maintenance_page(getattr(resp, "text", "")):
-            raise FredMaintenanceError("FRED is under maintenance")
+        series = params.get("series_id")
+        resp: Any = None
+        for attempt in (1, 2):
+            try:
+                resp = requests.get(f"{FRED_BASE_URL}/series/observations", params=full, timeout=_REQUEST_TIMEOUT_SECONDS)
+            except _RequestTimeout as exc:
+                if attempt == 1:
+                    self._sleep(_RETRY_BACKOFF_SECONDS)
+                    continue
+                raise FredTransportError(f"FRED request failed for {series}: {type(exc).__name__}") from None
+            except Exception as exc:  # noqa: BLE001 — message carries only the class name: a requests error embeds the URL (and key)
+                raise FredTransportError(f"FRED request failed for {series}: {type(exc).__name__}") from None
+            # Maintenance HTML arrives as HTTP 200, so test for it BEFORE the status check.
+            if is_maintenance_page(getattr(resp, "text", "")):
+                raise FredMaintenanceError("FRED is under maintenance")
+            status = getattr(resp, "status_code", None)
+            if attempt == 1 and isinstance(status, int) and status >= 500:
+                self._sleep(_RETRY_BACKOFF_SECONDS)
+                continue
+            break
         try:
             resp.raise_for_status()
         except Exception as exc:  # noqa: BLE001
-            raise FredFetchError(f"FRED HTTP error for {params.get('series_id')}: {type(exc).__name__}") from None
+            status = getattr(resp, "status_code", None)
+            label = f"HTTP {status}" if isinstance(status, int) else f"HTTP error {type(exc).__name__}"
+            detail = _fred_error_text(resp, self._api_key)
+            raise FredFetchError(f"FRED {label} for {series}" + (f": {detail}" if detail else "")) from None
         try:
             return list(resp.json().get("observations", []))
         except Exception as exc:  # noqa: BLE001
@@ -271,7 +313,8 @@ def reading_for_release(
         pv = transform_at(levels, prev_period, spec.transform)
         previous = format_value(pv, spec) if pv is not None else None
     first_print = None
-    if prior is not None and prior.period == prev_period:
+    # A vintage that holds only the release month (AITGCBS) has no prev_period: the prior release is the prior period.
+    if prior is not None and prev_period in (prior.period, None):
         p_levels = client.vintage_levels(spec.series_id, prior.vintage_date, prior.period - dt.timedelta(days=_OBSERVATION_LOOKBACK_DAYS))
         fv = transform_at(p_levels, prior.period, spec.transform)
         first_print = format_value(fv, spec) if fv is not None else None

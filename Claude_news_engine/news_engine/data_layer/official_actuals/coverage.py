@@ -61,7 +61,6 @@ PROPRIETARY_TITLES = frozenset({
     "RCM/TIPP Economic Optimism",
     "ADP Non-Farm Employment Change",
     "ADP Weekly Employment Change",
-    "Existing Home Sales",
     "Pending Home Sales m/m",
     "S&P/CS Composite-20 HPI y/y",
     "Omdia Total Vehicle Sales",
@@ -77,8 +76,6 @@ NOT_MAPPED: dict[str, str] = {
     "Current Account": "BEA ITA",
     "TIC Long-Term Purchases": "Treasury TIC",
     "Final Wholesale Inventories m/m": "Census mwts (code unresolved in ACT Task 1)",
-    "Prelim Wholesale Inventories m/m": "Census mwtsadv (code unresolved in ACT Task 1)",
-    "Goods Trade Balance": "Census ftdadv (code unresolved in ACT Task 1)",
 }
 
 
