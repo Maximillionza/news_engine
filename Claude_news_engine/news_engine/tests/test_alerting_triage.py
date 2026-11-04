@@ -204,6 +204,31 @@ def test_denials_fall_through(headline):
     "Oil at 6-month high as strait of hormuz closed",
     "Oil hits $150 after strait of hormuz closed",
     "If strait of hormuz closed, oil would hit $200",
+    "Oil higher as strait of hormuz closed",
+    "Oil hits record high after strait of hormuz closed",
+    "Oil at record high as strait of hormuz closed",
+    "Oil hits highest level since 2022 as strait of hormuz closed",
+    "Brent tops $100 as strait of hormuz closed",
+    "Oil above $120 as strait of hormuz closed",
+    "Oil pares losses as strait of hormuz closed",
+    "Oil lower as strait of hormuz closed",
+    "Oil below $90 despite strait of hormuz closed",
+    "Oil topped $100 as strait of hormuz closed",
+    "Oil prices top $100 as strait of hormuz closed",
+    "Stocks pare losses after Fed chair resigns",
+    "Gold advances after Fed chair resigns",
+    "Stocks advance after Fed chair resigns",
+    "Oil hits all-time high as strait of hormuz closed",
+    "Oil at lowest level in a year despite strait of hormuz closed",
+    "Oil hits 6-month level as strait of hormuz closed",
+    "Oil edges up as strait of hormuz closed",
+    "Gold ticks down after Fed chair fired",
+    "Oil prices down as strait of hormuz closed",
+    "Stocks end sharply lower after Fed chair resigns",
+    "Brent holds above $100 as strait of hormuz closed",
+    "Stocks plunge after Fed chair resigns",
+    "Oil eases as strait of hormuz closed",
+    "Oil extends losses as strait of hormuz closed",
 ])
 def test_price_reports_fall_through(headline):
     _assert_guarded(triage_article(_article(headline)), "price_report")
@@ -244,11 +269,27 @@ def test_may_the_month_is_not_commentary(headline):
     "Strait of Hormuz closed after Iranian strike",
     "OPEC+ agrees to cut output by 2 million barrels",
     "Fed chair resigns",
+    "Strait of Hormuz closed after naval clash",
+    "Oil tanker attack lifts insurance costs as strait of hormuz closed",
+    "Oil tanker attack lifts premiums higher as strait of hormuz closed",
+    "Oil exports shut down, strait of hormuz closed",
+    "Oil pipeline shut down after strait of hormuz closed",
+    "Oil tanker seized, top general says strait of hormuz closed",
+    "US raises alert to highest level as strait of hormuz closed",
+    "Oil tanker attack raises alert to highest level as strait of hormuz closed",
+    "Oil minister joins highest-level talks as strait of hormuz closed",
 ])
 def test_genuine_events_stay_on_the_rule_tier(headline):
     result = triage_article(_article(headline))
     assert result.rule_tier_hit is True
     assert result.guard_reason is None
+
+
+def test_shut_down_is_not_a_price_move():
+    # "down" two words after "oil" read as a price report and cost a real event its rule-tier speed.
+    assert triage_module.rule_guard_reason(
+        "Oil exports shut down, strait of hormuz closed", ["strait of hormuz closed"],
+    ) != "price_report"
 
 
 @pytest.mark.parametrize("headline", ["Notable day: Fed chair resigns", "Goldman says Fed chair resigns"])

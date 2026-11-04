@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.settings import CPI_FAMILY_TITLES, FOMC_FAMILY_TITLES
+from config.settings import CPI_FAMILY_TITLES, EVENT_RELEVANCE_KEYWORDS_BY_TITLE, FOMC_FAMILY_TITLES
 from data_layer.subject_rules import (
     b6_exclusion_reason,
     foreign_cb_match,
@@ -244,6 +244,36 @@ def test_soft_marker_needs_no_foreign_place():
         "Bullion climbs as Fed signals rate cut",
         "Emerging market stocks fall after US CPI",
         "SNAPSHOT US stock futures edge lower after economic data - Reuters",
+        "Colombian peso slips as dollar firms on Fed bets",
+        "Argentine peso slips as dollar firms on Fed bets",
+        "Chilean peso slips as dollar firms on Fed bets",
+        "Philippine peso slips as dollar firms on Fed bets",
+        "Mexico's peso slips as dollar firms on Fed bets",
+        "Mexico’s peso slips as dollar firms on Fed bets",
+        "Pakistani rupee weakens as dollar strengthens after hot CPI",
+        "Sri Lankan rupee weakens as dollar strengthens after hot CPI",
+        "India's rupee weakens as dollar strengthens after hot CPI",
+        "Egyptian pound falls as dollar rises",
+        "Thai baht weakens as dollar firms after US CPI",
+        "Korean stocks fall after US CPI",
+        "German stocks fall after US CPI",
+        "French stocks fall after US CPI",
+        "Japan stocks fall after US CPI",
+        "China stocks fall after US CPI",
+        "Hong Kong stocks fall after US CPI",
+        "Saudi stocks fall after US CPI",
+        "South Korea stocks fall after US CPI",
+        "Indonesian rupiah slides as dollar firms after US CPI",
+        "Malaysian ringgit slides as dollar firms after US CPI",
+        "Russian rouble slides as dollar firms after US CPI",
+        "Russian ruble slides as dollar firms after US CPI",
+        "Polish zloty slides as dollar firms after US CPI",
+        "Hungarian forint slides as dollar firms after US CPI",
+        "Swedish krona slides as dollar firms after US CPI",
+        "Norwegian krone slides as dollar firms after US CPI",
+        "Czech crown slides as dollar firms after US CPI",
+        "Israeli shekel slides as dollar firms after US CPI",
+        "Nigerian naira slides as dollar firms after US CPI",
     ],
 )
 def test_other_asset_lead_on_every_path(title):
@@ -283,10 +313,33 @@ def test_lead_pattern_covers_each_asset(title):
         "Oilfield hiring picks up", "Downtown retail sales slip", "Shareholders revolt", "Europe stumbles",
         "Fed lifts gold outlook", "Dollar firms vs yen after CPI beat", "Real wages fall as CPI runs hot",
         "Rand Paul criticises Fed", "Won't cut, Fed says", "Canadian jobs data disappoints", "Snapshot of US inflation",
+        "Fed's real rate rises", "Fed’s real rate rises", "Real wages rise as inflation cools", "Dollar vs peso",
+        "Fed's gold holdings unchanged", "America's stocks rally on CPI", "Treasury's oil reserve sale lifts dollar",
+        "US Treasury's gold audit", "Federal Reserve's gold holdings", "Trump's oil tariff lifts dollar",
+        "Powell's oil remarks lift dollar", "White House's oil plan lifts dollar", "Fed watch gold outlook",
+        "Dollar Mexican peso pair slips", "Saudi crown prince says oil output steady", "Crown Prince resigns",
+        "Swedish crown princess visits", "Fed's won't cut", "Korean jobs data disappoints",
     ],
 )
 def test_lead_pattern_leaves_other_leads(title):
     assert leads_with_other_asset(title) is False
+
+
+@pytest.mark.parametrize(
+    ("keyword", "listed_for", "headline"),
+    [
+        ("fed chairman", "FOMC Statement", "Fed chairman signals patience"),
+        ("central bankers", "FOMC Statement", "Central bankers gather at Jackson Hole"),
+        ("inflationary", "CPI m/m", "Inflationary pressure builds"),
+        ("recessionary", "Advance GDP q/q", "Recessionary signals grow"),
+    ],
+)
+def test_longer_keyword_forms_match_on_their_own(keyword, listed_for, headline):
+    # Whole-word matching stops "fed chair" reaching "fed chairman", so each longer form is listed itself.
+    keywords = EVENT_RELEVANCE_KEYWORDS_BY_TITLE[listed_for]
+    assert keyword in keywords
+    assert keyword_pattern(tuple(keywords)).search(headline.lower())
+    assert keyword_pattern(tuple(k for k in keywords if k != keyword)).search(headline.lower()) is None
 
 
 def test_dollar_headline_kept_in_every_family():

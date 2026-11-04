@@ -677,7 +677,7 @@ PRINT_SURPRISE_LEXICON = {
 # they're framing variants of the same underlying BLS release, same
 # reasoning as the FOMC family below sharing one list across its variants.
 _CPI_RELEVANCE_KEYWORDS = [
-    "cpi", "consumer price index", "consumer prices", "inflation", "core inflation",
+    "cpi", "consumer price index", "consumer prices", "inflation", "inflationary", "core inflation",
     "headline inflation", "price index", "cost of living", "disinflation",
     "bureau of labor statistics", "core cpi", "consumer inflation",
 ]
@@ -687,11 +687,12 @@ _CPI_RELEVANCE_KEYWORDS = [
 # row) — both names kept so historical Powell-era coverage and current
 # Warsh-era coverage both match, same "never drop real coverage" reasoning
 # as everything else in this dict.
-# B6 (2026-10-22), FIX (2026-11-03): keyword lists unchanged; the Fed co-term, other-asset and US-subject rules live in data_layer/subject_rules.py.
+# B6 (2026-10-22), FIX (2026-11-03): the Fed co-term, other-asset and US-subject rules live in data_layer/subject_rules.py.
+# Matching is whole-word since FIX, so a longer word needs its own entry ("fed chairman", "central bankers", "inflationary", "recessionary").
 _FOMC_RELEVANCE_KEYWORDS = [
-    "fomc", "federal reserve", "federal funds rate", "fed rate", "fed chair",
+    "fomc", "federal reserve", "federal funds rate", "fed rate", "fed chair", "fed chairman",
     "fed meeting", "fed minutes", "interest rate decision", "monetary policy",
-    "rate hike", "rate cut", "powell", "warsh", "dot plot", "central bank",
+    "rate hike", "rate cut", "powell", "warsh", "dot plot", "central bank", "central bankers",
     "fed press conference", "economic projections",
 ]
 
@@ -729,7 +730,7 @@ _RETAIL_SALES_RELEVANCE_KEYWORDS = [
 ]
 _GDP_RELEVANCE_KEYWORDS = [
     "gdp", "gross domestic product", "economic growth", "gdp nowcast",
-    "economic output", "recession", "gdp report",
+    "economic output", "recession", "recessionary", "gdp report",
 ]
 
 # Only the groups confirmed to actually need it (the ones this project

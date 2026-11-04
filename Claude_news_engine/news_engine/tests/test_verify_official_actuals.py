@@ -15,7 +15,7 @@ from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data_layer.fred_history import FredFetchError, InitialRelease
+from data_layer.fred_history import FredFetchError, FredMaintenanceError, InitialRelease
 from data_layer.official_actuals.fetch import FetchOutcome
 from data_layer.official_actuals.http import HttpResponse
 from data_layer.official_actuals.keys import Keys
@@ -495,6 +495,55 @@ def test_gate_tolerance_counts_ehs_previous(tmp_path):
     assert (gate.matches, gate.comparisons) == (2, 3)
     assert gate.status == "suspect"
     assert len(gate.mismatches) == 1
+
+
+class _FailingTwin:
+    """Every FRED call fails the way a real FRED error does: scrubbed text, here on two lines."""
+
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def value_asof(self, series_id, transform, period, vintage_date):
+        raise self.error
+
+    def current_values(self, series_id, transform, since, today):
+        raise self.error
+
+    def first_releases(self, series_id, start, end):
+        raise self.error
+
+
+def _twin_spec():
+    return next(spec for spec in OFFICIAL_SPECS.values() if spec.fred_twin is not None and spec.transform != "auction")
+
+
+def _assert_one_warning(capsys, spec, step: str, text: str) -> None:
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1, err
+    assert err.startswith(f"WARNING: FRED {step} failed for {spec.fred_twin[0]}: ")
+    assert text in err
+
+
+def test_fred_failures_warn_with_the_scrubbed_text_on_one_line(capsys, monkeypatch):
+    spec = _twin_spec()
+    twin = _FailingTwin(FredFetchError("FRED HTTP 400:\nBad Request. The series does not exist."))
+    day = D(2026, 9, 1)
+    monkeypatch.setattr(verify, "value_for", lambda *_: 1.0)
+
+    assert verify._identity(spec, {day: 1.0}, twin, "1.0", NOW) == "unavailable"
+    _assert_one_warning(capsys, spec, "current values", "FRED HTTP 400: Bad Request. The series does not exist.")
+
+    assert verify._explained_by_twin(spec, twin, "1.0", day, (D(2026, 9, 15), D(2026, 10, 15))) is False
+    _assert_one_warning(capsys, spec, "vintage value", "FRED HTTP 400: Bad Request. The series does not exist.")
+
+    assert verify._twin_first_releases(spec, twin, NOW) is None
+    _assert_one_warning(capsys, spec, "first releases", "FRED HTTP 400: Bad Request. The series does not exist.")
+
+
+def test_fred_maintenance_page_warns_too(capsys):
+    spec = _twin_spec()
+    assert verify._twin_first_releases(spec, _FailingTwin(FredMaintenanceError("FRED maintenance page")), NOW) is None
+    _assert_one_warning(capsys, spec, "first releases", "FRED maintenance page")
 
 
 def test_gate_tolerance_is_off_without_the_spec_field(tmp_path):

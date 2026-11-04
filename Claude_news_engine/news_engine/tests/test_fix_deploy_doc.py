@@ -84,6 +84,28 @@ def test_step_6_lists_the_seven_real_fills_and_no_august_value() -> None:
     assert "NULL country" in step
 
 
+def test_step_5_explains_the_29_row_dry_run() -> None:
+    step = _step(5)
+    assert "29 rows" in step and "28 of the 59 `in_line` rows" in step
+    assert "1 Prelim GDP q/q row going from NULL to `in_line`" in step
+
+
+def test_step_6_reruns_the_dry_run_and_clears_the_reports() -> None:
+    step = _step(6)
+    commands = [line for line in step.splitlines() if line.startswith("python scripts/backfill_official_actuals.py")]
+    assert len(commands) == 3
+    assert "--apply" not in commands[0] and "--apply" in commands[1] and "--apply" not in commands[2]
+    assert "must fill 0" in step
+    assert "rederive_surprise_direction_<stamp>.txt" in step and "backfill-report.txt" in step and "Delete both" in step
+
+
+def test_steps_1_8_and_9_name_what_really_exists() -> None:
+    assert "`research_alerts` in `ops/ops_state.db`" in _step(1) and "Any new table" not in _step(1)
+    assert "next to the existing tier1_research.py record-late-check rule" in _step(8)
+    assert "tier1_allow_rules.py" not in _text()
+    assert "BOTH occurrences of `(plan, record-call, record-late-check)`" in _step(9)
+
+
 def test_step_11_names_the_path_that_really_fills_each_title() -> None:
     lines = _step(11).splitlines()
     empire = next(line for line in lines if "Empire State" in line)

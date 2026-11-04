@@ -86,16 +86,46 @@ _DENIAL_RE = re.compile(
     r"|\b\w+n't\b"
 )
 
+_PRICED_ASSET = r"\b(?:prices?|oil|crude|brent|wti|gold|stocks?|shares)\b"
+# Reporting words allowed between an asset and a tight move word ("Oil edges up", "Stocks end sharply lower",
+# "Gold is 2% down"). A closed list on purpose: any other word there is usually a noun, and then the sentence
+# is about that noun ("Oil exports shut down", "Oil tanker attack lifts premiums higher").
+_ASSET_TO_MOVE = (
+    r"(?:\s+prices?)?"
+    r"(?:\s+(?:edg(?:e|es|ed|ing)|inch(?:es|ed|ing)?|tick(?:s|ed|ing)?|drift(?:s|ed|ing)?|trad(?:e|es|ed|ing)"
+    r"|end(?:s|ed|ing)?|clos(?:e|es|ed|ing)|finish(?:es|ed|ing)?|open(?:s|ed|ing)?|turn(?:s|ed|ing)?"
+    r"|head(?:s|ed|ing)?|mov(?:e|es|ed|ing)|push(?:es|ed|ing)?|stay(?:s|ed|ing)?|hold(?:s|ing)?|held"
+    r"|remain(?:s|ed|ing)?|is|are|was|were|sharply|slightly|briefly|again|back|now|still"
+    r"|\d+(?:\.\d+)?\s*%)){0,2}"
+    r"\s+"
+)
+_LONG_RANGE = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|multi)[- ](?:day|week|month|year)"
+_EXTREME = r"(?:record|all[- ]time|highest|lowest|" + _LONG_RANGE + r")"
+
+# The first shape reads its verbs across a 30-character window, as it always did. The second holds the words
+# that also turn up in event headlines ("up", "down", "lower", "top", "pare"), so they count only right after
+# the asset, or after _ASSET_TO_MOVE. "top" and "pare" also take the plural-subject form ("Oil prices top $100",
+# "Stocks pare losses"); bare "top" needs the dollar figure, since "Oil tanker seized, top general says" is an
+# event. "high" and "low" beside a superlative read as a price with or without a named asset ("Dollar hits
+# record high"), but "highest level" also means an alert or a rank, so "level" and "highest since" need the
+# asset and a verb of arrival right before them.
 _PRICE_REPORT_RE = re.compile(
-    r"\b(?:prices?|oil|crude|brent|wti|gold|stocks?|shares)\b.{0,30}?"
+    _PRICED_ASSET + r".{0,30}?"
     r"\b(?:rises?|rose|rising|falls?|fell|falling|jump(?:s|ed|ing)?|slides?|slid|sliding|climb(?:s|ed|ing)?"
     r"|drop(?:s|ped|ping)?|dip(?:s|ped|ping)?|sinks?|sank|sinking|surg(?:e|es|ed|ing)|tumbl(?:e|es|ed|ing)"
-    r"|gain(?:s|ed|ing)?|soar(?:s|ed|ing)?|spik(?:e|es|ed|ing)|rall(?:y|ies|ied|ying)|up|down)\b"
+    r"|gain(?:s|ed|ing)?|soar(?:s|ed|ing)?|spik(?:e|es|ed|ing)|rall(?:y|ies|ied|ying))\b"
+    r"|" + _PRICED_ASSET + _ASSET_TO_MOVE +
+    r"(?:(?:up|down|higher|lower|mixed|flat|unchanged|steady|steadie[sd]|top(?:s|ped|ping)|advanc(?:e|es|ed|ing)"
+    r"|par(?:e|es|ed|ing)|plung(?:e|es|ed|ing)|slump(?:s|ed|ing)?|slip(?:s|ped|ping)?|rebound(?:s|ed|ing)?"
+    r"|retreat(?:s|ed|ing)?|eas(?:e|es|ed|ing)|extend(?:s|ed|ing)?|trim(?:s|med|ming)?|recover(?:s|ed|ing)?)\b"
+    r"|(?:top|above|below|over|under)\s+\$\d)"
     r"|\bfutures\b"
     r"|\bsettle[sd]?\b"
     r"|\d+(?:\.\d+)?\s*%\s+(?:higher|lower)\b"
-    r"|\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|multi)[- ](?:day|week|month|year)"
-    r" (?:high|low)s?\b"
+    r"|\b" + _EXTREME + r"[- ](?:high|low)s?\b"
+    r"|" + _PRICED_ASSET + r"(?:\s+prices?)?\s+(?:hit(?:s|ting)?|at|near|reach(?:es|ed|ing)?|touch(?:es|ed|ing)?)"
+    r"(?:\s+(?:its|their|a|an|the|new|fresh))*\s+"
+    r"(?:records?|" + _EXTREME + r"\s+levels?|(?:highest|lowest)\s+(?:since|in))\b"
     r"|\bhit(?:s|ting)? \$\d"
 )
 

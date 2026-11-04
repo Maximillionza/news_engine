@@ -153,20 +153,56 @@ _OTHER_ASSET_LEAD_PATTERN = re.compile(
 # FIX (2026-11-03), audit B1 stopgap: every path, a Fed or US mention does not
 # rescue the title ("Gold miners rally as Fed signals rate cut", "Yen falls as
 # US yields rise"). A Reuters "SNAPSHOT" slug and a qualifier may come first
-# ("Spot gold", "U.S. crude", "Indian rupee", "Emerging market stocks"); a bare
-# "Asian" or "Global" lead does not count here. Other countries' dollars lead
-# too ("Australian dollar slides as US CPI runs hot"). "won", "real" and "rand"
-# are English words, so they count only with their nationality.
-_NON_USD_LEAD_PATTERN = re.compile(
-    r"^\W*(?:snapshot\W+)?"
-    r"(?:(?:spot|u\.?s\.?|asian|european|global|japanese|chinese|london|british|indian|mexican|swiss|"
-    r"turkish|australian|canadian|new zealand|south korean|brazilian|south african|"
-    r"emerging[- ]markets?)\s+)?"
-    r"(?:gold|silver|platinum|copper|bullion|oil|crude|brent|wti|natural gas|natgas|bitcoin|crypto\w*|"
+# ("Spot gold", "U.S. crude", "Emerging market stocks", "Sri Lankan rupee",
+# "Mexico's peso", "Hong Kong stocks"); a bare "Asian" or "Global" lead does
+# not count here. Other countries' dollars lead too ("Australian dollar slides
+# as US CPI runs hot").
+#
+# The qualifier goes by shape, not by a nationality list: one optional word,
+# then a demonym ("Colombian", "Thai", "French"), a possessive or a place.
+# That is safe only because it sits in front of _UNAMBIGUOUS_ASSET, words that
+# are an asset wherever they stand. "won", "real", "rand" and "crown" are
+# English words, so they stay on their explicit forms in _NAMED_ASSET, and a
+# crown is never a crown prince.
+_UNAMBIGUOUS_ASSET = (
+    r"gold|silver|platinum|copper|bullion|oil|crude|brent|wti|natural gas|natgas|bitcoin|crypto\w*|"
     r"stocks?|equities|shares|wall st(?:reet)?|s&p(?: 500)?|nasdaq|dow|nikkei|ftse|dax|"
     r"pound|sterling|euro|yen|yuan|aussie|loonie|kiwi|franc|rupee|peso|lira|"
-    r"(?:south )?korean won|brazilian real|south african rand|" + _FOREIGN_DOLLAR + r"|"
-    r"asia fx|asian currencies|emerging[- ]markets? (?:fx|currencies))\b",
+    r"rupiah|ringgit|baht|rouble|ruble|zloty|forint|krona|krone|shekel|naira"
+)
+_NAMED_ASSET = (
+    r"(?:south )?korean won|brazilian real|south african rand|"
+    r"(?:czech|swedish|norwegian|danish|icelandic) crown(?!\s+prince)|" + _FOREIGN_DOLLAR + r"|"
+    r"asia fx|asian currencies|emerging[- ]markets? (?:fx|currencies)"
+)
+# Countries a demonym shape cannot reach. _FOREIGN_PLACES stays as it is:
+# foreign_cb_match reads it for "<place> central bank".
+_LEAD_PLACES: tuple[str, ...] = _FOREIGN_PLACES + (
+    "asia", "argentina", "austria", "bangladesh", "belgium", "chile", "colombia", "denmark", "egypt", "finland",
+    "greece", "greek", "hungary", "iraq", "ireland", "kenya", "kuwait", "malaysia", "netherlands", "peru",
+    "portugal", "qatar", "saudi arabia", "sri lanka", "uae", "venezuela", "vietnam",
+)
+_LEAD_PLACE = "|".join(re.escape(place) for place in sorted(_LEAD_PLACES, key=len, reverse=True))
+_LEAD_DEMONYM = r"[a-z]+(?:an|ese|ish|ine|ch|i)"
+# The Fed's and America's own words are policy, not another asset ("Fed's gold
+# holdings", "Treasury's oil reserve sale"), so a US possessive never qualifies.
+_US_POSSESSOR = "|".join(
+    (
+        "fed", "fomc", "reserve", "treasury", "us", "usa", "america", "american", "congress", "senate", "house",
+        "washington", "trump", "biden", "bessent", "yellen", "labor", "commerce", "census", "bls", "bea",
+        *(re.escape(name) for name in FED_OFFICIAL_SURNAMES),
+    )
+)
+_LEAD_POSSESSIVE = r"(?!(?:" + _US_POSSESSOR + r")'s\b)[a-z]+'s"
+# "Dollar Mexican peso" is a pair and "Fed watch gold" a Fed story: neither
+# word may stand as the optional first word.
+_LEAD_FIRST_WORD = r"(?!(?:fed|fomc|us|usa|america|dollar|usd|greenback|dxy|treasury)\s)[a-z]+\s+"
+_NON_USD_LEAD_PATTERN = re.compile(
+    r"^\W*(?:snapshot\W+)?"
+    r"(?:(?:(?:spot|u\.?s\.?|global|london|emerging[- ]markets?|"
+    r"(?:" + _LEAD_FIRST_WORD + r")?(?:" + _LEAD_PLACE + r"|" + _LEAD_POSSESSIVE + r"|" + _LEAD_DEMONYM + r"))\s+)?"
+    r"(?:" + _UNAMBIGUOUS_ASSET + r")"
+    r"|" + _NAMED_ASSET + r")\b",
     re.IGNORECASE,
 )
 

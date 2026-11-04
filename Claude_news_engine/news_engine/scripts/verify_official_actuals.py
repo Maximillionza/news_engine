@@ -172,6 +172,11 @@ def _latest_template(rows: list[sqlite3.Row]) -> Optional[str]:
     return None
 
 
+def _warn_fred(series_id: str, step: str, exc: Exception) -> None:
+    """One line per FRED failure (spec 6e): the row result alone hides the cause. The text never holds the URL or key."""
+    print(f"WARNING: FRED {step} failed for {series_id}: {' '.join(str(exc).split())}", file=sys.stderr)
+
+
 def _identity(spec: OfficialSpec, series: Mapping[dt.date, Any], twin: Optional[TwinSource],
               template: Optional[str], now: dt.datetime) -> str:
     """Official values vs the twin's current values over the last common periods, formatted like FF."""
@@ -185,7 +190,8 @@ def _identity(spec: OfficialSpec, series: Mapping[dt.date, Any], twin: Optional[
     try:
         current = twin.current_values(twin_id, twin_transform, min(official) - dt.timedelta(days=TWIN_LOOKBACK_DAYS),
                                       now.date())
-    except (FredFetchError, FredMaintenanceError):
+    except (FredFetchError, FredMaintenanceError) as exc:
+        _warn_fred(twin_id, "current values", exc)
         return "unavailable"
     common = sorted(set(official) & set(current))[-GATE_IDENTITY_PERIODS:]
     if not common:
@@ -206,7 +212,8 @@ def _explained_by_twin(spec: OfficialSpec, twin: Optional[TwinSource], stored: s
     for vintage in vintages:
         try:
             value = twin.value_asof(twin_id, twin_transform, period, vintage)
-        except (FredFetchError, FredMaintenanceError):
+        except (FredFetchError, FredMaintenanceError) as exc:
+            _warn_fred(twin_id, "vintage value", exc)
             return False
         if value is not None and ff_values_match(stored, format_like(value, stored, spec)):
             return True
@@ -225,7 +232,8 @@ def _twin_first_releases(spec: OfficialSpec, twin: Optional[TwinSource],
     try:
         found = list(twin.first_releases(spec.fred_twin[0], GATE_START - dt.timedelta(days=TWIN_RELEASE_LOOKBACK_DAYS),
                                          now.date()))
-    except (FredFetchError, FredMaintenanceError):
+    except (FredFetchError, FredMaintenanceError) as exc:
+        _warn_fred(spec.fred_twin[0], "first releases", exc)
         return None
     return found or None
 

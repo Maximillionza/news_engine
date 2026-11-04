@@ -19,7 +19,7 @@ cd C:/Users/Masoodt/Documents/Claude/Projects/.worktrees/news-engine-live/Claude
 - Actuals follow-ups (T5): corrected Empire State FRED id, Existing Home Sales first prints (FRED poller, 2% `previous` tolerance), Census advance titles (Goods Trade Balance, Prelim Wholesale Inventories), one retry for FRED 5xx / timeout, FRED error text without URL or key.
 - Tier 1 capture (T6): `macro_calendar` fallback for unconfirmed dates (DST-safe release time, phantom rows dropped), refresh of a market row when the forecast changes, FedWatch tier per registry, battery and stagger settings in `scripts/register_tier1_tasks.ps1`.
 - Health and alerts (T7, R3): switched-off titles show amber "not covered (switched off)" in `actuals_sla`; Tier 1 research heartbeat and late-check items; new `tier1_research.py alert` command that sends one Telegram notice and records it for the health panel.
-- No schema change to the three dashboard databases. Any new table is created idempotently on first connect.
+- No schema change to the three dashboard databases. The one new table, `research_alerts` in `ops/ops_state.db`, is created idempotently on first connect.
 
 ## 2. Stop the single engine copy
 
@@ -55,7 +55,7 @@ Note the merge commit sha for the rollback.
 
 ## 5. Re-derive surprise labels
 
-Dry run first and read the counts (build-time estimate on a live copy: 28 of 59 `in_line` rows change, 10 to higher and 18 to lower; no higher or lower row changes), then apply, then a third run must show 0:
+Dry run first and read the counts, then apply, then a third run must show 0. The build-time dry run on a live copy shows 29 rows to change: 28 of the 59 `in_line` rows (10 to higher, 18 to lower) plus 1 Prelim GDP q/q row going from NULL to `in_line`. No higher or lower row changes.
 
 ```
 python scripts/rederive_surprise_direction.py --db webapp/dashboard.db
@@ -65,7 +65,7 @@ python scripts/rederive_surprise_direction.py --db webapp/dashboard.db
 
 ## 6. Backlog actuals
 
-Dry run and read the lists, then apply. A rerun must fill 0. Build-time dry run on a live copy (2026-11-04), seven fills:
+Dry run and read the lists, apply, then run the dry run again: it must fill 0. Build-time dry run on a live copy (2026-11-04), seven fills:
 
 - Empire State Manufacturing Index: 7.6 (2026-09-15), 25.5 (2026-10-15), both from the FRED/ALFRED pass.
 - Goods Trade Balance: -132.6B (2026-09-30, FRED/ALFRED pass), -134.9B (2026-10-28, Census).
@@ -74,11 +74,13 @@ Dry run and read the lists, then apply. A rerun must fill 0. Build-time dry run 
 
 The August rows of the first three titles (Empire 2026-08-17, the other two 2026-08-27) have a NULL country. Both passes read USD rows only, so those rows stay empty and no August value appears in the lists. That is expected, not a mismatch. A release after 2026-11-04 can add a fill to this list.
 
-
 ```
 python scripts/backfill_official_actuals.py --db webapp/dashboard.db --env-file .env --fred-backfill
 python scripts/backfill_official_actuals.py --db webapp/dashboard.db --env-file .env --fred-backfill --apply --report backfill-report.txt
+python scripts/backfill_official_actuals.py --db webapp/dashboard.db --env-file .env --fred-backfill
 ```
+
+Steps 5 and 6 leave two report files in the live app dir, `rederive_surprise_direction_<stamp>.txt` and `backfill-report.txt`. Neither is tracked by git. Delete both once they have been read.
 
 ## 7. Task re-registration
 
@@ -90,7 +92,7 @@ powershell -ExecutionPolicy Bypass -File scripts/register_tier1_tasks.ps1
 
 ## 8. Allow rule for the alert command
 
-Back up `C:\Users\Masoodt\Documents\Claude\Projects\Claude_news_engine\news_engine\.claude\settings.local.json`, then add this to `permissions.allow`, next to the rules `tier1_allow_rules.py` writes:
+Back up `C:\Users\Masoodt\Documents\Claude\Projects\Claude_news_engine\news_engine\.claude\settings.local.json`, then add this to `permissions.allow`, next to the existing tier1_research.py record-late-check rule:
 
 ```
 Bash(python C:/Users/Masoodt/Documents/Claude/Projects/.worktrees/news-engine-live/Claude_news_engine/news_engine/scripts/tier1_research.py alert:*)
@@ -104,7 +106,7 @@ File: `C:/Users/Masoodt/.claude/scheduled-tasks/tier1-cpi-ppi-autoresearch/SKILL
 - ALERT DELIVERY: each "RELIABILITY ALERT:", "SECURITY ALERT:" or "RUN BLOCKED:" line is also sent once with python C:/Users/Masoodt/Documents/Claude/Projects/.worktrees/news-engine-live/Claude_news_engine/news_engine/scripts/tier1_research.py alert --kind <reliability|security|blocked> --event "<event title, or run when it concerns the whole run>" --message "<the same line without its label>". If this command is refused, keep the line in the report and stop.
 ```
 
-Then replace `(plan, record-call, record-late-check)` with `(plan, record-call, record-late-check, alert)` and `the three full-path tier1_research.py subcommands` with `the four full-path tier1_research.py subcommands`.
+Then replace BOTH occurrences of `(plan, record-call, record-late-check)` with `(plan, record-call, record-late-check, alert)` and `the three full-path tier1_research.py subcommands` with `the four full-path tier1_research.py subcommands`.
 
 ## 10. Restart
 

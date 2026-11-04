@@ -396,7 +396,7 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
                           surprise_direction=row_sign)
             hand_logged = {"value": logged["value"], "confidence": logged["confidence"], "source": logged["source"]}
             tier1_tracked = True
-            tier1_tier = tier1_row_tier(logged["source"], logged["value"], title)   # B12: FedWatch value -> market_implied
+            tier1_tier = tier1_row_tier(logged["source"], logged["value"], title)   # B12/T6: a FedWatch citation -> market_implied, unless the registry makes the title judgment
         else:
             tier1_tracked = title in NOWCAST_EVENTS      # tracked but no snapshot yet: row shows no call
 
