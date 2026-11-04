@@ -4,7 +4,7 @@ Branch `news-engine/fix-audit`, built from `news-engine/batch-predictions-querie
 
 Every step below is applied at deploy by the controller, never by an implementer. Nothing in this branch has touched the live worktree, a live database, a Windows task, a Claude task or Telegram.
 
-Shell: steps 2 and 7 need Windows PowerShell (5.1). Every other command is a plain `python` call with forward-slash paths, so it runs unchanged in PowerShell, cmd or Git Bash. Every command runs from the live app dir:
+Shell: steps 2 and 7 and the `Get-ScheduledTask` check in step 11 need Windows PowerShell (5.1). Steps 3 to 6 and the `git revert` in step 12 are plain `python` or `git` calls with forward-slash paths, so they run unchanged in PowerShell, cmd or Git Bash. Step 10 calls `schtasks`, and Git Bash rewrites its `/`-prefixed arguments into file paths, so step 10 gives a separate Git Bash form. Steps 8 and 9 are file edits. Every command runs from the live app dir:
 
 ```
 cd C:/Users/Masoodt/Documents/Claude/Projects/.worktrees/news-engine-live/Claude_news_engine/news_engine
@@ -65,7 +65,15 @@ python scripts/rederive_surprise_direction.py --db webapp/dashboard.db
 
 ## 6. Backlog actuals
 
-Dry run and read the lists (Empire State first prints 20.6 / 7.6 / 25.5; Goods Trade Balance -118.8B / -132.6B / -134.9B; Prelim Wholesale 1.3% / 0.7% / 0.6%; Existing Home Sales 3.99M on the latest row only), then apply. A rerun must fill 0:
+Dry run and read the lists, then apply. A rerun must fill 0. Build-time dry run on a live copy (2026-11-04), seven fills:
+
+- Empire State Manufacturing Index: 7.6 (2026-09-15), 25.5 (2026-10-15), both from the FRED/ALFRED pass.
+- Goods Trade Balance: -132.6B (2026-09-30, FRED/ALFRED pass), -134.9B (2026-10-28, Census).
+- Prelim Wholesale Inventories m/m: 0.7% (2026-09-30, FRED/ALFRED pass), 0.6% (2026-10-28, Census).
+- Existing Home Sales: 3.99M (2026-10-13, FRED), the latest row only. The 2026-09-10 row stays empty with `revised since release`.
+
+The August rows of the first three titles (Empire 2026-08-17, the other two 2026-08-27) have a NULL country. Both passes read USD rows only, so those rows stay empty and no August value appears in the lists. That is expected, not a mismatch. A release after 2026-11-04 can add a fill to this list.
+
 
 ```
 python scripts/backfill_official_actuals.py --db webapp/dashboard.db --env-file .env --fred-backfill
@@ -100,15 +108,24 @@ Then replace `(plan, record-call, record-late-check)` with `(plan, record-call, 
 
 ## 10. Restart
 
+PowerShell or cmd:
+
 ```
 schtasks /run /tn NewsEngine_AutoStart
+```
+
+Git Bash:
+
+```
+MSYS_NO_PATHCONV=1 schtasks /run /tn NewsEngine_AutoStart
 ```
 
 ## 11. Checks
 
 - `GET http://localhost:5001/api/health` shows `tier1_alerts` ok, and `tier1_research` amber until the next plan run.
 - Stats shows `n=` beside News calls; below-floor leans show as no-call.
-- The first Empire State and Existing Home Sales releases after deploy fill by their poller (source `fred`).
+- The first Existing Home Sales release after deploy fills through the release poller (source `fred`).
+- The first Empire State release after deploy fills through the hourly FRED/ALFRED backfill, at least an hour after release (source `fred`). Empire is classed proprietary, so the poller never reads it.
 - `Get-ScheduledTask` for the Tier 1 tasks shows the battery settings (starts on battery, no stop on battery) and the staggered Monday time.
 - One test alert is not sent to Telegram unless the owner asks.
 

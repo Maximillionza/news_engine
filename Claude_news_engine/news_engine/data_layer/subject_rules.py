@@ -134,10 +134,8 @@ _US_RATES_PATTERN = re.compile(
 )
 
 # The dollar, once other countries' dollars are removed from the title.
-_FOREIGN_DOLLAR_PATTERN = re.compile(
-    r"\b(?:australian|aussie|canadian|new zealand|kiwi|hong kong|singapore|taiwan)\s+dollars?\b",
-    re.IGNORECASE,
-)
+_FOREIGN_DOLLAR = r"(?:australian|aussie|canadian|new zealand|kiwi|hong kong|singapore|taiwan)\s+dollars?"
+_FOREIGN_DOLLAR_PATTERN = re.compile(r"\b" + _FOREIGN_DOLLAR + r"\b", re.IGNORECASE)
 _DOLLAR_PATTERN = re.compile(r"\b(?:dollar|usd|greenback|dxy)\b", re.IGNORECASE)
 
 # A title that LEADS with another asset is about that asset, even when it
@@ -154,14 +152,21 @@ _OTHER_ASSET_LEAD_PATTERN = re.compile(
 
 # FIX (2026-11-03), audit B1 stopgap: every path, a Fed or US mention does not
 # rescue the title ("Gold miners rally as Fed signals rate cut", "Yen falls as
-# US yields rise"). An optional qualifier may come first ("Spot gold", "U.S.
-# crude", "Asian shares"); a bare "Asian" or "Global" lead does not count here.
+# US yields rise"). A Reuters "SNAPSHOT" slug and a qualifier may come first
+# ("Spot gold", "U.S. crude", "Indian rupee", "Emerging market stocks"); a bare
+# "Asian" or "Global" lead does not count here. Other countries' dollars lead
+# too ("Australian dollar slides as US CPI runs hot"). "won", "real" and "rand"
+# are English words, so they count only with their nationality.
 _NON_USD_LEAD_PATTERN = re.compile(
-    r"^\W*(?:(?:spot|u\.?s\.?|asian|european|global|japanese|chinese|london)\s+)?"
-    r"(?:gold|silver|platinum|copper|oil|crude|brent|wti|natural gas|natgas|bitcoin|crypto\w*|"
+    r"^\W*(?:snapshot\W+)?"
+    r"(?:(?:spot|u\.?s\.?|asian|european|global|japanese|chinese|london|british|indian|mexican|swiss|"
+    r"turkish|australian|canadian|new zealand|south korean|brazilian|south african|"
+    r"emerging[- ]markets?)\s+)?"
+    r"(?:gold|silver|platinum|copper|bullion|oil|crude|brent|wti|natural gas|natgas|bitcoin|crypto\w*|"
     r"stocks?|equities|shares|wall st(?:reet)?|s&p(?: 500)?|nasdaq|dow|nikkei|ftse|dax|"
     r"pound|sterling|euro|yen|yuan|aussie|loonie|kiwi|franc|rupee|peso|lira|"
-    r"asia fx|asian currencies)\b",
+    r"(?:south )?korean won|brazilian real|south african rand|" + _FOREIGN_DOLLAR + r"|"
+    r"asia fx|asian currencies|emerging[- ]markets? (?:fx|currencies))\b",
     re.IGNORECASE,
 )
 

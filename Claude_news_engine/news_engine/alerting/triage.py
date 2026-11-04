@@ -82,28 +82,31 @@ def _is_minor_earthquake_only(text: str, category: Optional[str], hits: list[str
 
 # "not" also covers has not / have not / will not.
 _DENIAL_RE = re.compile(
-    r"\b(?:den(?:y|ies|ied|ying)|rul(?:e|es|ed) out|no plans? to|not|false reports?|unconfirmed|rumou?r(?:s|ed)?)\b"
+    r"\b(?:den(?:y|ies|ied|ying)|rul(?:e|es|ed|ing) out|no plans? to|not|false reports?|unconfirmed|rumou?r(?:s|ed)?)\b"
     r"|\b\w+n't\b"
 )
 
 _PRICE_REPORT_RE = re.compile(
     r"\b(?:prices?|oil|crude|brent|wti|gold|stocks?|shares)\b.{0,30}?"
-    r"\b(?:rises?|rose|falls?|fell|jump(?:s|ed)?|slides?|slid|climb(?:s|ed)?|drop(?:s|ped)?|dip(?:s|ped)?"
-    r"|sinks?|sank|surge[sd]?|tumble[sd]?|gain(?:s|ed)?)\b"
+    r"\b(?:rises?|rose|rising|falls?|fell|falling|jump(?:s|ed|ing)?|slides?|slid|sliding|climb(?:s|ed|ing)?"
+    r"|drop(?:s|ped|ping)?|dip(?:s|ped|ping)?|sinks?|sank|sinking|surg(?:e|es|ed|ing)|tumbl(?:e|es|ed|ing)"
+    r"|gain(?:s|ed|ing)?|soar(?:s|ed|ing)?|spik(?:e|es|ed|ing)|rall(?:y|ies|ied|ying)|up|down)\b"
     r"|\bfutures\b"
     r"|\bsettle[sd]?\b"
     r"|\d+(?:\.\d+)?\s*%\s+(?:higher|lower)\b"
-    r"|\bhits? \d+-(?:day|week|month|year) (?:high|low)s?\b"
+    r"|\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|multi)[- ](?:day|week|month|year)"
+    r" (?:high|low)s?\b"
+    r"|\bhit(?:s|ting)? \$\d"
 )
 
 # "may" the month is stripped first, so only the modal reads as speculation.
 _MONTH_MAY_RE = re.compile(r"\b(?:in|by|of|on|since|from|until|early|late|mid|next|last|this)[\s-]+may\b|\bmay\s+(?=\d)")
 
 _COMMENTARY_RE = re.compile(
-    r"\banalysts?\s+(?:says?|said|warns?|sees?|expects?)\b"
-    r"|\b(?:could|might|may)\b"
-    r"|\bwarns?\s+(?:that|of)\b"
-    r"|\bfears?\b"
+    r"\banalysts?\s+(?:says?|said|warn(?:s|ed)?|sees?|saw|expect(?:s|ed)?)\b"
+    r"|\b(?:could|might|may|would|if)\b"
+    r"|\bwarn(?:s|ed)?\s+(?:that|of)\b"
+    r"|\bfear(?:s|ed)?\b"
 )
 
 

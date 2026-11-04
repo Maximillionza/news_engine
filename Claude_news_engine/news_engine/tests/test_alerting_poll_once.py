@@ -128,7 +128,7 @@ def test_dedup_match_escalates_severity_and_notifies_on_upgrade():
         category="energy", severity="Medium", classification_method="llm", rationale=None, affected_symbols=[],
     )
 
-    escalating_article = _article("Oil prices tick up as Strait of Hormuz closed after naval clash")
+    escalating_article = _article("Strait of Hormuz closed after naval clash")
 
     with patch("alerting.poll_once.RSSNewsSource") as mock_source_cls, \
          patch("alerting.poll_once.dedup.find_existing_alert", return_value=existing_id), \

@@ -234,10 +234,21 @@ def test_soft_marker_needs_no_foreign_place():
         "Gold miners rally as Fed signals rate cut",
         "U.S. crude falls below $80 as oil prices sink",
         "Wall Street ends higher as tech rebounds",
+        "Indian rupee weakens as dollar strengthens after hot CPI",
+        "British pound falls as dollar rises",
+        "Swiss franc gains as dollar softens",
+        "Mexican peso slips as dollar firms on Fed bets",
+        "Australian dollar slides as US CPI runs hot",
+        "Canadian dollar firms as US jobs data disappoints",
+        "New Zealand dollar slips as Fed holds",
+        "Bullion climbs as Fed signals rate cut",
+        "Emerging market stocks fall after US CPI",
+        "SNAPSHOT US stock futures edge lower after economic data - Reuters",
     ],
 )
 def test_other_asset_lead_on_every_path(title):
     assert b6_exclusion_reason(title, "", "CPI m/m") == "other_asset_lead"
+    assert b6_exclusion_reason(title, "", "PPI m/m") == "other_asset_lead"
     assert b6_exclusion_reason(title, "", "Unemployment Claims") == "other_asset_lead"
     assert b6_exclusion_reason(title, "Fed officials meet next week", "FOMC Statement") == "other_asset_lead"
     # The empty-summary case stops one rule earlier unless the title names the Fed; either way it is out.
@@ -254,6 +265,11 @@ def test_other_asset_lead_on_every_path(title):
         "S&P slips", "Nasdaq jumps", "Dow drops", "Nikkei jumps", "FTSE 100 falls", "DAX rises", "Sterling slips",
         "Euro firms", "Yuan steadies", "Aussie gains", "Loonie weakens", "Kiwi rises", "Franc firms", "Rupee falls",
         "Peso slides", "Lira hits low", "Asia FX weak", "Asian currencies fall", "\u2018Gold rush\u2019 continues",
+        "British pound falls", "Indian shares slip", "Mexican peso slips", "Swiss franc gains", "Turkish lira slides",
+        "Australian shares rise", "Canadian stocks fall", "New Zealand dollar slips", "Hong Kong dollar steadies",
+        "Aussie dollar eyes CPI", "South Korean won weakens", "Korean won falls", "Brazilian real slides",
+        "South African rand firms", "Bullion climbs", "Emerging market stocks fall", "Emerging-market shares drop",
+        "Emerging markets FX slides", "Emerging market currencies slide", "SNAPSHOT-US stock futures edge lower",
     ],
 )
 def test_lead_pattern_covers_each_asset(title):
@@ -265,7 +281,8 @@ def test_lead_pattern_covers_each_asset(title):
     [
         "Dollar rises after hot CPI", "Treasury yields climb", "US CPI rises", "Golden Week trade slows",
         "Oilfield hiring picks up", "Downtown retail sales slip", "Shareholders revolt", "Europe stumbles",
-        "Fed lifts gold outlook", "Dollar firms vs yen after CPI beat",
+        "Fed lifts gold outlook", "Dollar firms vs yen after CPI beat", "Real wages fall as CPI runs hot",
+        "Rand Paul criticises Fed", "Won't cut, Fed says", "Canadian jobs data disappoints", "Snapshot of US inflation",
     ],
 )
 def test_lead_pattern_leaves_other_leads(title):
@@ -277,8 +294,9 @@ def test_dollar_headline_kept_in_every_family():
     assert b6_exclusion_reason("Dollar rises after hot PPI", "", "PPI m/m") is None
     assert b6_exclusion_reason("Greenback rises after hot PPI", "", "PPI m/m") is None
     assert b6_exclusion_reason("Aussie dollar rises on hot CPI", "", "CPI m/m") is not None
-    # A foreign dollar is not the dollar for the soft marker either.
-    assert b6_exclusion_reason("Canadian dollar firms on hot PPI", "", "PPI m/m") == "no_us_subject"
+    # A leading foreign dollar is another asset; later in the title it is still not the dollar for the soft marker.
+    assert b6_exclusion_reason("Canadian dollar firms on hot PPI", "", "PPI m/m") == "other_asset_lead"
+    assert b6_exclusion_reason("Hot PPI lifts Canadian dollar", "", "PPI m/m") == "no_us_subject"
 
 
 def test_wall_street_marker_only_when_not_leading():

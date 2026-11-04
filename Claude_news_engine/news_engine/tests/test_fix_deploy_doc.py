@@ -28,6 +28,13 @@ def _text() -> str:
     return DOC.read_text(encoding="utf-8")
 
 
+def _step(number: int) -> str:
+    """The body of one numbered step, up to the next heading."""
+    match = re.search(rf"^## {number}\. .*?(?=^## |\Z)", _text(), re.MULTILINE | re.DOTALL)
+    assert match, f"step {number} missing"
+    return match.group(0)
+
+
 def test_markers_appear_in_order() -> None:
     text = _text()
     pos = -1
@@ -54,6 +61,35 @@ def test_no_secret_looking_text() -> None:
     assert not re.search(r"_API_KEY\s*=\s*\S", text)
     assert not re.search(r"\b[0-9a-f]{32,}\b", text)
     assert not re.search(r"\b\d{8,}:[A-Za-z0-9_-]{30,}\b", text)  # Telegram bot token shape
+
+
+def test_shell_note_sends_step_10_away_from_plain_git_bash() -> None:
+    """Git Bash rewrites schtasks /run into a path, so a plain call there fails and the engine stays stopped."""
+    note = next(line for line in _text().splitlines() if line.startswith("Shell:"))
+    assert "Every other command" not in note
+    assert "Step 10" in note and "Git Bash" in note
+    step = _step(10)
+    assert "PowerShell or cmd:\n\n```\nschtasks /run /tn NewsEngine_AutoStart\n```" in step
+    assert "Git Bash:\n\n```\nMSYS_NO_PATHCONV=1 schtasks /run /tn NewsEngine_AutoStart\n```" in step
+
+
+def test_step_6_lists_the_seven_real_fills_and_no_august_value() -> None:
+    step = _step(6)
+    assert "seven fills" in step
+    for value in ("7.6", "25.5", "-132.6B", "-134.9B", "0.7%", "0.6%", "3.99M"):
+        assert value in step, value
+    # The August rows have a NULL country, so a list naming these reads as a false mismatch.
+    for value in ("20.6", "-118.8B", "1.3%"):
+        assert value not in step, value
+    assert "NULL country" in step
+
+
+def test_step_11_names_the_path_that_really_fills_each_title() -> None:
+    lines = _step(11).splitlines()
+    empire = next(line for line in lines if "Empire State" in line)
+    home_sales = next(line for line in lines if "Existing Home Sales" in line)
+    assert "hourly FRED/ALFRED backfill" in empire and "Existing Home Sales" not in empire
+    assert "release poller" in home_sales
 
 
 def test_methodology_is_current_and_pre_registers_the_floor() -> None:

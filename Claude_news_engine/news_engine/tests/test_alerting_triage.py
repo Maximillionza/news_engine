@@ -174,6 +174,7 @@ def test_live_commentary_alerts_leave_the_rule_tier():
     "Iran won't see strait of hormuz closed",
     "Iran won\u2019t see strait of hormuz closed",
     "Claim of strait of hormuz closed isn\u2019t true",
+    "Saudi Arabia ruling out oil export ban",
 ])
 def test_denials_fall_through(headline):
     _assert_guarded(triage_article(_article(headline)), "denial")
@@ -189,6 +190,20 @@ def test_denials_fall_through(headline):
     "Gold 1.5 % lower after Fed chair fired",
     "Brent dropped after strait of hormuz shut",
     "Oil sank as strait of hormuz closed",
+    "Oil prices rising as strait of hormuz closed",
+    "Stocks falling after Fed chair resigns",
+    "Oil soars as strait of hormuz closed",
+    "Gold spiking after Fed chair resigns",
+    "Stocks rally after Fed chair resigns",
+    "Oil up 5% as strait of hormuz closed",
+    "Gold down after Fed chair fired",
+    "Oil hits a 6-month high as strait of hormuz closed",
+    "Oil hits six-month high after strait of hormuz closed",
+    "Oil hits an eight-month high after strait of hormuz closed",
+    "Oil hits new multi-year high as strait of hormuz closed",
+    "Oil at 6-month high as strait of hormuz closed",
+    "Oil hits $150 after strait of hormuz closed",
+    "If strait of hormuz closed, oil would hit $200",
 ])
 def test_price_reports_fall_through(headline):
     _assert_guarded(triage_article(_article(headline)), "price_report")
@@ -202,6 +217,12 @@ def test_price_reports_fall_through(headline):
     "Analyst warns strait of hormuz closed",
     "Strait of Hormuz closed might last weeks",
     "Tehran warns of strait of hormuz closed",
+    "Analysts warned strait of hormuz closed",
+    "Analysts expected strait of hormuz closed",
+    "Tehran warned of strait of hormuz closed",
+    "Traders feared strait of hormuz shut",
+    "Strait of Hormuz closed would send oil to $200",
+    "If strait of hormuz closed, shipping stops",
 ])
 def test_commentary_falls_through(headline):
     _assert_guarded(triage_article(_article(headline)), "commentary")
