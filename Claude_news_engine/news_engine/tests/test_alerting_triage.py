@@ -293,6 +293,14 @@ def test_denials_fall_through(headline):
     "Record high oil prices as strait of hormuz closed",
     "Record high for gold after Fed chair resigns",
     "Dollar retreats from 18-month peaks after Fed chair resigns",
+    "Natural gas hits record high as strait of hormuz closed",
+    "European gas at record high as strait of hormuz closed",
+    "LNG hits record high as strait of hormuz closed",
+    "Wheat hits record high as strait of hormuz closed",
+    "Nvidia hits all-time high after Fed chair resigns",
+    "Kospi hits record high after Fed chair resigns",
+    "Ruble hits record low after Fed chair resigns",
+    "Wall Street ends lower, off record highs, after Fed chair resigns",
 ])
 def test_price_reports_fall_through(headline):
     _assert_guarded(triage_article(_article(headline)), "price_report")
@@ -343,6 +351,7 @@ def test_may_the_month_is_not_commentary(headline):
     "Oil tanker attack raises alert to highest level as strait of hormuz closed",
     "Oil minister joins highest-level talks as strait of hormuz closed",
     "Tensions at record high as strait of hormuz closed",
+    "Oil output at record high as strait of hormuz closed",
     "Attacks at record high as strait of hormuz closed",
     "Oil tanker attacks at record high as strait of hormuz closed",
     "Oil firms evacuate staff as strait of hormuz closed",

@@ -178,6 +178,15 @@ _SUBJECT_AT_LEVEL = (
 # Bare "6-month high" reads as a price with no named asset. "top" and "pare" also take the plural-subject form
 # ("Oil prices top $100", "Stocks pare losses"); bare "top" needs the dollar figure, since "Oil tanker seized,
 # top general says" is an event.
+# "Record high" reads as a price unless a known non-price noun owns it. Default to price on purpose: a word
+# missing here costs one classifier call, while a priced subject missing from a list would fire a clean High.
+_NOT_A_PRICE = (
+    r"(?:tensions?|attacks?|strikes?|casualt(?:y|ies)|deaths?|ratings?|approval|sentiment|confidence|revenues?"
+    r"|sales|profits?|margins?|earnings|debt|deficits?|turnout|temperatures?|heat|inflation|unemployment"
+    r"|output|production|exports?|imports?|demand|supply|arrests?|migration|hiring|layoffs)"
+)
+_RECORD = r"\b(?:record|all[- ]time)[- ](?:highs?|lows?)\b"
+
 _PRICE_REPORT_RE = re.compile(
     _PRICED_ASSET + r".{0,30}?\b" + _WINDOW_MOVE + r"\b"
     r"|" + _PRICED_ASSET + _ASSET_TO_MOVE + r"(?:" + _TIGHT_MOVE + r"\b|" + _DOLLAR_LEVEL + r"|" + _OUTLOOK + r")"
@@ -187,6 +196,7 @@ _PRICE_REPORT_RE = re.compile(
     r"|\b" + _LONG_RANGE + r"[- ](?:high|low)s?\b"
     r"|" + _SUBJECT_AT_LEVEL +
     r"|\b(?:record[- ]|all[- ]time[- ])(?:highs?|lows?)\s+(?:(?:for|in|on)\s+(?:the\s+)?)?" + _PRICED_SUBJECT +
+    r"|^(?!.*\b" + _NOT_A_PRICE + r"\b[^,;:]{0,30}?" + _RECORD + r").*" + _RECORD +
     r"|\bhit(?:s|ting)? \$\d"
 )
 

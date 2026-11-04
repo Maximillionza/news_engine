@@ -308,6 +308,9 @@ def test_soft_marker_needs_no_foreign_place():
         "Asia Pacific stocks fall after US CPI",
         "Offshore yuan slips after US CPI",
         "Onshore yuan slips after US CPI",
+        "Turkiye's lira slides after US CPI",
+        "New Delhi stocks fall after US CPI",
+        "Sudan's oil output falls after US CPI",
     ],
 )
 def test_other_asset_lead_on_every_path(title):
@@ -376,6 +379,10 @@ def test_lead_pattern_covers_each_asset(title):
         "Sweden's crown princess visits US", "Norway's crown prince visits Fed", "Denmark's crown jewels on show",
         # A place word with no asset straight after it.
         "Gulf of Mexico output slips", "Gulf Coast refiners lift dollar", "World Bank warns on US inflation",
+        # The country's own adjective and hyphenated English words.
+        "American oil output lifts dollar", "American shares rise after US CPI", "Texan oil output lifts US CPI",
+        "Kaplan shares rate view after CPI", "Sluggish oil demand lifts dollar",
+        "Brazil's real-estate boom lifts dollar", "Sweden's crown-prince visits US",
     ],
 )
 def test_lead_pattern_leaves_other_leads(title):

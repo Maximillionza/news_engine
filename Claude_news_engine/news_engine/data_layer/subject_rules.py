@@ -176,8 +176,8 @@ _UNAMBIGUOUS_ASSET = (
     r"rupiah|ringgit|baht|rouble|ruble|zloty|forint|krona|krone|shekel|naira"
 )
 _SOUTH = r"(?:south |s\.\s?)?"
-_NOT_THE_CURRENCY_REAL = r"(?!\s+(?:estate|wages?|rates?|interest|yields?|gdp|economy|incomes?|earnings|growth|terms))"
-_NOT_THE_CURRENCY_CROWN = r"(?!\s+(?:prince|jewel))"
+_NOT_THE_CURRENCY_REAL = r"(?![\s-]+(?:estate|wages?|rates?|interest|yields?|gdp|economy|incomes?|earnings|growth|terms))"
+_NOT_THE_CURRENCY_CROWN = r"(?![\s-]+(?:prince|jewel))"
 _NAMED_ASSET = (
     _SOUTH + r"(?:korean|korea's) won(?!')|"
     r"(?:brazilian|brazil's) real" + _NOT_THE_CURRENCY_REAL + r"|" +
@@ -203,7 +203,8 @@ _LEAD_PLACES: tuple[str, ...] = _FOREIGN_PLACES + _FOREIGN_CITIES + (
     "peru", "portugal", "qatar", "romania", "s.africa", "s.korea", "s. africa", "s. korea", "sao paulo",
     "são paulo", "saudi arabia", "serbia", "slovakia", "slovenia", "sri lanka", "syria", "tanzania", "tunisia",
     "uae", "uganda", "ukraine", "uruguay", "uzbekistan", "venezuela", "vietnam", "world", "yemen", "zambia",
-    "zimbabwe",
+    "zimbabwe", "turkiye", "türkiye", "new delhi", "sudan", "south sudan", "guyana", "congo", "kurdistan",
+    "gabon", "chad", "turkmenistan", "madrid", "riyadh", "istanbul", "toronto", "bangkok", "jakarta", "oslo",
 )
 _LEAD_PLACE = "|".join(re.escape(place) for place in sorted(_LEAD_PLACES, key=len, reverse=True))
 # Everyday words, US names, sectors and acronyms the demonym shape also fits
@@ -224,6 +225,7 @@ _SHAPE_COLLISIONS = "|".join(
         "cpi", "ppi", "pmi", "msci", "fbi", "citi",
         "michigan", "manhattan", "mississippi", "hawaii", "miami", "cincinnati",
         "morgan", "jpmorgan", "sullivan", "reagan",
+        "american", "alaskan", "texan", "louisianan", "hawaiian", "kaplan", "sluggish",
         *FED_OFFICIAL_SURNAMES,
     )
 )
