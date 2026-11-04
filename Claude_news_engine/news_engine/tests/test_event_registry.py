@@ -136,10 +136,18 @@ def test_event_influence_links_every_title_is_registered():
     print("PASS\n")
 
 
-def test_event_influence_links_absorbs_the_old_hardcoded_adp_ppi_links():
-    print("=== EVENT_INFLUENCE_LINKS: the two previously-hardcoded links (ADP->NFP, PPI->CPI) are present ===")
-    nfp_precursors = dict(EVENT_INFLUENCE_LINKS.get("Non-Farm Employment Change", []))
-    assert "ADP Non-Farm Employment Change" in nfp_precursors
+def test_rejected_adp_is_no_precursor_and_claims_lead_nfp():
+    print("=== EVENT_INFLUENCE_LINKS: ADP (rejected by the workbook) feeds nothing; claims outrank JOLTS and Challenger ===")
+    for precursors in EVENT_INFLUENCE_LINKS.values():
+        assert "ADP Non-Farm Employment Change" not in dict(precursors)
+    nfp_precursors = dict(EVENT_INFLUENCE_LINKS["Non-Farm Employment Change"])
+    assert nfp_precursors["Unemployment Claims"] > nfp_precursors["JOLTS Job Openings"]
+    assert nfp_precursors["Unemployment Claims"] > nfp_precursors["Challenger Job Cuts y/y"]
+    print("PASS\n")
+
+
+def test_event_influence_links_keeps_the_old_hardcoded_ppi_link():
+    print("=== EVENT_INFLUENCE_LINKS: the previously-hardcoded PPI->CPI link is present ===")
     cpi_precursors = dict(EVENT_INFLUENCE_LINKS.get("CPI m/m", []))
     assert "PPI m/m" in cpi_precursors
     print("PASS\n")
@@ -148,6 +156,7 @@ def test_event_influence_links_absorbs_the_old_hardcoded_adp_ppi_links():
 if __name__ == "__main__":
     test_event_registry_every_entry_has_impact_and_interval()
     test_event_registry_covers_every_event_surprise_direction_title()
+    test_rejected_adp_is_no_precursor_and_claims_lead_nfp()
     test_get_approximate_next_occurrence_unregistered_title_returns_none()
     test_get_approximate_next_occurrence_no_sources_returns_none()
     test_get_approximate_next_occurrence_tier3_cadence_math()
@@ -155,4 +164,4 @@ if __name__ == "__main__":
     test_get_approximate_next_occurrence_macro_calendar_beats_cadence_math()
     test_get_approximate_next_occurrence_ff_snapshot_beats_everything()
     test_event_influence_links_every_title_is_registered()
-    test_event_influence_links_absorbs_the_old_hardcoded_adp_ppi_links()
+    test_event_influence_links_keeps_the_old_hardcoded_ppi_link()

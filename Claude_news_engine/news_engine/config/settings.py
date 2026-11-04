@@ -426,11 +426,14 @@ EVENT_REGISTRY: dict[str, dict] = {
 # tier (EVENT_REGISTRY) is metadata used only to decide dashboard-score-
 # or-not, never a structural constraint on which links are allowed.
 #
-# Absorbs and replaces the old hardcoded precursor-lookup dict — ADP->NFP
-# and PPI->CPI are its first two entries below, at the same weight
-# (PRECURSOR_TRUST_WEIGHT, 0.9) the old hardcoded mechanism used, so the
-# migration is behavior-preserving (see tests/test_probability_engine.py's
-# regression test).
+# Absorbs and replaces the old hardcoded precursor-lookup dict; PPI->CPI
+# kept the weight (PRECURSOR_TRUST_WEIGHT, 0.9) that mechanism used.
+#
+# ADP links removed 2026-11-04 (owner decision): the workbook's
+# POC_NFP_Leading_Indicators tab REJECTS ADP as an NFP preview (47.7%
+# direction hit rate), and verified initial claims now outrank the unverified
+# JOLTS and Challenger links. A removed link is not a zero weight: the pair
+# stops being a precursor at all.
 #
 # Since B6 (2026-10-22) the float weight IS the precursor's trust weight
 # (scoring.probability_engine._precursor_link_weight); PRECURSOR_TRUST_WEIGHT
@@ -439,17 +442,12 @@ EVENT_REGISTRY: dict[str, dict] = {
 # this codebase.
 EVENT_INFLUENCE_LINKS: dict[str, list[tuple[str, float]]] = {
     "Non-Farm Employment Change": [
-        ("ADP Non-Farm Employment Change", 0.90),  # migrated from the old hardcoded precursor-lookup link
-        ("JOLTS Job Openings", 0.40),
-        ("Challenger Job Cuts y/y", 0.35),
-        ("Unemployment Claims", 0.30),
+        ("Unemployment Claims", 0.40),  # the workbook's one verified NFP input
+        ("JOLTS Job Openings", 0.30),   # workbook: Guessing, not sourced
+        ("Challenger Job Cuts y/y", 0.30),  # workbook: Guessing, not sourced
     ],
     "Unemployment Rate": [
-        ("ADP Non-Farm Employment Change", 0.60),
         ("Unemployment Claims", 0.40),
-    ],
-    "Average Hourly Earnings m/m": [
-        ("ADP Non-Farm Employment Change", 0.50),
     ],
     "CPI m/m": [
         ("PPI m/m", 0.90),  # migrated from the old hardcoded precursor-lookup link

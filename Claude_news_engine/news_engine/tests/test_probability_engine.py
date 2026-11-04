@@ -1101,8 +1101,8 @@ def test_score_bundle_flags_chain_conflict_when_linked_precursors_disagree():
     print("PASS\n")
 
 
-def test_migrated_links_produce_identical_score_bundle_result_old_vs_new_path():
-    print("=== REGRESSION: graph-driven ADP->NFP and PPI->CPI precursors produce IDENTICAL score_bundle() results to the old hardcoded path ===")
+def test_adp_unlinked_and_ppi_link_identical_old_vs_new_path():
+    print("=== REGRESSION: ADP->NFP is unlinked; graph-driven PPI->CPI precursor produces IDENTICAL score_bundle() results to the old hardcoded path ===")
     with tempfile.TemporaryDirectory() as tmp:
         conn = webapp_store.get_connection(Path(tmp) / "test.db")
 
@@ -1112,15 +1112,8 @@ def test_migrated_links_produce_identical_score_bundle_result_old_vs_new_path():
         adp_event = EconomicEvent(title="ADP Non-Farm Employment Change", country="USD", impact="Medium", event_time_utc=adp_time, forecast="150K", actual="190K")
         webapp_store.upsert_event_history(conn, adp_event, surprise_direction="higher", now=adp_time)
 
-        nfp_bundle = EventNewsBundle(event=nfp_event, articles=[], as_of_utc=EVENT_TIME)
-        old_path_nfp = score_bundle(nfp_bundle, "XAUUSD", precursor_events=[adp_event])
-        new_precursors_nfp = get_precursor_events_for("Non-Farm Employment Change", EVENT_TIME, conn)
-        new_path_nfp = score_bundle(nfp_bundle, "XAUUSD", precursor_events=new_precursors_nfp)
-
-        assert new_path_nfp.aggregate_usd_sentiment == old_path_nfp.aggregate_usd_sentiment
-        assert new_path_nfp.probability == old_path_nfp.probability
-        assert new_path_nfp.confidence == old_path_nfp.confidence
-        assert new_path_nfp.direction == old_path_nfp.direction
+        # ADP was rejected by the workbook and unlinked on 2026-11-04: a resolved print feeds nothing.
+        assert get_precursor_events_for("Non-Farm Employment Change", EVENT_TIME, conn) == []
 
         # --- CPI target, PPI precursor ---
         cpi_event = _cpi_event()
@@ -1147,21 +1140,21 @@ def test_precursor_trust_uses_authored_link_weight():
     event = EconomicEvent(title="Challenger Job Cuts y/y", country="USD", impact="Low", event_time_utc=EVENT_TIME, forecast="20K", actual="35K")  # linked to NFP at weight 0.35
     contributions = _build_precursor_contributions([event], EVENT_TIME, target_title="Non-Farm Employment Change")
     assert len(contributions) == 1
-    assert contributions[0].trust_weight == 0.35
-    assert contributions[0].combined_weight == 0.35 * contributions[0].time_weight
+    assert contributions[0].trust_weight == 0.30
+    assert contributions[0].combined_weight == 0.30 * contributions[0].time_weight
     print("PASS\n")
 
 
-def test_jolts_to_nfp_uses_0_40():
-    print("=== B6: JOLTS -> NFP link weight is 0.40 (JOLTS is dormant today: no EVENT_SURPRISE_DIRECTION entry, patched in here) ===")
+def test_jolts_to_nfp_uses_0_30():
+    print("=== JOLTS -> NFP link weight is 0.30 (JOLTS is dormant today: no EVENT_SURPRISE_DIRECTION entry, patched in here) ===")
     from scoring.probability_engine import _build_precursor_contributions, _precursor_link_weight
     from config.settings import EVENT_SURPRISE_DIRECTION
-    assert _precursor_link_weight("Non-Farm Employment Change", "JOLTS Job Openings") == 0.40
+    assert _precursor_link_weight("Non-Farm Employment Change", "JOLTS Job Openings") == 0.30
     event = EconomicEvent(title="JOLTS Job Openings", country="USD", impact="Medium", event_time_utc=EVENT_TIME, forecast="7.2M", actual="7.6M")
     with patch.dict(EVENT_SURPRISE_DIRECTION, {"JOLTS Job Openings": "higher_bullish"}):
         contributions = _build_precursor_contributions([event], EVENT_TIME, target_title="Non-Farm Employment Change")
     assert len(contributions) == 1
-    assert contributions[0].trust_weight == 0.40
+    assert contributions[0].trust_weight == 0.30
     print("PASS\n")
 
 
@@ -1429,9 +1422,9 @@ if __name__ == "__main__":
     test_check_precursor_chain_conflict_two_disagree_flags()
     test_check_precursor_chain_conflict_three_with_one_outlier_flags()
     test_score_bundle_flags_chain_conflict_when_linked_precursors_disagree()
-    test_migrated_links_produce_identical_score_bundle_result_old_vs_new_path()
+    test_adp_unlinked_and_ppi_link_identical_old_vs_new_path()
     test_precursor_trust_uses_authored_link_weight()
-    test_jolts_to_nfp_uses_0_40()
+    test_jolts_to_nfp_uses_0_30()
     test_adp_and_ppi_links_stay_0_90()
     test_unlinked_precursor_falls_back_to_global_weight()
     test_score_bundle_passes_target_title_to_precursors()
