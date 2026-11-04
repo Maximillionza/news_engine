@@ -15,7 +15,9 @@ def test_register_tier1_tasks_script_has_both_tasks_with_start_when_available() 
     for needle in ("NewsEngine_Tier1Weekly", "NewsEngine_Tier1Daily", "-StartWhenAvailable",
                    "-DaysOfWeek Monday", "-Daily", "tier1_capture_scheduled.vbs"):
         assert needle in text, needle
-    assert text.count("-At 07:00") == 2
+    assert text.count("-At 07:00") == 1                       # daily; the weekly task starts 10 minutes later
+    assert text.count("-At 07:10") == 1
+    assert "-AllowStartIfOnBatteries" in text and "-DontStopIfGoingOnBatteries" in text
     assert "schtasks" not in text
 
 

@@ -210,3 +210,69 @@ def test_fed_funds_has_one_producer(tmp_path, capsys):
     # B12 review: Federal Funds Rate is outside the shared surprise map; the Kalshi row's own sign still gives
     # it a side (implied 4.25 vs forecast 4.00% = hotter = +1), so it is scored once the actual lands.
     assert row.tier1.side == 1
+
+
+# --- FIX Task 6: forecast-change refresh and unconfirmed releases --------------------------------------
+
+def _set_forecast(paths, title, forecast):
+    dash = ws.get_connection(str(paths[0]))
+    try:
+        dash.execute("UPDATE event_history SET forecast = ? WHERE event_title = ?", (forecast, title))
+        dash.commit()
+    finally:
+        dash.close()
+
+
+def test_daily_run_refreshes_market_row_when_forecast_changed(tmp_path, capsys):
+    paths = _setup(tmp_path, [("Non-Farm Employment Change", NFP_RELEASE, "63K")])
+    day1 = dt.datetime(2026, 11, 2, 5, 0, tzinfo=UTC)
+    assert ct.main(_args(paths), cleveland_fetch=_cleveland, ladder_fetch=_ladder_fetch(), now=day1) == 0
+    assert len(_rows(paths[1])) == 2 and all("vs forecast 63K" in r["value"] for r in _rows(paths[1]))
+    _set_forecast(paths, "Non-Farm Employment Change", "65K")
+    day2 = dt.datetime(2026, 11, 3, 5, 0, tzinfo=UTC)                     # release 80.5 h out: beyond the 48 h window
+    calls: list = []
+    assert ct.main(_args(paths, window="48"), cleveland_fetch=_cleveland, ladder_fetch=_ladder_fetch(calls),
+                   now=day2) == 0
+    rows = _rows(paths[1])
+    assert len(rows) == 4 and len(calls) == 1
+    assert sorted(("65K" in r["value"]) for r in rows) == [False, False, True, True]   # old rows intact, one new each
+    bt = bs.get_connection(paths[1])
+    try:
+        latest = bs.get_latest_tier1_prediction_for_occurrence(bt, "Non-Farm Employment Change", "XAUUSD", NFP_RELEASE)
+    finally:
+        bt.close()
+    assert "vs forecast 65K" in latest.value
+    capsys.readouterr()
+    assert ct.main(_args(paths, window="48"), cleveland_fetch=_cleveland, ladder_fetch=_ladder_fetch(),
+                   now=day2 + dt.timedelta(hours=1)) == 0
+    assert len(_rows(paths[1])) == 4                                      # second run writes 0
+
+
+def test_unchanged_forecast_beyond_window_is_not_read(tmp_path):
+    paths = _setup(tmp_path, [("Non-Farm Employment Change", NFP_RELEASE, "63K")])
+    day1 = dt.datetime(2026, 11, 2, 5, 0, tzinfo=UTC)
+    ct.main(_args(paths), cleveland_fetch=_cleveland, ladder_fetch=_ladder_fetch(), now=day1)
+    calls: list = []
+    ct.main(_args(paths, window="48"), cleveland_fetch=_cleveland, ladder_fetch=_ladder_fetch(calls),
+            now=dt.datetime(2026, 11, 3, 5, 0, tzinfo=UTC))
+    assert calls == [] and len(_rows(paths[1])) == 2
+
+
+def test_market_phase_unconfirmed_no_forecast_is_pending(tmp_path, capsys):
+    paths = _setup(tmp_path, [])
+    dash = ws.get_connection(str(paths[0]))
+    ws.upsert_macro_calendar_event(dash, "Non-Farm Employment Change", "2026-11-06", "2026-11-06T12:30:00+00:00",
+                                   "history_derived", NOW)
+    dash.close()
+    calls: list = []
+    now = dt.datetime(2026, 11, 5, 5, 0, tzinfo=UTC)                      # 32.5 h out
+    assert ct.main(_args(paths, window="48"), cleveland_fetch=_cleveland, ladder_fetch=_ladder_fetch(calls),
+                   now=now) == 0
+    out = capsys.readouterr().out
+    assert ("TIER1 PENDING Non-Farm Employment Change release 2026-11-06T13:30:00+00:00 (UNCONFIRMED date): "
+            "no readable forecast yet") in out
+    eve = dt.datetime(2026, 11, 6, 5, 0, tzinfo=UTC)                      # 8.5 h out: too late for tomorrow's run
+    assert ct.main(_args(paths, window="48"), cleveland_fetch=_cleveland, ladder_fetch=_ladder_fetch(calls),
+                   now=eve) == 2
+    assert "SKIPPED Non-Farm Employment Change" in capsys.readouterr().out
+    assert calls == [] and _rows(paths[1]) == []

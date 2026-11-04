@@ -8,6 +8,8 @@ task used to write, so fixed commands can be pre-approved and the rules live in 
 
 plan prints JSON: every USD judgment-tier event (data_layer.tier1_events) within --days, with one status per
 tracked instrument: needs_call, covered, or late_check_due (with the reason and the call of record).
+A release Forex Factory has not listed yet is read from macro_calendar at its official New York time
+(data_layer.tier1_calendar) and carries "unconfirmed": true; only those events have the key.
 record-call logs the FIRST pre-release call for an occurrence and refuses a second one (the first call stands),
 a formula-tier title (CPI and Core CPI m/m and y/y, Core PCE m/m come from the Cleveland capture), a
 market-implied title (NFP, Retail Sales, PPI, ISM Manufacturing, Advance GDP and Federal Funds Rate come from the
@@ -31,6 +33,7 @@ from typing import Optional
 # Allow `python scripts/tier1_research.py ...` (script dir, not the app root, is on sys.path).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config.settings import LOCAL_TZ  # noqa: E402
+from data_layer.tier1_calendar import unconfirmed_releases  # noqa: E402
 from data_layer.tier1_events import (  # noqa: E402
     TIER1_FORMULA, TIER1_JUDGMENT, TIER1_MARKET_IMPLIED, TIER1_RESEARCH_LOOKAHEAD, late_check_reason, tier1_titles,
 )
@@ -81,23 +84,33 @@ def build_plan(dash_conn, bt_conn, now: dt.datetime, days: float) -> list[dict]:
         f"SELECT DISTINCT event_title, event_time_utc FROM event_history "
         f"WHERE country = 'USD' AND event_title IN ({marks})", titles).fetchall()
     symbols = list_tracked_symbols(dash_conn)
-    events = []
+    end = now + dt.timedelta(days=days)
+    releases = []                                    # (title, release, unconfirmed)
     for row in rows:
         release = _as_utc(row[1])
-        if release is None or not now < release <= now + dt.timedelta(days=days):
-            continue
+        if release is not None and now < release <= end:
+            releases.append((row[0], release, False))
+    # FF lists a release late: fall back to FRED's date for the titles with no event_history row in the window.
+    listed = {title for title, _release, _unconfirmed in releases}
+    releases += [(item.title, item.release_utc, True)
+                 for item in unconfirmed_releases(dash_conn, [t for t in titles if t not in listed], now, end)]
+    events = []
+    for title, release, unconfirmed in releases:
         instruments = {}
         for symbol in symbols:
-            call, reason = _late_check_state(bt_conn, row[0], symbol, release, now)
+            call, reason = _late_check_state(bt_conn, title, symbol, release, now)
             if call is None:
                 instruments[symbol] = {"status": "needs_call"}
             elif reason is not None:
                 instruments[symbol] = {"status": "late_check_due", "reason": reason, "call": _call_dict(call)}
             else:
                 instruments[symbol] = {"status": "covered", "call": _call_dict(call)}
-        events.append({"event_title": row[0], "event_time_utc": release.isoformat(),
-                       "event_time_sast": f"{release.astimezone(LOCAL_TZ):%Y-%m-%d %H:%M} SAST",
-                       "tier": TIER1_JUDGMENT, "instruments": instruments})
+        event = {"event_title": title, "event_time_utc": release.isoformat(),
+                 "event_time_sast": f"{release.astimezone(LOCAL_TZ):%Y-%m-%d %H:%M} SAST",
+                 "tier": TIER1_JUDGMENT, "instruments": instruments}
+        if unconfirmed:
+            event["unconfirmed"] = True
+        events.append(event)
     return sorted(events, key=lambda e: (e["event_time_utc"], e["event_title"]))
 
 

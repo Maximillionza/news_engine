@@ -122,3 +122,20 @@ def test_daily_0806_sast_run_fires_the_24h_check_on_the_release_morning_not_the_
     assert late_check_reason(call, release_1230, day_before, False) is None
     assert late_check_reason(call, release_1230, release_morning, False) == "release_within_24h"
     assert late_check_reason(call, release_1230, _at(12, 6, 12), False) == "release_within_24h"  # scheduler jitter
+
+
+@pytest.mark.parametrize("title, value, expected", [
+    ("FOMC Statement", "FedWatch: ~91% hold priced", TIER1_JUDGMENT),
+    ("FOMC Meeting Minutes", "CME FedWatch (via FXStreet): ~90% hold", TIER1_JUDGMENT),
+    ("Federal Funds Rate", "CME FedWatch (via FXStreet): ~90% hold", TIER1_MARKET_IMPLIED),
+    (None, "FedWatch: ~91% hold priced", TIER1_MARKET_IMPLIED),
+])
+def test_tier1_row_tier_follows_the_registry_for_fedwatch(title, value, expected):
+    assert tier1_row_tier("https://fxstreet.com/x", value, title) == expected
+    assert tier1_row_tier("CME FedWatch via CBS", None, title) == expected       # FedWatch in the source
+
+
+def test_tier1_row_tier_title_never_overrides_the_producer_sources():
+    assert tier1_row_tier(TIER1_FORMULA_SOURCE, None, "FOMC Statement") == TIER1_FORMULA
+    assert tier1_row_tier(TIER1_MARKET_IMPLIED_SOURCE, None, "FOMC Statement") == TIER1_MARKET_IMPLIED
+    assert tier1_row_tier("BLS/ISM", "no citation", "Federal Funds Rate") == TIER1_JUDGMENT

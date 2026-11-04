@@ -10,7 +10,11 @@ What it does, once per run:
   1. Finds USD rows in event_history for the formula-tier Tier 1 titles (data_layer.tier1_events) whose release
      time is within the window (strictly after now; --window-hours, default 48; the weekly Windows task uses 192
      so a release 8 days out is captured early). If there are none - the common case - it says so and does
-     nothing, without even downloading a file.
+     nothing, without even downloading a file. Two additions (FIX Task 6): a release Forex Factory has not
+     listed yet is read from macro_calendar at its official New York time and captured as UNCONFIRMED (its
+     snapshot source ends with UNCONFIRMED_SOURCE_SUFFIX; it has no forecast, so it only ever gets a pending
+     line); and a release beyond the window whose forecast changed since its last formula row (within
+     FORECAST_REFRESH_HORIZON) is re-read, so the call follows the revised forecast without waiting for the window.
   2. Downloads each file the due releases need, once (60 s timeout, descriptive User-Agent), finds the chart for
      each release's reference month (the month before the release month), and takes that chart's LAST non-blank
      nowcast value dated before the release day.
@@ -43,19 +47,20 @@ import datetime as dt
 import math
 import sys
 from pathlib import Path
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, NamedTuple, Optional
 
 import requests
 
 # Allow `python scripts/capture_nowcast_from_cleveland.py ...` (script dir, not the app root, is on sys.path).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from data_layer.tier1_calendar import unconfirmed_releases  # noqa: E402
 from data_layer.tier1_events import TIER1_FORMULA, TIER1_FORMULA_SOURCE, tier1_titles  # noqa: E402
 from scoring import backtest_store  # noqa: E402
 from scripts.backfill_tier1_reconstructed import open_dash_readonly  # noqa: E402
 from scripts.capture_nowcast_snapshot import capture  # noqa: E402
 from scripts.cleveland_nowcast_to_csv import SOURCE, _series, _slot_dates  # noqa: E402
 from webapp.store import list_tracked_symbols  # noqa: E402
-from webapp.tier1_formula import record_formula_calls  # noqa: E402
+from webapp.tier1_formula import nowcast_key_in_value_text, record_formula_calls  # noqa: E402
 
 UTC = dt.timezone.utc
 NOWCAST_URL = "https://www.clevelandfed.org/-/media/files/webcharts/inflationnowcasting/nowcast_month.json"
@@ -79,6 +84,9 @@ MAX_WINDOW_HOURS = 240                # --window-hours ceiling (the weekly task 
 MISSING_FORECAST_ALERT_WITHIN = dt.timedelta(hours=24)   # no forecast this close to the release -> exit 2
 MAX_DAYS_PAST_CHART = 45             # a release further than this after the chart's last date label is not that chart's
 MAX_VALUE_AGE_DAYS = 5                # the Fed updates every business day; a long weekend is at most 4 days
+UNCONFIRMED_SOURCE_SUFFIX = " (unconfirmed date)"   # marks a snapshot whose release date came from macro_calendar
+UNCONFIRMED_TAG = " (UNCONFIRMED date)"             # the same mark in the scheduler log lines
+FORECAST_REFRESH_HORIZON = dt.timedelta(hours=192)  # a release this far out is re-read when its forecast changed
 
 
 class FetchError(RuntimeError):
@@ -188,10 +196,17 @@ def latest_nowcasts(json_data, release_dates: Iterable[tuple[str, dt.datetime]],
 
 # --- run -----------------------------------------------------------------------------------------
 
+class DueRelease(NamedTuple):
+    title: str
+    release: dt.datetime
+    forecast: Optional[str]
+    unconfirmed: bool = False      # date from macro_calendar (FF has not listed it): no forecast, marked in the log
+
+
 def _due_releases(dash_conn, now: dt.datetime, window: dt.timedelta = WINDOW,
-                  titles: Optional[list[str]] = None) -> list[tuple[str, dt.datetime, Optional[str]]]:
-    """(title, release_utc, forecast_text) for every release of `titles` (default: the formula tier) strictly
-    after now and within window."""
+                  titles: Optional[list[str]] = None) -> list[DueRelease]:
+    """DueRelease for every release of `titles` (default: the formula tier) strictly after now and within window.
+    A title with no event_history row due in the window falls back to its unconfirmed macro_calendar date."""
     titles = tier1_titles(TIER1_FORMULA) if titles is None else titles
     marks = ",".join("?" for _ in titles)
     rows = dash_conn.execute(
@@ -206,8 +221,47 @@ def _due_releases(dash_conn, now: dt.datetime, window: dt.timedelta = WINDOW,
             continue
         release = release.replace(tzinfo=UTC) if release.tzinfo is None else release.astimezone(UTC)
         if now < release <= now + window:
-            due.append((title, release, forecast))
-    return sorted(due, key=lambda item: (item[1], item[0]))
+            due.append(DueRelease(title, release, forecast))
+    covered = {item.title for item in due}
+    for item in unconfirmed_releases(dash_conn, [t for t in titles if t not in covered], now, now + window):
+        due.append(DueRelease(item.title, item.release_utc, None, True))
+    return sorted(due, key=lambda item: (item.release, item.title))
+
+
+def _forecast_refresh_due(dash_conn, bt_conn, now: dt.datetime, window: dt.timedelta, titles: list[str],
+                          symbols: list[str], source: str,
+                          key_in_value: Callable[[str], Optional[tuple[float, str]]]) -> list[DueRelease]:
+    """
+    Releases of `titles` strictly beyond now + window and within now + FORECAST_REFRESH_HORIZON whose latest
+    pre-release row of `source` (for some symbol) was written against a different forecast text than the one
+    event_history holds now. `key_in_value` reads (value, forecast text) back from a stored row. Without this a
+    forecast revised after the first capture is only picked up once the release enters the daily window.
+    Nothing is read on a dry run (bt_conn None) or when the revised forecast is itself missing.
+    """
+    if bt_conn is None or not titles:
+        return []
+    marks = ",".join("?" for _ in titles)
+    rows = dash_conn.execute(
+        f"SELECT DISTINCT event_title, event_time_utc, forecast FROM event_history "
+        f"WHERE country = 'USD' AND event_title IN ({marks})", titles).fetchall()
+    due = []
+    for row in rows:
+        title, when, forecast = row[0], row[1], row[2]
+        try:
+            release = dt.datetime.fromisoformat(when)
+        except (TypeError, ValueError):
+            continue
+        release = release.replace(tzinfo=UTC) if release.tzinfo is None else release.astimezone(UTC)
+        if not now + window < release <= now + FORECAST_REFRESH_HORIZON or not (forecast or "").strip():
+            continue
+        for symbol in symbols:
+            latest = backtest_store.get_latest_tier1_prediction_for_occurrence(
+                bt_conn, title, symbol, release, source=source)
+            key = key_in_value(latest.value) if latest is not None else None
+            if key is not None and key[1] != forecast:
+                due.append(DueRelease(title, release, forecast))
+                break
+    return sorted(due, key=lambda item: (item.release, item.title))
 
 
 def _record_tier1(summary: dict, bt_conn, title: str, release: dt.datetime, nowcast: float,
@@ -239,8 +293,9 @@ def run(dash_conn, bt_conn, now: dt.datetime, fetch: Optional[Callable[[str], ob
     (default: a live download); each needed file is fetched once.
     Returns {"captured": [(title, release_iso, value)], "skipped": [(title, release_iso, reason)],
     "tier1_rows": [(title, release_iso, symbol, direction, "written"|"unchanged")],
-    "tier1_pending": [(title, release_iso, reason)], "dry_run": bool, "message": str}. With dry_run nothing
-    is written (bt_conn may be None) and "captured" / "tier1_rows" list what would be. Raises FetchError if
+    "tier1_pending": [(title, release_iso, reason)], "unconfirmed": [(title, release_iso)] (present when
+    something was due), "dry_run": bool, "message": str}. With dry_run nothing is written (bt_conn may be
+    None) and "captured" / "tier1_rows" list what would be. Raises FetchError if
     a needed file cannot be fetched or is not a chart list.
     """
     if now.tzinfo is None or now.utcoffset() is None:
@@ -248,17 +303,21 @@ def run(dash_conn, bt_conn, now: dt.datetime, fetch: Optional[Callable[[str], ob
     now = now.astimezone(UTC)
     summary: dict = {"captured": [], "skipped": [], "tier1_rows": [], "tier1_pending": [],
                      "dry_run": dry_run, "message": ""}
+    symbols = list_tracked_symbols(dash_conn)          # read once: every due release uses the same list
     due = _due_releases(dash_conn, now, window)
+    due += _forecast_refresh_due(dash_conn, bt_conn, now, window, tier1_titles(TIER1_FORMULA), symbols,
+                                 TIER1_FORMULA_SOURCE, nowcast_key_in_value_text)
     if not due:
         hours = window.total_seconds() / 3600
         summary["message"] = f"No formula-tier release within {hours:g} hours: nothing to capture."
         return summary
-    forecasts = {(title, release): forecast for title, release, forecast in due}
-    symbols = list_tracked_symbols(dash_conn)          # read once: every due release uses the same list
+    forecasts = {(item.title, item.release): item.forecast for item in due}
+    unconfirmed = {(item.title, item.release) for item in due if item.unconfirmed}
+    summary["unconfirmed"] = [(title, release.isoformat()) for title, release in sorted(unconfirmed)]
 
     by_file: dict[str, list[tuple[str, dt.datetime]]] = {}
-    for title, release, _ in due:
-        by_file.setdefault(CAPTURE_SERIES[title][0], []).append((title, release))
+    for item in due:
+        by_file.setdefault(CAPTURE_SERIES[item.title][0], []).append((item.title, item.release))
     readings_by_release: dict[tuple[str, dt.datetime], dict] = {}
     try:
         for file_key, releases in by_file.items():
@@ -267,7 +326,7 @@ def run(dash_conn, bt_conn, now: dt.datetime, fetch: Optional[Callable[[str], ob
                 readings_by_release[(reading["event_title"], reading["release_utc"])] = reading
     except Exception as exc:  # noqa: BLE001 -- anything here means we have no trustworthy number: fail loud
         raise FetchError(f"could not get the Cleveland Fed nowcast: {exc}") from exc
-    readings = [readings_by_release[(title, release)] for title, release, _ in due]
+    readings = [readings_by_release[(item.title, item.release)] for item in due]
 
     for r in readings:
         title, release = r["event_title"], r["release_utc"]
@@ -284,7 +343,8 @@ def run(dash_conn, bt_conn, now: dt.datetime, fetch: Optional[Callable[[str], ob
             continue
         if not dry_run:
             try:
-                capture(bt_conn, title, release, r["value"], as_of_utc=now, source=SOURCE)
+                capture(bt_conn, title, release, r["value"], as_of_utc=now,
+                        source=SOURCE + (UNCONFIRMED_SOURCE_SUFFIX if (title, release) in unconfirmed else ""))
             except ValueError as exc:       # capture() refuses a snapshot stamped after the release
                 summary["skipped"].append((title, release_iso, str(exc)))
                 continue
@@ -302,14 +362,17 @@ def print_summary(summary: dict, dry_run: bool, now: dt.datetime) -> None:
     """Print run()'s summary as the scheduler log shows it (scripts/capture_tier1.py prints it too)."""
     print(summary["message"])
     verb = "WOULD capture" if dry_run else "captured"
+    unconfirmed = set(summary.get("unconfirmed", ()))
+    tag = lambda title, release_iso: UNCONFIRMED_TAG if (title, release_iso) in unconfirmed else ""  # noqa: E731
     for title, release_iso, value in summary["captured"]:
-        print(f"  {verb} {title} release {release_iso} nowcast {value:g} (as of {now.isoformat()})")
+        print(f"  {verb} {title} release {release_iso}{tag(title, release_iso)} nowcast {value:g} "
+              f"(as of {now.isoformat()})")
     for title, release_iso, reason in summary["skipped"]:
-        print(f"  SKIPPED {title} release {release_iso}: {reason}")
+        print(f"  SKIPPED {title} release {release_iso}{tag(title, release_iso)}: {reason}")
     for title, _release_iso, symbol, direction, status in summary["tier1_rows"]:
         print(f"  TIER1 {title} {symbol}: {direction} ({'would write' if dry_run else status})")
     for title, release_iso, reason in summary["tier1_pending"]:
-        print(f"  TIER1 PENDING {title} release {release_iso}: {reason}")
+        print(f"  TIER1 PENDING {title} release {release_iso}{tag(title, release_iso)}: {reason}")
 
 
 def main(argv: Optional[list[str]] = None, fetch: Optional[Callable] = None,

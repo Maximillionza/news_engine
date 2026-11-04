@@ -203,3 +203,20 @@ def test_non_utc_release_offset_is_normalised_to_utc(tmp_path, capsys):
     assert cli.main(["record-call", *_call_args(paths, direction="bearish")], now=NOW) == 2
     assert "first pre-release call stands" in capsys.readouterr().err
     assert _count(paths) == 1
+
+
+def test_plan_includes_unconfirmed_judgment_release(tmp_path, capsys):
+    paths = _setup(tmp_path, [("ISM Services PMI", dt.datetime(2026, 11, 24, 15, 0, tzinfo=UTC))])
+    dash = ws.get_connection(str(paths[0]))
+    ws.upsert_macro_calendar_event(dash, "Prelim GDP q/q", "2026-11-25", "2026-11-25T12:30:00+00:00",
+                                   "history_derived", NOW)
+    ws.upsert_macro_calendar_event(dash, "Prelim GDP q/q", "2026-10-29", "2026-10-29T12:30:00+00:00",
+                                   "history_derived", NOW)               # phantom: October is the advance estimate
+    dash.close()
+    out = _plan(paths, capsys, now=dt.datetime(2026, 11, 20, 6, 0, tzinfo=UTC))
+    assert [e["event_title"] for e in out] == ["ISM Services PMI", "Prelim GDP q/q"]
+    gdp = out[1]
+    assert gdp["unconfirmed"] is True and gdp["event_time_utc"] == "2026-11-25T13:30:00+00:00"
+    assert gdp["event_time_sast"] == "2026-11-25 15:30 SAST" and gdp["tier"] == "judgment"
+    assert gdp["instruments"] == {"XAUUSD": {"status": "needs_call"}, "US30": {"status": "needs_call"}}
+    assert "unconfirmed" not in out[0]

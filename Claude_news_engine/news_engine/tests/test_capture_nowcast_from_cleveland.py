@@ -674,3 +674,82 @@ def test_run_cpi_yy_hotter_is_bearish_gold(conns):
     cap.run(dash, bt, now, lambda key: CPI_YEAR)
     assert [(r["instrument"], r["predicted_direction"]) for r in _tier1(bt)] == [
         ("US30", "bearish"), ("XAUUSD", "bearish")]
+
+
+# --- FIX Task 6: unconfirmed releases (macro_calendar fallback) and the forecast-change refresh ---------
+
+def _macro(dash, title, date_text):
+    ws.upsert_macro_calendar_event(dash, title, date_text, f"{date_text}T12:30:00+00:00", "history_derived", NOW)
+
+
+def test_unconfirmed_release_logs_marked_snapshot_and_pending_tier1(conns, capsys):
+    dash, bt = conns
+    _track(dash, "XAUUSD", "US30")
+    _macro(dash, "CPI m/m", "2026-11-12")                      # FF has not listed it: no event_history row
+    summary = cap.run(dash, bt, NOW, lambda key: DATA)
+    snap = bt.execute("SELECT * FROM tier1_nowcast_snapshots").fetchall()
+    assert [(r["event_title"], r["source"]) for r in snap] == [("CPI m/m", SOURCE + cap.UNCONFIRMED_SOURCE_SUFFIX)]
+    assert dt.datetime.fromisoformat(snap[0]["as_of_utc"]) == NOW < RELEASE
+    assert summary["tier1_pending"] == [("CPI m/m", RELEASE.isoformat(), "no readable forecast yet")]
+    assert summary["skipped"] == [] and _tier1(bt) == []       # 31.5 h out: pending, not yet an alert, no call
+    cap.print_summary(summary, False, NOW)
+    out = capsys.readouterr().out
+    assert "UNCONFIRMED" in out and "captured CPI m/m" in out
+
+
+def test_unconfirmed_within_24h_without_forecast_exits_2(tmp_path, capsys):
+    dash_path, bt_path = tmp_path / "dash.db", tmp_path / "bt.db"
+    dash = ws.get_connection(str(dash_path))
+    ws.add_tracked_symbol(dash, "XAUUSD")
+    _macro(dash, "CPI m/m", "2026-11-12")
+    dash.close()
+    now = RELEASE - dt.timedelta(hours=6)
+    code = cap.main(["--dash-db", str(dash_path), "--bt-db", str(bt_path)], fetch=lambda key: DATA, now=now)
+    out = capsys.readouterr().out
+    assert code == 2 and "SKIPPED CPI m/m" in out and "UNCONFIRMED" in out
+
+
+def test_unconfirmed_row_not_shown_after_real_release(conns):
+    _dash, bt = conns
+    guessed = dt.datetime(2026, 11, 12, 13, 30, tzinfo=UTC)
+    real = dt.datetime(2026, 11, 12, 12, 30, tzinfo=UTC)
+    bs.record_tier1_prediction(bt, "CPI m/m", "XAUUSD", guessed, "v", "Likely", TIER1_FORMULA_SOURCE, "bullish",
+                               logged_at_utc=dt.datetime(2026, 11, 12, 13, 0, tzinfo=UTC))
+    assert bs.get_latest_tier1_prediction_for_occurrence(bt, "CPI m/m", "XAUUSD", real) is None
+    assert bs.get_latest_tier1_prediction_for_occurrence(bt, "CPI m/m", "XAUUSD", guessed) is not None
+    bs.record_tier1_prediction(bt, "Core CPI m/m", "XAUUSD", guessed, "v", "Likely", TIER1_FORMULA_SOURCE, "bullish",
+                               logged_at_utc=guessed + dt.timedelta(minutes=30))     # after its own release
+    assert bs.get_latest_tier1_prediction_for_occurrence(bt, "Core CPI m/m", "XAUUSD", guessed) is None
+
+
+def test_daily_run_refreshes_formula_row_when_forecast_changed(conns):
+    dash, bt = conns
+    _track(dash, "XAUUSD", "US30")
+    _event(dash, "CPI m/m", RELEASE, forecast="0.3%")
+    early = _chart("2026-10", LABELS, CPI[:5] + [""] * 5, CORE)          # Fed values up to 11/05 only
+    day1 = dt.datetime(2026, 11, 5, 6, 0, tzinfo=UTC)
+    cap.run(dash, bt, day1, lambda key: [early], window=dt.timedelta(hours=192))
+    assert len(_tier1(bt)) == 2
+    dash.execute("UPDATE event_history SET forecast = '0.4%' WHERE event_title = 'CPI m/m'")
+    dash.commit()
+    day2 = day1 + dt.timedelta(days=1)                                    # release now 6.3 days out: beyond 48 h
+    summary = cap.run(dash, bt, day2, lambda key: [early])
+    assert len(_tier1(bt)) == 4 and sum("vs forecast 0.4%" in r["value"] for r in _tier1(bt)) == 2   # old rows kept
+    assert [row[4] for row in summary["tier1_rows"]] == ["written", "written"]
+    cap.run(dash, bt, day2 + dt.timedelta(hours=1), lambda key: [early])
+    assert len(_tier1(bt)) == 4                                           # forecast now matches: nothing to refresh
+
+
+def test_forecast_refresh_is_skipped_on_a_dry_run(conns):
+    dash, bt = conns
+    _track(dash, "XAUUSD")
+    _event(dash, "CPI m/m", RELEASE, forecast="0.3%")
+    early = _chart("2026-10", LABELS, CPI[:5] + [""] * 5, CORE)
+    day1 = dt.datetime(2026, 11, 5, 6, 0, tzinfo=UTC)
+    cap.run(dash, bt, day1, lambda key: [early], window=dt.timedelta(hours=192))
+    dash.execute("UPDATE event_history SET forecast = '0.4%'")
+    dash.commit()
+    fetch = MagicMock(return_value=[early])
+    summary = cap.run(dash, None, day1 + dt.timedelta(days=1), fetch, dry_run=True)
+    fetch.assert_not_called()
+    assert summary["captured"] == []

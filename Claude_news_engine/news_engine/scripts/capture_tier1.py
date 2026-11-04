@@ -12,6 +12,9 @@ every row comes from a fixed rule on a published source. Two phases, run in this
      Kalshi row for that occurrence (a revised forecast can flip the side). No open event, an illiquid or uncrossed ladder or a units mismatch = no call and no row (reported
      as MARKET NO CALL, a legitimate outcome, exit 0). No readable forecast = TIER1 PENDING, and a skip (exit 2)
      once the release is within MISSING_FORECAST_ALERT_WITHIN. A Kalshi read failure is a skip (exit 2).
+     A release Forex Factory has not listed yet comes from macro_calendar (UNCONFIRMED date): it has no forecast,
+     so it is pending without a Kalshi read. A release beyond the window whose forecast changed since its last
+     Kalshi row (FORECAST_REFRESH_HORIZON, 8 days) is read again and gets a new row.
 
 The phases are isolated: a Cleveland download failure is printed and the Kalshi phase still runs (exit 1); a Kalshi
 failure never touches the formula rows. Nothing is ever written for a release at or before now.
@@ -41,12 +44,15 @@ from data_layer.tier1_events import (  # noqa: E402
 from scoring import backtest_store  # noqa: E402
 from scripts.backfill_tier1_reconstructed import open_dash_readonly  # noqa: E402
 from scripts.capture_nowcast_from_cleveland import (  # noqa: E402
-    MAX_WINDOW_HOURS, MISSING_FORECAST_ALERT_WITHIN, WINDOW, FetchError, _due_releases, print_summary,
+    MAX_WINDOW_HOURS, MISSING_FORECAST_ALERT_WITHIN, UNCONFIRMED_TAG, WINDOW, FetchError, _due_releases,
+    _forecast_refresh_due, print_summary,
 )
 from scripts.capture_nowcast_from_cleveland import run as run_cleveland  # noqa: E402
 from webapp.store import list_tracked_symbols  # noqa: E402
 from webapp.tier1_formula import SIDE_LABELS  # noqa: E402
-from webapp.tier1_market import MARKET_SERIES, NO_FORECAST, market_call, record_market_calls  # noqa: E402
+from webapp.tier1_market import (  # noqa: E402
+    MARKET_SERIES, NO_FORECAST, implied_key_in_value_text, market_call, record_market_calls,
+)
 
 UTC = dt.timezone.utc
 
@@ -69,7 +75,8 @@ def run_market(dash_conn, bt_conn, now: dt.datetime, ladder_fetch: Optional[Ladd
     The Kalshi phase: a market-implied call for every market-implied release within `window` after `now`.
     Returns {"calls": [(title, release_iso, implied, side)], "no_call": [(title, release_iso, reason)],
     "skipped": [(title, release_iso, reason)], "tier1_rows": [(title, release_iso, symbol, direction,
-    "written"|"unchanged")], "tier1_pending": [(title, release_iso, reason)], "dry_run": bool, "message": str}.
+    "written"|"unchanged")], "tier1_pending": [(title, release_iso, reason)], "unconfirmed": [(title, release_iso)]
+    (present when something was due), "dry_run": bool, "message": str}.
     With dry_run nothing is written (bt_conn may be None) and "tier1_rows" lists what would be.
     """
     if now.tzinfo is None or now.utcoffset() is None:
@@ -78,16 +85,27 @@ def run_market(dash_conn, bt_conn, now: dt.datetime, ladder_fetch: Optional[Ladd
     fetch = ladder_fetch or get_ladder
     summary: dict = {"calls": [], "no_call": [], "skipped": [], "tier1_rows": [], "tier1_pending": [],
                      "dry_run": dry_run, "message": ""}
-    due = _due_releases(dash_conn, now, window, tier1_titles(TIER1_MARKET_IMPLIED))
+    titles = tier1_titles(TIER1_MARKET_IMPLIED)
+    symbols = list_tracked_symbols(dash_conn)          # read once: every due release uses the same list
+    due = _due_releases(dash_conn, now, window, titles)
+    due += _forecast_refresh_due(dash_conn, bt_conn, now, window, titles, symbols, TIER1_MARKET_IMPLIED_SOURCE,
+                                 implied_key_in_value_text)
     if not due:
         hours = window.total_seconds() / 3600
         summary["message"] = f"No market-implied release within {hours:g} hours: nothing to read."
         return summary
-    symbols = list_tracked_symbols(dash_conn)          # read once: every due release uses the same list
+    summary["unconfirmed"] = [(item.title, item.release.isoformat()) for item in due if item.unconfirmed]
 
-    for title, release, forecast in due:
+    for item in due:
+        title, release, forecast = item.title, item.release, item.forecast
         release_iso = release.isoformat()
         series = MARKET_SERIES[title]
+        if item.unconfirmed:
+            # The date is FRED's, and event_history holds no forecast for it: nothing to compare a ladder with.
+            summary["tier1_pending"].append((title, release_iso, NO_FORECAST))
+            if release - now <= MISSING_FORECAST_ALERT_WITHIN:
+                summary["skipped"].append((title, release_iso, f"no Tier 1 market-implied call: {NO_FORECAST}"))
+            continue
         try:
             ladder = fetch(series.series_ticker, series.ticketing, release)
         except KalshiFetchError as exc:
@@ -128,16 +146,18 @@ def run_market(dash_conn, bt_conn, now: dt.datetime, ladder_fetch: Optional[Ladd
 def print_market_summary(summary: dict, dry_run: bool) -> None:
     """Print run_market()'s summary in the same log style as the formula phase."""
     print(summary["message"])
+    unconfirmed = set(summary.get("unconfirmed", ()))
+    tag = lambda title, release_iso: UNCONFIRMED_TAG if (title, release_iso) in unconfirmed else ""  # noqa: E731
     for title, release_iso, implied, side in summary["calls"]:
         print(f"  MARKET CALL {title} release {release_iso}: implied {implied:g} ({SIDE_LABELS[side]})")
     for title, release_iso, reason in summary["no_call"]:
         print(f"  MARKET NO CALL {title} release {release_iso}: {reason}")
     for title, release_iso, reason in summary["skipped"]:
-        print(f"  SKIPPED {title} release {release_iso}: {reason}")
+        print(f"  SKIPPED {title} release {release_iso}{tag(title, release_iso)}: {reason}")
     for title, _release_iso, symbol, direction, status in summary["tier1_rows"]:
         print(f"  TIER1 [market-implied] {title} {symbol}: {direction} ({'would write' if dry_run else status})")
     for title, release_iso, reason in summary["tier1_pending"]:
-        print(f"  TIER1 PENDING {title} release {release_iso}: {reason}")
+        print(f"  TIER1 PENDING {title} release {release_iso}{tag(title, release_iso)}: {reason}")
 
 
 def main(argv: Optional[list[str]] = None, cleveland_fetch: Optional[Callable[[str], object]] = None,

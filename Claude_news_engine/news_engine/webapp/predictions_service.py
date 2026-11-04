@@ -131,7 +131,7 @@ def _tier1_prediction_dict(tier1_row, late_check_row=None) -> dict:
         "confidence": tier1_row.confidence,
         "source": tier1_row.source,
         "predicted_direction": tier1_row.predicted_direction,
-        "tier": tier1_row_tier(tier1_row.source, tier1_row.value),
+        "tier": tier1_row_tier(tier1_row.source, tier1_row.value, tier1_row.event_title),
         "late_check": late_check,
     }
 

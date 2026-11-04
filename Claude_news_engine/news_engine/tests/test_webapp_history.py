@@ -1160,7 +1160,7 @@ def test_text_only_row_carries_real_tier1_prediction():
         assert rows[0].tier1_prediction == {
             "value": "85.5% probability of a 25bp hike", "confidence": "Certain",
             "source": "CME FedWatch", "predicted_direction": "bearish",
-            "tier": "market_implied", "late_check": None,    # B12: a FedWatch-sourced row is market-implied
+            "tier": "judgment", "late_check": None,    # FIX T6: FOMC Statement is a judgment title, so FedWatch stays judgment
         }
     print("PASS\n")
 
@@ -1214,14 +1214,14 @@ def test_fallback_row_conflict_against_a_fedwatch_valued_row_is_market_implied()
     print("PASS\n")
 
 
-def test_text_only_row_conflict_against_a_fedwatch_valued_row_is_market_implied():
-    print("=== build_print_call_history: a text-only conflict against a FedWatch-valued Tier 1 row names market_implied ===")
+def test_text_only_row_conflict_against_a_fedwatch_valued_row_follows_the_registry():
+    print("=== build_print_call_history: a text-only conflict against a FedWatch-valued row on a judgment title names judgment (FIX T6) ===")
     rows = _fedwatch_conflict_rows("FOMC Statement", None, None, None)
     assert len(rows) == 1
     assert rows[0].tier1_conflict == {
-        "sentiment_direction": "bearish", "tier1_direction": "bullish", "tier1_tier": "market_implied",
+        "sentiment_direction": "bearish", "tier1_direction": "bullish", "tier1_tier": "judgment",
     }
-    assert rows[0].tier1_prediction["tier"] == "market_implied"
+    assert rows[0].tier1_prediction["tier"] == "judgment"
     print("PASS\n")
 
 
