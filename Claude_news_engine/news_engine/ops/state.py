@@ -29,6 +29,7 @@ JOB_NAMES: tuple[str, ...] = (
     "article_accumulator",
     "calendar_refresh",
     "actuals_poller",      # ACT: the release-time actuals poller thread (heartbeat only)
+    "tier1_research",      # FIX: stamped by `tier1_research.py plan`, the one command every research run makes
 )
 
 _SCHEMA = """
@@ -52,6 +53,14 @@ CREATE TABLE IF NOT EXISTS official_source_status (
     last_ok_utc    TEXT,
     last_error_utc TEXT,
     last_error     TEXT
+);
+CREATE TABLE IF NOT EXISTS research_alerts (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind           TEXT NOT NULL,
+    event          TEXT NOT NULL,
+    message        TEXT NOT NULL,
+    created_at_utc TEXT NOT NULL,
+    telegram_sent  INTEGER NOT NULL
 );
 """
 
@@ -195,3 +204,43 @@ def get_source_status(conn: sqlite3.Connection) -> dict[str, SourceStatus]:
         r["source"]: SourceStatus(r["source"], _parse(r["last_ok_utc"]), _parse(r["last_error_utc"]), r["last_error"])
         for r in rows
     }
+
+
+@dataclass(frozen=True)
+class ResearchAlert:
+    kind: str
+    event: str
+    message: str
+    created_at_utc: dt.datetime
+
+
+def record_research_alert(conn: sqlite3.Connection, kind: str, event: str, message: str,
+                          now: dt.datetime, sent: bool) -> int:
+    """FIX: append one research-task alert (reliability / security / blocked); rows are never updated."""
+    cur = conn.execute(
+        "INSERT INTO research_alerts (kind, event, message, created_at_utc, telegram_sent) VALUES (?, ?, ?, ?, ?)",
+        (kind, event, message, now.isoformat(), 1 if sent else 0),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def research_alert_sent_since(conn: sqlite3.Connection, kind: str, event: str, message: str,
+                              since: dt.datetime) -> bool:
+    """True when an identical alert went out to Telegram at or after `since` (a failed send never dedupes a retry)."""
+    row = conn.execute(
+        "SELECT 1 FROM research_alerts WHERE kind = ? AND event = ? AND message = ? AND telegram_sent = 1 "
+        "AND julianday(created_at_utc) >= julianday(?) LIMIT 1",
+        (kind, event, message, since.isoformat()),
+    ).fetchone()
+    return row is not None
+
+
+def active_research_alerts(conn: sqlite3.Connection, since: dt.datetime) -> list[ResearchAlert]:
+    """Alerts recorded at or after `since`, oldest first (sent or not: health shows both)."""
+    rows = conn.execute(
+        "SELECT kind, event, message, created_at_utc FROM research_alerts "
+        "WHERE julianday(created_at_utc) >= julianday(?) ORDER BY julianday(created_at_utc), id",
+        (since.isoformat(),),
+    ).fetchall()
+    return [ResearchAlert(r["kind"], r["event"], r["message"], _parse(r["created_at_utc"])) for r in rows]

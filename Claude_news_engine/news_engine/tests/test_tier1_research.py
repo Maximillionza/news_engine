@@ -4,7 +4,11 @@ Temp DB files under tmp_path, `now` injected, no network.
 """
 import datetime as dt
 import json
+from unittest.mock import MagicMock
 
+import pytest
+
+from ops import state as ops_state
 from scoring import backtest_store as bs
 from scripts import tier1_research as cli
 from webapp import store as ws
@@ -220,3 +224,108 @@ def test_plan_includes_unconfirmed_judgment_release(tmp_path, capsys):
     assert gdp["event_time_sast"] == "2026-11-25 15:30 SAST" and gdp["tier"] == "judgment"
     assert gdp["instruments"] == {"XAUUSD": {"status": "needs_call"}, "US30": {"status": "needs_call"}}
     assert "unconfirmed" not in out[0]
+
+
+# ---------------------------------------------------------------------------
+# FIX Task 7: research heartbeat on plan, and the alert command
+# ---------------------------------------------------------------------------
+def _ops(tmp_path):
+    return ["--ops-db", str(tmp_path / "ops.db")]
+
+
+def _alert_args(tmp_path, kind="security", event="ISM Services PMI", message="page asked for a login: https://x.example"):
+    return ["alert", "--kind", kind, "--event", event, "--message", message, *_ops(tmp_path)]
+
+
+def _alert_rows(tmp_path):
+    conn = ops_state.get_connection(tmp_path / "ops.db")
+    try:
+        return conn.execute("SELECT kind, event, message, telegram_sent FROM research_alerts ORDER BY id").fetchall()
+    finally:
+        conn.close()
+
+
+def test_plan_records_the_heartbeat(tmp_path, capsys):
+    paths = _setup(tmp_path)
+    assert cli.main(["plan", *_db(paths), *_ops(tmp_path)], now=NOW) == 0
+    json.loads(capsys.readouterr().out)
+    conn = ops_state.get_connection(tmp_path / "ops.db")
+    try:
+        run = ops_state.get_job_runs(conn)["tier1_research"]
+    finally:
+        conn.close()
+    assert run.last_success_utc == NOW and run.last_exit_code == 0
+
+
+def test_plan_succeeds_when_heartbeat_write_fails(tmp_path, capsys):
+    paths = _setup(tmp_path)
+    broken = tmp_path / "no_such_dir" / "ops.db"              # sqlite cannot create the file: the write fails
+    assert cli.main(["plan", *_db(paths), "--ops-db", str(broken)], now=NOW) == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)[0]["event_title"] == "ISM Services PMI"     # stdout stays pure JSON
+    assert "WARNING" in captured.err
+
+
+def test_alert_sends_one_prefixed_message(tmp_path, monkeypatch, capsys):
+    send = MagicMock(return_value=True)
+    monkeypatch.setattr(cli.notify_telegram, "send_notice", send)
+    assert cli.main(_alert_args(tmp_path), now=NOW) == 0
+    send.assert_called_once_with(
+        "Tier 1 research: SECURITY ALERT - ISM Services PMI: page asked for a login: https://x.example")
+    assert [tuple(r) for r in _alert_rows(tmp_path)] == [
+        ("security", "ISM Services PMI", "page asked for a login: https://x.example", 1)]
+
+
+def test_alert_dedupes_identical_within_24h(tmp_path, monkeypatch, capsys):
+    send = MagicMock(return_value=True)
+    monkeypatch.setattr(cli.notify_telegram, "send_notice", send)
+    assert cli.main(_alert_args(tmp_path), now=NOW) == 0
+    capsys.readouterr()
+    assert cli.main(_alert_args(tmp_path), now=NOW + dt.timedelta(hours=23)) == 0
+    assert "duplicate, not sent" in capsys.readouterr().out
+    assert send.call_count == 1 and len(_alert_rows(tmp_path)) == 1
+
+
+def test_alert_sends_again_after_24h_or_with_new_text(tmp_path, monkeypatch):
+    send = MagicMock(return_value=True)
+    monkeypatch.setattr(cli.notify_telegram, "send_notice", send)
+    assert cli.main(_alert_args(tmp_path), now=NOW) == 0
+    assert cli.main(_alert_args(tmp_path), now=NOW + dt.timedelta(hours=25)) == 0
+    assert cli.main(_alert_args(tmp_path, message="another page"), now=NOW + dt.timedelta(hours=26)) == 0
+    assert send.call_count == 3 and len(_alert_rows(tmp_path)) == 3
+
+
+def test_alert_retry_after_failed_send(tmp_path, monkeypatch):
+    send = MagicMock(side_effect=[False, True])
+    monkeypatch.setattr(cli.notify_telegram, "send_notice", send)
+    assert cli.main(_alert_args(tmp_path), now=NOW) == 3
+    assert [r["telegram_sent"] for r in _alert_rows(tmp_path)] == [0]       # recorded, so health still shows it
+    assert cli.main(_alert_args(tmp_path), now=NOW + dt.timedelta(minutes=5)) == 0
+    assert send.call_count == 2
+    assert [r["telegram_sent"] for r in _alert_rows(tmp_path)] == [0, 1]
+
+
+def test_alert_cuts_long_text(tmp_path, monkeypatch):
+    send = MagicMock(return_value=True)
+    monkeypatch.setattr(cli.notify_telegram, "send_notice", send)
+    assert cli.main(_alert_args(tmp_path, message="x" * 5000), now=NOW) == 0
+    assert len(send.call_args.args[0]) == cli.ALERT_MAX_CHARS
+
+
+def test_alert_rejects_unknown_kind(tmp_path, monkeypatch):
+    send = MagicMock(return_value=True)
+    monkeypatch.setattr(cli.notify_telegram, "send_notice", send)
+    with pytest.raises(SystemExit) as exc:
+        cli.main(_alert_args(tmp_path, kind="panic"), now=NOW)
+    assert exc.value.code == 2
+    send.assert_not_called()
+
+
+def test_alert_runs_without_dash_db(tmp_path, monkeypatch):
+    """A broken or missing dash / backtest DB must not silence an alert: main never opens them for `alert`."""
+    send = MagicMock(return_value=True)
+    monkeypatch.setattr(cli.notify_telegram, "send_notice", send)
+    monkeypatch.setattr(cli, "open_dash_readonly", MagicMock(side_effect=RuntimeError("dash db is gone")))
+    monkeypatch.setattr(cli.backtest_store, "get_connection", MagicMock(side_effect=RuntimeError("bt db is gone")))
+    assert cli.main(_alert_args(tmp_path, kind="blocked", event="run"), now=NOW) == 0
+    assert send.call_args.args[0].startswith("Tier 1 research: RUN BLOCKED - run: ")
