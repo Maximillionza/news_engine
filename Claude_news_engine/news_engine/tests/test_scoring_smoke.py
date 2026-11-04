@@ -213,13 +213,18 @@ def test_confidence_reflects_coverage_not_just_agreement():
 
 
 def test_precursor_leading_indicator():
-    print("=== Precursor: ADP miss before NFP should score as a real structured signal ===")
+    print("=== Precursor: a claims miss before NFP should score as a real structured signal; ADP feeds nothing ===")
     nfp = EconomicEvent(
         title="Non-Farm Employment Change", country="USD", impact="High",
         event_time_utc=EVENT_TIME,
     )
-    # Real numbers from the 2026-08-07 NFP backtest case earlier this
-    # session: ADP came in at 44K vs 75K forecast, a soft miss.
+    claims_time = EVENT_TIME - dt.timedelta(hours=24)
+    claims = EconomicEvent(
+        title="Unemployment Claims", country="USD", impact="High",
+        event_time_utc=claims_time,
+        forecast="200K", actual="230K",
+    )
+    # Real numbers from the 2026-08-07 NFP case: the workbook rejects ADP, so this print must not count.
     adp_time = EVENT_TIME - dt.timedelta(hours=47, minutes=30)
     adp = EconomicEvent(
         title="ADP Non-Farm Employment Change", country="USD", impact="Medium",
@@ -227,21 +232,22 @@ def test_precursor_leading_indicator():
         forecast="75K", actual="44K",
     )
 
-    surprise = adp.usd_surprise_score()
-    assert surprise is not None and surprise < 0, "a miss on a higher_bullish indicator should be USD-bearish"
+    surprise = claims.usd_surprise_score()
+    assert surprise is not None and surprise < 0, "higher claims than forecast should be USD-bearish"
 
     with tempfile.TemporaryDirectory() as tmp:
         conn = webapp_store.get_connection(Path(tmp) / "test.db")
+        webapp_store.upsert_event_history(conn, claims, surprise_direction="higher", now=claims_time)
         webapp_store.upsert_event_history(conn, adp, surprise_direction="lower", now=adp_time)
         precursors = get_precursor_events_for(nfp.title, nfp.event_time_utc, conn)
         conn.close()
-    assert len(precursors) == 1 and precursors[0].title == adp.title, "ADP should be found as NFP's precursor"
+    assert [event.title for event in precursors] == [claims.title], "only claims should be found as NFP's precursor"
 
     empty_bundle = EventNewsBundle(event=nfp, articles=[], as_of_utc=EVENT_TIME)
     result = score_bundle(empty_bundle, "XAUUSD", precursor_events=precursors)
     print(f"  {result.summary()}")
 
-    assert result.direction == Direction.BULLISH, "USD-bearish ADP miss should map to bullish gold via inverse relationship"
+    assert result.direction == Direction.BULLISH, "USD-bearish claims miss should map to bullish gold via inverse relationship"
     assert len(result.precursor_contributions) == 1
     print("PASS\n")
 
