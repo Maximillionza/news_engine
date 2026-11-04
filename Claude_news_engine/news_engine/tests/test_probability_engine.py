@@ -1174,6 +1174,11 @@ def test_surviving_links_use_their_authored_weights():
     assert _precursor_link_weight("CPI m/m", "Import Prices m/m") == 0.40
     assert _precursor_link_weight("FOMC Statement", "CPI m/m") == 0.60
     assert _precursor_link_weight("Federal Funds Rate", "Core PCE Price Index m/m") == 0.65
+    # ISM Manufacturing PMI carries different weights per target, and its first
+    # table entry (Prelim GDP q/q, 0.30) is not the 0.40 below, so a lookup that
+    # ignored the target would fail here.
+    assert _precursor_link_weight("Industrial Production m/m", "ISM Manufacturing PMI") == 0.40
+    assert _precursor_link_weight("Durable Goods Orders m/m", "ISM Manufacturing PMI") == 0.30
     print("PASS\n")
 
 
