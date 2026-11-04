@@ -817,3 +817,21 @@ def test_red_alert_lands_in_daily_notice(c):
     assert health.maybe_send_health_notice(NOW, send=send, connections=_conn_tuple(c)) is True
     text = send.call_args.args[0]
     assert "Tier 1 research alerts" in text and "RUN BLOCKED" in text and "login wall on bls.gov" in text
+
+
+def test_long_red_alert_keeps_daily_notice_under_telegram_limit(c):
+    _fresh_jobs(c)
+    _research_alert(c, "security", dt.timedelta(hours=1), "x" * 5000)
+    item = _build(c)["tier1_alerts"]
+    assert len(item.detail) < 600 and item.detail.count("x") <= health._RESEARCH_ALERT_DETAIL_MAX
+    assert len(health.health_notice_text([item], NOW)) < 4096
+
+
+def test_three_long_alerts_keep_daily_notice_under_telegram_limit(c):
+    _fresh_jobs(c)
+    for i, kind in enumerate(("security", "blocked", "reliability")):
+        _research_alert(c, kind, dt.timedelta(hours=i + 1), "y" * 1400)
+    item = _build(c)["tier1_alerts"]
+    assert len(health.health_notice_text([item], NOW)) < 4096
+    stored = [a.message for a in ops_state.active_research_alerts(c.ops, NOW - dt.timedelta(hours=72))]
+    assert all(len(m) == 1400 for m in stored)  # the DB keeps the full text

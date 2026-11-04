@@ -139,6 +139,8 @@ LATE_CHECK_HEALTH_WINDOW = dt.timedelta(hours=24)
 RESEARCH_ALERT_TTL = dt.timedelta(hours=72)
 _RESEARCH_ALERT_LABELS = {"reliability": "RELIABILITY ALERT", "security": "SECURITY ALERT", "blocked": "RUN BLOCKED"}
 _RESEARCH_ALERT_RED_KINDS = frozenset({"security", "blocked"})
+# FIX: the stored alert text is uncut; the panel and the Telegram health notice show at most this many characters of it.
+_RESEARCH_ALERT_DETAIL_MAX = 300
 _TIER1_ALERTS_LABEL = "Tier 1 research alerts"
 _ACTUALS_SLA_LABEL = "Actuals within 15 min"
 _MACRO = _JobSpec("macro_calendar", "Macro calendar (FRED)", 29 * _D, 30 * _D, 31 * _D)
@@ -386,6 +388,12 @@ def _tier1_research_check(now: dt.datetime, conns: dict[str, sqlite3.Connection]
                       item.expected_every_seconds, detail)
 
 
+def _clip(text: str, limit: int) -> str:
+    """One line of at most `limit` characters, ending in an ellipsis when cut."""
+    flat = " ".join(str(text).split())
+    return flat if len(flat) <= limit else flat[: limit - 1].rstrip() + "…"
+
+
 def _tier1_alerts_check(now: dt.datetime, conns: dict[str, sqlite3.Connection]) -> HealthItem:
     """FIX: the research task's own alerts from the last 72 h; reliability is amber, security and blocked are red."""
     alerts = ops_state.active_research_alerts(conns["ops"], now - RESEARCH_ALERT_TTL)
@@ -393,7 +401,8 @@ def _tier1_alerts_check(now: dt.datetime, conns: dict[str, sqlite3.Connection]) 
     if not alerts:
         return HealthItem("tier1_alerts", _TIER1_ALERTS_LABEL, "ok", None, None, expected, "")
     status = "red" if any(a.kind in _RESEARCH_ALERT_RED_KINDS for a in alerts) else "amber"
-    entries = [f"{_RESEARCH_ALERT_LABELS.get(a.kind, a.kind)} {a.event} ({_sast(a.created_at_utc)}): {a.message}"
+    entries = [f"{_RESEARCH_ALERT_LABELS.get(a.kind, a.kind)} {_clip(a.event, 80)} ({_sast(a.created_at_utc)}): "
+               f"{_clip(a.message, _RESEARCH_ALERT_DETAIL_MAX)}"
                for a in reversed(alerts)]                     # newest first
     newest = alerts[-1].created_at_utc
     return HealthItem("tier1_alerts", _TIER1_ALERTS_LABEL, status, None, (now - newest).total_seconds(), expected,
