@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import datetime as dt
 
+from alerting import triage as triage_module
 from alerting.triage import triage_article
+from alerting.us_link import rule_country_us_link
 from data_layer.news_feed import NewsArticle
 
 UTC = dt.timezone.utc
@@ -57,9 +59,11 @@ def test_partial_keyword_overlap_gets_positive_near_miss_score():
 
 
 def test_matching_checks_title_and_summary():
+    # FIX C1: a phrase found only in the summary still matches, and goes to the classifier.
     result = triage_article(_article("Markets steady", summary="Reports confirm: Strait of Hormuz closed overnight"))
     assert result.matched is True
-    assert result.rule_tier_hit is True
+    assert result.rule_tier_hit is False
+    assert result.guard_reason == "summary_only"
 
 
 import pytest
@@ -132,3 +136,305 @@ def test_gold_bar_tariff_headline_triages_as_trade_policy_without_a_hard_rule():
     assert result.matched is True
     assert result.category == "trade_policy"
     assert result.rule_tier_hit is False
+
+
+# --- FIX C1: guards in front of the rule tier. A guarded hit stays matched and goes to the classifier ---
+
+_LIVE_ID_1 = "U.S. oil falls below $100 as Saudi Arabia reportedly offers more crude via Hormuz after pipeline attack"
+_LIVE_ID_5 = "Aramco halts October crude deliveries to some European refiners after pipeline attack, Bloomberg reports - reuters.com"
+_LIVE_ID_7 = "U.S. urges Americans to reconsider Middle East travel as Iran tensions rise"
+
+
+def _assert_guarded(result, reason: str) -> None:
+    assert result.matched is True
+    assert result.rule_tier_hit is False
+    assert result.guard_reason == reason
+
+
+def test_guard_reasons_are_the_five_in_priority_order():
+    assert triage_module.GUARD_REASONS == ("summary_only", "denial", "price_report", "commentary", "unknown_us_link")
+
+
+def test_live_commentary_alerts_leave_the_rule_tier():
+    _assert_guarded(triage_article(_article(_LIVE_ID_1)), "price_report")
+    _assert_guarded(triage_article(_article(_LIVE_ID_5)), "unknown_us_link")
+    _assert_guarded(triage_article(_article(_LIVE_ID_7, summary="strait of hormuz closed, officials said")), "summary_only")
+
+
+@pytest.mark.parametrize("headline", [
+    "Iran denies strait of hormuz closed",
+    "Saudi Arabia rules out oil export ban",
+    "False report says Fed chair resigns",
+    "Strait of Hormuz closed rumour unconfirmed",
+    "OPEC+ agrees to cut? Delegates say it has not",
+    "Iran denied strait of hormuz closed",
+    "Saudi Arabia ruled out oil export ban",
+    "Riyadh has no plans to impose oil export ban",
+    "Fed chair resigns story is rumoured",
+    "Iran won't see strait of hormuz closed",
+    "Iran won\u2019t see strait of hormuz closed",
+    "Claim of strait of hormuz closed isn\u2019t true",
+    "Saudi Arabia ruling out oil export ban",
+])
+def test_denials_fall_through(headline):
+    _assert_guarded(triage_article(_article(headline)), "denial")
+
+
+@pytest.mark.parametrize("headline", [
+    "Oil prices jump as strait of hormuz blocked",
+    "Brent settles higher after strait of hormuz shut",
+    "Gold 2% higher after Fed chair resigns",
+    "Oil hits 6-month high as strait of hormuz closed",
+    "Stocks tumbled after Fed chair resigns",
+    "Crude futures up after strait of hormuz shut",
+    "Gold 1.5 % lower after Fed chair fired",
+    "Brent dropped after strait of hormuz shut",
+    "Oil sank as strait of hormuz closed",
+    "Oil prices rising as strait of hormuz closed",
+    "Stocks falling after Fed chair resigns",
+    "Oil soars as strait of hormuz closed",
+    "Gold spiking after Fed chair resigns",
+    "Stocks rally after Fed chair resigns",
+    "Oil up 5% as strait of hormuz closed",
+    "Gold down after Fed chair fired",
+    "Oil hits a 6-month high as strait of hormuz closed",
+    "Oil hits six-month high after strait of hormuz closed",
+    "Oil hits an eight-month high after strait of hormuz closed",
+    "Oil hits new multi-year high as strait of hormuz closed",
+    "Oil at 6-month high as strait of hormuz closed",
+    "Oil hits $150 after strait of hormuz closed",
+    "If strait of hormuz closed, oil would hit $200",
+    "Oil higher as strait of hormuz closed",
+    "Oil hits record high after strait of hormuz closed",
+    "Oil at record high as strait of hormuz closed",
+    "Oil hits highest level since 2022 as strait of hormuz closed",
+    "Brent tops $100 as strait of hormuz closed",
+    "Oil above $120 as strait of hormuz closed",
+    "Oil pares losses as strait of hormuz closed",
+    "Oil lower as strait of hormuz closed",
+    "Oil below $90 despite strait of hormuz closed",
+    "Oil topped $100 as strait of hormuz closed",
+    "Oil prices top $100 as strait of hormuz closed",
+    "Stocks pare losses after Fed chair resigns",
+    "Gold advances after Fed chair resigns",
+    "Stocks advance after Fed chair resigns",
+    "Oil hits all-time high as strait of hormuz closed",
+    "Oil at lowest level in a year despite strait of hormuz closed",
+    "Oil hits 6-month level as strait of hormuz closed",
+    "Oil edges up as strait of hormuz closed",
+    "Gold ticks down after Fed chair fired",
+    "Oil prices down as strait of hormuz closed",
+    "Stocks end sharply lower after Fed chair resigns",
+    "Brent holds above $100 as strait of hormuz closed",
+    "Stocks plunge after Fed chair resigns",
+    "Oil eases as strait of hormuz closed",
+    "Oil extends losses as strait of hormuz closed",
+    # Stored wire shapes, with a hard-rule phrase.
+    "Brent crude near $112 as U.S. and Israel reportedly weigh fresh Iran strikes, strait of hormuz closed",
+    "Brent oil touches $110 as Iran escalates Hormuz attacks, strait of hormuz closed",
+    "Brent crude hovers near $109 a barrel as strait of hormuz closed",
+    "Oil little changed as strait of hormuz closed",
+    "Oil prices little changed as strait of hormuz closed",
+    "Oil prices stable as strait of hormuz closed",
+    "Oil prices seesaw as strait of hormuz closed",
+    "Gold firms after Fed chair resigns",
+    "Crude oil dives to session low as strait of hormuz closed",
+    "Crude oil prices sell off more than 7% as strait of hormuz closed",
+    "Stocks in red after Fed chair resigns",
+    "Stocks remain under pressure after Fed chair resigns",
+    "Shares decline after Fed chair resigns",
+    "Stock pops 10% after Fed chair resigns",
+    "Shares on track for muted open after Fed chair resigns",
+    "Oil set for weekly gain as strait of hormuz closed",
+    "Stocks head for worst day since 2020 after Fed chair resigns",
+    "Prices increase as strait of hormuz closed",
+    "Oil prices remain high as strait of hormuz closed",
+    # A price level with no arrival verb of its own.
+    "Brent crude near $112 as strait of hormuz closed",
+    "Brent oil touches $110 as strait of hormuz closed",
+    "Oil at $120 as strait of hormuz closed",
+    "Oil nears $120 as strait of hormuz closed",
+    "Gold near $5,000 after Fed chair resigns",
+    "Oil reaches $120 as strait of hormuz closed",
+    "Brent breaches $100 as strait of hormuz closed",
+    "Brent crosses $100 as strait of hormuz closed",
+    "Brent breaks $100 as strait of hormuz closed",
+    "Brent breaks the $100 mark as strait of hormuz closed",
+    "Oil past $120 as strait of hormuz closed",
+    "Oil surpasses $120 as strait of hormuz closed",
+    "Brent passes $100 as strait of hormuz closed",
+    # The rest of the verb class.
+    "Stocks crash after Fed chair resigns",
+    "Oil weakens as strait of hormuz closed",
+    "Oil strengthens as strait of hormuz closed",
+    "Oil stabilises as strait of hormuz closed",
+    "Oil stabilizes as strait of hormuz closed",
+    "Oil bounces as strait of hormuz closed",
+    "Oil firmed as strait of hormuz closed",
+    "Oil firms, strait of hormuz closed",
+    # Level forms: the arrival verb need not follow the asset directly.
+    "Oil prices are at their highest level since 2022 as strait of hormuz closed",
+    "Oil trades at highest level since 2022 as strait of hormuz closed",
+    "Oil hits 6-month peak as strait of hormuz closed",
+    "Oil hits session low as strait of hormuz closed",
+    "Gold hits fresh high after Fed chair resigns",
+    "Gold hits new high after Fed chair resigns",
+    # A record needs a priced subject, and a dollar or a yield is one as much as oil.
+    "Dollar hits record high after Fed chair resigns",
+    "Dollar climbs to record high after Fed chair resigns",
+    "Treasury yields hit record high after Fed chair resigns",
+    "Bitcoin at all-time high after Fed chair resigns",
+    "Euro falls to record low after Fed chair resigns",
+    "Stock market at record high after Fed chair resigns",
+    "S&P 500 closes at record high after Fed chair resigns",
+    "Stocks notch records after Fed chair resigns",
+    "Stocks made a record high after Fed chair resigns",
+    "Gold's record high stalls after Fed chair resigns",
+    "Record high oil prices as strait of hormuz closed",
+    "Record high for gold after Fed chair resigns",
+    "Dollar retreats from 18-month peaks after Fed chair resigns",
+    "Natural gas hits record high as strait of hormuz closed",
+    "European gas at record high as strait of hormuz closed",
+    "LNG hits record high as strait of hormuz closed",
+    "Wheat hits record high as strait of hormuz closed",
+    "Nvidia hits all-time high after Fed chair resigns",
+    "Kospi hits record high after Fed chair resigns",
+    "Ruble hits record low after Fed chair resigns",
+    "Wall Street ends lower, off record highs, after Fed chair resigns",
+])
+def test_price_reports_fall_through(headline):
+    _assert_guarded(triage_article(_article(headline)), "price_report")
+
+
+@pytest.mark.parametrize("headline", [
+    "Analysts say OPEC+ agrees to cut soon",
+    "Strait of Hormuz closed could send oil to $150",
+    "Traders fear strait of hormuz shut",
+    "Iran may see strait of hormuz closed",
+    "Analyst warns strait of hormuz closed",
+    "Strait of Hormuz closed might last weeks",
+    "Tehran warns of strait of hormuz closed",
+    "Analysts warned strait of hormuz closed",
+    "Analysts expected strait of hormuz closed",
+    "Tehran warned of strait of hormuz closed",
+    "Traders feared strait of hormuz shut",
+    "Strait of Hormuz closed would send oil to $200",
+    "If strait of hormuz closed, shipping stops",
+])
+def test_commentary_falls_through(headline):
+    _assert_guarded(triage_article(_article(headline)), "commentary")
+
+
+@pytest.mark.parametrize("headline", [
+    "OPEC+ agrees to cut output from May",
+    "OPEC+ agrees to cut output in May 2026",
+    "OPEC+ agrees to cut output starting May 1",
+    "OPEC+ agrees to cut output since mid-May",
+])
+def test_may_the_month_is_not_commentary(headline):
+    result = triage_article(_article(headline))
+    assert result.rule_tier_hit is True
+    assert result.guard_reason is None
+
+
+@pytest.mark.parametrize("headline", [
+    "Strait of Hormuz closed after Iranian strike",
+    "OPEC+ agrees to cut output by 2 million barrels",
+    "Fed chair resigns",
+    "Strait of Hormuz closed after naval clash",
+    "Oil tanker attack lifts insurance costs as strait of hormuz closed",
+    "Oil tanker attack lifts premiums higher as strait of hormuz closed",
+    "Oil exports shut down, strait of hormuz closed",
+    "Oil pipeline shut down after strait of hormuz closed",
+    "Oil tanker seized, top general says strait of hormuz closed",
+    "US raises alert to highest level as strait of hormuz closed",
+    "Oil tanker attack raises alert to highest level as strait of hormuz closed",
+    "Oil minister joins highest-level talks as strait of hormuz closed",
+    "Tensions at record high as strait of hormuz closed",
+    "Oil output at record high as strait of hormuz closed",
+    "Attacks at record high as strait of hormuz closed",
+    "Oil tanker attacks at record high as strait of hormuz closed",
+    "Oil firms evacuate staff as strait of hormuz closed",
+    "Oil firm Aramco says strait of hormuz closed",
+    "Oil tanks ablaze as strait of hormuz closed",
+    "Stocks of oil under $5 billion ransom as strait of hormuz closed",
+])
+def test_genuine_events_stay_on_the_rule_tier(headline):
+    result = triage_article(_article(headline))
+    assert result.rule_tier_hit is True
+    assert result.guard_reason is None
+
+
+def test_shut_down_is_not_a_price_move():
+    # "down" two words after "oil" read as a price report and cost a real event its rule-tier speed.
+    assert triage_module.rule_guard_reason(
+        "Oil exports shut down, strait of hormuz closed", ["strait of hormuz closed"],
+    ) != "price_report"
+
+
+@pytest.mark.parametrize("headline", [
+    "US credit rating downgraded to record low",
+    "US consumer sentiment near record low as strait of hormuz closed",
+    "Trump's approval rating on economy hits all-time low as strait of hormuz closed",
+])
+def test_a_record_with_no_priced_subject_is_not_a_price_report(headline):
+    assert triage_module.rule_guard_reason(
+        headline, [hit for hit in ("credit rating downgraded", "strait of hormuz closed") if hit in headline.lower()],
+    ) != "price_report"
+
+
+@pytest.mark.parametrize("headline", ["Notable day: Fed chair resigns", "Goldman says Fed chair resigns"])
+def test_guard_words_inside_longer_words_do_not_fire(headline):
+    # "not" in "Notable" and "gold" in "Goldman" are whole-word guards, so neither trips here.
+    assert triage_article(_article(headline)).rule_tier_hit is True
+
+
+@pytest.mark.parametrize("headline", ["OPEC+ agrees output cut", "Explosion hits Riyadh oil facility"])
+def test_spec_event_headlines_still_reach_the_classifier(headline):
+    result = triage_article(_article(headline))
+    assert result.matched is True
+    assert result.rule_tier_hit is False
+    assert result.guard_reason is None
+
+
+def test_guarded_hit_stays_matched_for_the_classifier():
+    # "sovereign default" has no CATEGORY_SIGNAL_KEYWORDS entry: falling through to the keyword tier would lose it.
+    result = triage_article(_article("Moody's says sovereign default could follow"))
+    assert result.matched is True
+    assert result.rule_tier_hit is False
+    assert result.category == "sovereign_fiscal"
+    assert result.matched_keywords == ["sovereign default"]
+    assert result.guard_reason == "commentary"
+
+
+def test_guards_read_the_title_not_the_summary():
+    # A commentary-shaped summary does not guard a clean title.
+    result = triage_article(_article("Strait of Hormuz closed after naval clash", summary="Analysts say it could last"))
+    assert result.rule_tier_hit is True
+
+
+@pytest.mark.parametrize("headline,summary", [
+    (_LIVE_ID_5, "Traders fear a strait of hormuz closed scenario, analysts said"),
+    ("Tanker attacked near Yemen", "Iran denied the strait of hormuz closed claim"),
+])
+def test_summary_phrase_does_not_lend_a_us_link_to_the_title_phrase(headline, summary):
+    # The link is read from the title phrase alone, even when the summary holds a phrase with a known link.
+    _assert_guarded(triage_article(_article(headline, summary=summary)), "unknown_us_link")
+
+
+def test_clean_hit_keeps_only_the_title_phrases():
+    # "emergency rate decision" sorts first and has no known link; poll_once must not read it on a fired hit.
+    result = triage_article(_article("Fed chair resigns", summary="An emergency rate decision followed"))
+    assert result.rule_tier_hit is True
+    assert result.guard_reason is None
+    assert result.matched_keywords == ["fed chair resigns"]
+    assert rule_country_us_link(result.matched_keywords) == ("US", "direct")
+
+
+def test_rule_guard_reason_returns_the_first_reason_in_order():
+    # A title that is both a denial and a price report, on an unknown-link phrase, reads as a denial.
+    assert triage_module.rule_guard_reason("Oil prices jump, Iran denies tanker attacked", ["tanker attacked"]) == "denial"
+    assert triage_module.rule_guard_reason("Tanker attacked in the Gulf", ["tanker attacked"]) == "unknown_us_link"
+    assert triage_module.rule_guard_reason("Markets steady", ["tanker attacked"]) == "summary_only"
+    assert triage_module.rule_guard_reason("Fed chair fired", ["fed chair fired"]) is None
+    assert triage_module.rule_guard_reason("Tanker attacked", ["strait of hormuz closed", "tanker attacked"]) == "unknown_us_link"

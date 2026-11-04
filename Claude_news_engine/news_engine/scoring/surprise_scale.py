@@ -23,8 +23,8 @@ units) of the same title. Rules, all deliberate:
 Read-only: nothing here writes. Used by the dashboard essence calls
 (webapp/scheduler.py, webapp/predictions_service.py) and precursor
 contributions (scoring/probability_engine.get_precursor_events_for). Stats
-(webapp/stats_service.py) and classify_surprise() (the grading truth) do not
-use it.
+(webapp/stats_service.py) and classify_surprise() (the grading truth, one
+rounding step = in line) do not use it.
 """
 from __future__ import annotations
 

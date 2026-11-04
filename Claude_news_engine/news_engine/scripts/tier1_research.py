@@ -5,9 +5,12 @@ task used to write, so fixed commands can be pre-approved and the rules live in 
     python scripts/tier1_research.py plan [--days 8]
     python scripts/tier1_research.py record-call        --event T --release ISO --instrument S --value V --confidence C --source SRC --direction D
     python scripts/tier1_research.py record-late-check (same arguments)
+    python scripts/tier1_research.py alert --kind <reliability|security|blocked> --event "<title>" --message "<text>"
 
 plan prints JSON: every USD judgment-tier event (data_layer.tier1_events) within --days, with one status per
 tracked instrument: needs_call, covered, or late_check_due (with the reason and the call of record).
+A release Forex Factory has not listed yet is read from macro_calendar at its official New York time
+(data_layer.tier1_calendar) and carries "unconfirmed": true; only those events have the key.
 record-call logs the FIRST pre-release call for an occurrence and refuses a second one (the first call stands),
 a formula-tier title (CPI and Core CPI m/m and y/y, Core PCE m/m come from the Cleveland capture), a
 market-implied title (NFP, Retail Sales, PPI, ISM Manufacturing, Advance GDP and Federal Funds Rate come from the
@@ -15,31 +18,45 @@ Kalshi capture, B12), an untracked instrument, a release time without a UTC offs
 already happened.
 record-late-check appends a re-check to tier1_late_checks only when plan says it is due; it never changes the
 call of record.
+plan also stamps the "tier1_research" heartbeat in the ops DB (--ops-db) after it succeeds, so the health panel can
+tell a quiet week from a dead task; a failed stamp never fails the plan.
+alert sends one Telegram notice for a RELIABILITY ALERT, SECURITY ALERT or RUN BLOCKED line of the research report
+and records it in ops research_alerts (the health panel shows it for 72 h). An identical alert already sent within
+24 h is not sent again. It never opens the dashboard or backtest DBs, so a broken DB cannot silence an alert.
 
 --dash-db is opened read-only (it supplies events and tracked instruments); --bt-db defaults to the live backtest
-DB. Exit 0 ok, 2 refused (one-line reason on stderr).
+DB. Exit 0 ok, 2 refused (one-line reason on stderr), 3 alert recorded but Telegram did not confirm (a retry sends).
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import json
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 # Allow `python scripts/tier1_research.py ...` (script dir, not the app root, is on sys.path).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from alerting import notify_telegram  # noqa: E402
 from config.settings import LOCAL_TZ  # noqa: E402
+from data_layer.tier1_calendar import unconfirmed_releases  # noqa: E402
 from data_layer.tier1_events import (  # noqa: E402
     TIER1_FORMULA, TIER1_JUDGMENT, TIER1_MARKET_IMPLIED, TIER1_RESEARCH_LOOKAHEAD, late_check_reason, tier1_titles,
 )
+from ops import state as ops_state  # noqa: E402
 from scoring import backtest_store  # noqa: E402
 from scripts.backfill_tier1_reconstructed import open_dash_readonly  # noqa: E402
 from scripts.capture_nowcast_snapshot import parse_aware  # noqa: E402
 from webapp.store import list_tracked_symbols  # noqa: E402
 
 UTC = dt.timezone.utc
+
+# The report line each alert kind carries, in the research task's SKILL.md wording.
+ALERT_KINDS = {"reliability": "RELIABILITY ALERT", "security": "SECURITY ALERT", "blocked": "RUN BLOCKED"}
+ALERT_DEDUPE_WINDOW = dt.timedelta(hours=24)
+ALERT_MAX_CHARS = 1500           # Telegram caps a message at 4096; keep an alert short enough to read at a glance
 
 
 class Refused(Exception):
@@ -81,23 +98,33 @@ def build_plan(dash_conn, bt_conn, now: dt.datetime, days: float) -> list[dict]:
         f"SELECT DISTINCT event_title, event_time_utc FROM event_history "
         f"WHERE country = 'USD' AND event_title IN ({marks})", titles).fetchall()
     symbols = list_tracked_symbols(dash_conn)
-    events = []
+    end = now + dt.timedelta(days=days)
+    releases = []                                    # (title, release, unconfirmed)
     for row in rows:
         release = _as_utc(row[1])
-        if release is None or not now < release <= now + dt.timedelta(days=days):
-            continue
+        if release is not None and now < release <= end:
+            releases.append((row[0], release, False))
+    # FF lists a release late: fall back to FRED's date for the titles with no event_history row in the window.
+    listed = {title for title, _release, _unconfirmed in releases}
+    releases += [(item.title, item.release_utc, True)
+                 for item in unconfirmed_releases(dash_conn, [t for t in titles if t not in listed], now, end)]
+    events = []
+    for title, release, unconfirmed in releases:
         instruments = {}
         for symbol in symbols:
-            call, reason = _late_check_state(bt_conn, row[0], symbol, release, now)
+            call, reason = _late_check_state(bt_conn, title, symbol, release, now)
             if call is None:
                 instruments[symbol] = {"status": "needs_call"}
             elif reason is not None:
                 instruments[symbol] = {"status": "late_check_due", "reason": reason, "call": _call_dict(call)}
             else:
                 instruments[symbol] = {"status": "covered", "call": _call_dict(call)}
-        events.append({"event_title": row[0], "event_time_utc": release.isoformat(),
-                       "event_time_sast": f"{release.astimezone(LOCAL_TZ):%Y-%m-%d %H:%M} SAST",
-                       "tier": TIER1_JUDGMENT, "instruments": instruments})
+        event = {"event_title": title, "event_time_utc": release.isoformat(),
+                 "event_time_sast": f"{release.astimezone(LOCAL_TZ):%Y-%m-%d %H:%M} SAST",
+                 "tier": TIER1_JUDGMENT, "instruments": instruments}
+        if unconfirmed:
+            event["unconfirmed"] = True
+        events.append(event)
     return sorted(events, key=lambda e: (e["event_time_utc"], e["event_title"]))
 
 
@@ -146,6 +173,35 @@ def _record_late_check(args: argparse.Namespace, dash_conn, bt_conn, now: dt.dat
     return f"late check {row_id}: {outcome} ({reason})"
 
 
+def _send_alert(args: argparse.Namespace, ops_conn, now: dt.datetime, send: Callable[[str], bool]) -> int:
+    """Send and record one alert. 0 sent or duplicate, 3 not delivered (recorded, so health shows it)."""
+    since = now - ALERT_DEDUPE_WINDOW
+    if ops_state.research_alert_sent_since(ops_conn, args.kind, args.event, args.message, since):
+        print("duplicate, not sent")
+        return 0
+    text = f"Tier 1 research: {ALERT_KINDS[args.kind]} - {args.event}: {args.message}"[:ALERT_MAX_CHARS]
+    try:
+        sent = bool(send(text))
+    except Exception:                 # the notifier never raises today; an alert must still be recorded if it does
+        sent = False
+    ops_state.record_research_alert(ops_conn, args.kind, args.event, args.message, now, sent)
+    if not sent:
+        print("alert recorded, Telegram did not confirm", file=sys.stderr)
+        return 3
+    print("alert sent")
+    return 0
+
+
+def _stamp_heartbeat(args: argparse.Namespace, now: dt.datetime) -> None:
+    """The plan command is the one every research run makes; its stamp feeds the health panel. Never raises."""
+    try:
+        # touch_heartbeat reports its own failure on stdout; stdout here must stay pure JSON.
+        with contextlib.redirect_stdout(sys.stderr):
+            ops_state.touch_heartbeat("tier1_research", now, db_path=args.ops_db)
+    except Exception as exc:
+        print(f"WARNING: research heartbeat not recorded: {exc}", file=sys.stderr)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -154,8 +210,12 @@ def _build_parser() -> argparse.ArgumentParser:
         p.add_argument("--dash-db", type=Path, default=None, help="dashboard.db (read-only; default: live)")
         p.add_argument("--bt-db", type=Path, default=None, help="backtest_log.db (default: live)")
 
+    def add_ops_db(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--ops-db", type=Path, default=None, help="ops_state.db (default: live)")
+
     plan = sub.add_parser("plan", help="print the judgment-tier events due a call or late check as JSON")
     add_dbs(plan)
+    add_ops_db(plan)
     plan.add_argument("--days", type=float, default=TIER1_RESEARCH_LOOKAHEAD.days,
                       help="look this many days ahead (default 8)")
     for name, help_text in (("record-call", "log the first pre-release call for one instrument"),
@@ -169,6 +229,11 @@ def _build_parser() -> argparse.ArgumentParser:
         p.add_argument("--confidence", required=True, help="Certain | Likely | Guessing")
         p.add_argument("--source", required=True, help="where the finding came from")
         p.add_argument("--direction", required=True, help="bullish | bearish | neutral (for this instrument)")
+    alert = sub.add_parser("alert", help="send one RELIABILITY ALERT / SECURITY ALERT / RUN BLOCKED to Telegram")
+    add_ops_db(alert)
+    alert.add_argument("--kind", required=True, choices=sorted(ALERT_KINDS), help="reliability | security | blocked")
+    alert.add_argument("--event", required=True, help="event title, or 'run' when it concerns the whole run")
+    alert.add_argument("--message", required=True, help="the alert line without its label")
     return parser
 
 
@@ -176,11 +241,18 @@ def main(argv: Optional[list[str]] = None, now: Optional[dt.datetime] = None) ->
     """now is a test seam; the research task uses the real clock."""
     args = _build_parser().parse_args(argv)
     now = now or dt.datetime.now(UTC)
+    if args.command == "alert":      # before any data DB opens: a broken DB must not silence an alert
+        ops_conn = ops_state.get_connection(args.ops_db)
+        try:
+            return _send_alert(args, ops_conn, now, notify_telegram.send_notice)
+        finally:
+            ops_conn.close()
     dash_conn = open_dash_readonly(args.dash_db)
     bt_conn = backtest_store.get_connection(args.bt_db)
     try:
         if args.command == "plan":
             print(json.dumps(build_plan(dash_conn, bt_conn, now, args.days), indent=2))
+            _stamp_heartbeat(args, now)
         elif args.command == "record-call":
             print(_record_call(args, dash_conn, bt_conn, now))
         else:

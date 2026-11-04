@@ -11,9 +11,36 @@ const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
 
 // The News side is pre-registered (server: |lean| >= 0.2 gives higher/lower, otherwise no call). The row field
 // `news_call` is the only way the side reaches the UI; News is never described as "in line".
-export const NEWS_CALL_TEXT = { higher: "calls higher", lower: "calls lower", no_call: "no call (|lean| under 0.2)" };
-export function newsCallText(newsCall) {
-  return Object.prototype.hasOwnProperty.call(NEWS_CALL_TEXT, newsCall) ? NEWS_CALL_TEXT[newsCall] : "";
+export const NEWS_CALL_TEXT = { higher: "calls higher", lower: "calls lower", no_call: "no call" };
+// `reason` is the server's news_no_call_reason ("|lean| under 0.2", "too few articles (n=2)"); the text is the
+// server's, so a threshold change never needs a UI edit. Absent reason -> plain "no call".
+export function newsCallText(newsCall, reason) {
+  if (!Object.prototype.hasOwnProperty.call(NEWS_CALL_TEXT, newsCall)) return "";
+  if (newsCall === "no_call" && reason) return `no call (${reason})`;
+  return NEWS_CALL_TEXT[newsCall];
+}
+
+// FIX B1: for the FOMC and CPI families the News lean is article tone, not the policy stance.
+export const NEWS_LOW_TRUST_NOTE = "News = article tone, not policy stance";
+
+// FIX A3: the signal-bearing article count beside every News word. null/undefined = not recoverable.
+// A "too few articles" reason already names n, so it is not repeated.
+export function newsCountText(row) {
+  if (row.news_call === "no_call" && String(row.news_no_call_reason || "").startsWith("too few")) return "";
+  const n = row.detail ? row.detail.news_article_count : null;
+  return n == null || Number.isNaN(Number(n)) ? "n unknown" : `n=${Number(n)}`;
+}
+
+// " · calls higher · n=5" style tail for a News cell; "" when the row has no News call word.
+export function newsWordWithCount(row) {
+  const word = newsCallText(row.news_call, row.news_no_call_reason);
+  if (!word) return "";
+  const count = newsCountText(row);
+  return count ? `${word} · ${count}` : word;
+}
+
+function lowTrustHtml(row) {
+  return row.news_low_trust ? `<div class="meta-text-sm">${escapeHtml(NEWS_LOW_TRUST_NOTE)}</div>` : "";
 }
 
 // Up to 2 decimals, no trailing zeros: 0.4 -> "0.4", 89 -> "89", 0.3499 -> "0.35".
@@ -129,8 +156,8 @@ export function combinedRowHtml(row) {
   const cell = (call) => (call == null ? "—" : `${num(call.predicted)} ${verdictChip(call.verdict)}`);
   const newsCell = (call) => {
     if (call == null) return "—";
-    const word = newsCallText(row.news_call);
-    return `${num(call.predicted)}${word ? ` · ${word}` : ""} ${verdictChip(call.verdict)}`;
+    const word = newsWordWithCount(row);
+    return `${num(call.predicted)}${word ? ` · ${escapeHtml(word)}` : ""} ${verdictChip(call.verdict)}${lowTrustHtml(row)}`;
   };
   const flag = c && c.note === "news_missing" ? ' <span class="meta-text-sm">Tier 1 only</span>' : "";
   const attrs = row.tier1_tracked ? clickAttrs(row, "combined", "combined") : "";
@@ -162,9 +189,9 @@ export function sentimentRowHtml(row) {
     return `<tr class="row-off"><td>${title}</td><td>${dateCell(row)}</td><td>${articlesLeanCell(row)}</td>`
       + `<td colspan="3">${why}</td></tr>`;
   }
-  const word = newsCallText(row.news_call);
+  const word = newsWordWithCount(row);
   return `<tr><td>${title}</td><td>${dateCell(row)}</td><td>${articlesLeanCell(row)}</td>`
-    + `<td>${num(n.predicted)}${word ? ` · ${word}` : ""} <div class="meta-text-sm">${leanText(n.leans)}</div></td>`
+    + `<td>${num(n.predicted)}${word ? ` · ${escapeHtml(word)}` : ""} <div class="meta-text-sm">${leanText(n.leans)}</div>${lowTrustHtml(row)}</td>`
     + `<td>${row.status === "pending" ? "pending" : escapeHtml(row.actual_text ?? "")}</td><td>${verdictChip(n.verdict)}</td></tr>`;
 }
 
@@ -218,11 +245,13 @@ export function briefCardHtml(row, method, disclaimers, impactFiltered = false) 
   const call = row[method];
   const unit = String(row.forecast_text ?? "").replace(/^-?[\d.,]+/, "").trim();
   const lean = leanText(call.leans);
+  const newsTail = method === "news" ? ` · ${escapeHtml(newsCountText(row) || "")}` : "";
+  const newsNote = method === "news" ? lowTrustHtml(row) : "";
   return `<div class="brief-card"><b>Next release: ${escapeHtml(row.event_title)}</b>`
     + `<div class="meta-text-sm">${escapeHtml(sastText(row.event_time_utc))}</div>`
     + `<div>Expected: ${method === "news" ? newsExpectedWord(row.news_call) : expectedWord(row.forecast, call.predicted, row.forecast_text)} `
-    + `(call ${escapeHtml(num(call.predicted) + unit)} vs forecast ${escapeHtml(row.forecast_text ?? "")})</div>`
-    + (lean ? `<div>${lean}</div>` : "")
+    + `(call ${escapeHtml(num(call.predicted) + unit)} vs forecast ${escapeHtml(row.forecast_text ?? "")})${newsTail}</div>`
+    + (lean ? `<div>${lean}</div>` : "") + newsNote
     + `<div class="meta-text-sm">${escapeHtml((disclaimers && disclaimers.typical_reaction) || "")}</div></div>`;
 }
 
@@ -252,7 +281,7 @@ export function scoreboardHtml(sb, unit) {
     const pct = m.accuracy_shown ? ` (${Math.round(m.accuracy * 100)}%)` : "";
     const miss = m.mean_miss == null ? "" : `<div class="meta-text-sm">mean miss ${Number(m.mean_miss).toFixed(2)}${u}</div>`;
     const noCall = key === "news" && m.no_call != null
-      ? `<div class="meta-text-sm">no call on ${Number(m.no_call)} of ${Number(m.scored || 0) + Number(m.no_call)} graded releases (|lean| under 0.2)</div>` : "";
+      ? `<div class="meta-text-sm">no call on ${Number(m.no_call)} of ${Number(m.scored || 0) + Number(m.no_call)} graded releases (${Number(m.no_call_weak_lean || 0)} weak lean, ${Number(m.no_call_floor || 0)} too few articles)</div>` : "";
     return `<tr><td>${METHOD_LABEL[key]}</td><td>${m.right} of ${m.scored}${pct}${populationLines(m)}${noCall}${miss}</td>`
       + `<td>${rateText(m.directional)}</td></tr>`;
   }).join("");

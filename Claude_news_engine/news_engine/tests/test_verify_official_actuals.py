@@ -15,7 +15,7 @@ from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data_layer.fred_history import FredFetchError, InitialRelease
+from data_layer.fred_history import FredFetchError, FredMaintenanceError, InitialRelease
 from data_layer.official_actuals.fetch import FetchOutcome
 from data_layer.official_actuals.http import HttpResponse
 from data_layer.official_actuals.keys import Keys
@@ -423,6 +423,179 @@ def test_main_exit_2_when_db_missing(tmp_path, capsys):
     _write_env(env)
     assert verify.main(["--db", str(tmp_path / "absent.db"), "--env-file", str(env)]) == 2
 
+
+# ---------------------------------------------------------------- ACT follow-ups (FIX Task 5)
+
+GOODS = "Goods Trade Balance"
+EHS = "Existing Home Sales"
+
+
+def test_gate_goods_balance_explains_revision_with_alfred(tmp_path):
+    # Census today's (revised) numbers differ from FF's `previous`, which is the prior month's FIRST print. AITGCBS
+    # vintages hold only the release month, so the first print is read from the prior period's own release vintage.
+    conn = _db(tmp_path)
+    _row(conn, GOODS, _t(2026, 8, 27), "-119.0B", "-101.5B")           # Jul data, previous = Jun first print
+    _row(conn, GOODS, _t(2026, 9, 25), "-132.0B", "-118.8B")           # Aug data, previous = Jul first print
+    _row(conn, GOODS, _t(2026, 10, 27), "-134.0B", "-132.6B")          # Sep data, previous = Aug first print
+    official = {D(2026, 6, 1): -100900.0, D(2026, 7, 1): -118000.0, D(2026, 8, 1): -132069.0, D(2026, 9, 1): -134904.0}
+    spec = OFFICIAL_SPECS[GOODS]
+    twin_id = spec.fred_twin[0]
+    releases = {twin_id: [(D(2026, 6, 1), D(2026, 7, 28)), (D(2026, 7, 1), D(2026, 8, 27)),
+                          (D(2026, 8, 1), D(2026, 9, 25)), (D(2026, 9, 1), D(2026, 10, 27))]}
+    twin = FakeTwin(
+        asof={(twin_id, D(2026, 6, 1), D(2026, 7, 28)): -101461.0, (twin_id, D(2026, 7, 1), D(2026, 8, 27)): -118806.0,
+              (twin_id, D(2026, 8, 1), D(2026, 9, 25)): -132636.0},
+        current={twin_id: official}, releases=releases)
+    gate = verify.gate_title(GOODS, spec, _rows(conn, GOODS), official, twin, NOW)
+    assert gate.identity == "ok"
+    assert (gate.matches, gate.comparisons, gate.revision_explained) == (3, 3, 3)
+    assert gate.status == "verified"
+    assert gate.mismatches == []
+
+
+def test_gate_first_print_vintage_needs_an_identical_twin(tmp_path):
+    conn = _db(tmp_path)
+    _row(conn, GOODS, _t(2026, 9, 25), "-132.0B", "-118.8B")
+    _row(conn, GOODS, _t(2026, 10, 27), "-134.0B", "-132.6B")
+    official = {D(2026, 7, 1): -118000.0, D(2026, 8, 1): -132069.0, D(2026, 9, 1): -134904.0}
+    spec = OFFICIAL_SPECS[GOODS]
+    twin_id = spec.fred_twin[0]
+    releases = {twin_id: [(D(2026, 7, 1), D(2026, 8, 27)), (D(2026, 8, 1), D(2026, 9, 25)), (D(2026, 9, 1), D(2026, 10, 27))]}
+    drifted = {p: v - 5000.0 for p, v in official.items()}                # a different series: identity fails
+    twin = FakeTwin(asof={(twin_id, D(2026, 7, 1), D(2026, 8, 27)): -118806.0}, current={twin_id: drifted},
+                    releases=releases)
+    gate = verify.gate_title(GOODS, spec, _rows(conn, GOODS), official, twin, NOW)
+    assert gate.identity == "mismatch" and gate.revision_explained == 0 and gate.status != "verified"
+
+
+def _ehs_rows(conn, previous_aug: str = "3.98M") -> None:
+    _row(conn, EHS, _t(2026, 8, 11, 14, 0), "4.10M", "4.09M")
+    _row(conn, EHS, _t(2026, 9, 10, 14, 0), "4.00M", "4.06M")
+    _row(conn, EHS, _t(2026, 10, 13, 14, 0), "3.95M", previous_aug)
+
+
+EHS_OFFICIAL = {D(2026, 6, 1): 4130000.0, D(2026, 7, 1): 4060000.0, D(2026, 8, 1): 3930000.0, D(2026, 9, 1): 3990000.0}
+
+
+def test_gate_tolerance_counts_ehs_previous(tmp_path):
+    # NAR revises the prior month at each release: 4.13 vs 4.09, 3.93 vs 3.98 (both within 2%), 4.06 vs 4.06.
+    conn = _db(tmp_path)
+    _ehs_rows(conn)
+    spec = OFFICIAL_SPECS[EHS]
+    gate = verify.gate_title(EHS, spec, _rows(conn, EHS), EHS_OFFICIAL, None, NOW)
+    assert (gate.matches, gate.comparisons) == (3, 3)
+    assert gate.status == "verified"
+    assert gate.revision_explained == 0
+    assert any("tolerance" in n for n in gate.period_notes)
+
+    # A 3% gap (3.93 vs 4.05) is a real mismatch.
+    conn2 = ws.get_connection(tmp_path / "e2.db")
+    _ehs_rows(conn2, previous_aug="4.05M")
+    gate = verify.gate_title(EHS, spec, _rows(conn2, EHS), EHS_OFFICIAL, None, NOW)
+    assert (gate.matches, gate.comparisons) == (2, 3)
+    assert gate.status == "suspect"
+    assert len(gate.mismatches) == 1
+
+
+class _FailingTwin:
+    """Every FRED call fails the way a real FRED error does: scrubbed text, here on two lines."""
+
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def value_asof(self, series_id, transform, period, vintage_date):
+        raise self.error
+
+    def current_values(self, series_id, transform, since, today):
+        raise self.error
+
+    def first_releases(self, series_id, start, end):
+        raise self.error
+
+
+def _twin_spec():
+    return next(spec for spec in OFFICIAL_SPECS.values() if spec.fred_twin is not None and spec.transform != "auction")
+
+
+def _assert_one_warning(capsys, spec, step: str, text: str) -> None:
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1, err
+    assert err.startswith(f"WARNING: FRED {step} failed for {spec.fred_twin[0]}: ")
+    assert text in err
+
+
+def test_fred_failures_warn_with_the_scrubbed_text_on_one_line(capsys, monkeypatch):
+    spec = _twin_spec()
+    twin = _FailingTwin(FredFetchError("FRED HTTP 400:\nBad Request. The series does not exist."))
+    day = D(2026, 9, 1)
+    monkeypatch.setattr(verify, "value_for", lambda *_: 1.0)
+
+    assert verify._identity(spec, {day: 1.0}, twin, "1.0", NOW) == "unavailable"
+    _assert_one_warning(capsys, spec, "current values", "FRED HTTP 400: Bad Request. The series does not exist.")
+
+    assert verify._explained_by_twin(spec, twin, "1.0", day, (D(2026, 9, 15), D(2026, 10, 15))) is False
+    _assert_one_warning(capsys, spec, "vintage value", "FRED HTTP 400: Bad Request. The series does not exist.")
+
+    assert verify._twin_first_releases(spec, twin, NOW) is None
+    _assert_one_warning(capsys, spec, "first releases", "FRED HTTP 400: Bad Request. The series does not exist.")
+
+
+def test_fred_maintenance_page_warns_too(capsys):
+    spec = _twin_spec()
+    assert verify._twin_first_releases(spec, _FailingTwin(FredMaintenanceError("FRED maintenance page")), NOW) is None
+    _assert_one_warning(capsys, spec, "first releases", "FRED maintenance page")
+
+
+def test_gate_tolerance_is_off_without_the_spec_field(tmp_path):
+    conn = _db(tmp_path)
+    _row(conn, "Housing Starts", _t(2026, 10, 19, 12, 30), "1.30M", "1.31M")
+    series = {D(2026, 8, 1): 1.34e3, D(2026, 9, 1): 1.30e3}          # 2% off the stored previous: still a mismatch
+    gate = verify.gate_title("Housing Starts", OFFICIAL_SPECS["Housing Starts"], _rows(conn, "Housing Starts"),
+                             series, None, NOW)
+    assert (gate.matches, gate.comparisons) == (0, 1)
+
+
+def test_write_results_with_title_merges(tmp_path):
+    path = tmp_path / "gate_results.json"
+    old = {"generated_at_utc": "2026-10-29T05:22:14+00:00", "threshold": 0.8, "titles": {
+        "CPI m/m": {"status": "suspect", "matches": 0, "comparisons": 4},
+        "Other Title": {"status": "verified", "matches": 5, "comparisons": 5}}}
+    path.write_text(json.dumps(old), encoding="utf-8")
+    new = {"generated_at_utc": "2026-11-03T08:00:00+00:00", "threshold": 0.8, "titles": {
+        "CPI m/m": {"status": "verified", "matches": 4, "comparisons": 4}}}
+    verify.write_results(path, new, merge=True)
+    merged = json.loads(path.read_text(encoding="utf-8"))
+    assert merged["titles"]["Other Title"]["status"] == "verified"          # preserved
+    assert merged["titles"]["CPI m/m"]["status"] == "verified"              # replaced
+    assert merged["generated_at_utc"] == "2026-11-03T08:00:00+00:00"
+    assert b"\r\n" not in path.read_bytes()
+
+    verify.write_results(path, new, merge=False)                             # a run without --title replaces
+    assert list(json.loads(path.read_text(encoding="utf-8"))["titles"]) == ["CPI m/m"]
+
+    path.write_text("{ not json", encoding="utf-8")                          # unreadable old file: written fresh
+    verify.write_results(path, new, merge=True)
+    assert list(json.loads(path.read_text(encoding="utf-8"))["titles"]) == ["CPI m/m"]
+
+
+def test_main_with_title_merges_into_existing_results(tmp_path, monkeypatch):
+    db = tmp_path / "d.db"
+    conn = ws.get_connection(db)
+    _row(conn, "CPI m/m", _t(2026, 10, 14), "0.6%", "0.4%", "0.6%", source="fred")
+    conn.close()
+    env = tmp_path / ".env"
+    _write_env(env)
+    results_path = tmp_path / "gate_results.json"
+    results_path.write_text(json.dumps({"generated_at_utc": "x", "threshold": 0.8, "titles": {
+        "Other Title": {"status": "verified", "matches": 5, "comparisons": 5}}}), encoding="utf-8")
+    monkeypatch.setattr(verify, "requests_fetcher",
+                        lambda *a, **k: FakeFetcher([(_url_has("api.bls.gov"), _ok(_fixture("bls_timeseries.json")))]))
+    monkeypatch.setattr(verify, "FredClient", _NoFred)
+    monkeypatch.setattr(verify, "GATE_RESULTS_PATH", results_path)
+    assert verify.main(["--db", str(db), "--env-file", str(env), "--title", "CPI m/m", "--write-results"]) == 0
+    payload = json.loads(results_path.read_text(encoding="utf-8"))
+    assert set(payload["titles"]) == {"CPI m/m", "Other Title"}
+    assert payload["generated_at_utc"] != "x"
 
 if __name__ == "__main__":
     import pytest

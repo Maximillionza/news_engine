@@ -659,7 +659,7 @@ PRINT_SURPRISE_LEXICON = {
 # Minutes' top-3 contributing articles for XAUUSD.
 #
 # An article is kept if its title+summary contains ANY keyword below
-# (case-insensitive substring match), for its event's title. Same
+# (case-insensitive whole-word match, FIX 2026-11-03), for its event's title. Same
 # fail-open contract as PRINT_SURPRISE_LEXICON: an event title with NO
 # entry here gets NO filtering at all — guessing a keyword list for an
 # event nobody's curated risks silently dropping genuinely relevant
@@ -677,7 +677,7 @@ PRINT_SURPRISE_LEXICON = {
 # they're framing variants of the same underlying BLS release, same
 # reasoning as the FOMC family below sharing one list across its variants.
 _CPI_RELEVANCE_KEYWORDS = [
-    "cpi", "consumer price index", "consumer prices", "inflation", "core inflation",
+    "cpi", "consumer price index", "consumer prices", "inflation", "inflationary", "core inflation",
     "headline inflation", "price index", "cost of living", "disinflation",
     "bureau of labor statistics", "core cpi", "consumer inflation",
 ]
@@ -687,11 +687,12 @@ _CPI_RELEVANCE_KEYWORDS = [
 # row) — both names kept so historical Powell-era coverage and current
 # Warsh-era coverage both match, same "never drop real coverage" reasoning
 # as everything else in this dict.
-# B6 (2026-10-22): keyword list unchanged; the Fed co-term and title subject rules live in data_layer/subject_rules.py.
+# B6 (2026-10-22), FIX (2026-11-03): the Fed co-term, other-asset and US-subject rules live in data_layer/subject_rules.py.
+# Matching is whole-word since FIX, so a longer word needs its own entry ("fed chairman", "central bankers", "inflationary", "recessionary").
 _FOMC_RELEVANCE_KEYWORDS = [
-    "fomc", "federal reserve", "federal funds rate", "fed rate", "fed chair",
+    "fomc", "federal reserve", "federal funds rate", "fed rate", "fed chair", "fed chairman",
     "fed meeting", "fed minutes", "interest rate decision", "monetary policy",
-    "rate hike", "rate cut", "powell", "warsh", "dot plot", "central bank",
+    "rate hike", "rate cut", "powell", "warsh", "dot plot", "central bank", "central bankers",
     "fed press conference", "economic projections",
 ]
 
@@ -729,7 +730,7 @@ _RETAIL_SALES_RELEVANCE_KEYWORDS = [
 ]
 _GDP_RELEVANCE_KEYWORDS = [
     "gdp", "gross domestic product", "economic growth", "gdp nowcast",
-    "economic output", "recession", "gdp report",
+    "economic output", "recession", "recessionary", "gdp report",
 ]
 
 # Only the groups confirmed to actually need it (the ones this project
@@ -960,7 +961,8 @@ SURPRISE_SENSITIVITY = 3.0
 # MIN_PRIOR_SURPRISES_FOR_SIGMA priors, usd_surprise_score() keeps the
 # percent method above. The z is mapped with tanh(z * STANDARDIZED_SURPRISE_
 # SENSITIVITY) (1 sigma -> 0.46, 2 sigma -> 0.76, 3 sigma -> 0.91): untuned,
-# same caveat as SURPRISE_SENSITIVITY. Stats and classify_surprise() do not
+# same caveat as SURPRISE_SENSITIVITY. Stats and classify_surprise() (one
+# rounding step = in line, data_layer/surprise_side.py) do not
 # use any of this.
 MIN_PRIOR_SURPRISES_FOR_SIGMA = 6
 SURPRISE_SIGMA_MAX_HISTORY = 24
@@ -1130,13 +1132,6 @@ PREDICTIONS_RECENT_RESOLVED_RETENTION_DAYS = 7
 # "this is current" — it was burying a genuinely upcoming pending event
 # under an already-resolved one purely because the resolved one happened
 # to get recomputed more recently.
-
-# Below this relative (or, when forecast≈0, absolute) delta between actual
-# and forecast, classify_surprise() below calls it 'in_line' rather than
-# 'higher'/'lower' — a literal actual-vs-forecast comparison for event
-# history/trend display, distinct from usd_surprise_score()'s continuous
-# bullish/bearish-mapped magnitude used for instrument-score blending.
-EVENT_HISTORY_IN_LINE_TOLERANCE = 0.05
 
 # --- Free-tier API sources worth adding later (not yet implemented) ---
 # GDELT      — free, huge global news volume, good for a "how much is this

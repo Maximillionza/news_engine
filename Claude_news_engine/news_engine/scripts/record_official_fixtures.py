@@ -61,6 +61,8 @@ CENSUS_GET = "cell_value,data_type_code,category_code,seasonally_adj,time_slot_i
 CENSUS_SINCE = "2026-01"          # keeps the recorded files small; 9+ months is enough for tests and resolution
 EIA_SERIES = (("crude", "petroleum/stoc/wstk", "WCESTUS1"), ("natgas", "natural-gas/stor/wkly", "NW2_EPG0_SWO_R48_BCF"))
 FED_PAGES = ("monetary20261028a.htm", "monetary20260916a.htm")
+# FRED current-value series read through the poller's FRED adapter: weekly claims, and Existing Home Sales (FIX Task 5).
+FRED_SERIES = ("ICSA", "EXHOSLUSM495S")
 
 
 def scrub(text: str, keys: Keys) -> str:
@@ -124,9 +126,10 @@ def record_all(fetcher: Fetcher, keys: Keys) -> None:
         _record(f"treasury_{sec_type.lower()}.json", lambda t=sec_type: fetcher("GET", TREASURY_URL, {
             "format": "json", "type": t, "days": 120,     # fixture size; the adapter default is 400
         }, None), keys, r'"competitiveAuctionCloseDate":"(\d{4}-\d\d-\d\d)')
-    _record("fred_ICSA.json", lambda: fetcher("GET", FRED_URL, {
-        "series_id": "ICSA", "api_key": keys.fred, "file_type": "json", "observation_start": f"{year - 1}-01-01",
-    }, None), keys, r'"date":"(\d{4}-\d\d-\d\d)"')
+    for series in FRED_SERIES:
+        _record(f"fred_{series}.json", lambda s=series: fetcher("GET", FRED_URL, {
+            "series_id": s, "api_key": keys.fred, "file_type": "json", "observation_start": f"{year - 1}-01-01",
+        }, None), keys, r'"date":"(\d{4}-\d\d-\d\d)"')
 
 
 # ---- Census code resolution (recorded fixtures + DB mode=ro; FRED GETs only with --env-file) ----
@@ -143,8 +146,8 @@ CENSUS_TITLES: dict[str, tuple[str, float, Optional[str], str]] = {
     "Construction Spending m/m": ("vip", 1.0, "TTLCONS", "pch"),
     "Business Inventories m/m": ("mtis", 1.0, "BUSINV", "pch"),
     "Final Wholesale Inventories m/m": ("mwts", 1.0, "WHLSLRIMSA", "pch"),
-    "Prelim Wholesale Inventories m/m": ("mwtsadv", 1.0, None, "pch"),
-    "Goods Trade Balance": ("ftdadv", 0.001, None, "lin"),
+    "Prelim Wholesale Inventories m/m": ("mwtsadv", 1.0, "AMINVTS", "pch"),     # twin added in FIX Task 5
+    "Goods Trade Balance": ("ftdadv", 0.001, "AITGCBS", "lin"),                 # twin added in FIX Task 5
     "Trade Balance": ("ftd", 0.001, "BOPGSTB", "lin"),
     "Factory Orders m/m": ("m3", 1.0, "AMTMNO", "pch"),
 }

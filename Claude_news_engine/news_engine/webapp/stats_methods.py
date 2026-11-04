@@ -17,6 +17,9 @@ NEWS_WEIGHT = 0.30
 MIN_HISTORY_FOR_SCALE = 3
 # Pre-registered 2026-10-20 (owner decision 5, roadmap B9 ST1), fixed before viewing more results: do not tune.
 NEWS_CALL_MIN_LEAN = 0.2
+# Pre-registered 2026-11-03 (owner ruling R1), fixed before viewing results: never tuned on results.
+# A News call needs at least this many signal-bearing articles (included, non-zero USD sentiment).
+NEWS_CALL_MIN_ARTICLES = 3
 
 
 def news_side(lean: Optional[float]) -> Optional[int]:
@@ -28,6 +31,27 @@ def news_side(lean: Optional[float]) -> Optional[int]:
     if lean is None or abs(lean) < NEWS_CALL_MIN_LEAN - 1e-9:
         return None
     return 1 if lean > 0 else -1
+
+
+@dataclass(frozen=True)
+class NewsCallDecision:
+    side: Optional[int]        # +1 / -1 / None
+    reason: Optional[str]      # None on a call; "|lean| under 0.2"; "too few articles (n=2)"; "too few articles (n unknown)"
+
+
+def news_call_decision(lean: Optional[float], signal_articles: Optional[int]) -> NewsCallDecision:
+    """
+    The News call with the evidence floor (FIX A3): the lean rule first (news_side), then at least
+    NEWS_CALL_MIN_ARTICLES signal-bearing articles. signal_articles None (count not recoverable) fails closed.
+    A weak lean reports its own reason whatever n is. The floor changes the call only, never the lean or Combined.
+    """
+    if news_side(lean) is None:
+        return NewsCallDecision(None, f"|lean| under {NEWS_CALL_MIN_LEAN:g}")
+    if signal_articles is None:
+        return NewsCallDecision(None, "too few articles (n unknown)")
+    if signal_articles < NEWS_CALL_MIN_ARTICLES:
+        return NewsCallDecision(None, f"too few articles (n={signal_articles})")
+    return NewsCallDecision(news_side(lean), None)
 
 
 def news_scale(prior_abs_surprises: list[float]) -> Optional[float]:

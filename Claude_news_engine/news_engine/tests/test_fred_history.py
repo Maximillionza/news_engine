@@ -55,9 +55,10 @@ class FakeRequests:
         return FakeResp({"observations": [{"date": d.isoformat(), "value": str(v)} for d, v in sorted(obs.items())]})
 
 
-def _client(fake, monkeypatch):
+def _client(fake, monkeypatch, sleeps=None):
     monkeypatch.setattr(fh, "requests", fake)
-    return fh.FredClient(SECRET, pace_seconds=0)
+    # The 5xx / timeout retry waits _RETRY_BACKOFF_SECONDS; a recorder (or no-op) keeps the suite fast.
+    return fh.FredClient(SECRET, pace_seconds=0, sleep=(sleeps.append if sleeps is not None else (lambda _s: None)))
 
 
 def _init_obs(period, vintage):
@@ -207,3 +208,159 @@ def test_specs_are_complete():
     assert fh.FRED_HISTORY_SPECS["Unemployment Claims"].frequency == "weekly"
     assert not fh.FRED_HISTORY_SPECS["JOLTS Job Openings"].seed
     assert fh.FRED_HISTORY_SPECS["ADP Non-Farm Employment Change"].release_time_et == dt.time(8, 15)
+
+
+# ---------------------------------------------------------------- ACT follow-ups (FIX Task 5)
+
+class Scripted:
+    """A `requests` stand-in answering each get() with the next step (an exception is raised)."""
+
+    def __init__(self, *steps):
+        self.steps = list(steps)
+        self.calls = 0
+
+    def get(self, url, params=None, timeout=None):
+        self.calls += 1
+        step = self.steps.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return step
+
+
+OBS_OK = FakeResp({"observations": [{"date": "2026-09-01", "value": "1.0"}]})
+
+
+def test_empire_maps_to_the_sa_series():
+    assert fh.FRED_HISTORY_SPECS["Empire State Manufacturing Index"].series_id == "GACDISA066MSFRBNY"
+
+
+def test_ehs_not_in_fred_history_specs():
+    # ALFRED holds no vintages for EXHOSLUSM495S: the poller (not the B8 backfill) owns this title.
+    assert "Existing Home Sales" not in fh.FRED_HISTORY_SPECS
+
+
+def test_census_advance_titles_map_to_their_fred_mirrors():
+    goods = fh.FRED_HISTORY_SPECS["Goods Trade Balance"]
+    assert (goods.series_id, goods.transform, goods.fmt, goods.scale) == ("AITGCBS", "lin", "b1", 0.001)
+    wholesale = fh.FRED_HISTORY_SPECS["Prelim Wholesale Inventories m/m"]
+    assert (wholesale.series_id, wholesale.transform, wholesale.fmt) == ("AMINVTS", "pch", "pct1")
+
+
+def test_get_observations_retries_once_on_503(monkeypatch):
+    fake = Scripted(FakeResp(status=503, text="unavailable"), OBS_OK)
+    sleeps: list[float] = []
+    client = _client(fake, monkeypatch, sleeps)
+    assert client.vintage_levels("CPIAUCSL", D(2026, 10, 14), D(2025, 9, 1)) == [(D(2026, 9, 1), 1.0)]
+    assert fake.calls == 2
+    assert sleeps == [fh._RETRY_BACKOFF_SECONDS]
+
+
+def test_get_observations_retries_once_on_timeout(monkeypatch):
+    import requests as real_requests
+    fake = Scripted(real_requests.Timeout("slow"), OBS_OK)
+    sleeps: list[float] = []
+    client = _client(fake, monkeypatch, sleeps)
+    assert client.vintage_levels("CPIAUCSL", D(2026, 10, 14), D(2025, 9, 1)) == [(D(2026, 9, 1), 1.0)]
+    assert fake.calls == 2
+    assert sleeps == [fh._RETRY_BACKOFF_SECONDS]
+
+
+def test_second_5xx_raises(monkeypatch):
+    fake = Scripted(FakeResp(status=502, text="x"), FakeResp(status=502, text="x"))
+    sleeps: list[float] = []
+    client = _client(fake, monkeypatch, sleeps)
+    with pytest.raises(fh.FredFetchError) as exc:
+        client.vintage_levels("CPIAUCSL", D(2026, 10, 14), D(2025, 9, 1))
+    assert fake.calls == 2 and len(sleeps) == 1
+    assert "502" in str(exc.value) and SECRET not in str(exc.value)
+
+
+def test_second_timeout_raises_transport_error(monkeypatch):
+    import requests as real_requests
+    fake = Scripted(real_requests.Timeout("slow"), real_requests.Timeout("slow"))
+    client = _client(fake, monkeypatch)
+    with pytest.raises(fh.FredTransportError):
+        client.vintage_levels("CPIAUCSL", D(2026, 10, 14), D(2025, 9, 1))
+    assert fake.calls == 2
+
+
+def test_no_retry_on_400(monkeypatch):
+    fake = Scripted(FakeResp(status=400, text="bad"))
+    sleeps: list[float] = []
+    client = _client(fake, monkeypatch, sleeps)
+    with pytest.raises(fh.FredFetchError):
+        client.vintage_levels("CPIAUCSL", D(2026, 10, 14), D(2025, 9, 1))
+    assert fake.calls == 1 and sleeps == []
+
+
+def test_no_retry_on_connection_error(monkeypatch):
+    import requests as real_requests
+    fake = Scripted(real_requests.ConnectionError(f"https://x?api_key={SECRET}"))
+    sleeps: list[float] = []
+    client = _client(fake, monkeypatch, sleeps)
+    with pytest.raises(fh.FredTransportError) as exc:
+        client.vintage_levels("CPIAUCSL", D(2026, 10, 14), D(2025, 9, 1))
+    assert fake.calls == 1 and sleeps == []
+    assert SECRET not in str(exc.value)
+
+
+def test_fred_error_message_kept_without_url_or_key(monkeypatch):
+    message = "Bad Request. The series does not exist in ALFRED but may exist in FRED."
+    fake = Scripted(FakeResp({"error_code": 400, "error_message": message}, status=400))
+    client = _client(fake, monkeypatch)
+    with pytest.raises(fh.FredFetchError) as exc:
+        client.vintage_levels("EXHOSLUSM495S", D(2026, 10, 14), D(2025, 9, 1))
+    text = str(exc.value)
+    assert message in text and "EXHOSLUSM495S" in text
+    assert "http" not in text and SECRET not in text
+
+    echo = f"Bad Request. api_key={SECRET} rejected, see https://fred.stlouisfed.org/docs/api/x for details"
+    fake = Scripted(FakeResp({"error_message": echo}, status=400))
+    client = _client(fake, monkeypatch)
+    with pytest.raises(fh.FredFetchError) as exc:
+        client.vintage_levels("CPIAUCSL", D(2026, 10, 14), D(2025, 9, 1))
+    assert SECRET not in str(exc.value) and "http" not in str(exc.value)
+
+
+def test_fred_error_text_edge_cases():
+    assert fh._fred_error_text(FakeResp({}, status=400), SECRET) == ""
+    assert fh._fred_error_text(FakeResp({"error_message": 5}, status=400), SECRET) == ""
+    assert len(fh._fred_error_text(FakeResp({"error_message": "x" * 500}, status=400), SECRET)) == 200
+
+    class NotJson(FakeResp):
+        def json(self):
+            raise ValueError("no json")
+
+    assert fh._fred_error_text(NotJson(status=500), SECRET) == ""
+
+
+def test_reading_uses_prior_first_print_when_vintage_has_one_point(monkeypatch):
+    # AITGCBS (advance goods balance): ALFRED vintages hold only the release month; older months are ".".
+    fake = FakeRequests(vintages={
+        ("AITGCBS", "2026-10-27"): {D(2026, 9, 1): -134904.0},
+        ("AITGCBS", "2026-09-25"): {D(2026, 8, 1): -132636.0},
+    })
+    client = _client(fake, monkeypatch)
+    prior = fh.InitialRelease(period=D(2026, 8, 1), vintage_date=D(2026, 9, 25))
+    rel = fh.InitialRelease(period=D(2026, 9, 1), vintage_date=D(2026, 10, 27))
+    reading = fh.reading_for_release(client, "Goods Trade Balance", rel, prior)
+    assert reading.actual == "-134.9B"
+    assert reading.previous is None
+    assert reading.previous_first_print == "-132.6B"
+    assert fh.previous_check(reading, "-132.6B") == "match"
+
+
+def test_aminvts_reading_inside_vintage(monkeypatch):
+    # Level series: the m/m is computed inside each vintage (0.5% revised Aug, 0.6% Sep in the 10-28 one).
+    fake = FakeRequests(vintages={
+        ("AMINVTS", "2026-10-28"): {D(2026, 7, 1): 1000.0, D(2026, 8, 1): 1005.0, D(2026, 9, 1): 1011.03},
+        ("AMINVTS", "2026-09-30"): {D(2026, 7, 1): 1000.0, D(2026, 8, 1): 1007.0},
+    })
+    client = _client(fake, monkeypatch)
+    prior = fh.InitialRelease(period=D(2026, 8, 1), vintage_date=D(2026, 9, 30))
+    rel = fh.InitialRelease(period=D(2026, 9, 1), vintage_date=D(2026, 10, 28))
+    reading = fh.reading_for_release(client, "Prelim Wholesale Inventories m/m", rel, prior)
+    assert reading.actual == "0.6%"
+    assert reading.previous == "0.5%"
+    assert reading.previous_first_print == "0.7%"
+    assert fh.previous_check(reading, "0.7%") == "match"

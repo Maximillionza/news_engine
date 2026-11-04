@@ -1160,7 +1160,7 @@ def test_text_only_row_carries_real_tier1_prediction():
         assert rows[0].tier1_prediction == {
             "value": "85.5% probability of a 25bp hike", "confidence": "Certain",
             "source": "CME FedWatch", "predicted_direction": "bearish",
-            "tier": "market_implied", "late_check": None,    # B12: a FedWatch-sourced row is market-implied
+            "tier": "judgment", "late_check": None,    # FIX T6: FOMC Statement is a judgment title, so FedWatch stays judgment
         }
     print("PASS\n")
 
@@ -1214,14 +1214,14 @@ def test_fallback_row_conflict_against_a_fedwatch_valued_row_is_market_implied()
     print("PASS\n")
 
 
-def test_text_only_row_conflict_against_a_fedwatch_valued_row_is_market_implied():
-    print("=== build_print_call_history: a text-only conflict against a FedWatch-valued Tier 1 row names market_implied ===")
+def test_text_only_row_conflict_against_a_fedwatch_valued_row_follows_the_registry():
+    print("=== build_print_call_history: a text-only conflict against a FedWatch-valued row on a judgment title names judgment (FIX T6) ===")
     rows = _fedwatch_conflict_rows("FOMC Statement", None, None, None)
     assert len(rows) == 1
     assert rows[0].tier1_conflict == {
-        "sentiment_direction": "bearish", "tier1_direction": "bullish", "tier1_tier": "market_implied",
+        "sentiment_direction": "bearish", "tier1_direction": "bullish", "tier1_tier": "judgment",
     }
-    assert rows[0].tier1_prediction["tier"] == "market_implied"
+    assert rows[0].tier1_prediction["tier"] == "judgment"
     print("PASS\n")
 
 
@@ -1414,6 +1414,49 @@ def test_history_keeps_publisher_source():
     print("PASS\n")
 
 
+def _one_tick_history_rows(forecast, actual, gold_direction, outcome_direction=None):
+    """One resolved Unemployment Claims row (label from classify_surprise) with an XAUUSD accumulator call."""
+    from data_layer.calendar_feed import classify_surprise
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db = Path(tmp) / "dashboard.db"
+        backtest_db = Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 3, 12, 30, tzinfo=UTC_TZ)
+        event = _resolved_event("Unemployment Claims", event_time, forecast, "203K", actual)
+
+        dash_conn = store.get_connection(dash_db)
+        store.add_tracked_symbol(dash_conn, "XAUUSD")
+        store.upsert_event_history(dash_conn, event, classify_surprise(event), now=event_time)
+        dash_conn.close()
+
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, "Unemployment Claims", "XAUUSD", event_time,
+            0.7, gold_direction, 0.6, 40, False, scored_at_utc=event_time,
+        )
+        if outcome_direction is not None:
+            backtest_store.record_outcome(bt_conn, "Unemployment Claims", "XAUUSD", event_time, outcome_direction, "Dukascopy: test (auto)")
+        bt_conn.close()
+
+        with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+            return history.build_print_call_history()
+
+
+def test_one_tick_miss_is_graded_not_shrugged():
+    print("=== build_print_call_history: 200K vs 194K claims is a graded miss (one-tick rule); 0 ticks keeps the in-line exemption (FIX R2) ===")
+    # Claims higher is USD-bearish, so a bullish gold call implies a 'higher' surprise.
+    rows = _one_tick_history_rows("194K", "200K", "bullish")
+    assert len(rows) == 1
+    assert rows[0].outcome == "Confirmed"
+    assert rows[0].unjudged_reason is None
+
+    # Exact hit: the label is in_line, graded on the price move, never compared with 'in_line'.
+    pending = _one_tick_history_rows("205K", "205K", "bullish")
+    assert pending[0].outcome is None and pending[0].unjudged_reason == "pending"
+    graded = _one_tick_history_rows("205K", "205K", "bullish", outcome_direction="bullish")
+    assert graded[0].outcome == "Confirmed"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_implied_surprise_direction_works_for_a_real_symbol_never_in_config_settings_instruments()
     test_implied_surprise_direction_returns_none_for_a_real_fx_cross_pair()
@@ -1447,4 +1490,5 @@ if __name__ == "__main__":
     test_compute_history_stats_overall_and_per_title_breakdown()
     test_compute_history_stats_accuracy_none_when_zero_calls_made()
     test_compute_history_stats_empty_rows_returns_empty_stats()
+    test_one_tick_miss_is_graded_not_shrugged()
     print("All webapp_history tests passed.")

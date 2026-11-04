@@ -37,8 +37,8 @@ from typing import Optional
 
 import requests
 
+from data_layer.surprise_side import side
 from config.settings import (
-    EVENT_HISTORY_IN_LINE_TOLERANCE,
     EVENT_SURPRISE_DIRECTION,
     LOCAL_TZ,
     POST_RELEASE_GRACE_MINUTES,
@@ -239,6 +239,11 @@ def classify_surprise(event: "EconomicEvent") -> Optional[str]:
     (same set of titles usd_surprise_score() recognizes) — not for its
     higher_bullish/higher_bearish values, which don't apply here.
 
+    'in_line' means the actual equals the forecast at the forecast's own
+    published precision (one rounding step, tick_of()); one tick off is
+    'higher'/'lower'. Same rule as Stats (data_layer/surprise_side.side),
+    owner ruling R2 2026-11-03; the old 5%-of-forecast band is retired.
+
     Returns 'higher', 'lower', 'in_line', or None — never a fabricated
     guess — when the title isn't tracked or forecast/actual don't parse.
     """
@@ -250,14 +255,13 @@ def classify_surprise(event: "EconomicEvent") -> Optional[str]:
     if forecast is None or actual is None:
         return None
 
-    if abs(forecast) > 1e-9:
-        pct_diff = (actual - forecast) / abs(forecast)
-    else:
-        pct_diff = actual - forecast
+    tick = tick_of(event.forecast)
+    if tick is None:
+        return None
 
-    if abs(pct_diff) <= EVENT_HISTORY_IN_LINE_TOLERANCE:
-        return "in_line"
-    return "higher" if pct_diff > 0 else "lower"
+    # Compare in whole ticks so float noise at B-scale values cannot flip a
+    # one-tick difference into "in line" (side()'s _EPS is absolute).
+    return {0: "in_line", 1: "higher", -1: "lower"}[side(actual / tick, forecast / tick, 1.0)]
 
 
 def _parse_numeric(value: Optional[str]) -> Optional[float]:

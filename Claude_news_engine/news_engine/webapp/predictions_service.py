@@ -36,6 +36,7 @@ from webapp.reconciliation import reconcile_group
 from webapp.conflict import compute_tier1_sentiment_conflict
 from data_layer.tier1_events import tier1_row_tier
 from data_layer.event_title_mapping import resolve_methodology_label
+from data_layer.subject_rules import news_low_trust
 from data_layer.event_symbol_relevance import get_relevance, RelevanceStatus
 from data_layer.event_symbol_magnitude import get_magnitude, MagnitudeTier
 
@@ -130,7 +131,7 @@ def _tier1_prediction_dict(tier1_row, late_check_row=None) -> dict:
         "confidence": tier1_row.confidence,
         "source": tier1_row.source,
         "predicted_direction": tier1_row.predicted_direction,
-        "tier": tier1_row_tier(tier1_row.source, tier1_row.value),
+        "tier": tier1_row_tier(tier1_row.source, tier1_row.value, tier1_row.event_title),
         "late_check": late_check,
     }
 
@@ -491,6 +492,7 @@ def build_predictions_payload(conn: sqlite3.Connection, backtest_conn: sqlite3.C
                 "tier1_sentiment_conflict": None,  # computed below, after reconciliation settles article_prediction's final value
                 "tier1_confidence_downgrade": tier1_confidence_downgrade,
                 "relevance_magnitude_note": relevance_magnitude_note,
+                "news_low_trust": news_low_trust(event["title"]),   # FIX B1: News = article tone, not policy stance
             })
 
         for time_key, predictions_by_title in accumulator_predictions_by_time_and_title.items():

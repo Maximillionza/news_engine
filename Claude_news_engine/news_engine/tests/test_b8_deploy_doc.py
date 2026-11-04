@@ -7,7 +7,7 @@ DOC = APP / "docs" / "b8-deploy.md"
 
 # pointer -> text that must appear on (or within) the cited lines
 EXPECTED = {
-    "data_layer/calendar_feed.py:383": 'actual=item.get("actual") or None',
+    "data_layer/calendar_feed.py:387": 'actual=item.get("actual") or None',
     "webapp/scheduler.py:205-209": "get_actual_from_fred(",
     "config/settings.py:153": "FRED_SERIES_ID_BY_EVENT_TITLE",
     "config/settings.py:443": "JOLTS Job Openings",

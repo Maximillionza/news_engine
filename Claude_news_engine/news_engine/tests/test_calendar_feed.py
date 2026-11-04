@@ -90,14 +90,44 @@ def test_classify_surprise_lower_when_actual_below_forecast():
     print("PASS\n")
 
 
-def test_classify_surprise_in_line_within_tolerance():
-    print("=== classify_surprise: a tiny delta within EVENT_HISTORY_IN_LINE_TOLERANCE returns 'in_line' ===")
-    event = EconomicEvent(
-        title="CPI m/m", country="USD", impact="High",
+def _surprise_event(title, forecast, actual):
+    return EconomicEvent(
+        title=title, country="USD", impact="High",
         event_time_utc=dt.datetime(2026, 8, 12, 12, 30, tzinfo=UTC_TZ),
-        forecast="0.40%", actual="0.41%",  # 2.5% relative delta, well under the 5% tolerance
+        forecast=forecast, actual=actual,
     )
-    assert classify_surprise(event) == "in_line"
+
+
+def test_classify_surprise_uses_one_rounding_step():
+    print("=== classify_surprise: in line only at the forecast's own precision; one tick off is a beat/miss (FIX R2) ===")
+    assert classify_surprise(_surprise_event("CPI m/m", "4.2%", "4.1%")) == "lower"
+    assert classify_surprise(_surprise_event("CPI m/m", "4.2%", "4.3%")) == "higher"
+    assert classify_surprise(_surprise_event("CPI m/m", "0.3%", "0.3%")) == "in_line"
+    assert classify_surprise(_surprise_event("Unemployment Claims", "194K", "200K")) == "higher"
+    assert classify_surprise(_surprise_event("Unemployment Claims", "7.1M", "7.08M")) == "in_line"
+    assert classify_surprise(_surprise_event("CPI m/m", "0.0%", "0.1%")) == "higher"
+    assert classify_surprise(_surprise_event("CPI m/m", None, "0.1%")) is None
+    assert classify_surprise(_surprise_event("CPI m/m", "0.1%", None)) is None
+    print("PASS\n")
+
+
+def test_classify_surprise_handles_units_and_commas():
+    print("=== classify_surprise: mixed units and thousands commas still compare in scaled units ===")
+    assert classify_surprise(_surprise_event("Unemployment Claims", "1.2M", "950K")) == "lower"
+    assert classify_surprise(_surprise_event("Unemployment Claims", "1,200K", "1,234K")) == "higher"
+    print("PASS\n")
+
+
+def test_classify_surprise_agrees_with_stats_side():
+    print("=== classify_surprise: same-suffix pairs give the label Stats' side() gives ===")
+    from data_layer.surprise_side import parse_number, side, tolerance
+    names = {0: "in_line", 1: "higher", -1: "lower"}
+    pairs = [("0.3%", "0.4%"), ("0.3%", "0.3%"), ("0.4%", "0.3%"), ("225K", "226K"), ("225K", "225K"),
+             ("7.23M", "7.24M"), ("52", "51"), ("-0.1%", "0.0%"), ("158.4", "158.4"), ("-78.3B", "-78.4B")]
+    for forecast, actual in pairs:
+        expected = names[side(parse_number(actual), parse_number(forecast), tolerance(forecast))]
+        got = classify_surprise(_surprise_event("CPI m/m", forecast, actual))
+        assert got == expected, (forecast, actual, got, expected)
     print("PASS\n")
 
 
@@ -292,7 +322,9 @@ if __name__ == "__main__":
     test_arbitrary_invalid_period_rejected()
     test_classify_surprise_higher_when_actual_above_forecast()
     test_classify_surprise_lower_when_actual_below_forecast()
-    test_classify_surprise_in_line_within_tolerance()
+    test_classify_surprise_uses_one_rounding_step()
+    test_classify_surprise_handles_units_and_commas()
+    test_classify_surprise_agrees_with_stats_side()
     test_classify_surprise_none_when_title_not_tracked()
     test_classify_surprise_none_when_forecast_or_actual_missing()
     test_classify_surprise_is_literal_not_bullish_bearish()

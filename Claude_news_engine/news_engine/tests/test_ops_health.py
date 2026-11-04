@@ -24,7 +24,7 @@ NOW = dt.datetime(2026, 10, 20, 10, 0, tzinfo=UTC)
 
 EXPECTED_KEYS = [
     "shock_poll", "outcome_confirm", "reaction_incremental", "reaction_baselines",
-    "tier1_capture_daily", "tier1_capture_weekly", "tier1_research", "nowcast_live",
+    "tier1_capture_daily", "tier1_capture_weekly", "tier1_research", "tier1_alerts", "nowcast_live",
     "shock_reality_check", "article_accumulator", "calendar_refresh", "actuals_sla", "macro_calendar",
     "classifier:ollama", "classifier:claude",
     "feed:reuters_business", "feed:cnbc_top_news", "feed:cnbc_economy", "feed:investing_com_forex",
@@ -150,11 +150,13 @@ def test_never_run_job_is_amber_until_red_after_tracking(tmp_path):
 
 def test_missed_release_compares_naive_and_offset_stamps_as_instants(tmp_path):
     on_time = _open(tmp_path, name="a.db")
+    _research_heartbeat(on_time, dt.timedelta(hours=1))      # FIX: a missing research heartbeat is amber on its own
     _event(on_time, "ISM Services PMI", "2026-10-15T12:30:00")
     _tier1_call(on_time, "ISM Services PMI", "2026-10-15T12:30:00+00:00", "2026-10-15T14:29:00+02:00")
     assert _build(on_time)["tier1_research"].status == "ok"
 
     late = _open(tmp_path, name="b.db")
+    _research_heartbeat(late, dt.timedelta(hours=1))      # FIX: a missing research heartbeat is amber on its own
     _event(late, "ISM Services PMI", "2026-10-15T12:30:00")
     _tier1_call(late, "ISM Services PMI", "2026-10-15T12:30:00+00:00", "2026-10-15T14:31:00+02:00")
     item = _build(late)["tier1_research"]
@@ -163,12 +165,14 @@ def test_missed_release_compares_naive_and_offset_stamps_as_instants(tmp_path):
 
 
 def test_missed_release_ignores_non_usd_and_out_of_window_occurrences(c):
+    _research_heartbeat(c, dt.timedelta(hours=1))      # FIX: a missing research heartbeat is amber on its own
     _event(c, "ISM Services PMI", "2026-10-15T12:30:00+00:00", country="EUR")
     _event(c, "Core Retail Sales m/m", "2026-10-10T12:30:00+00:00")      # 10 days back: outside the 7-day lookback
     assert _build(c)["tier1_research"].status == "ok"
 
 
 def test_missed_release_detail_lists_three_then_counts_the_rest(c):
+    _research_heartbeat(c, dt.timedelta(hours=1))      # FIX: a missing research heartbeat is amber on its own
     for day in (13, 14, 15, 16, 17):
         _event(c, "ISM Services PMI", f"2026-10-{day}T12:30:00+00:00")
     item = _build(c)["tier1_research"]
@@ -526,6 +530,7 @@ def test_shock_reality_check_status_unchanged_by_grading_run(c):
 PCE = "Core PCE Price Index m/m"          # official (BEA); the gate decides whether it is polled
 VERIFIED = health.coverage.GateResult("verified", 5, 5, "ok")
 SUSPECT = health.coverage.GateResult("suspect", 1, 5, "ok")
+KEY_INACTIVE = health.coverage.GateResult("key_inactive", 0, 0, "none")
 
 
 def _numeric_event(c, title: str, when: dt.datetime, forecast: str | None = "0.3%", previous: str | None = "0.2%") -> None:
@@ -558,9 +563,9 @@ def test_sla_ok_when_nothing_overdue(c):
 def test_sla_red_lists_title_time_minutes_and_reason(c):
     _heartbeat(c)
     _numeric_event(c, PCE, dt.datetime(2026, 10, 20, 8, 30, tzinfo=UTC))
-    item = _sla(c, {PCE: SUSPECT})
+    item = _sla(c, {PCE: KEY_INACTIVE})
     assert item.status == "red"
-    assert item.detail == f"1 overdue: {PCE} 10:30 SAST, 90 min late (gate: suspect)"
+    assert item.detail == f"1 overdue: {PCE} 10:30 SAST, 90 min late (gate: key_inactive)"
 
 
 def test_sla_gate_not_run_when_the_title_has_no_gate_result(c):
@@ -648,11 +653,11 @@ def test_health_notice_includes_overdue_actuals(c, monkeypatch):
     _heartbeat(c)
     _numeric_event(c, PCE, dt.datetime(2026, 10, 20, 8, 30, tzinfo=UTC))
     conns = {"dash": c.dash, "bt": c.bt, "alerts": c.alerts, "ops": c.ops}
-    monkeypatch.setattr(health, "build_health", lambda now, **kw: [health._actuals_sla_check(now, conns, {PCE: SUSPECT})])
+    monkeypatch.setattr(health, "build_health", lambda now, **kw: [health._actuals_sla_check(now, conns, {PCE: KEY_INACTIVE})])
     send = MagicMock(return_value=True)
     assert health.maybe_send_health_notice(NOW, send=send, connections=_conn_tuple(c)) is True
     send.assert_called_once()
-    assert f"Actuals within 15 min: 1 overdue: {PCE} 10:30 SAST, 90 min late (gate: suspect)" in send.call_args.args[0]
+    assert f"Actuals within 15 min: 1 overdue: {PCE} 10:30 SAST, 90 min late (gate: key_inactive)" in send.call_args.args[0]
 
 
 def test_sla_check_failure_is_amber_and_isolated(c, monkeypatch):
@@ -662,3 +667,171 @@ def test_sla_check_failure_is_amber_and_isolated(c, monkeypatch):
     assert items["actuals_sla"].status == "amber"
     assert items["actuals_sla"].detail.startswith("check failed")
     assert items["shock_poll"].status == "ok"
+
+
+# ---------------------------------------------------------------------------
+# FIX Task 7: switched-off titles amber (R3), research heartbeat, late check, alert channel
+# ---------------------------------------------------------------------------
+GDP_PRICE = "Advance GDP Price Index q/q"       # official title; its gate is "unverified" (switched off on purpose)
+UNVERIFIED = health.coverage.GateResult("unverified", 0, 0, "none")
+
+
+def test_sla_switched_off_title_is_amber(c):
+    _heartbeat(c)
+    _numeric_event(c, GDP_PRICE, NOW - dt.timedelta(minutes=40))
+    item = _sla(c, {GDP_PRICE: UNVERIFIED})
+    assert item.status == "amber"
+    assert health.SLA_SWITCHED_OFF_REASON == "not covered (switched off)"
+    assert "not covered (switched off)" in item.detail
+
+
+def test_sla_enabled_title_stays_red(c):
+    _heartbeat(c)
+    _numeric_event(c, PCE, NOW - dt.timedelta(minutes=40))
+    item = _sla(c, {PCE: VERIFIED})
+    assert item.status == "red" and "(awaiting publication)" in item.detail
+
+
+def test_sla_mixed_switched_off_and_enabled_is_red(c):
+    _heartbeat(c)
+    _numeric_event(c, GDP_PRICE, NOW - dt.timedelta(minutes=40))
+    _numeric_event(c, PCE, NOW - dt.timedelta(minutes=30))
+    item = _sla(c, {GDP_PRICE: UNVERIFIED, PCE: VERIFIED})
+    assert item.status == "red"
+    assert "not covered (switched off)" in item.detail and "awaiting publication" in item.detail
+
+
+def test_sla_gate_not_run_stays_red(c):
+    _heartbeat(c)
+    _numeric_event(c, GDP_PRICE, NOW - dt.timedelta(minutes=40))
+    item = _sla(c, {})
+    assert item.status == "red" and "(gate: not run)" in item.detail
+
+
+def test_sla_key_inactive_gate_stays_red(c):
+    _heartbeat(c)
+    _numeric_event(c, PCE, NOW - dt.timedelta(minutes=40))
+    item = _sla(c, {PCE: KEY_INACTIVE})
+    assert item.status == "red" and "(gate: key_inactive)" in item.detail
+
+
+def _research_heartbeat(c, age: dt.timedelta) -> None:
+    ops_state.record_job_run(c.ops, "tier1_research", NOW - age, 0)
+
+
+def test_research_amber_after_30h_silence(c):
+    _research_heartbeat(c, dt.timedelta(hours=31))
+    item = _build(c)["tier1_research"]
+    assert item.status == "amber"
+    assert "no research run for 31 h" in item.detail
+
+
+def test_research_ok_at_29h(c):
+    _research_heartbeat(c, dt.timedelta(hours=29))
+    assert _build(c)["tier1_research"].status == "ok"
+
+
+def test_research_amber_with_no_heartbeat_at_all(c):
+    item = _build(c)["tier1_research"]
+    assert item.status == "amber" and "no research run" in item.detail
+
+
+def test_research_heartbeat_keeps_quiet_week_green(c):
+    # no call rows at all, but plan ran 2 hours ago: a quiet week, not a dead task
+    _research_heartbeat(c, dt.timedelta(hours=2))
+    item = _build(c)["tier1_research"]
+    assert item.status == "ok" and item.last_success_utc == NOW - dt.timedelta(hours=2)
+
+
+def test_research_amber_late_check_missing_inside_24h(c):
+    _research_heartbeat(c, dt.timedelta(hours=2))
+    release = NOW + dt.timedelta(hours=10)
+    _event(c, "ISM Services PMI", release.isoformat())
+    _tier1_call(c, "ISM Services PMI", release.isoformat(), (NOW - dt.timedelta(days=3)).isoformat())
+    item = _build(c)["tier1_research"]
+    assert item.status == "amber"
+    assert f"late check missing: ISM Services PMI {health._sast(release)}" in item.detail
+
+
+def test_research_late_check_missing_shown_after_release(c):
+    _research_heartbeat(c, dt.timedelta(hours=2))
+    release = NOW - dt.timedelta(hours=5)
+    _event(c, "ISM Services PMI", release.isoformat())
+    _tier1_call(c, "ISM Services PMI", release.isoformat(), (NOW - dt.timedelta(days=9)).isoformat())
+    item = _build(c)["tier1_research"]
+    assert item.status == "amber" and "late check missing: ISM Services PMI" in item.detail
+
+
+def test_research_call_inside_window_needs_no_late_check(c):
+    _research_heartbeat(c, dt.timedelta(hours=2))
+    release = NOW + dt.timedelta(hours=10)
+    _event(c, "ISM Services PMI", release.isoformat())
+    _tier1_call(c, "ISM Services PMI", release.isoformat(), (NOW - dt.timedelta(hours=1)).isoformat())
+    assert _build(c)["tier1_research"].status == "ok"
+
+
+def test_research_late_check_answered_by_a_check(c):
+    _research_heartbeat(c, dt.timedelta(hours=2))
+    release = NOW + dt.timedelta(hours=10)
+    _event(c, "ISM Services PMI", release.isoformat())
+    _tier1_call(c, "ISM Services PMI", release.isoformat(), (NOW - dt.timedelta(days=3)).isoformat())
+    bs.record_tier1_late_check(c.bt, "ISM Services PMI", "XAUUSD", release, "v", "Likely", "bullish", "src",
+                               "release_within_24h", checked_at_utc=NOW - dt.timedelta(hours=1))
+    assert _build(c)["tier1_research"].status == "ok"
+
+
+def _research_alert(c, kind: str, age: dt.timedelta, message: str = "m") -> None:
+    ops_state.record_research_alert(c.ops, kind, "ISM Services PMI", message, NOW - age, True)
+
+
+def test_alerts_item_ok_when_none(c):
+    item = _build(c)["tier1_alerts"]
+    assert item.status == "ok" and item.label == "Tier 1 research alerts"
+
+
+def test_alerts_item_amber_for_reliability(c):
+    _research_alert(c, "reliability", dt.timedelta(hours=2), "BLS page down, used Reuters")
+    item = _build(c)["tier1_alerts"]
+    assert item.status == "amber"
+    assert "RELIABILITY ALERT" in item.detail and "BLS page down, used Reuters" in item.detail
+
+
+@pytest.mark.parametrize("kind", ["security", "blocked"])
+def test_alerts_item_red_for_security_and_blocked(c, kind):
+    _research_alert(c, kind, dt.timedelta(hours=2))
+    _research_alert(c, "reliability", dt.timedelta(hours=1), "other")
+    assert _build(c)["tier1_alerts"].status == "red"
+
+
+def test_alerts_item_clears_after_72h(c):
+    _research_alert(c, "security", dt.timedelta(hours=73))
+    assert _build(c)["tier1_alerts"].status == "ok"
+    _research_alert(c, "security", dt.timedelta(hours=71), "newer")
+    assert _build(c)["tier1_alerts"].status == "red"
+
+
+def test_red_alert_lands_in_daily_notice(c):
+    _fresh_jobs(c)
+    _research_alert(c, "blocked", dt.timedelta(hours=1), "login wall on bls.gov")
+    send = MagicMock(return_value=True)
+    assert health.maybe_send_health_notice(NOW, send=send, connections=_conn_tuple(c)) is True
+    text = send.call_args.args[0]
+    assert "Tier 1 research alerts" in text and "RUN BLOCKED" in text and "login wall on bls.gov" in text
+
+
+def test_long_red_alert_keeps_daily_notice_under_telegram_limit(c):
+    _fresh_jobs(c)
+    _research_alert(c, "security", dt.timedelta(hours=1), "x" * 5000)
+    item = _build(c)["tier1_alerts"]
+    assert len(item.detail) < 600 and item.detail.count("x") <= health._RESEARCH_ALERT_DETAIL_MAX
+    assert len(health.health_notice_text([item], NOW)) < 4096
+
+
+def test_three_long_alerts_keep_daily_notice_under_telegram_limit(c):
+    _fresh_jobs(c)
+    for i, kind in enumerate(("security", "blocked", "reliability")):
+        _research_alert(c, kind, dt.timedelta(hours=i + 1), "y" * 1400)
+    item = _build(c)["tier1_alerts"]
+    assert len(health.health_notice_text([item], NOW)) < 4096
+    stored = [a.message for a in ops_state.active_research_alerts(c.ops, NOW - dt.timedelta(hours=72))]
+    assert all(len(m) == 1400 for m in stored)  # the DB keeps the full text

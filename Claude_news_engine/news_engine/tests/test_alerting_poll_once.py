@@ -15,12 +15,12 @@ from webapp import store as webapp_store
 UTC = dt.timezone.utc
 
 
-def _article(title: str, url: str | None = None) -> NewsArticle:
+def _article(title: str, url: str | None = None, summary: str = "") -> NewsArticle:
     # B7 (2026-10-22): alerts sharing a URL can be linked as one incident, so distinct test
     # stories need distinct URLs; the default is derived from the title.
     slug = "-".join("".join(c for c in title.lower() if c.isalnum() or c == " ").split())
     return NewsArticle(
-        title=title, summary="", source="reuters_business", source_type="rss_reuters_business",
+        title=title, summary=summary, source="reuters_business", source_type="rss_reuters_business",
         published_utc=dt.datetime.now(UTC), url=url or "https://example.com/" + slug,
     )
 
@@ -128,7 +128,7 @@ def test_dedup_match_escalates_severity_and_notifies_on_upgrade():
         category="energy", severity="Medium", classification_method="llm", rationale=None, affected_symbols=[],
     )
 
-    escalating_article = _article("Oil prices tick up as Strait of Hormuz closed after naval clash")
+    escalating_article = _article("Strait of Hormuz closed after naval clash")
 
     with patch("alerting.poll_once.RSSNewsSource") as mock_source_cls, \
          patch("alerting.poll_once.dedup.find_existing_alert", return_value=existing_id), \
@@ -1195,3 +1195,106 @@ def test_cycle_prunes_seen_urls():
          patch("alerting.poll_once.store.prune_seen_urls", return_value=0) as spy:
         run_poll_cycle(conn=conn, webapp_conn=_tracked_webapp())
     assert spy.call_count == 1
+
+
+# --- FIX C1: guarded and unknown-link hard-rule hits, through the real triage ---
+
+def _run_real_triage(headline, classify=None, summary=""):
+    """One poll cycle with the REAL triage_article; returns (stored alert, classify mock, send mock)."""
+    conn = store.get_connection(":memory:")
+    classify = classify if classify is not None else MagicMock()
+    send = MagicMock(return_value=True)
+    with patch("alerting.poll_once.FREE_PREVIEW_FEEDS", {"feed_a": "u"}), \
+         patch("alerting.poll_once.RSSNewsSource") as source_cls, \
+         patch("alerting.poll_once.llm_classify.classify_candidate", classify), \
+         patch("alerting.poll_once.notify_telegram.send_alert", send):
+        source_cls.return_value.fetch.return_value = [_article(headline, summary=summary)]
+        run_poll_cycle(conn=conn, webapp_conn=_tracked_webapp(("XAUUSD", "US30")))
+    return store.list_recent_alerts(conn, _ALL_TIME)[0], classify, send
+
+
+def test_guarded_headline_uses_the_classifier():
+    classify = MagicMock(return_value=ClassificationResult(
+        category="energy", severity="Low", rationale="a denial", provider="claude", polarity="relief",
+        country="IR", us_link="global_supply"))
+    alert, _, _ = _run_real_triage("Iran denies strait of hormuz closed", classify)
+    assert classify.call_count == 1
+    assert alert.classification_method == "llm"
+    assert alert.severity == "Low"
+
+
+def test_unknown_link_rule_hit_capped_medium_mixed_when_classifier_down():
+    conn = store.get_connection(":memory:")
+    down = ("ollama", MagicMock(side_effect=RuntimeError("down")), lambda: True, 5)
+    send = MagicMock(return_value=True)
+    with patch("alerting.poll_once.FREE_PREVIEW_FEEDS", {"feed_a": "u"}), \
+         patch("alerting.poll_once.RSSNewsSource") as source_cls, \
+         patch("alerting.llm_classify._providers", return_value=[down]), \
+         patch("alerting.poll_once.notify_telegram.send_notice", return_value=True), \
+         patch("alerting.poll_once.notify_telegram.send_alert", send):
+        source_cls.return_value.fetch.return_value = [_article("Russia declares war on Moldova")]
+        run_poll_cycle(conn=conn, webapp_conn=_tracked_webapp(("XAUUSD", "US30")))
+
+    alert = store.list_recent_alerts(conn, _ALL_TIME)[0]
+    assert alert.severity == "Medium"
+    assert alert.classification_method == "llm_failed_fallback"
+    assert alert.category == "geopolitical_conflict"
+    assert alert.affected_symbols
+    assert {s["lean"] for s in alert.affected_symbols} == {"mixed"}
+    assert send.call_args.kwargs["classification_failed"] is True
+
+
+def test_unknown_link_rule_hit_capped_medium_mixed_when_llm_budget_spent():
+    classify = MagicMock()
+    with patch("alerting.poll_once.LLM_CYCLE_BUDGET_SECONDS", 0):
+        alert, _, _ = _run_real_triage("Russia declares war on Moldova", classify)
+    classify.assert_not_called()
+    assert alert.severity == "Medium"
+    assert alert.classification_method == "llm_failed_fallback"
+    assert {s["lean"] for s in alert.affected_symbols} == {"mixed"}
+
+
+def test_clean_rule_hit_still_high_without_llm():
+    alert, classify, _ = _run_real_triage("Strait of Hormuz closed after Iranian strike")
+    classify.assert_not_called()
+    assert alert.severity == "High"
+    assert alert.classification_method == "rule_tier"
+
+
+def test_summary_phrase_cannot_fire_an_unknown_link_title():
+    classify = MagicMock(return_value=ClassificationResult(
+        category="energy", severity="Medium", rationale="a local outage", provider="claude", polarity="escalation",
+        country="SA", us_link="none"))
+    alert, _, send = _run_real_triage(
+        "Aramco halts October crude deliveries to some European refiners after pipeline attack, Bloomberg reports - reuters.com",
+        classify, summary="Traders fear a strait of hormuz closed scenario, analysts said",
+    )
+    assert classify.call_count == 1
+    assert alert.classification_method == "llm"
+    assert alert.severity == "Medium"
+    assert alert.us_link == "none"
+    assert {s["lean"] for s in alert.affected_symbols} == {"mixed"}
+    assert send.call_args.args[2] == "Medium"
+
+
+def test_clean_rule_hit_reads_its_link_from_the_title_phrase():
+    alert, classify, _ = _run_real_triage("Fed chair resigns", summary="An emergency rate decision followed")
+    classify.assert_not_called()
+    assert alert.severity == "High"
+    assert alert.classification_method == "rule_tier"
+    assert (alert.country, alert.us_link) == ("US", "direct")
+
+
+@pytest.mark.parametrize("headline,category", [
+    ("OPEC+ agrees output cut", "energy"),
+    ("Explosion hits Riyadh oil facility", "geopolitical_conflict"),
+])
+def test_opec_and_explosion_headlines_alert_through_the_classifier(headline, category):
+    classify = MagicMock(return_value=ClassificationResult(
+        category=category, severity="High", rationale="concrete supply hit", provider="claude",
+        polarity="escalation", country="XX", us_link="global_supply"))
+    alert, _, send = _run_real_triage(headline, classify)
+    assert classify.call_count == 1
+    assert alert.severity == "High"
+    assert alert.classification_method == "llm"
+    assert send.call_args.args[2] == "High"

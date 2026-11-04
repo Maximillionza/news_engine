@@ -51,7 +51,7 @@ def _cpi_fake():
 
 def _client(fake, monkeypatch):
     monkeypatch.setattr(fh, "requests", fake)
-    return fh.FredClient("KEY", pace_seconds=0)
+    return fh.FredClient("KEY", pace_seconds=0, sleep=lambda _s: None)    # no real wait on the 5xx retry
 
 
 def _run(conn, client, **kw):

@@ -5,10 +5,13 @@ than docs/News_Engine_Causation_Matrix_v2.xlsx's AdHoc_Category_Taxonomy
 already-detected price anomalies; live headlines need a wider net). See
 docs/superpowers/specs/2026-09-14-realtime-news-shock-alerting-design.md.
 
-HARD_RULE_PATTERNS: an exact-phrase match here skips the LLM entirely and
-is always severity="High" -- reserved for genuinely unambiguous events
-(a named chokepoint closure, a war declaration) where waiting on an LLM
-call would cost real seconds for no judgment benefit.
+HARD_RULE_PATTERNS: an exact-phrase match here skips the LLM and is
+severity="High" only when triage.rule_guard_reason() lets it through: the
+phrase is in the title, the title is no denial, price report or commentary,
+and us_link.py maps the phrase to a known US link. Any other hit goes to
+llm_classify.py (FIX C1, 2026-11-03). Reserved for genuinely unambiguous
+events (a named chokepoint closure, a Fed chair's exit) where waiting on an
+LLM call would cost real seconds for no judgment benefit.
 
 CATEGORY_SIGNAL_KEYWORDS: a match here means "plausible candidate," not
 an automatic tier -- escalated to llm_classify.py for a real severity

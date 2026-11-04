@@ -15,6 +15,7 @@ bound. julianday() resolves to the millisecond, so a stamp under 1 ms after the 
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 import sqlite3
 from dataclasses import dataclass, field, replace
@@ -22,12 +23,13 @@ from typing import Callable, Optional
 
 from config.settings import EVENT_SURPRISE_DIRECTION
 from data_layer import brent_feed
+from data_layer.subject_rules import news_low_trust
 from data_layer.tier1_events import TIER1_FORMULA, TIER1_MARKET_IMPLIED_SOURCE, tier1_row_tier, tier1_titles
 from scoring.backtest_store import get_scored_nowcast_snapshot
 from webapp.history import _implied_surprise_direction
 from webapp.reaction_rules import impact_info, title_tag_counts
 from webapp.stats_methods import (
-    NEWS_WEIGHT, TIER1_WEIGHT, combine, market_lean, news_lean, news_scale, news_side, news_surprise,
+    NEWS_WEIGHT, TIER1_WEIGHT, combine, market_lean, news_call_decision, news_lean, news_scale, news_surprise,
     tier1_surprise,
 )
 from webapp.stats_rules import judge, miss_size, parse_number, side, tolerance
@@ -69,7 +71,7 @@ class RowDetail:
     news_scale: Optional[float] = None
     news_surprise: Optional[float] = None
     combined_surprise: Optional[float] = None
-    news_article_count: Optional[int] = None    # bounded print call's count, else the bounded XAUUSD prediction's
+    news_article_count: Optional[int] = None    # signal-bearing articles behind the bounded XAUUSD accumulator row (FIX A3)
     hand_logged: Optional[dict] = None          # {"value", "confidence", "source"} of the hand-logged Tier 1 call
     weights: dict = field(default_factory=lambda: {"tier1": TIER1_WEIGHT, "news": NEWS_WEIGHT})
     # Brent crude beside the nowcast snapshot: information only, 0% weight, never part of any call.
@@ -107,6 +109,8 @@ class StatsRow:
     agreement: Optional[str] = None   # 'agree' | 'disagree' | None
     tier1_tier: Optional[str] = None  # TIER1_FORMULA | TIER1_MARKET_IMPLIED | TIER1_JUDGMENT of the call used
     news_call: Optional[str] = None   # 'higher' | 'lower' | 'no_call' when a News MethodCall exists, else None
+    news_no_call_reason: Optional[str] = None   # why 'no_call': weak lean, or the evidence floor (FIX A3)
+    news_low_trust: bool = False      # FOMC / CPI families: News is article tone, not policy stance (FIX B1)
 
 
 def _parse_time(value: str) -> dt.datetime:
@@ -131,12 +135,42 @@ def _print_call_before(bt_conn: sqlite3.Connection, title: str, release_iso: str
 
 def _accumulator_call_before(bt_conn: sqlite3.Connection, title: str, release_iso: str) -> Optional[sqlite3.Row]:
     return bt_conn.execute(
-        "SELECT direction, probability, article_count FROM predictions "
+        "SELECT id, direction, probability, article_count, top_contributions_json FROM predictions "
         "WHERE event_title = ? AND instrument = ? AND julianday(event_time_utc) = julianday(?) "
         "AND julianday(scored_at_utc) <= julianday(?) "
         "ORDER BY julianday(scored_at_utc) DESC, id DESC LIMIT 1",
         (title, NEWS_INSTRUMENT, release_iso, release_iso),
     ).fetchone()
+
+
+def _signal_article_count(bt_conn: sqlite3.Connection, acc_row: Optional[sqlite3.Row]) -> Optional[int]:
+    """
+    FIX A3: how many signal-bearing articles (included, non-zero USD sentiment) stand behind the accumulator row,
+    or None when that cannot be recovered. predictions.article_count is not used: it counts zero-sentiment
+    articles and leaves out the Kalshi, print, trend and precursor components. Rows from before the evidence table
+    (2026-10-22) fall back to the non-zero entries of top_contributions_json, a lower bound capped at 3, which is
+    enough for a floor of 3. Unknown fails closed in news_call_decision.
+    """
+    if acc_row is None:
+        return None
+    if acc_row["article_count"] == 0:
+        return 0
+    prediction_id = acc_row["id"]
+    has_evidence = bt_conn.execute(
+        "SELECT 1 FROM prediction_article_contributions WHERE prediction_id = ? LIMIT 1", (prediction_id,),
+    ).fetchone()
+    if has_evidence:
+        return bt_conn.execute(
+            "SELECT COUNT(*) FROM prediction_article_contributions WHERE prediction_id = ? AND status = 'included' "
+            "AND usd_sentiment IS NOT NULL AND usd_sentiment != 0", (prediction_id,),
+        ).fetchone()[0]
+    try:
+        top = json.loads(acc_row["top_contributions_json"] or "")
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(top, list) or not top:
+        return None
+    return sum(1 for c in top if isinstance(c, dict) and c.get("usd_sentiment") not in (None, 0, 0.0))
 
 
 def _hand_logged_tier1_before(bt_conn: sqlite3.Connection, title: str, release_iso: str) -> Optional[sqlite3.Row]:
@@ -362,7 +396,7 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
                           surprise_direction=row_sign)
             hand_logged = {"value": logged["value"], "confidence": logged["confidence"], "source": logged["source"]}
             tier1_tracked = True
-            tier1_tier = tier1_row_tier(logged["source"], logged["value"])   # B12: FedWatch value -> market_implied
+            tier1_tier = tier1_row_tier(logged["source"], logged["value"], title)   # B12/T6: a FedWatch citation -> market_implied, unless the registry makes the title judgment
         else:
             tier1_tracked = title in NOWCAST_EVENTS      # tracked but no snapshot yet: row shows no call
 
@@ -386,8 +420,12 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
     sn = news_surprise(lean, scale)
     news: Optional[MethodCall] = None
     news_call: Optional[str] = None
+    news_no_call_reason: Optional[str] = None
+    n_signal = _signal_article_count(bt_conn, acc_row)
     if lean is not None:
-        nside = news_side(lean)
+        decision = news_call_decision(lean, n_signal)
+        nside = decision.side
+        news_no_call_reason = decision.reason
         news = _call(None if sn is None else forecast + sn, sn, forecast, tol, actual, title,
                      note="scaled" if sn is not None else "unsized", explicit_side=nside, side_fixed=True)
         news_call = {1: "higher", -1: "lower", None: "no_call"}[nside]
@@ -403,19 +441,16 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
                          note="news_missing" if blended.news_missing else None,
                          kind=None if tier1 is None else tier1.kind)
 
-    if print_row is not None:
-        article_count = print_row["article_count"]
-    else:
-        article_count = None if acc_row is None else acc_row["article_count"]
     detail = RowDetail(
         forecast_text=r["forecast"], nowcast_value=nowcast_value, nowcast_as_of_utc=nowcast_as_of,
         tier1_surprise=s1, news_lean=lean, news_scale=scale, news_surprise=sn,
         combined_surprise=None if blended is None else blended.surprise,
-        news_article_count=article_count, hand_logged=hand_logged, brent=brent,
+        news_article_count=n_signal, hand_logged=hand_logged, brent=brent,
     )
     return StatsRow(title, when, r["forecast"], r["actual"], forecast, actual, tol, status,
                     tier1_tracked, tier1, news, combined, nowcast_as_of, pre_news, detail,
-                    agreement=agreement, tier1_tier=tier1_tier, news_call=news_call)
+                    agreement=agreement, tier1_tier=tier1_tier, news_call=news_call,
+                    news_no_call_reason=news_no_call_reason, news_low_trust=news_low_trust(title))
 
 
 # --- payloads ---------------------------------------------------------------------------------
@@ -487,8 +522,9 @@ def build_scoreboard(rows: list[StatsRow]) -> dict:
     B9 ST2 (honest baselines, each with n, % hidden under 20), over the SAME graded calls as above:
     `directional` is accuracy on releases whose actual came in higher or lower (in-line actuals left out);
     top-level `in_line_baseline[name]` is how often an "always in line" guess would have been right on that
-    method's graded releases; `methods.news.no_call` counts scored releases where News abstained (|lean| under
-    the pre-registered threshold). An abstention is never graded, so it is in none of the other counts.
+    method's graded releases; `methods.news.no_call` counts scored releases where News abstained, split into
+    `no_call_weak_lean` (|lean| under the pre-registered threshold) and `no_call_floor` (fewer signal-bearing
+    articles than the evidence floor). An abstention is never graded, so it is in none of the other counts.
     """
     methods = {}
     in_line_baseline = {}
@@ -533,6 +569,9 @@ def build_scoreboard(rows: list[StatsRow]) -> dict:
         in_line_baseline[name] = _rate(scored, base_right)
         if name == "combined":
             methods[name]["with_news"] = with_news
-    methods["news"]["no_call"] = sum(
-        1 for r in rows if r.status == "scored" and r.news is not None and r.news.side is None)
+    abstained = [r for r in rows if r.status == "scored" and r.news is not None and r.news.side is None]
+    floor = sum(1 for r in abstained if str(r.news_no_call_reason or "").startswith("too few"))
+    methods["news"]["no_call"] = len(abstained)
+    methods["news"]["no_call_floor"] = floor                       # abstained on the evidence floor (FIX A3)
+    methods["news"]["no_call_weak_lean"] = len(abstained) - floor  # abstained on |lean| under the threshold
     return {"methods": methods, "min_for_percent": MIN_SCORED_FOR_PERCENT, "in_line_baseline": in_line_baseline}

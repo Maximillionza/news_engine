@@ -55,8 +55,8 @@ def get_actual_from_fred(event_title: str, event_time_utc: dt.datetime) -> Optio
         )
         resp.raise_for_status()
         observations = resp.json().get("observations", [])
-    except Exception as exc:  # noqa: BLE001 — a failed fetch must not crash the caller
-        print(f"[fred_actuals] WARNING: fetch failed for {event_title!r} ({series_id}): {exc}")
+    except Exception as exc:  # noqa: BLE001 — a failed fetch must not crash the caller; class name only: a requests error embeds the URL and key
+        print(f"[fred_actuals] WARNING: fetch failed for {event_title!r} ({series_id}): {type(exc).__name__}")
         return None
 
     if not observations:

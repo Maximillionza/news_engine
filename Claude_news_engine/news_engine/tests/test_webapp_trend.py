@@ -140,6 +140,25 @@ def test_summarize_trend_and_compute_trend_signal_agree_on_no_signal_cases():
     print("PASS\n")
 
 
+def test_trend_counts_a_one_tick_miss():
+    print("=== summarize_trend: rows re-labelled 'higher' by the one-tick rule form a streak (FIX R2) ===")
+    from data_layer.calendar_feed import EconomicEvent
+    from data_layer.calendar_feed import classify_surprise
+    import datetime as dt
+    rows = []
+    for month in (8, 7, 6):
+        event = EconomicEvent(
+            title="CPI m/m", country="USD", impact="High",
+            event_time_utc=dt.datetime(2026, month, 12, 12, 30, tzinfo=dt.timezone.utc),
+            forecast="4.1%", actual="4.2%",
+        )
+        label = classify_surprise(event)
+        assert label == "higher"  # the old 5% band would have said in_line
+        rows.append(_row(month, label))
+    assert summarize_trend(rows) == "Trending higher for 3 consecutive releases"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_not_enough_history_with_zero_rows()
     test_not_enough_history_with_one_confirmed_row()
@@ -156,4 +175,5 @@ if __name__ == "__main__":
     test_compute_trend_signal_single_row_saturates_tally_at_one()
     test_compute_trend_signal_in_line_lead_then_unanimous_still_saturates()
     test_summarize_trend_and_compute_trend_signal_agree_on_no_signal_cases()
+    test_trend_counts_a_one_tick_miss()
     print("All webapp_trend tests passed.")

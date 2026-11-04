@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-10-29T05:22:14.310335+00:00",
+  "generated_at_utc": "2026-11-03T23:43:58.887704+00:00",
   "threshold": 0.8,
   "titles": {
     "10-y Bond Auction": {
@@ -204,6 +204,16 @@
       "series_matches": 0,
       "status": "unverified"
     },
+    "Existing Home Sales": {
+      "comparisons": 2,
+      "identity": "none",
+      "matches": 2,
+      "mismatches": [],
+      "revision_explained": 0,
+      "series_comparisons": 2,
+      "series_matches": 2,
+      "status": "verified"
+    },
     "Factory Orders m/m": {
       "comparisons": 3,
       "identity": "ok",
@@ -242,6 +252,16 @@
       "revision_explained": 1,
       "series_comparisons": 3,
       "series_matches": 3,
+      "status": "verified"
+    },
+    "Goods Trade Balance": {
+      "comparisons": 2,
+      "identity": "ok",
+      "matches": 2,
+      "mismatches": [],
+      "revision_explained": 2,
+      "series_comparisons": 2,
+      "series_matches": 2,
       "status": "verified"
     },
     "Housing Starts": {
@@ -373,6 +393,16 @@
       "series_comparisons": 1,
       "series_matches": 1,
       "status": "unverified"
+    },
+    "Prelim Wholesale Inventories m/m": {
+      "comparisons": 2,
+      "identity": "ok",
+      "matches": 2,
+      "mismatches": [],
+      "revision_explained": 2,
+      "series_comparisons": 2,
+      "series_matches": 2,
+      "status": "verified"
     },
     "Retail Sales m/m": {
       "comparisons": 22,

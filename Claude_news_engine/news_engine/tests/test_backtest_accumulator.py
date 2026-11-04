@@ -1396,9 +1396,10 @@ def test_record_prediction_stores_same_incident_rows():
         event_time_utc=now + dt.timedelta(hours=2), forecast=None, previous=None,
     )
     articles = [
-        _evidence_article("Iran seizes oil tanker in Strait of Hormuz", 55 * 60, 0.4, now),
-        _evidence_article("Tanker seized by Iran near Hormuz as oil jumps", 25 * 60, 0.3, now),
-        _evidence_article("Iran holds seized tanker in Hormuz, oil tanker crew detained", 5 * 60, 0.35, now),
+        # An invented title reads as the "other" family, so each headline carries a US marker (FIX 2026-11-03).
+        _evidence_article("Iran seizes US oil tanker in Strait of Hormuz", 55 * 60, 0.4, now),
+        _evidence_article("US tanker seized by Iran near Hormuz as oil jumps", 25 * 60, 0.3, now),
+        _evidence_article("Iran holds seized US tanker in Hormuz, oil tanker crew detained", 5 * 60, 0.35, now),
     ]
     with tempfile.TemporaryDirectory() as tmp, \
          patch.dict(settings.EVENT_RELEVANCE_KEYWORDS_BY_TITLE, {event.title: ["hormuz"]}), \

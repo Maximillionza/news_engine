@@ -16,6 +16,13 @@ Rules worth knowing:
   red on deploy day, but a task that never fires is still caught.
 - Instants are compared with julianday() in SQL, never as raw strings:
   naive and offset ISO stamps both occur in these DBs.
+- FIX: a numeric title whose gate is suspect / unverified / unavailable is switched
+  off on purpose, so it is amber "not covered (switched off)", never red; an
+  enabled title keeps the red 15-minute rule. The research task's heartbeat
+  (tier1_research.py plan) goes amber after 30 h of silence, and a judgment
+  release inside 24 h with no late check is amber. tier1_alerts shows the
+  research task's own RELIABILITY / SECURITY / RUN BLOCKED alerts for 72 h
+  (amber for reliability, red for the other two).
 - Every check is wrapped: one failing check is amber "check failed: ..." and
   never takes the whole build (or the job that asked for it) down.
 """
@@ -36,7 +43,8 @@ from data_layer.official_actuals.coverage import GateResult
 from data_layer.official_actuals.registry import OFFICIAL_SPECS
 from data_layer.rss_sources import FREE_PREVIEW_FEEDS
 from data_layer.tier1_events import (
-    TIER1_FORMULA, TIER1_FORMULA_SOURCE, TIER1_JUDGMENT, TIER1_MARKET_IMPLIED_SOURCE, tier1_titles,
+    TIER1_FORMULA, TIER1_FORMULA_SOURCE, TIER1_JUDGMENT, TIER1_MARKET_IMPLIED_SOURCE, late_check_reason,
+    tier1_titles,
 )
 from ops import state as ops_state
 from ops.state import SourceStatus
@@ -119,6 +127,21 @@ POLLER_STALE_AFTER = dt.timedelta(minutes=10)
 # Gaps that can never be fixed for free (private publishers) are listed but do not trigger the daily notice.
 # Set to "red" to make them page like any other miss.
 SLA_PROPRIETARY_STATUS = "amber"
+# FIX (R3): gate statuses that mean the title is deliberately not polled. key_inactive and "gate: not run" are
+# not deliberate switch-offs, so they stay red.
+SLA_SWITCHED_OFF_REASON = "not covered (switched off)"
+_SWITCHED_OFF_GATE_STATUSES = frozenset({"suspect", "unverified", "unavailable"})
+# FIX: the research task runs daily; `plan` stamps a heartbeat each run, so 30 h of silence is a dead task.
+TIER1_RESEARCH_SILENT_AFTER = dt.timedelta(hours=30)
+# FIX: a judgment release inside this window of now with no late check is flagged (also for 24 h after it).
+LATE_CHECK_HEALTH_WINDOW = dt.timedelta(hours=24)
+# FIX: how long a research alert stays on the health panel.
+RESEARCH_ALERT_TTL = dt.timedelta(hours=72)
+_RESEARCH_ALERT_LABELS = {"reliability": "RELIABILITY ALERT", "security": "SECURITY ALERT", "blocked": "RUN BLOCKED"}
+_RESEARCH_ALERT_RED_KINDS = frozenset({"security", "blocked"})
+# FIX: the stored alert text is uncut; the panel and the Telegram health notice show at most this many characters of it.
+_RESEARCH_ALERT_DETAIL_MAX = 300
+_TIER1_ALERTS_LABEL = "Tier 1 research alerts"
 _ACTUALS_SLA_LABEL = "Actuals within 15 min"
 _MACRO = _JobSpec("macro_calendar", "Macro calendar (FRED)", 29 * _D, 30 * _D, 31 * _D)
 _TIER1_RESEARCH_LABEL = "Tier 1 research (judgment calls)"
@@ -298,6 +321,35 @@ def _missed_release_item(
     return HealthItem(key, label, status, last_success, age, int(_D.total_seconds()), "; ".join(parts))
 
 
+def _late_check_missing(bt: sqlite3.Connection, title: str, release: dt.datetime, now: dt.datetime) -> bool:
+    """
+    True when some instrument has a pre-release call of record for this occurrence but no late check where
+    tier1_events.late_check_reason says one is due ("release_within_24h"). `now` is clamped to just before the
+    release, so the question stays "was the 24 h check made" after the release as well.
+    """
+    instruments = [r[0] for r in bt.execute(
+        "SELECT DISTINCT instrument FROM tier1_predictions WHERE event_title = ? "
+        "AND abs(julianday(event_time_utc) - julianday(?)) < ? AND julianday(logged_at_utc) <= julianday(?)",
+        (title, release.isoformat(), _SAME_INSTANT_DAYS, release.isoformat())).fetchall()]
+    asof = min(now, release - dt.timedelta(seconds=1))
+    for instrument in instruments:
+        newest = _newest(
+            bt, "SELECT logged_at_utc FROM tier1_predictions WHERE event_title = ? AND instrument = ? "
+                "AND abs(julianday(event_time_utc) - julianday(?)) < ? AND julianday(logged_at_utc) <= julianday(?) "
+                "ORDER BY julianday(logged_at_utc) DESC LIMIT 1",
+            (title, instrument, release.isoformat(), _SAME_INSTANT_DAYS, release.isoformat()))
+        checks = bt.execute(
+            "SELECT checked_at_utc, reason FROM tier1_late_checks WHERE event_title = ? AND instrument = ? "
+            "AND abs(julianday(event_time_utc) - julianday(?)) < ?",
+            (title, instrument, release.isoformat(), _SAME_INSTANT_DAYS)).fetchall()
+        for check in checks:                       # a fresh check resets staleness, as in the research CLI
+            newest = max(newest, _parse_utc(check[0]))
+        has_window_check = any(check[1] == "release_within_24h" for check in checks)
+        if late_check_reason(newest, release, asof, has_window_check) == "release_within_24h":
+            return True
+    return False
+
+
 def _tier1_research_check(now: dt.datetime, conns: dict[str, sqlite3.Connection]) -> HealthItem:
     bt = conns["bt"]
     # Only the LLM research task's rows: capture-task rows (Cleveland formula, Kalshi market-implied) would make
@@ -308,9 +360,53 @@ def _tier1_research_check(now: dt.datetime, conns: dict[str, sqlite3.Connection]
                 (TIER1_FORMULA_SOURCE, TIER1_MARKET_IMPLIED_SOURCE)),
         _newest(bt, "SELECT checked_at_utc FROM tier1_late_checks ORDER BY julianday(checked_at_utc) DESC LIMIT 1"),
     ]
+    # FIX: `tier1_research.py plan` stamps a heartbeat on every run, so a quiet week (nothing to log) is not a dead task.
+    run = ops_state.get_job_runs(conns["ops"]).get("tier1_research")
+    if run is not None and run.last_success_utc is not None:
+        stamps.append(_as_utc(run.last_success_utc))
     last = max((s for s in stamps if s is not None), default=None)
-    return _missed_release_item("tier1_research", _TIER1_RESEARCH_LABEL, now, conns["dash"], bt,
-                                tier1_titles(TIER1_JUDGMENT), _PRE_RELEASE_CALL_SQL, last, check_due=True)
+    titles = tier1_titles(TIER1_JUDGMENT)
+    item = _missed_release_item("tier1_research", _TIER1_RESEARCH_LABEL, now, conns["dash"], bt,
+                                titles, _PRE_RELEASE_CALL_SQL, last, check_due=True)
+    notes: list[str] = []
+    if last is None:
+        notes.append("no research run recorded yet")
+    elif now - last > TIER1_RESEARCH_SILENT_AFTER:
+        notes.append(f"no research run for {int((now - last).total_seconds() // 3600)} h")
+    missing = [
+        f"{title} {_sast(_parse_utc(when))}"
+        for title, when in _occurrences(conns["dash"], titles, now - LATE_CHECK_HEALTH_WINDOW,
+                                        now + LATE_CHECK_HEALTH_WINDOW, include_start=False)
+        if _late_check_missing(bt, title, _parse_utc(when), now)
+    ]
+    if missing:
+        notes.append(_list_detail("late check missing", missing))
+    if not notes:
+        return item
+    detail = "; ".join(part for part in (item.detail, *notes) if part)
+    return HealthItem(item.key, item.label, _worst(item.status, "amber"), item.last_success_utc, item.age_seconds,
+                      item.expected_every_seconds, detail)
+
+
+def _clip(text: str, limit: int) -> str:
+    """One line of at most `limit` characters, ending in an ellipsis when cut."""
+    flat = " ".join(str(text).split())
+    return flat if len(flat) <= limit else flat[: limit - 1].rstrip() + "…"
+
+
+def _tier1_alerts_check(now: dt.datetime, conns: dict[str, sqlite3.Connection]) -> HealthItem:
+    """FIX: the research task's own alerts from the last 72 h; reliability is amber, security and blocked are red."""
+    alerts = ops_state.active_research_alerts(conns["ops"], now - RESEARCH_ALERT_TTL)
+    expected = int(RESEARCH_ALERT_TTL.total_seconds())
+    if not alerts:
+        return HealthItem("tier1_alerts", _TIER1_ALERTS_LABEL, "ok", None, None, expected, "")
+    status = "red" if any(a.kind in _RESEARCH_ALERT_RED_KINDS for a in alerts) else "amber"
+    entries = [f"{_RESEARCH_ALERT_LABELS.get(a.kind, a.kind)} {_clip(a.event, 80)} ({_sast(a.created_at_utc)}): "
+               f"{_clip(a.message, _RESEARCH_ALERT_DETAIL_MAX)}"
+               for a in reversed(alerts)]                     # newest first
+    newest = alerts[-1].created_at_utc
+    return HealthItem("tier1_alerts", _TIER1_ALERTS_LABEL, status, None, (now - newest).total_seconds(), expected,
+                      _list_detail(f"{len(alerts)} alert(s) in 72 h", entries))
 
 
 def _nowcast_live_check(now: dt.datetime, conns: dict[str, sqlite3.Connection]) -> HealthItem:
@@ -413,6 +509,8 @@ def overdue_reason(
     result = gate.get(title)
     if result is None:
         return "gate: not run"
+    if result.status in _SWITCHED_OFF_GATE_STATUSES:
+        return SLA_SWITCHED_OFF_REASON
     if result.status != "verified":
         return f"gate: {result.status}"
     status = sources.get(OFFICIAL_SPECS[title].source)
@@ -452,7 +550,8 @@ def _actuals_sla_check(
         late = int((now - release).total_seconds() // 60)
         sast = release.astimezone(LOCAL_TZ).strftime("%H:%M")
         entries.append(f"{row['event_title']} {sast} SAST, {late} min late ({reason})")
-    status = "red" if any(r != "proprietary" for r in reasons) else SLA_PROPRIETARY_STATUS
+    status = ("red" if any(r not in ("proprietary", SLA_SWITCHED_OFF_REASON) for r in reasons)
+              else SLA_PROPRIETARY_STATUS)
     return HealthItem("actuals_sla", _ACTUALS_SLA_LABEL, status, last_tick, age, expected,
                       _list_detail(f"{len(entries)} overdue", entries))
 
@@ -487,6 +586,8 @@ def build_health(
         job("tier1_capture_daily"),
         job("tier1_capture_weekly"),
         ("tier1_research", _TIER1_RESEARCH_LABEL, day, lambda: _tier1_research_check(now, conns)),
+        ("tier1_alerts", _TIER1_ALERTS_LABEL, int(RESEARCH_ALERT_TTL.total_seconds()),
+         lambda: _tier1_alerts_check(now, conns)),
         ("nowcast_live", _NOWCAST_LIVE_LABEL, day, lambda: _nowcast_live_check(now, conns)),
         ("shock_reality_check", _JOBS["shock_reality_check"].label,
          int(_JOBS["shock_reality_check"].expected.total_seconds()), lambda: _shock_reality_check_check(now, conns)),

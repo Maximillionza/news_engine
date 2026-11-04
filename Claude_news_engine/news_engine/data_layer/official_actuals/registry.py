@@ -27,10 +27,10 @@ table note "LastRevised: <date>" on or after the release date; for BLS, a
 "R" (revised) footnote on the period in any series of the same release),
 so an unchanged re-estimate is written too.
 
-Census codes were resolved in Task 1 (see census.py); the three unresolved
-Census titles (Final / Prelim Wholesale Inventories m/m, Goods Trade Balance)
-are deliberately absent, so coverage reports them as not mapped and they keep
-their FRED backfill. Every twin below exists on FRED (checked 2026-10-28,
+Census codes were resolved in Task 1 (see census.py) and, for the advance
+programs, in FIX Task 5; the one unresolved Census title (Final Wholesale
+Inventories m/m) is deliberately absent, so coverage reports it as not mapped
+and it keeps its FRED backfill. Every twin below exists on FRED (checked 2026-10-28,
 including the plan's "(verify)" ones: PRS85006092, PRS85006112,
 A191RI1Q225SBEA); the plan's crude twin WCESTUS1 does not, so crude has none.
 """
@@ -76,6 +76,12 @@ class OfficialSpec:
     # BLS only: other series of the same release, fetched in the same POST, whose "R" (revised) footnote
     # on the period proves a re-estimate is out even when this series' own value did not change.
     revision_family: tuple[str, ...] = ()
+    # FIX Task 5. A source that serves only today's value and has no vintages (Existing Home Sales on FRED): the
+    # poller stops this many days after the release, because later the number is a revision, not the first print.
+    first_print_window_days: Optional[int] = None
+    # The gate accepts this relative gap (percent) between FF's `previous` and the official value: NAR revises
+    # the prior month at every release and ALFRED has no vintages to explain it with.
+    gate_tolerance_pct: Optional[float] = None
 
 
 _T0830 = dt.time(8, 30)
@@ -156,6 +162,14 @@ OFFICIAL_SPECS: dict[str, OfficialSpec] = {
     "Trade Balance": OfficialSpec("census", "ftd:BOPGS:BAL", "level", "lin", "monthly", 0.001, "B", 1,
                                   _T0830, min_lag_days=20, fred_twin=("BOPGSTB", "lin")),
     "Factory Orders m/m": _pct("census", "m3:MTM:MPCNO", "lin", ("AMTMNO", "pch"), lag=20, time=_T1000),
+    # Advance reports (codes resolved 2026-11-03 against FRED's AITGCBS / AMINVTS mirrors, see census.py).
+    "Goods Trade Balance": OfficialSpec("census", "ftdadv:CBG:BAL", "level", "lin", "monthly", 0.001, "B", 1,
+                                        _T0830, fred_twin=("AITGCBS", "lin")),
+    "Prelim Wholesale Inventories m/m": _pct("census", "mwtsadv:42:MPCIM", "lin", ("AMINVTS", "pch")),
+    # NAR sales: FRED holds today's value only (ALFRED has no vintages), so the first print can be read for the
+    # latest month during a short window after the release; older rows stay empty (`later_release`).
+    "Existing Home Sales": OfficialSpec("fred", "EXHOSLUSM495S", "level", "lin", "monthly", 1e-6, "M", 2, _T1000,
+                                        first_print_window_days=3, gate_tolerance_pct=2.0),
     # EIA weekly stocks: levels by week-ending Friday; FF prints the weekly change. Never revised.
     # No twin: FRED has no WCESTUS1 (HTTP 400, checked 2026-10-28), and an unrevised series needs none.
     "Crude Oil Inventories": OfficialSpec("eia", "petroleum/stoc/wstk:WCESTUS1", "level", "chg", "weekly", 0.001,

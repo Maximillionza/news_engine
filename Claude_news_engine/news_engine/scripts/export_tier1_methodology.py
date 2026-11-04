@@ -309,6 +309,11 @@ _INTRO = [
     "the same series sign it was written with, so Federal Funds Rate and Advance GDP q/q are scored although the "
     "shared surprise map (and so the News method) leaves them out.",
     "",
+    "News evidence floor: `NEWS_CALL_MIN_ARTICLES = 3`, pre-registered 2026-11-03, never tuned on results. A News "
+    "lean is a call only if |lean| >= 0.2 and it rests on at least 3 included articles with non-zero sentiment. "
+    "Kalshi, print-call, trend and precursor components are not articles. Rows before 2026-10-22 have no full "
+    "evidence table, so their n is a lower bound from the stored top 3.",
+    "",
 ]
 
 

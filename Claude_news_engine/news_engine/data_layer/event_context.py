@@ -17,13 +17,15 @@ from dataclasses import dataclass, field
 from config.settings import EVENT_RELEVANCE_KEYWORDS_BY_TITLE, PRE_EVENT_WINDOW_HOURS, UTC_TZ
 from data_layer.calendar_feed import EconomicEvent
 from data_layer.news_feed import NewsArticle, NewsSource, fetch_from_all_sources, deduplicate_articles, dedupe_same_url
-from data_layer.subject_rules import b6_exclusion_reason
+from data_layer.subject_rules import _normalise, b6_exclusion_reason, keyword_pattern
 
 # B6 (2026-10-22): why an article that matched an event's keywords was
 # still kept out of its score. Recorded in EventNewsBundle.excluded (and,
 # from Task 3, in the evidence table). Keyword misses are NOT recorded:
 # there are hundreds per event and they say nothing about a source.
-EXCLUSION_REASONS: tuple[str, ...] = ("single_stock_blurb", "foreign_cb", "no_fed_coterm", "off_subject", "duplicate_url")
+EXCLUSION_REASONS: tuple[str, ...] = (
+    "single_stock_blurb", "foreign_cb", "no_fed_coterm", "other_asset_lead", "off_subject", "no_us_subject", "duplicate_url",
+)
 
 # 2026-09-24 fix: a single-company stock-price blurb ("First Solar stock
 # heads into the open after a 4.42 percent drop", "NetApp stock rises 1.8
@@ -47,9 +49,8 @@ EXCLUSION_REASONS: tuple[str, ...] = ("single_stock_blurb", "foreign_cb", "no_fe
 # single-stock blurb always is. Checked against the title only (not
 # summary/body) -- deliberately narrower than the keyword filter itself,
 # so this can't suppress a genuinely on-topic article whose own headline
-# happens to name a company reacting to real macro news (e.g. "Gold miners
-# rally as Fed signals rate cut" doesn't match: no "<Name> stock <verb>"
-# shape).
+# happens to name a company reacting to real macro news (e.g. "Apple rises
+# as Fed signals rate cut" doesn't match: no "<Name> stock <verb>" shape).
 _SINGLE_STOCK_BLURB_TITLE_PATTERN = re.compile(
     r"\bstock (rises?|falls?|drops?|slips?|gains?|jumps?|climbs?|declines?|"
     r"surges?|plunges?|sinks?|ralli(?:es|ed)|tumbles?|heads into)\b",
@@ -79,8 +80,9 @@ class EventNewsBundle:
 
 
 def _is_relevant(article: NewsArticle, keywords: list[str]) -> bool:
-    haystack = f"{article.title} {article.summary}".lower()
-    return any(kw in haystack for kw in keywords)
+    # FIX (2026-11-03), audit B3: whole words, so "optimism" is not ISM and "dropping" is not PPI.
+    haystack = _normalise(f"{article.title} {article.summary}").lower()
+    return bool(keyword_pattern(tuple(keywords)).search(haystack))
 
 
 def _partition_relevant(
@@ -114,8 +116,8 @@ def _partition_relevant(
     B6 (2026-10-22): returns (kept, excluded). Per article: a keyword miss
     is skipped and not recorded; a keyword match is then excluded as
     "single_stock_blurb", or by data_layer/subject_rules.py's
-    b6_exclusion_reason() ("foreign_cb", "no_fed_coterm", "off_subject");
-    anything left is kept.
+    b6_exclusion_reason() ("foreign_cb", "no_fed_coterm", "other_asset_lead",
+    "off_subject", "no_us_subject"); anything left is kept.
     """
     keywords = EVENT_RELEVANCE_KEYWORDS_BY_TITLE.get(event_title)
     if not keywords:

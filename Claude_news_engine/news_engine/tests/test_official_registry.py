@@ -149,8 +149,7 @@ def test_decide_fill_uses_previous_as_template_when_forecast_missing():
 # ---------------------------------------------------------------- registry shape
 
 def test_registry_titles_sources_and_unresolved_census_left_out():
-    for title in ("Final Wholesale Inventories m/m", "Prelim Wholesale Inventories m/m", "Goods Trade Balance"):
-        assert title not in OFFICIAL_SPECS
+    assert "Final Wholesale Inventories m/m" not in OFFICIAL_SPECS      # code still unresolved (never guess one)
     for title, spec in OFFICIAL_SPECS.items():
         assert spec.source in registry.PUBLISHER_SOURCES + ("fred",), title
         assert spec.transform in ("lin", "chg", "pch", "pc1", "auction"), title
@@ -261,7 +260,7 @@ def test_coverage_lists():
     for title in ("ISM Services PMI", "Prelim UoM Consumer Sentiment", "CB Consumer Confidence",
                   "Philly Fed Manufacturing Index", "Richmond Manufacturing Index", "ADP Weekly Employment Change"):
         assert coverage.coverage_for(title) == "proprietary", title
-    for title in ("Industrial Production m/m", "Goods Trade Balance", "Some Unknown Title"):
+    for title in ("Industrial Production m/m", "Final Wholesale Inventories m/m", "Some Unknown Title"):
         assert coverage.coverage_for(title) == "not_mapped", title
     assert coverage.coverage_for("CPI m/m") == "official"
     assert "Industrial Production m/m" in coverage.NOT_MAPPED
@@ -373,6 +372,89 @@ def test_fetch_for_specs_census_bea_fed_treasury_fred_routes():
     assert out.data[series_key(_spec("Unemployment Claims"))][D(2026, 10, 17)] == 194000.0
     assert D(2026, 8, 1) in out.data[series_key(_spec("Retail Sales m/m"))]
 
+
+# ---------------------------------------------------------------- ACT follow-ups (FIX Task 5)
+
+EHS = "Existing Home Sales"
+GOODS = "Goods Trade Balance"
+WHOLESALE = "Prelim Wholesale Inventories m/m"
+EHS_RELEASE = dt.datetime(2026, 10, 13, 14, 0, tzinfo=UTC)          # 10:00 ET
+
+
+def test_ehs_format_3990000_is_3_99m():
+    assert format_like(3990000.0, "3.95M", _spec(EHS)) == "3.99M"
+    assert format_like(4060000.0, None, _spec(EHS)) == "4.06M"       # no template: the spec's 2 decimals
+
+
+def test_ehs_spec_shape():
+    spec = _spec(EHS)
+    assert (spec.source, spec.series, spec.revises) == ("fred", "EXHOSLUSM495S", True)
+    assert spec.first_print_window_days == 3 and spec.gate_tolerance_pct == 2.0
+    assert spec.fred_twin is None            # ALFRED has no vintages for it
+    assert _spec("CPI m/m").first_print_window_days is None and _spec("CPI m/m").gate_tolerance_pct is None
+
+
+def test_decide_fill_ehs_fills_latest_month_only():
+    series = {D(2026, 8, 1): 3930000.0, D(2026, 9, 1): 3990000.0}
+    d = decide_fill(_spec(EHS), EHS_RELEASE, "3.95M", "3.98M", series, False, None)
+    assert d == registry.FillDecision("3.99M", "fill")
+
+
+def test_decide_fill_ehs_older_month_left_empty_with_reason():
+    series = {D(2026, 8, 1): 3930000.0, D(2026, 9, 1): 3990000.0}
+    older = dt.datetime(2026, 9, 10, 14, 0, tzinfo=UTC)               # the Aug release; Oct 13 has come since
+    d = decide_fill(_spec(EHS), older, "4.00M", "4.06M", series, True, "3.98M")
+    assert d.actual is None and d.reason.startswith("revised since release")
+
+
+_EITS_HEADER = ["cell_value", "data_type_code", "category_code", "seasonally_adj", "time_slot_id", "geo_level_code", "time"]
+
+
+def _eits(*rows) -> str:
+    return json.dumps([_EITS_HEADER, *rows])
+
+
+def test_ehs_reads_the_recorded_fred_fixture():
+    from data_layer.official_actuals import fred_current
+    series = fred_current.parse_observations(_fixture("fred_EXHOSLUSM495S.json"), "EXHOSLUSM495S")
+    d = decide_fill(_spec(EHS), EHS_RELEASE, "3.95M", "3.98M", series, False, None)
+    assert d == registry.FillDecision("3.99M", "fill")
+
+
+def test_census_advance_series_parse():
+    # Verified 2026-11-03: ftdadv CBG:BAL SA Sep -134904, Aug -132069; mwtsadv 42:MPCIM SA Sep 0.6, Aug 0.5.
+    from data_layer.official_actuals import census
+    goods = census.parse_eits(_eits(
+        ["-134904", "BAL", "CBG", "yes", "1", "US", "2026-09"], ["-132069", "BAL", "CBG", "yes", "1", "US", "2026-08"],
+        ["-99999", "BAL", "CBG", "no", "1", "US", "2026-09"],                 # not seasonally adjusted: skipped
+    ), "ftdadv")
+    series = goods[("CBG", "BAL")]
+    spec = _spec(GOODS)
+    assert registry.value_for(spec, series, D(2026, 9, 1)) == -134904.0
+    assert format_like(registry.value_for(spec, series, D(2026, 9, 1)), "-132.6B", spec) == "-134.9B"
+    wholesale = census.parse_eits(_eits(
+        ["0.6", "MPCIM", "42", "yes", "1", "US", "2026-09"], ["0.5", "MPCIM", "42", "yes", "1", "US", "2026-08"],
+    ), "mwtsadv")
+    series = wholesale[("42", "MPCIM")]
+    spec = _spec(WHOLESALE)
+    assert format_like(registry.value_for(spec, series, D(2026, 9, 1)), "0.7%", spec) == "0.6%"
+
+
+def test_census_advance_specs():
+    goods, wholesale = _spec(GOODS), _spec(WHOLESALE)
+    assert (goods.source, goods.series, goods.fred_twin) == ("census", "ftdadv:CBG:BAL", ("AITGCBS", "lin"))
+    assert (wholesale.source, wholesale.series, wholesale.fred_twin) == ("census", "mwtsadv:42:MPCIM", ("AMINVTS", "pch"))
+    assert expected_period(goods, D(2026, 10, 27)) == D(2026, 9, 1)             # advance report: previous month
+    assert expected_period(wholesale, D(2026, 10, 28)) == D(2026, 9, 1)
+    assert expected_period(wholesale, D(2026, 9, 30)) == D(2026, 8, 1)
+
+
+def test_coverage_of_new_titles_is_official():
+    for title in (EHS, GOODS, WHOLESALE):
+        assert coverage.coverage_for(title) == "official", title
+        assert title not in coverage.NOT_MAPPED and title not in coverage.PROPRIETARY_TITLES
+    assert coverage.coverage_for("Final Wholesale Inventories m/m") == "not_mapped"     # still no adapter
+    assert "Final Wholesale Inventories m/m" in coverage.NOT_MAPPED
 
 if __name__ == "__main__":
     import pytest

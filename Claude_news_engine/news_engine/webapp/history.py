@@ -335,7 +335,8 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                     tier1_row = tier1_by_occurrence.get((event.event_title, instrument, event_time.isoformat()))
                     fallback_tier1_conflict = compute_tier1_sentiment_conflict(
                         prediction.direction, tier1_row.predicted_direction if tier1_row is not None else None,
-                        tier1_row_tier(tier1_row.source, tier1_row.value) if tier1_row is not None else None,
+                        tier1_row_tier(tier1_row.source, tier1_row.value, tier1_row.event_title)
+                        if tier1_row is not None else None,
                     )
 
                     fallback_outcome: Optional[str] = None
@@ -475,7 +476,8 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                 tier1_row = tier1_by_occurrence.get((event.event_title, instrument, event_time.isoformat()))
                 text_tier1_conflict = compute_tier1_sentiment_conflict(
                     prediction.direction, tier1_row.predicted_direction if tier1_row is not None else None,
-                    tier1_row_tier(tier1_row.source, tier1_row.value) if tier1_row is not None else None,
+                    tier1_row_tier(tier1_row.source, tier1_row.value, tier1_row.event_title)
+                    if tier1_row is not None else None,
                 )
 
                 text_outcome: Optional[str] = None

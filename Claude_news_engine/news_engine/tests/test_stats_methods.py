@@ -1,7 +1,7 @@
 import pytest
 
 from webapp.stats_methods import (
-    NEWS_CALL_MIN_LEAN, NEWS_WEIGHT, TIER1_WEIGHT, combine, market_lean, news_lean, news_scale, news_side,
+    NEWS_CALL_MIN_ARTICLES, NEWS_CALL_MIN_LEAN, NEWS_WEIGHT, TIER1_WEIGHT, combine, market_lean, news_lean, news_call_decision, news_scale, news_side,
     news_surprise, tier1_surprise,
 )
 
@@ -94,3 +94,19 @@ def test_market_lean_override_and_default_unchanged():
     # The override replaces the shared map, it does not merge with it.
     assert market_lean("CPI m/m", 1, "XAUUSD", surprise_direction="higher_bearish") == "buy"
     assert market_lean("CPI m/m", 1, "XAUUSD") == "sell"
+
+
+def test_news_call_decision_floor():
+    assert NEWS_CALL_MIN_ARTICLES == 3 and NEWS_CALL_MIN_LEAN == 0.2
+    for n in (0, 1, 2):
+        d = news_call_decision(0.5, n)
+        assert d.side is None and d.reason == f"too few articles (n={n})"
+    assert news_call_decision(0.25, 3).side == 1 and news_call_decision(0.25, 3).reason is None
+    assert news_call_decision(-0.25, 3).side == -1
+    d = news_call_decision(0.1, 30)
+    assert d.side is None and d.reason == "|lean| under 0.2"
+    d = news_call_decision(0.5, None)
+    assert d.side is None and d.reason == "too few articles (n unknown)"
+    assert news_call_decision(0.19999999999999996, 3).side == 1
+    # a weak lean reports the lean reason even when n is also short
+    assert news_call_decision(0.1, 1).reason == "|lean| under 0.2"

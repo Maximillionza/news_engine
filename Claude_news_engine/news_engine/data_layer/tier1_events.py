@@ -70,12 +70,15 @@ def tier1_titles(tier: str) -> list[str]:
     return [title for title, t in TIER1_EVENTS.items() if t == tier]
 
 
-def tier1_row_tier(source: str, value: Optional[str] = None) -> str:
+def tier1_row_tier(source: str, value: Optional[str] = None, event_title: Optional[str] = None) -> str:
     """
     Tier of a stored tier1_predictions row. Formula only for the formula source
     (a pre-B3 LLM CPI row is judgment); the Kalshi capture source is
     market_implied; a row citing CME FedWatch is market_implied too, because
-    its call is the futures-implied rate path, not a researcher's view.
+    its call is the futures-implied rate path, not a researcher's view - unless
+    the registry makes the row's title judgment (FOMC Statement, FOMC Meeting
+    Minutes): a FedWatch citation on those stays judgment, since the Kalshi
+    capture does not produce them and the tier of a title names its only producer.
     FedWatch counts when it appears anywhere in the source or when the value
     opens with it: the live 2026-10-26 Fed rows have URL-only sources and carry
     FedWatch only as the value's leading citation, so a source-only test would
@@ -83,10 +86,13 @@ def tier1_row_tier(source: str, value: Optional[str] = None) -> str:
     """
     if source == TIER1_FORMULA_SOURCE:
         return TIER1_FORMULA
-    if source == TIER1_MARKET_IMPLIED_SOURCE or "fedwatch" in (source or "").lower():
+    if source == TIER1_MARKET_IMPLIED_SOURCE:
         return TIER1_MARKET_IMPLIED
+    fedwatch_tier = TIER1_JUDGMENT if TIER1_EVENTS.get(event_title) == TIER1_JUDGMENT else TIER1_MARKET_IMPLIED
+    if "fedwatch" in (source or "").lower():
+        return fedwatch_tier
     if value is not None and _FEDWATCH_LEADING_CITATION.match(value):
-        return TIER1_MARKET_IMPLIED
+        return fedwatch_tier
     return TIER1_JUDGMENT
 
 

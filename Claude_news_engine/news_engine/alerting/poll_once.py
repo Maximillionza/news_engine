@@ -199,7 +199,7 @@ def _process_matched(conn, webapp_conn, article: NewsArticle, result: TriageResu
     if result.rule_tier_hit:
         category, raw_severity, method, rationale = result.category, "High", "rule_tier", None
         polarity = direction.rule_polarity(result.matched_keywords)
-        # A rule-tier phrase maps to a fixed (country, us_link) -- never "none", so a hard rule is never capped.
+        # A fired rule-tier phrase maps to a fixed, known (country, us_link) -- never "none", so it is never capped.
         country, us_link = rule_country_us_link(result.matched_keywords)
     else:
         classification = _classify(article, result, conn, llm_deadline)
@@ -368,7 +368,7 @@ def _maybe_escalate(
 
     B2: a corroborating article whose US link is unknown inherits the
     STORED alert's link ("effective"), and the no-US-link cap applies to
-    it. Otherwise a hard-rule corroboration (link unknown) would bring back
+    it. Otherwise a corroboration with no link of its own would bring back
     a High on a story already judged to have no US or global-supply link,
     with its stale lean-less symbols. The cap is lifted only by an article
     that positively reports a direct / global_supply link: that rewrites
