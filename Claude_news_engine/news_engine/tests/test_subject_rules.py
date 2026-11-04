@@ -274,6 +274,40 @@ def test_soft_marker_needs_no_foreign_place():
         "Czech crown slides as dollar firms after US CPI",
         "Israeli shekel slides as dollar firms after US CPI",
         "Nigerian naira slides as dollar firms after US CPI",
+        "South Africa's rand slides after US CPI",
+        "S.Africa's rand slides after US CPI",
+        "Brazil's real slides as dollar firms on Fed bets",
+        "Brazil\u2019s real slides as dollar firms on Fed bets",
+        "South Korea's won falls after US CPI",
+        "Korea's won falls after US CPI",
+        "S.Korea's won falls after US CPI",
+        "Sweden's crown falls after Fed",
+        "Norway's crown falls after Fed",
+        "Denmark's crown falls after Fed",
+        "Czech Republic's crown falls after Fed",
+        "Iceland's crown falls after Fed",
+        "Iran's oil exports fall as dollar firms after US CPI",
+        "Pakistan's rupee falls after US CPI",
+        "Tokyo stocks close lower on U.S. inflation",
+        "Seoul shares open lower on U.S. inflation",
+        "Sydney shares slide after US CPI",
+        "Paris stocks fall after US CPI",
+        "Frankfurt stocks fall after US CPI",
+        "Beijing stocks fall after US CPI",
+        "Mumbai stocks fall after US CPI",
+        "Shanghai stocks fall after US CPI",
+        "Moscow stocks fall after US CPI",
+        "Sao Paulo stocks fall after US CPI",
+        "Gulf stocks fall as dollar firms after US CPI",
+        "Most Gulf shares close lower after US CPI",
+        "Most Gulf stocks in red after US CPI",
+        "Mideast stocks fall after US CPI",
+        "Nordic stocks fall after US CPI",
+        "World stocks fall after hot US CPI",
+        "Asia-Pacific stocks fall after US CPI",
+        "Asia Pacific stocks fall after US CPI",
+        "Offshore yuan slips after US CPI",
+        "Onshore yuan slips after US CPI",
     ],
 )
 def test_other_asset_lead_on_every_path(title):
@@ -319,6 +353,29 @@ def test_lead_pattern_covers_each_asset(title):
         "Powell's oil remarks lift dollar", "White House's oil plan lifts dollar", "Fed watch gold outlook",
         "Dollar Mexican peso pair slips", "Saudi crown prince says oil output steady", "Crown Prince resigns",
         "Swedish crown princess visits", "Fed's won't cut", "Korean jobs data disappoints",
+        # A possessive qualifies only for a foreign place, so no US office, state or company does.
+        "Trump administration's oil plan lifts US inflation fears", "Energy Department's oil reserve release to cool US CPI",
+        "Supreme Court's oil ruling lifts dollar", "SEC's crypto rule lifts dollar", "Pentagon's oil purchase lifts dollar",
+        "Vance's oil remarks lift dollar", "Lutnick's gold tariff lifts dollar", "Nation's oil output rises as US CPI cools",
+        "Country's oil output rises as US CPI cools", "Texas's oil output rises as US inflation cools",
+        "President's oil plan lifts dollar", "Secretary's oil remarks lift dollar", "Alaska's oil output rises as US CPI cools",
+        "New Mexico's oil output rises as US CPI cools", "New England's oil demand rises as US CPI cools",
+        "Georgia's oil refinery lifts US inflation", "Goldman's gold call lifts dollar", "Morgan's gold forecast lifts dollar",
+        # Words the demonym shape fits that are no nationality; "shares" is often the verb.
+        "Kashkari shares rate view after CPI", "Logan shares inflation concerns", "Miran shares dovish view on rates",
+        "Governor Bowman shares rate view", "President Logan shares rate view", "Altman shares AI plan after Fed",
+        "Republican oil bill lifts dollar", "Michigan shares fall as Fed holds", "Trump plan oil tariff lifts dollar",
+        "Biden plan oil tariff lifts dollar", "Senate plan oil tariff lifts dollar", "Congress plan oil tariff lifts dollar",
+        "Energy plan oil tariff lifts dollar", "These stocks could soar after US CPI", "Which stocks could rally after US CPI",
+        "Why these stocks could rally after CPI", "Can gold rally as US CPI cools?", "Bullish oil bets lift dollar",
+        "Bearish gold bets lift dollar", "Ban oil exports, Trump says", "Goldman gold forecast lifts dollar",
+        "JPMorgan oil call lifts dollar", "Citi gold call lifts dollar", "CPI gold rally fades",
+        "Tech stocks plunge as Fed rate hike fears, AI funding worries mount", "AI stocks plunge after hot US CPI",
+        # The explicit won, real, rand and crown forms stop at the English word.
+        "Brazil's real estate boom lifts dollar", "Brazilian real estate slump lifts dollar", "South Korea's won't cut",
+        "Sweden's crown princess visits US", "Norway's crown prince visits Fed", "Denmark's crown jewels on show",
+        # A place word with no asset straight after it.
+        "Gulf of Mexico output slips", "Gulf Coast refiners lift dollar", "World Bank warns on US inflation",
     ],
 )
 def test_lead_pattern_leaves_other_leads(title):
@@ -340,6 +397,18 @@ def test_longer_keyword_forms_match_on_their_own(keyword, listed_for, headline):
     assert keyword in keywords
     assert keyword_pattern(tuple(keywords)).search(headline.lower())
     assert keyword_pattern(tuple(k for k in keywords if k != keyword)).search(headline.lower()) is None
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Trump administration's oil plan lifts US inflation fears", "Energy Department's oil reserve release to cool US CPI",
+        "Nation's oil output rises as US CPI cools", "Texas's oil output rises as US inflation cools",
+        "Kashkari shares rate view after CPI",
+    ],
+)
+def test_us_titles_the_lead_rule_leaves_alone_are_kept_on_cpi(title):
+    assert b6_exclusion_reason(title, "", "CPI m/m") is None
 
 
 def test_dollar_headline_kept_in_every_family():

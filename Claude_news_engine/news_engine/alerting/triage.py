@@ -87,45 +87,106 @@ _DENIAL_RE = re.compile(
 )
 
 _PRICED_ASSET = r"\b(?:prices?|oil|crude|brent|wti|gold|stocks?|shares)\b"
+# Wider, for the record/highest branch only: "record high" also describes tensions and ratings, so that branch
+# needs something with a price beside it, and a dollar, a yield or an index has one as much as oil does.
+_PRICED_SUBJECT = (
+    r"\b(?:prices?|oil|crude|brent|wti|gold|silver|copper|platinum|palladium|bullion|stocks?|shares|equities"
+    r"|dollar|greenback|yields?|bonds?|treasur(?:y|ies)|bitcoin|crypto\w*|ether|euro|yen|yuan|sterling|pound"
+    r"|franc|rupee|peso|lira|wall st(?:reet)?|s&p(?: 500)?|nasdaq|dow|nikkei|ftse|dax|ind(?:ex|exes|ices)|markets?)\b"
+)
 # Reporting words allowed between an asset and a tight move word ("Oil edges up", "Stocks end sharply lower",
 # "Gold is 2% down"). A closed list on purpose: any other word there is usually a noun, and then the sentence
 # is about that noun ("Oil exports shut down", "Oil tanker attack lifts premiums higher").
 _ASSET_TO_MOVE = (
-    r"(?:\s+prices?)?"
+    r"(?:\s+(?:prices?|markets?))?"
     r"(?:\s+(?:edg(?:e|es|ed|ing)|inch(?:es|ed|ing)?|tick(?:s|ed|ing)?|drift(?:s|ed|ing)?|trad(?:e|es|ed|ing)"
     r"|end(?:s|ed|ing)?|clos(?:e|es|ed|ing)|finish(?:es|ed|ing)?|open(?:s|ed|ing)?|turn(?:s|ed|ing)?"
     r"|head(?:s|ed|ing)?|mov(?:e|es|ed|ing)|push(?:es|ed|ing)?|stay(?:s|ed|ing)?|hold(?:s|ing)?|held"
-    r"|remain(?:s|ed|ing)?|is|are|was|were|sharply|slightly|briefly|again|back|now|still"
+    r"|hover(?:s|ed|ing)?|sit(?:s|ting)?|get(?:s|ting)?|set|post(?:s|ed|ing)?|remain(?:s|ed|ing)?"
+    r"|is|are|was|were|ha[sd]"
+    r"|sharply|slightly|briefly|mostly|largely|broadly|modestly|marginally|again|back|now|still"
     r"|\d+(?:\.\d+)?\s*%)){0,2}"
     r"\s+"
 )
-_LONG_RANGE = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|multi)[- ](?:day|week|month|year)"
+_LONG_RANGE = (
+    r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|multi)"
+    r"[- ](?:session|day|week|month|year|decade)"
+)
 _EXTREME = r"(?:record|all[- ]time|highest|lowest|" + _LONG_RANGE + r")"
 
-# The first shape reads its verbs across a 30-character window, as it always did. The second holds the words
-# that also turn up in event headlines ("up", "down", "lower", "top", "pare"), so they count only right after
-# the asset, or after _ASSET_TO_MOVE. "top" and "pare" also take the plural-subject form ("Oil prices top $100",
-# "Stocks pare losses"); bare "top" needs the dollar figure, since "Oil tanker seized, top general says" is an
-# event. "high" and "low" beside a superlative read as a price with or without a named asset ("Dollar hits
-# record high"), but "highest level" also means an alert or a rank, so "level" and "highest since" need the
-# asset and a verb of arrival right before them.
-_PRICE_REPORT_RE = re.compile(
-    _PRICED_ASSET + r".{0,30}?"
-    r"\b(?:rises?|rose|rising|falls?|fell|falling|jump(?:s|ed|ing)?|slides?|slid|sliding|climb(?:s|ed|ing)?"
+# Verbs that read as a price move anywhere in a 30-character window after the asset, as they always did.
+_WINDOW_MOVE = (
+    r"(?:rises?|rose|rising|falls?|fell|falling|jump(?:s|ed|ing)?|slides?|slid|sliding|climb(?:s|ed|ing)?"
     r"|drop(?:s|ped|ping)?|dip(?:s|ped|ping)?|sinks?|sank|sinking|surg(?:e|es|ed|ing)|tumbl(?:e|es|ed|ing)"
-    r"|gain(?:s|ed|ing)?|soar(?:s|ed|ing)?|spik(?:e|es|ed|ing)|rall(?:y|ies|ied|ying))\b"
-    r"|" + _PRICED_ASSET + _ASSET_TO_MOVE +
-    r"(?:(?:up|down|higher|lower|mixed|flat|unchanged|steady|steadie[sd]|top(?:s|ped|ping)|advanc(?:e|es|ed|ing)"
+    r"|gain(?:s|ed|ing)?|soar(?:s|ed|ing)?|spik(?:e|es|ed|ing)|rall(?:y|ies|ied|ying))"
+)
+# Words that also turn up in event headlines ("up", "down", "lower", "top", "pare"), so they count only right
+# after the asset, or after _ASSET_TO_MOVE. "firm" alone is the noun in "Oil firms evacuate staff", so it needs
+# what follows a verb. Bare "tanks" and "shed" are left out for the same reason ("Oil tanks ablaze").
+_TIGHT_MOVE = (
+    r"(?:up|down|higher|lower|mixed|flat|unchanged|(?:little|barely|largely|mostly)\s+changed"
+    r"|steady|steadie[sd]|stable|stabili[sz](?:e|es|ed|ing)|top(?:s|ped|ping)|advanc(?:e|es|ed|ing)"
     r"|par(?:e|es|ed|ing)|plung(?:e|es|ed|ing)|slump(?:s|ed|ing)?|slip(?:s|ped|ping)?|rebound(?:s|ed|ing)?"
-    r"|retreat(?:s|ed|ing)?|eas(?:e|es|ed|ing)|extend(?:s|ed|ing)?|trim(?:s|med|ming)?|recover(?:s|ed|ing)?)\b"
-    r"|(?:top|above|below|over|under)\s+\$\d)"
+    r"|retreat(?:s|ed|ing)?|eas(?:e|es|ed|ing)|extend(?:s|ed|ing)?|trim(?:s|med|ming)?|recover(?:s|ed|ing)?"
+    r"|firm(?:ed|ing|er)|firms?(?=\s+(?:as|on|after|amid|ahead|despite|while|near|above|below|at|up)\b|\s*[,;:-]|\s*$)"
+    r"|weak(?:er|en(?:s|ed|ing)?)?|stronger|strengthen(?:s|ed|ing)?|soft(?:er|en(?:s|ed|ing)?)"
+    r"|seesaw(?:s|ed|ing)?|div(?:e|es|ed|ing)|crash(?:es|ed|ing)?|bounc(?:e|es|ed|ing)"
+    r"|sell(?:s|ing)?[- ]?off|sold[- ]off|pull(?:s|ed|ing)?\s+back|pop(?:s|ped|ping)?|declin(?:e|es|ed|ing)"
+    r"|revers(?:e|es|ed|ing)|skid(?:s|ded|ding)?|sag(?:s|ged|ging)?|swing(?:s|ing)?|swung|sheds|shedding"
+    r"|los(?:es|ing)|falter(?:s|ed|ing)?|wobbl(?:e|es|ed|ing)|hammered|rattled|rocked|crushed"
+    r"|increas(?:e|es|ed|ing)|decreas(?:e|es|ed|ing)|tak(?:es|ing)\s+off|(?:break(?:s|ing)?|broke)\s+(?:higher|lower)"
+    r"|(?:remain(?:s|ed|ing)?|stay(?:s|ed|ing)?)\s+(?:high|low|elevated)"
+    r"|under\s+pressure|in\s+(?:the\s+)?(?:red|green))"
+)
+# A level word plus a dollar figure ("Brent crude near $112", "Oil past $120", "Brent breaks the $100 mark").
+# A figure in billions is a sum of money, not a price: "Stocks of oil under $5 billion ransom" stays out.
+_DOLLAR_LEVEL = (
+    r"(?:above|below|over|under|top|near(?:s|ing)?|around|at|past|beyond|through"
+    r"|touch(?:es|ed|ing)?|reach(?:es|ed|ing)?|breach(?:es|ed|ing)?|cross(?:es|ed|ing)?|break(?:s|ing)?|broke"
+    r"|pass(?:es|ed|ing)?|surpass(?:es|ed|ing)?|exceed(?:s|ed|ing)?|test(?:s|ed|ing)?)"
+    r"\s+(?:(?:the|about|around|nearly|almost|roughly)\s+)*"
+    r"\$(?![\d,.]+\s*(?:billion|million|trillion|bn|mn)\b)\d"
+)
+# "Indian shares on track for muted open", "Oil set for weekly gain", "Intel stock heads for worst day".
+_OUTLOOK = (
+    r"(?:(?:set|poised|on\s+track|on\s+course|head(?:s|ed|ing)?|bound)\s+(?:to|for)\s+(?:[a-z0-9-]+\s+){0,3}?"
+    r"(?:gains?|loss(?:es)?|drops?|rises?|falls?|declines?|opens?|closes?|rebounds?|jumps?|slides?|rall(?:y|ies))"
+    r"|(?:for\s+)?(?:(?:its|their)\s+)?(?:worst|best)\s+(?:session|day|week|month|quarter|year))\b"
+)
+# The level a priced subject arrives at. "level", "peak" and "highest since" read as a price only with that
+# subject and, for "records", a verb of arrival right before them: "highest level" also means an alert or a
+# rank ("US raises alert to highest level"), and "Tensions at record high" has no price in it at all.
+_ARRIVAL = (
+    r"(?:hit(?:s|ting)?|at|near(?:s|ing)?|to|from|off|reach(?:es|ed|ing)?|touch(?:es|ed|ing)?"
+    r"|set(?:s|ting)?|notch(?:es|ed|ing)?|scal(?:e|es|ed|ing)|test(?:s|ed|ing)?|mark(?:s|ed|ing)?"
+    r"|ma(?:de|kes?|king)|s(?:aw|ees?|eeing))\s+"
+)
+_LEVEL_FILLER = r"(?:(?:its|their|a|an|the|new|fresh|another|near|nearly)\s+)*"
+_LEVEL = (
+    r"(?:" + _EXTREME + r"[- ](?:highs?|lows?|peaks?)"
+    r"|" + _EXTREME + r"\s+(?:levels?|close|closing|prices?)"
+    r"|(?:highest|lowest)\s+(?:since|in)"
+    r"|(?:session|intraday|intra-day|fresh|new|day|week|month|year|decade|weekly|monthly|yearly|annual)"
+    r"[- ](?:highs?|lows?|peaks?))\b"
+)
+_SUBJECT_AT_LEVEL = (
+    _PRICED_SUBJECT + r"(?:'s)?" + _ASSET_TO_MOVE
+    + r"(?:(?:" + _WINDOW_MOVE + r"|" + _TIGHT_MOVE + r")\s+)?"
+    + r"(?:(?:" + _ARRIVAL + r")?" + _LEVEL_FILLER + _LEVEL + r"|" + _ARRIVAL + _LEVEL_FILLER + r"records?\b)"
+)
+
+# Bare "6-month high" reads as a price with no named asset. "top" and "pare" also take the plural-subject form
+# ("Oil prices top $100", "Stocks pare losses"); bare "top" needs the dollar figure, since "Oil tanker seized,
+# top general says" is an event.
+_PRICE_REPORT_RE = re.compile(
+    _PRICED_ASSET + r".{0,30}?\b" + _WINDOW_MOVE + r"\b"
+    r"|" + _PRICED_ASSET + _ASSET_TO_MOVE + r"(?:" + _TIGHT_MOVE + r"\b|" + _DOLLAR_LEVEL + r"|" + _OUTLOOK + r")"
     r"|\bfutures\b"
     r"|\bsettle[sd]?\b"
     r"|\d+(?:\.\d+)?\s*%\s+(?:higher|lower)\b"
-    r"|\b" + _EXTREME + r"[- ](?:high|low)s?\b"
-    r"|" + _PRICED_ASSET + r"(?:\s+prices?)?\s+(?:hit(?:s|ting)?|at|near|reach(?:es|ed|ing)?|touch(?:es|ed|ing)?)"
-    r"(?:\s+(?:its|their|a|an|the|new|fresh))*\s+"
-    r"(?:records?|" + _EXTREME + r"\s+levels?|(?:highest|lowest)\s+(?:since|in))\b"
+    r"|\b" + _LONG_RANGE + r"[- ](?:high|low)s?\b"
+    r"|" + _SUBJECT_AT_LEVEL +
+    r"|\b(?:record[- ]|all[- ]time[- ])(?:highs?|lows?)\s+(?:(?:for|in|on)\s+(?:the\s+)?)?" + _PRICED_SUBJECT +
     r"|\bhit(?:s|ting)? \$\d"
 )
 
