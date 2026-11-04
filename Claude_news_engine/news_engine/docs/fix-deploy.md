@@ -59,7 +59,7 @@ Dry run first and read the counts (build-time estimate on a live copy: 28 of 59 
 
 ```
 python scripts/rederive_surprise_direction.py --db webapp/dashboard.db
-python scripts/rederive_surprise_direction.py --db webapp/dashboard.db --apply --report rederive-report.txt
+python scripts/rederive_surprise_direction.py --db webapp/dashboard.db --apply --report .
 python scripts/rederive_surprise_direction.py --db webapp/dashboard.db
 ```
 

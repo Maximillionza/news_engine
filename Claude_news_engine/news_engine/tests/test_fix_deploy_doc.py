@@ -64,3 +64,13 @@ def test_methodology_is_current_and_pre_registers_the_floor() -> None:
     assert "NEWS_CALL_MIN_ARTICLES = 3" in text
     assert "2026-11-03" in text
     assert "never tuned on results" in text
+
+
+def test_rederive_apply_command_uses_an_existing_report_folder() -> None:
+    """--report is a FOLDER for rederive_surprise_direction.py (exit 4 if missing); a file name would abort the apply step."""
+    text = _text()
+    commands = re.findall(r"rederive_surprise_direction\.py[^\r\n]*--report\s+(\S+)", text)
+    assert commands, "no rederive apply command with --report found"
+    for target in commands:
+        assert not target.endswith(".txt"), f"--report must be a folder, got {target!r}"
+        assert (APP / target).is_dir(), f"--report folder {target!r} does not exist relative to the app dir"
