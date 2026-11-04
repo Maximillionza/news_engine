@@ -10,7 +10,6 @@ EXPECTED = {
     "data_layer/calendar_feed.py:387": 'actual=item.get("actual") or None',
     "webapp/scheduler.py:205-209": "get_actual_from_fred(",
     "config/settings.py:153": "FRED_SERIES_ID_BY_EVENT_TITLE",
-    "config/settings.py:446": "JOLTS Job Openings",
     # Section 1: the trend-window readers the seed and fills change.
     "scoring/backtest_accumulator.py:332": "get_event_history(conn, event_title)",
     "webapp/app.py:146": "get_event_history(conn, title)",

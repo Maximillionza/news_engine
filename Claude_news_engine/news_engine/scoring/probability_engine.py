@@ -1045,8 +1045,8 @@ def score_bundle(
     per-instrument loop, which does exactly that (2026-09-13).
 
     precursor_events: optional leading-indicator events (already-released
-    minor/medium USD releases that predict this event — ADP before NFP,
-    PPI before CPI, etc; see get_precursor_events_for() above for how to
+    minor/medium USD releases that predict this event — initial claims
+    before NFP, etc; see get_precursor_events_for() above for how to
     build this list). Their forecast-vs-actual surprise is
     blended in as a structured, high-trust contribution alongside article
     sentiment — same USD-directional axis, same weighted-average math,

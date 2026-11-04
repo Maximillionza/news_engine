@@ -426,14 +426,30 @@ EVENT_REGISTRY: dict[str, dict] = {
 # tier (EVENT_REGISTRY) is metadata used only to decide dashboard-score-
 # or-not, never a structural constraint on which links are allowed.
 #
-# Absorbs and replaces the old hardcoded precursor-lookup dict; PPI->CPI
-# kept the weight (PRECURSOR_TRUST_WEIGHT, 0.9) that mechanism used.
+# Absorbs and replaces the old hardcoded precursor-lookup dict.
 #
-# ADP links removed 2026-11-04 (owner decision): the workbook's
-# POC_NFP_Leading_Indicators tab REJECTS ADP as an NFP preview (47.7%
-# direction hit rate), and verified initial claims now outrank the unverified
-# JOLTS and Challenger links. A removed link is not a zero weight: the pair
-# stops being a precursor at all.
+# Links removed 2026-11-04 (owner decision) because the Causation Matrix
+# workbook (docs/News_Engine_Causation_Matrix_v2.xlsx) contradicts or does
+# not verify them. A removed link is not a zero weight: the pair stops being
+# a precursor at all, because get_precursor_events_for() no longer fetches it.
+#   - ADP -> NFP, Unemployment Rate, Average Hourly Earnings: tab
+#     POC_NFP_Leading_Indicators REJECTS ADP as an NFP preview (47.7%
+#     direction hit rate).
+#   - JOLTS, Challenger -> NFP: same tab, Tier 2, Guessing, not sourced.
+#     Initial claims, its one verified input, is the only NFP link left.
+#   - ISM Manufacturing Prices, ISM Services Prices -> CPI m/m: tab
+#     POC_CPI_Leading_Indicators, RESOLVED NEGATIVE (Cleveland Fed: the ISM
+#     prices index predicts producer prices, not consumer prices).
+#   - PPI, Core PPI -> CPI m/m, CPI y/y, Core CPI m/m, Core CPI y/y: tabs
+#     POC_CPI_Leading_Indicators (Tier 2, Guessing) and
+#     POC_PPI_Leading_Indicators (pass-through strength and lag secondary-
+#     sourced only). The timing lead that tab calls certain is wrong too: CPI
+#     came first in 9 of 10 cycles in 2026.
+#   - CPI m/m, Core CPI m/m -> Core PCE Price Index m/m: tab POC_Core_PCE
+#     downgraded same-month CPI to Tier 2 after its July 2026 test failed.
+#   - CB Consumer Confidence, Prelim UoM Consumer Sentiment -> Retail Sales
+#     m/m: tab POC_Retail_Sales REJECTS consumer confidence indexes (Croushore).
+# Import Prices -> CPI m/m stays: unsourced, but not contradicted.
 #
 # Since B6 (2026-10-22) the float weight IS the precursor's trust weight
 # (scoring.probability_engine._precursor_link_weight); PRECURSOR_TRUST_WEIGHT
@@ -443,32 +459,12 @@ EVENT_REGISTRY: dict[str, dict] = {
 EVENT_INFLUENCE_LINKS: dict[str, list[tuple[str, float]]] = {
     "Non-Farm Employment Change": [
         ("Unemployment Claims", 0.40),  # the workbook's one verified NFP input
-        ("JOLTS Job Openings", 0.30),   # workbook: Guessing, not sourced
-        ("Challenger Job Cuts y/y", 0.30),  # workbook: Guessing, not sourced
     ],
     "Unemployment Rate": [
         ("Unemployment Claims", 0.40),
     ],
     "CPI m/m": [
-        ("PPI m/m", 0.90),  # migrated from the old hardcoded precursor-lookup link
-        ("Core PPI m/m", 0.60),
         ("Import Prices m/m", 0.40),
-        ("ISM Manufacturing Prices", 0.30),
-        ("ISM Services Prices", 0.30),
-    ],
-    "CPI y/y": [
-        ("PPI m/m", 0.80),
-        ("Core PPI m/m", 0.55),
-    ],
-    "Core CPI m/m": [
-        ("Core PPI m/m", 0.85),
-    ],
-    "Core CPI y/y": [
-        ("Core PPI m/m", 0.70),
-    ],
-    "Core PCE Price Index m/m": [
-        ("CPI m/m", 0.70),  # High->High: the Fed's own preferred gauge, reads the CPI print first
-        ("Core CPI m/m", 0.75),
     ],
     "FOMC Statement": [
         ("Non-Farm Employment Change", 0.50),   # High->High: labor strength shapes the Fed's read
@@ -498,10 +494,6 @@ EVENT_INFLUENCE_LINKS: dict[str, list[tuple[str, float]]] = {
     ],
     "Durable Goods Orders m/m": [
         ("ISM Manufacturing PMI", 0.30),
-    ],
-    "Retail Sales m/m": [
-        ("CB Consumer Confidence", 0.35),
-        ("Prelim UoM Consumer Sentiment", 0.35),
     ],
     "Housing Starts": [
         ("Building Permits", 0.55),  # leading -> coincident, same publish cycle

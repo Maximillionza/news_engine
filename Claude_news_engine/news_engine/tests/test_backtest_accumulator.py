@@ -415,19 +415,19 @@ def test_is_material_change_crossing_thin_sample_threshold_is_material():
 
 
 def test_precursor_events_found_via_graph_and_passed_to_score_bundle():
-    print("=== accumulator: a graph-linked, already-resolved precursor event (e.g. PPI before CPI) is found via event_history and blended into scoring ===")
+    print("=== accumulator: a graph-linked, already-resolved precursor event (e.g. claims before NFP) is found via event_history and blended into scoring ===")
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test.db"
         dashboard_db_path = Path(tmp) / "dashboard.db"
         now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
         target = EconomicEvent(
-            title="CPI m/m", country="USD", impact="High",
-            event_time_utc=now + dt.timedelta(hours=20), forecast="0.2%", actual=None,
+            title="Non-Farm Employment Change", country="USD", impact="High",
+            event_time_utc=now + dt.timedelta(hours=20), forecast="180K", actual=None,
         )
         precursor_time = now - dt.timedelta(hours=5)
         precursor = EconomicEvent(
-            title="Core PPI m/m", country="USD", impact="Medium",
-            event_time_utc=precursor_time, forecast="0.2%", actual="0.4%",  # already released, linked to CPI m/m
+            title="Unemployment Claims", country="USD", impact="Medium",
+            event_time_utc=precursor_time, forecast="220K", actual="240K",  # already released, linked to NFP
         )
         dash_conn = webapp_store.get_connection(dashboard_db_path)
         webapp_store.upsert_event_history(dash_conn, precursor, surprise_direction="higher", now=precursor_time)
@@ -446,8 +446,8 @@ def test_precursor_events_found_via_graph_and_passed_to_score_bundle():
             _, kwargs = mock_score.call_args
             assert "precursor_events" in kwargs, "score_bundle must be called with precursor_events, not left at its None default"
             precursors_passed = kwargs["precursor_events"]
-            assert len(precursors_passed) == 1, f"expected exactly the Core PPI precursor (linked, resolved, in-window), got {precursors_passed}"
-            assert precursors_passed[0].title == "Core PPI m/m"
+            assert len(precursors_passed) == 1, f"expected exactly the claims precursor (linked, resolved, in-window), got {precursors_passed}"
+            assert precursors_passed[0].title == "Unemployment Claims"
     print("PASS\n")
 
 
@@ -697,17 +697,17 @@ def test_precursor_events_found_regardless_of_scoring_calendar_filter():
         dashboard_db_path = Path(tmp) / "dashboard.db"
         now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
         target = EconomicEvent(
-            title="CPI m/m", country="USD", impact="High",
-            event_time_utc=now + dt.timedelta(hours=20), forecast="0.2%", actual=None,
+            title="Non-Farm Employment Change", country="USD", impact="High",
+            event_time_utc=now + dt.timedelta(hours=20), forecast="180K", actual=None,
         )
         precursor_time = now - dt.timedelta(hours=5)
-        # "PPI m/m" is Medium impact — filter_relevant_events() (High-only)
-        # would drop it from the SCORING candidate list, but the
+        # "Unemployment Claims" is Medium impact — filter_relevant_events()
+        # (High-only) would drop it from the SCORING candidate list, but the
         # graph-driven precursor lookup reads event_history directly and
         # must still find it.
         precursor = EconomicEvent(
-            title="PPI m/m", country="USD", impact="Medium",
-            event_time_utc=precursor_time, forecast="0.2%", actual="0.5%",
+            title="Unemployment Claims", country="USD", impact="Medium",
+            event_time_utc=precursor_time, forecast="220K", actual="250K",
         )
         dash_conn = webapp_store.get_connection(dashboard_db_path)
         webapp_store.upsert_event_history(dash_conn, precursor, surprise_direction="higher", now=precursor_time)
@@ -724,7 +724,7 @@ def test_precursor_events_found_regardless_of_scoring_calendar_filter():
 
             _, kwargs = mock_score.call_args
             titles_passed = [e.title for e in kwargs["precursor_events"]]
-            assert "PPI m/m" in titles_passed, "Medium-impact precursor must still be found via event_history, regardless of the scoring filter"
+            assert "Unemployment Claims" in titles_passed, "Medium-impact precursor must still be found via event_history, regardless of the scoring filter"
     print("PASS\n")
 
 
