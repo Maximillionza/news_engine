@@ -8,7 +8,7 @@ growing record of real predictions made blind, before the event, to be
 confirmed against real outcomes later via scripts/confirm_backtest_outcomes.py.
 
 Also blends in structured precursor data: already-released leading
-indicators (e.g. PPI before CPI, ADP before NFP — see config.settings'
+indicators (e.g. initial claims before NFP — see config.settings'
 EVENT_INFLUENCE_LINKS and scoring.probability_engine.get_precursor_events_for())
 get passed into score_bundle() alongside article sentiment, read from the
 dashboard's persisted event_history — unaffected by any high-impact-only

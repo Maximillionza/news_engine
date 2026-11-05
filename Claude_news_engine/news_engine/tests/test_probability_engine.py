@@ -939,13 +939,13 @@ def test_get_precursor_events_for_finds_resolved_precursor_in_window():
         precursor_time = EVENT_TIME - dt.timedelta(hours=5)
         webapp_store.upsert_event_history(
             conn,
-            EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=precursor_time, forecast="0.2%", actual="0.4%"),
+            EconomicEvent(title="Unemployment Claims", country="USD", impact="Medium", event_time_utc=precursor_time, forecast="220K", actual="240K"),
             surprise_direction="higher", now=precursor_time,
         )
-        result = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
+        result = get_precursor_events_for("Non-Farm Employment Change", EVENT_TIME, conn)
         assert len(result) == 1
-        assert result[0].title == "PPI m/m"
-        assert result[0].actual == "0.4%"
+        assert result[0].title == "Unemployment Claims"
+        assert result[0].actual == "240K"
         conn.close()
     print("PASS\n")
 
@@ -957,10 +957,10 @@ def test_get_precursor_events_for_skips_unresolved_precursor():
         precursor_time = EVENT_TIME - dt.timedelta(hours=5)
         webapp_store.upsert_event_history(
             conn,
-            EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=precursor_time, forecast="0.2%", actual=None),
+            EconomicEvent(title="Unemployment Claims", country="USD", impact="Medium", event_time_utc=precursor_time, forecast="220K", actual=None),
             surprise_direction=None, now=precursor_time,
         )
-        result = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
+        result = get_precursor_events_for("Non-Farm Employment Change", EVENT_TIME, conn)
         assert result == []
         conn.close()
     print("PASS\n")
@@ -973,11 +973,11 @@ def test_get_precursor_events_for_ignores_stale_resolved_row_outside_window():
         stale_time = EVENT_TIME - dt.timedelta(days=40)  # well outside PRE_EVENT_WINDOW_HOURS (72h)
         webapp_store.upsert_event_history(
             conn,
-            EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=stale_time, forecast="0.2%", actual="0.3%"),
+            EconomicEvent(title="Unemployment Claims", country="USD", impact="Medium", event_time_utc=stale_time, forecast="220K", actual="230K"),
             surprise_direction="higher", now=stale_time,
         )
-        result = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
-        assert result == [], "a month-old resolved PPI print must not be mistaken for this cycle's precursor"
+        result = get_precursor_events_for("Non-Farm Employment Change", EVENT_TIME, conn)
+        assert result == [], "a month-old resolved claims print must not be mistaken for this cycle's precursor"
         conn.close()
     print("PASS\n")
 
@@ -989,11 +989,11 @@ def test_get_precursor_events_for_excludes_foreign_country_row():
         precursor_time = EVENT_TIME - dt.timedelta(hours=5)
         webapp_store.upsert_event_history(
             conn,
-            EconomicEvent(title="PPI m/m", country="EUR", impact="Medium", event_time_utc=precursor_time, forecast="0.2%", actual="0.4%"),
+            EconomicEvent(title="Unemployment Claims", country="EUR", impact="Medium", event_time_utc=precursor_time, forecast="220K", actual="240K"),
             surprise_direction="higher", now=precursor_time,
         )
-        result = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
-        assert result == [], "a Eurozone PPI print must never be blended in as a USD precursor for a US CPI target"
+        result = get_precursor_events_for("Non-Farm Employment Change", EVENT_TIME, conn)
+        assert result == [], "a foreign print under the claims title must never be blended in as a USD precursor for a US NFP target"
         conn.close()
     print("PASS\n")
 
@@ -1008,10 +1008,10 @@ def test_get_precursor_events_for_excludes_unknown_country_row():
         conn.execute(
             "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, surprise_direction, recorded_at_utc, updated_at_utc, source) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'live')",
-            ("PPI m/m", precursor_time.isoformat(), "0.2%", None, "0.4%", "higher", precursor_time.isoformat(), precursor_time.isoformat()),
+            ("Unemployment Claims", precursor_time.isoformat(), "220K", None, "240K", "higher", precursor_time.isoformat(), precursor_time.isoformat()),
         )
         conn.commit()
-        result = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
+        result = get_precursor_events_for("Non-Farm Employment Change", EVENT_TIME, conn)
         assert result == [], "a legacy row with country still unknown must never be treated as USD by default"
         conn.close()
     print("PASS\n")
@@ -1021,21 +1021,21 @@ def test_get_precursor_events_for_multiple_links_all_resolved():
     print("=== get_precursor_events_for: multiple configured links for one target all resolve independently ===")
     with tempfile.TemporaryDirectory() as tmp:
         conn = webapp_store.get_connection(Path(tmp) / "test.db")
-        ppi_time = EVENT_TIME - dt.timedelta(hours=48)
-        import_time = EVENT_TIME - dt.timedelta(hours=6)
+        nfp_time = EVENT_TIME - dt.timedelta(hours=48)
+        cpi_time = EVENT_TIME - dt.timedelta(hours=6)
         webapp_store.upsert_event_history(
             conn,
-            EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=ppi_time, forecast="0.2%", actual="0.4%"),
-            surprise_direction="higher", now=ppi_time,
+            EconomicEvent(title="Non-Farm Employment Change", country="USD", impact="High", event_time_utc=nfp_time, forecast="180K", actual="210K"),
+            surprise_direction="higher", now=nfp_time,
         )
         webapp_store.upsert_event_history(
             conn,
-            EconomicEvent(title="Import Prices m/m", country="USD", impact="Low", event_time_utc=import_time, forecast="0.1%", actual="0.1%"),
-            surprise_direction="in_line", now=import_time,
+            EconomicEvent(title="CPI m/m", country="USD", impact="High", event_time_utc=cpi_time, forecast="0.1%", actual="0.1%"),
+            surprise_direction="in_line", now=cpi_time,
         )
-        result = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
+        result = get_precursor_events_for("FOMC Statement", EVENT_TIME, conn)
         titles = {e.title for e in result}
-        assert titles == {"PPI m/m", "Import Prices m/m"}
+        assert titles == {"Non-Farm Employment Change", "CPI m/m"}
         conn.close()
     print("PASS\n")
 
@@ -1081,28 +1081,29 @@ def test_check_precursor_chain_conflict_three_with_one_outlier_flags():
 
 def test_score_bundle_flags_chain_conflict_when_linked_precursors_disagree():
     print("=== score_bundle: 2 linked, confirmed precursors disagreeing in direction sets chain_conflict_flag and dampens confidence ===")
-    event = _cpi_event()  # "CPI m/m" target, links to PPI m/m + Core PPI m/m + Import Prices m/m + ISM Prices Paid
+    # "FOMC Statement" target, links to NFP + CPI m/m + Core PCE Price Index m/m
+    event = EconomicEvent(title="FOMC Statement", country="USD", impact="High", event_time_utc=EVENT_TIME)
     bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
-    ppi_beat = EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=EVENT_TIME - dt.timedelta(hours=10), forecast="0.2%", actual="0.5%")  # higher_bullish, beat -> USD-bullish
-    import_miss = EconomicEvent(title="Import Prices m/m", country="USD", impact="Low", event_time_utc=EVENT_TIME - dt.timedelta(hours=5), forecast="0.3%", actual="0.0%")  # higher_bullish, big miss -> USD-bearish
+    cpi_beat = EconomicEvent(title="CPI m/m", country="USD", impact="High", event_time_utc=EVENT_TIME - dt.timedelta(hours=10), forecast="0.2%", actual="0.5%")  # higher_bullish, beat -> USD-bullish
+    nfp_miss = EconomicEvent(title="Non-Farm Employment Change", country="USD", impact="High", event_time_utc=EVENT_TIME - dt.timedelta(hours=5), forecast="180K", actual="60K")  # higher_bullish, big miss -> USD-bearish
 
-    no_conflict_result = score_bundle(bundle, "XAUUSD", precursor_events=[ppi_beat])
+    no_conflict_result = score_bundle(bundle, "XAUUSD", precursor_events=[cpi_beat])
     assert no_conflict_result.chain_conflict_flag is False
 
-    conflict_result = score_bundle(bundle, "XAUUSD", precursor_events=[ppi_beat, import_miss])
+    conflict_result = score_bundle(bundle, "XAUUSD", precursor_events=[cpi_beat, nfp_miss])
     assert conflict_result.chain_conflict_flag is True
     assert conflict_result.chain_conflict_note is not None
-    # B6: with authored link weights (PPI 0.90 vs Import Prices 0.40) the second precursor adds sample size
-    # and the weaker dissenter barely lowers agreement, so comparing against the one-precursor run no longer
-    # isolates the conflict. Compare against the same two precursors with the conflict multiplier neutralised.
+    # B6: with authored link weights the second precursor also adds sample size, so comparing against the
+    # one-precursor run does not isolate the conflict. Compare against the same two precursors with the
+    # conflict multiplier neutralised.
     with patch.object(probability_engine, "PRECURSOR_CHAIN_CONFLICT_CONFIDENCE_MULTIPLIER", 1.0):
-        undampened = score_bundle(bundle, "XAUUSD", precursor_events=[ppi_beat, import_miss])
+        undampened = score_bundle(bundle, "XAUUSD", precursor_events=[cpi_beat, nfp_miss])
     assert conflict_result.confidence < undampened.confidence, "a chain conflict must dampen confidence, never raise it"
     print("PASS\n")
 
 
-def test_migrated_links_produce_identical_score_bundle_result_old_vs_new_path():
-    print("=== REGRESSION: graph-driven ADP->NFP and PPI->CPI precursors produce IDENTICAL score_bundle() results to the old hardcoded path ===")
+def test_removed_links_unfetched_and_graph_path_identical_to_direct_path():
+    print("=== REGRESSION: resolved ADP and PPI prints are no precursors; a graph-driven claims precursor produces IDENTICAL score_bundle() results to passing it directly ===")
     with tempfile.TemporaryDirectory() as tmp:
         conn = webapp_store.get_connection(Path(tmp) / "test.db")
 
@@ -1112,31 +1113,31 @@ def test_migrated_links_produce_identical_score_bundle_result_old_vs_new_path():
         adp_event = EconomicEvent(title="ADP Non-Farm Employment Change", country="USD", impact="Medium", event_time_utc=adp_time, forecast="150K", actual="190K")
         webapp_store.upsert_event_history(conn, adp_event, surprise_direction="higher", now=adp_time)
 
-        nfp_bundle = EventNewsBundle(event=nfp_event, articles=[], as_of_utc=EVENT_TIME)
-        old_path_nfp = score_bundle(nfp_bundle, "XAUUSD", precursor_events=[adp_event])
-        new_precursors_nfp = get_precursor_events_for("Non-Farm Employment Change", EVENT_TIME, conn)
-        new_path_nfp = score_bundle(nfp_bundle, "XAUUSD", precursor_events=new_precursors_nfp)
+        # ADP was rejected by the workbook and unlinked on 2026-11-04: a resolved print feeds nothing.
+        assert get_precursor_events_for("Non-Farm Employment Change", EVENT_TIME, conn) == []
 
-        assert new_path_nfp.aggregate_usd_sentiment == old_path_nfp.aggregate_usd_sentiment
-        assert new_path_nfp.probability == old_path_nfp.probability
-        assert new_path_nfp.confidence == old_path_nfp.confidence
-        assert new_path_nfp.direction == old_path_nfp.direction
-
-        # --- CPI target, PPI precursor ---
-        cpi_event = _cpi_event()
+        # --- CPI target, PPI print: the link was removed on 2026-11-04, so it is not fetched at all ---
         ppi_time = EVENT_TIME - dt.timedelta(hours=36)
         ppi_event = EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=ppi_time, forecast="0.2%", actual="0.4%")
         webapp_store.upsert_event_history(conn, ppi_event, surprise_direction="higher", now=ppi_time)
+        assert get_precursor_events_for("CPI m/m", EVENT_TIME, conn) == []
 
-        cpi_bundle = EventNewsBundle(event=cpi_event, articles=[], as_of_utc=EVENT_TIME)
-        old_path_cpi = score_bundle(cpi_bundle, "XAUUSD", precursor_events=[ppi_event])
-        new_precursors_cpi = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
-        new_path_cpi = score_bundle(cpi_bundle, "XAUUSD", precursor_events=new_precursors_cpi)
+        # --- Unemployment Rate target, claims precursor ---
+        rate_event = _unemployment_event()
+        claims_time = EVENT_TIME - dt.timedelta(hours=36)
+        claims_event = EconomicEvent(title="Unemployment Claims", country="USD", impact="Medium", event_time_utc=claims_time, forecast="220K", actual="240K")
+        webapp_store.upsert_event_history(conn, claims_event, surprise_direction="higher", now=claims_time)
 
-        assert new_path_cpi.aggregate_usd_sentiment == old_path_cpi.aggregate_usd_sentiment
-        assert new_path_cpi.probability == old_path_cpi.probability
-        assert new_path_cpi.confidence == old_path_cpi.confidence
-        assert new_path_cpi.direction == old_path_cpi.direction
+        rate_bundle = EventNewsBundle(event=rate_event, articles=[], as_of_utc=EVENT_TIME)
+        direct_path = score_bundle(rate_bundle, "XAUUSD", precursor_events=[claims_event])
+        graph_precursors = get_precursor_events_for("Unemployment Rate", EVENT_TIME, conn)
+        graph_path = score_bundle(rate_bundle, "XAUUSD", precursor_events=graph_precursors)
+
+        assert [e.title for e in graph_precursors] == ["Unemployment Claims"]
+        assert graph_path.aggregate_usd_sentiment == direct_path.aggregate_usd_sentiment
+        assert graph_path.probability == direct_path.probability
+        assert graph_path.confidence == direct_path.confidence
+        assert graph_path.direction == direct_path.direction
         conn.close()
     print("PASS\n")
 
@@ -1144,33 +1145,40 @@ def test_migrated_links_produce_identical_score_bundle_result_old_vs_new_path():
 def test_precursor_trust_uses_authored_link_weight():
     print("=== B6: _build_precursor_contributions() uses the EVENT_INFLUENCE_LINKS weight as the precursor's trust_weight ===")
     from scoring.probability_engine import _build_precursor_contributions
-    event = EconomicEvent(title="Challenger Job Cuts y/y", country="USD", impact="Low", event_time_utc=EVENT_TIME, forecast="20K", actual="35K")  # linked to NFP at weight 0.35
+    event = EconomicEvent(title="Unemployment Claims", country="USD", impact="Medium", event_time_utc=EVENT_TIME, forecast="220K", actual="240K")  # linked to NFP at weight 0.40
     contributions = _build_precursor_contributions([event], EVENT_TIME, target_title="Non-Farm Employment Change")
     assert len(contributions) == 1
-    assert contributions[0].trust_weight == 0.35
-    assert contributions[0].combined_weight == 0.35 * contributions[0].time_weight
+    assert contributions[0].trust_weight == 0.40
+    assert contributions[0].combined_weight == 0.40 * contributions[0].time_weight
     print("PASS\n")
 
 
-def test_jolts_to_nfp_uses_0_40():
-    print("=== B6: JOLTS -> NFP link weight is 0.40 (JOLTS is dormant today: no EVENT_SURPRISE_DIRECTION entry, patched in here) ===")
+def test_dormant_link_uses_its_authored_weight_once_a_direction_exists():
+    print("=== Building Permits -> Housing Starts link weight is 0.55 (Building Permits is dormant today: no EVENT_SURPRISE_DIRECTION entry, patched in here) ===")
     from scoring.probability_engine import _build_precursor_contributions, _precursor_link_weight
     from config.settings import EVENT_SURPRISE_DIRECTION
-    assert _precursor_link_weight("Non-Farm Employment Change", "JOLTS Job Openings") == 0.40
-    event = EconomicEvent(title="JOLTS Job Openings", country="USD", impact="Medium", event_time_utc=EVENT_TIME, forecast="7.2M", actual="7.6M")
-    with patch.dict(EVENT_SURPRISE_DIRECTION, {"JOLTS Job Openings": "higher_bullish"}):
-        contributions = _build_precursor_contributions([event], EVENT_TIME, target_title="Non-Farm Employment Change")
+    assert _precursor_link_weight("Housing Starts", "Building Permits") == 0.55
+    event = EconomicEvent(title="Building Permits", country="USD", impact="Low", event_time_utc=EVENT_TIME, forecast="1.40M", actual="1.50M")
+    assert _build_precursor_contributions([event], EVENT_TIME, target_title="Housing Starts") == []
+    with patch.dict(EVENT_SURPRISE_DIRECTION, {"Building Permits": "higher_bullish"}):
+        contributions = _build_precursor_contributions([event], EVENT_TIME, target_title="Housing Starts")
     assert len(contributions) == 1
-    assert contributions[0].trust_weight == 0.40
+    assert contributions[0].trust_weight == 0.55
     print("PASS\n")
 
 
-def test_adp_and_ppi_links_stay_0_90():
-    print("=== B6: ADP -> NFP and PPI m/m -> CPI m/m keep 0.90 (behaviour-preserving); PPI m/m -> CPI y/y is 0.80 ===")
+def test_surviving_links_use_their_authored_weights():
+    print("=== B6: surviving links return their authored weights, none of them the 0.9 fallback ===")
     from scoring.probability_engine import _precursor_link_weight
-    assert _precursor_link_weight("Non-Farm Employment Change", "ADP Non-Farm Employment Change") == 0.90
-    assert _precursor_link_weight("CPI m/m", "PPI m/m") == 0.90
-    assert _precursor_link_weight("CPI y/y", "PPI m/m") == 0.80
+    assert _precursor_link_weight("Non-Farm Employment Change", "Unemployment Claims") == 0.40
+    assert _precursor_link_weight("CPI m/m", "Import Prices m/m") == 0.40
+    assert _precursor_link_weight("FOMC Statement", "CPI m/m") == 0.60
+    assert _precursor_link_weight("Federal Funds Rate", "Core PCE Price Index m/m") == 0.65
+    # ISM Manufacturing PMI carries different weights per target, and its first
+    # table entry (Prelim GDP q/q, 0.30) is not the 0.40 below, so a lookup that
+    # ignored the target would fail here.
+    assert _precursor_link_weight("Industrial Production m/m", "ISM Manufacturing PMI") == 0.40
+    assert _precursor_link_weight("Durable Goods Orders m/m", "ISM Manufacturing PMI") == 0.30
     print("PASS\n")
 
 
@@ -1185,13 +1193,13 @@ def test_unlinked_precursor_falls_back_to_global_weight():
 
 
 def test_score_bundle_passes_target_title_to_precursors():
-    print("=== B6: score_bundle() hands bundle.event.title to the precursor builder (CPI y/y + PPI m/m -> trust 0.80) ===")
-    event = EconomicEvent(title="CPI y/y", country="USD", impact="High", event_time_utc=EVENT_TIME, forecast="2.9%", previous="2.9%")
-    ppi = EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=EVENT_TIME, forecast="0.2%", actual="0.4%")
+    print("=== B6: score_bundle() hands bundle.event.title to the precursor builder (FOMC Statement + CPI m/m -> trust 0.60) ===")
+    event = EconomicEvent(title="FOMC Statement", country="USD", impact="High", event_time_utc=EVENT_TIME)
+    cpi = EconomicEvent(title="CPI m/m", country="USD", impact="High", event_time_utc=EVENT_TIME, forecast="0.2%", actual="0.4%")
     bundle = EventNewsBundle(event=event, articles=[], as_of_utc=EVENT_TIME)
-    result = score_bundle(bundle, "XAUUSD", precursor_events=[ppi])
+    result = score_bundle(bundle, "XAUUSD", precursor_events=[cpi])
     assert len(result.precursor_contributions) == 1
-    assert result.precursor_contributions[0].trust_weight == 0.80
+    assert result.precursor_contributions[0].trust_weight == 0.60
     print("PASS\n")
 
 
@@ -1339,17 +1347,17 @@ def test_precursor_events_carry_prior_only_sigma():
             for k, actual in enumerate(prior_actuals[:n_priors], start=1):
                 when = dt.datetime(2026, 8 - k, 12, 12, 30, tzinfo=UTC_TZ)
                 webapp_store.insert_event_history_if_absent(
-                    conn, "PPI m/m", when, "0.2%", "0.1%", actual, None, "live", "Medium", "USD", when,
+                    conn, "CPI m/m", when, "0.2%", "0.1%", actual, None, "live", "High", "USD", when,
                 )
             webapp_store.upsert_event_history(
                 conn,
-                EconomicEvent(title="PPI m/m", country="USD", impact="Medium", event_time_utc=precursor_time, forecast="0.2%", actual="0.4%"),
+                EconomicEvent(title="CPI m/m", country="USD", impact="High", event_time_utc=precursor_time, forecast="0.2%", actual="0.4%"),
                 surprise_direction="higher", now=precursor_time,
             )
-            events = get_precursor_events_for("CPI m/m", EVENT_TIME, conn)
+            events = get_precursor_events_for("FOMC Statement", EVENT_TIME, conn)
             conn.close()
-        assert [e.title for e in events] == ["PPI m/m"]
-        return events[0], _build_precursor_contributions(events, EVENT_TIME, target_title="CPI m/m")[0]
+        assert [e.title for e in events] == ["CPI m/m"]
+        return events[0], _build_precursor_contributions(events, EVENT_TIME, target_title="FOMC Statement")[0]
 
     event, contribution = build(6)
     assert event.surprise_sigma == pytest.approx(0.121106, abs=1e-6)
@@ -1429,10 +1437,10 @@ if __name__ == "__main__":
     test_check_precursor_chain_conflict_two_disagree_flags()
     test_check_precursor_chain_conflict_three_with_one_outlier_flags()
     test_score_bundle_flags_chain_conflict_when_linked_precursors_disagree()
-    test_migrated_links_produce_identical_score_bundle_result_old_vs_new_path()
+    test_removed_links_unfetched_and_graph_path_identical_to_direct_path()
     test_precursor_trust_uses_authored_link_weight()
-    test_jolts_to_nfp_uses_0_40()
-    test_adp_and_ppi_links_stay_0_90()
+    test_dormant_link_uses_its_authored_weight_once_a_direction_exists()
+    test_surviving_links_use_their_authored_weights()
     test_unlinked_precursor_falls_back_to_global_weight()
     test_score_bundle_passes_target_title_to_precursors()
     test_same_incident_recoverage_counts_once()

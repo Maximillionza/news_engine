@@ -136,18 +136,78 @@ def test_event_influence_links_every_title_is_registered():
     print("PASS\n")
 
 
-def test_event_influence_links_absorbs_the_old_hardcoded_adp_ppi_links():
-    print("=== EVENT_INFLUENCE_LINKS: the two previously-hardcoded links (ADP->NFP, PPI->CPI) are present ===")
-    nfp_precursors = dict(EVENT_INFLUENCE_LINKS.get("Non-Farm Employment Change", []))
-    assert "ADP Non-Farm Employment Change" in nfp_precursors
-    cpi_precursors = dict(EVENT_INFLUENCE_LINKS.get("CPI m/m", []))
-    assert "PPI m/m" in cpi_precursors
+def test_rejected_adp_is_no_precursor_and_claims_lead_nfp():
+    print("=== EVENT_INFLUENCE_LINKS: ADP (rejected by the workbook) feeds nothing; claims is NFP's only link ===")
+    for precursors in EVENT_INFLUENCE_LINKS.values():
+        assert "ADP Non-Farm Employment Change" not in dict(precursors)
+    assert EVENT_INFLUENCE_LINKS["Non-Farm Employment Change"] == [("Unemployment Claims", 0.40)]
+    print("PASS\n")
+
+
+def test_event_influence_links_drops_the_old_hardcoded_ppi_link():
+    print("=== EVENT_INFLUENCE_LINKS: the previously-hardcoded PPI->CPI link is gone; PPI feeds no CPI event ===")
+    for target in ("CPI m/m", "CPI y/y", "Core CPI m/m", "Core CPI y/y"):
+        linked = dict(EVENT_INFLUENCE_LINKS.get(target, []))
+        assert "PPI m/m" not in linked and "Core PPI m/m" not in linked
+    print("PASS\n")
+
+
+# Causation Matrix fidelity check, 2026-11-04: pairs the workbook contradicts or does not verify.
+DELETED_LINKS = [
+    ("Non-Farm Employment Change", "JOLTS Job Openings"),
+    ("Non-Farm Employment Change", "Challenger Job Cuts y/y"),
+    ("CPI m/m", "PPI m/m"),
+    ("CPI m/m", "Core PPI m/m"),
+    ("CPI m/m", "ISM Manufacturing Prices"),
+    ("CPI m/m", "ISM Services Prices"),
+    ("CPI y/y", "PPI m/m"),
+    ("CPI y/y", "Core PPI m/m"),
+    ("Core CPI m/m", "Core PPI m/m"),
+    ("Core CPI y/y", "Core PPI m/m"),
+    ("Core PCE Price Index m/m", "CPI m/m"),
+    ("Core PCE Price Index m/m", "Core CPI m/m"),
+    ("Retail Sales m/m", "CB Consumer Confidence"),
+    ("Retail Sales m/m", "Prelim UoM Consumer Sentiment"),
+]
+
+# Targets left with no links lose their key instead of keeping an empty list.
+REMOVED_TARGETS = ["CPI y/y", "Core CPI m/m", "Core CPI y/y", "Core PCE Price Index m/m", "Retail Sales m/m"]
+
+SURVIVING_LINKS = {
+    "Non-Farm Employment Change": {"Unemployment Claims": 0.40},
+    "Unemployment Rate": {"Unemployment Claims": 0.40},
+    "CPI m/m": {"Import Prices m/m": 0.40},
+    "FOMC Statement": {"Non-Farm Employment Change": 0.50, "CPI m/m": 0.60, "Core PCE Price Index m/m": 0.65},
+    "Federal Funds Rate": {"Non-Farm Employment Change": 0.50, "CPI m/m": 0.60, "Core PCE Price Index m/m": 0.65},
+    "Prelim GDP q/q": {
+        "Retail Sales m/m": 0.35, "Durable Goods Orders m/m": 0.30, "Trade Balance": 0.20,
+        "ISM Manufacturing PMI": 0.30, "ISM Services PMI": 0.30,
+    },
+    "ISM Manufacturing PMI": {"S&P Global Manufacturing PMI Flash": 0.45},
+    "ISM Services PMI": {"S&P Global Services PMI Flash": 0.45},
+    "Industrial Production m/m": {"ISM Manufacturing PMI": 0.40},
+    "Durable Goods Orders m/m": {"ISM Manufacturing PMI": 0.30},
+    "Housing Starts": {"Building Permits": 0.55},
+    "Existing Home Sales": {"Building Permits": 0.30, "Housing Starts": 0.30},
+    "New Home Sales": {"Building Permits": 0.30, "Housing Starts": 0.30},
+}
+
+
+def test_link_fidelity_deleted_pairs_are_gone_and_surviving_links_stay():
+    print("=== EVENT_INFLUENCE_LINKS: no deleted pair remains, emptied targets lost their key, every surviving link keeps its weight ===")
+    for target, precursor in DELETED_LINKS:
+        assert precursor not in dict(EVENT_INFLUENCE_LINKS.get(target, [])), f"{precursor} -> {target}"
+    for target in REMOVED_TARGETS:
+        assert target not in EVENT_INFLUENCE_LINKS, target
+    for target, expected in SURVIVING_LINKS.items():
+        assert dict(EVENT_INFLUENCE_LINKS[target]) == expected, target
     print("PASS\n")
 
 
 if __name__ == "__main__":
     test_event_registry_every_entry_has_impact_and_interval()
     test_event_registry_covers_every_event_surprise_direction_title()
+    test_rejected_adp_is_no_precursor_and_claims_lead_nfp()
     test_get_approximate_next_occurrence_unregistered_title_returns_none()
     test_get_approximate_next_occurrence_no_sources_returns_none()
     test_get_approximate_next_occurrence_tier3_cadence_math()
@@ -155,4 +215,5 @@ if __name__ == "__main__":
     test_get_approximate_next_occurrence_macro_calendar_beats_cadence_math()
     test_get_approximate_next_occurrence_ff_snapshot_beats_everything()
     test_event_influence_links_every_title_is_registered()
-    test_event_influence_links_absorbs_the_old_hardcoded_adp_ppi_links()
+    test_event_influence_links_drops_the_old_hardcoded_ppi_link()
+    test_link_fidelity_deleted_pairs_are_gone_and_surviving_links_stay()

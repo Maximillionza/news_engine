@@ -172,4 +172,4 @@ Every FRED-sourced value is the first print from the ALFRED vintage dated the re
 
 ## OPEN QUESTION (owner): JOLTS surprise direction
 
-Should a JOLTS surprise direction exist (higher openings = USD bullish?) so the existing JOLTS -> NFP 0.40 link (`config/settings.py:443`) can ever contribute? No direction is set until the owner decides; JOLTS actuals are now filled but carry no `surprise_direction`.
+Should a JOLTS surprise direction exist (higher openings = USD bullish?)? No direction is set until the owner decides; JOLTS actuals are now filled but carry no `surprise_direction`. The JOLTS -> NFP link this question first served was removed on 2026-11-04 (workbook tab `POC_NFP_Leading_Indicators`: Guessing, not sourced), so a direction alone no longer makes JOLTS an NFP precursor; that would also need a sourced link.

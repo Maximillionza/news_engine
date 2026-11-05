@@ -147,7 +147,7 @@ def run_backtest_case(
 
     precursor_events: optional leading-indicator events already released
     ahead of `event` (build with scoring.probability_engine.get_precursor_events_for()
-    against the dashboard's persisted event_history — precursors like ADP
+    against the dashboard's persisted event_history — precursors like initial claims
     are typically Medium impact, so this is unaffected by any high-impact-only
     filter used for the target event's own candidate list).
 
