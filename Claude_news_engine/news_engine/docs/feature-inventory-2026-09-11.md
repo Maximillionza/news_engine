@@ -214,7 +214,7 @@ anything live, and Layer2's per-instrument DIRECTIONAL nuance —
 
 | Feature | Status | Where |
 |---|---|---|
-| Precursor link cleanup: `EVENT_INFLUENCE_LINKS` drops every ADP link (NFP, Unemployment Rate, Average Hourly Earnings), JOLTS and Challenger from NFP, PPI and Core PPI from CPI m/m, CPI y/y, Core CPI m/m and Core CPI y/y, ISM Manufacturing and Services Prices from CPI m/m, CPI m/m and Core CPI m/m from Core PCE, and CB Consumer Confidence and Prelim UoM Consumer Sentiment from Retail Sales; initial claims now leads NFP as its only link. A removed link stops the pair being a precursor at all | **Built on news-engine/link-fidelity, not deployed** | `config/settings.py`. Source: Causation Matrix fidelity check 2026-11-04 |
+| Precursor link cleanup: `EVENT_INFLUENCE_LINKS` drops every ADP link (NFP, Unemployment Rate, Average Hourly Earnings), JOLTS and Challenger from NFP, PPI and Core PPI from CPI m/m, CPI y/y, Core CPI m/m and Core CPI y/y, ISM Manufacturing and Services Prices from CPI m/m, CPI m/m and Core CPI m/m from Core PCE, and CB Consumer Confidence and Prelim UoM Consumer Sentiment from Retail Sales; initial claims now leads NFP as its only link. A removed link stops the pair being a precursor at all | **Live 2026-11-05** | `config/settings.py`. Source: Causation Matrix fidelity check 2026-11-04 |
 
 ---
 
