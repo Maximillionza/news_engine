@@ -13,7 +13,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data_layer import fred_history as fh
-from tests.test_fred_history import FakeRequests, FakeResp, _init_obs
+from tests.test_fred_history import FakeRequests, FakeResp, StrictFredRequests, _init_obs
 from webapp import actuals_backfill as ab
 from webapp import store as ws
 
@@ -290,3 +290,26 @@ def test_maybe_backfill_never_raises(tmp_path, monkeypatch):
     conn = _db(tmp_path)
     monkeypatch.setattr(ab, "backfill_missing_actuals", lambda *a, **k: (_ for _ in ()).throw(ValueError("boom")))
     assert ab.maybe_backfill(conn, NOW, client_factory=lambda: fh.FredClient("K")) is None
+
+
+def test_backfill_fills_a_row_whose_lag_window_ends_after_fred_today(tmp_path, monkeypatch):
+    # The live ADP failure: a 2026-11-04 row, the +3-day window ending 2026-11-07, FRED's today 2026-11-06.
+    conn = _db(tmp_path)
+    when = dt.datetime(2026, 11, 4, 13, 15, tzinfo=UTC)
+    _row(conn, title="ADP Non-Farm Employment Change", when=when, forecast="80K", previous="90K", impact="High")
+    fake = StrictFredRequests(
+        D(2026, 11, 6),
+        initial={"ADPMNUSNERSA": [_init_obs(D(2026, 9, 1), D(2026, 10, 7)), _init_obs(D(2026, 10, 1), D(2026, 11, 4))]},
+        vintages={
+            ("ADPMNUSNERSA", "2026-11-04"): {D(2026, 8, 1): 134000000.0, D(2026, 9, 1): 134090000.0, D(2026, 10, 1): 134157000.0},
+            ("ADPMNUSNERSA", "2026-10-07"): {D(2026, 8, 1): 134000000.0, D(2026, 9, 1): 134090000.0},
+        },
+    )
+    monkeypatch.setattr(fh, "requests", fake)
+    client = fh.FredClient("KEY", pace_seconds=0, sleep=lambda _s: None, today=lambda: D(2026, 11, 6))
+
+    report = ab.backfill_missing_actuals(conn, client, dt.datetime(2026, 11, 6, 15, 24, tzinfo=UTC))
+
+    assert report.skip_reasons == []
+    assert report.written == 1
+    assert conn.execute("SELECT actual, source FROM event_history").fetchone()[:] == ("67K", "fred")
