@@ -216,6 +216,16 @@ anything live, and Layer2's per-instrument DIRECTIONAL nuance —
 |---|---|---|
 | Precursor link cleanup: `EVENT_INFLUENCE_LINKS` drops every ADP link (NFP, Unemployment Rate, Average Hourly Earnings), JOLTS and Challenger from NFP, PPI and Core PPI from CPI m/m, CPI y/y, Core CPI m/m and Core CPI y/y, ISM Manufacturing and Services Prices from CPI m/m, CPI m/m and Core CPI m/m from Core PCE, and CB Consumer Confidence and Prelim UoM Consumer Sentiment from Retail Sales; initial claims now leads NFP as its only link. A removed link stops the pair being a precursor at all | **Live 2026-11-05** | `config/settings.py`. Source: Causation Matrix fidelity check 2026-11-04 |
 
+### 2h. Fix five (owner approval 2026-11-06, runbook `docs/fix-five-deploy.md`)
+
+| Feature | Status | Where |
+|---|---|---|
+| History shows only the pre-release score: the NE Prediction, its grade, the print call and the "why" panel read rows with `scored_at_utc` strictly before the release; no pre-release row means no prediction, never a post-release fallback; post-release rows stay stored | **Built on news-engine/fix-five, not deployed** | `scoring/backtest_store.py`, `webapp/history.py`, `webapp/app.py`, `webapp/static/js/history/table.js`. Live copy: headline 44/96 becomes 40/96, 9 outcomes change |
+| Engine stays awake for the final hour: every accumulator interval is capped at the start of the next unresolved event's final window, 60-second floor | **Built on news-engine/fix-five, not deployed** | `scoring/backtest_accumulator.py` (`compute_accumulator_interval_seconds`) |
+| Check budget counts runs: one `check_log` row per accumulator run, threshold unchanged at 20 | **Built on news-engine/fix-five, not deployed** | `scoring/backtest_accumulator.py` (`_RunCheck`) |
+| FRED lookup window stops at FRED's own today (America/Chicago), so a row from the last 3 days no longer gets HTTP 400 | **Built on news-engine/fix-five, not deployed** | `data_layer/fred_history.py` (`FredClient`). Live-copy dry run would fill 1 row: ADP 2026-11-04 = 86K |
+| Stats shows market-implied Tier 1 calls: direction word, implied number in the event's unit and verdict in the Tier 1 cell (`hotter · 75K · Right`, `in line · 3.2% · No call`), the implied number as the Tier 1 chart point, and matching hover and click-through text. Display only: counts, baseline, `mean_miss`, Combined, formula and judgment rows unchanged. A row with no stored median (FedWatch) shows direction and verdict with no chart point | **Built on news-engine/fix-five, not deployed** | `webapp/stats_service.py`, `webapp/tier1_market.py`, `webapp/app.py`, `webapp/static/js/stats/rows.js`, `info.js`, `chart.js` |
+
 ---
 
 ## 3. Real accuracy, as of this review (not claimed, pulled live from `scoring/backtest_log.db`)
