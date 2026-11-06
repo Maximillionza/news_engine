@@ -9,6 +9,7 @@ import sys
 import os
 import tempfile
 import datetime as dt
+from urllib.parse import urlencode
 from pathlib import Path
 from typing import Optional
 from unittest.mock import patch
@@ -1161,7 +1162,7 @@ def test_history_endpoint_returns_numeric_and_text_rows():
             bconn = backtest_store.get_connection(backtest_db_path)
             backtest_store.record_print_prediction_if_changed(
                 bconn, "CPI m/m", event_time,
-                PrintCall(direction="in_line", confidence=0.4, article_count=89), now=event_time,
+                PrintCall(direction="in_line", confidence=0.4, article_count=89), now=event_time - dt.timedelta(hours=1),
             )
             bconn.close()
 
@@ -1214,7 +1215,7 @@ def test_history_endpoint_includes_tier1_conflict_key_when_conflict_exists():
             backtest_store.record_prediction(
                 bconn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
                 probability=0.44, direction="bearish", confidence=0.33, article_count=142,
-                contradiction_flag=False, source="live", scored_at_utc=event_time,
+                contradiction_flag=False, source="live", scored_at_utc=event_time - dt.timedelta(hours=1),
             )
             backtest_store.record_tier1_prediction(
                 bconn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
@@ -1258,7 +1259,7 @@ def test_history_endpoint_serves_the_real_tier1_prediction_not_just_the_conflict
                 backtest_store.record_prediction(
                     bconn, event_title="PPI m/m", instrument=instrument, event_time_utc=event_time,
                     probability=0.56, direction="bullish", confidence=0.4, article_count=100,
-                    contradiction_flag=False, source="live", scored_at_utc=event_time)
+                    contradiction_flag=False, source="live", scored_at_utc=event_time - dt.timedelta(hours=1))
             # Tier 1 logged for XAUUSD only.
             backtest_store.record_tier1_prediction(
                 bconn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
@@ -2266,6 +2267,76 @@ def test_relevance_magnitude_note_present_but_no_downgrade_for_settled_event():
     print("PASS\n")
 
 
+def test_article_history_route_with_event_time_is_pre_release_and_one_occurrence():
+    print("=== GET /api/predictions/<symbol>/article_history?event_time_utc=: the History why panel gets this occurrence's pre-release rows only ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            bconn = backtest_store.get_connection(backtest_db_path)
+            october = dt.datetime(2026, 10, 2, 12, 30, tzinfo=dt.timezone.utc)
+            november = dt.datetime(2026, 11, 6, 13, 30, tzinfo=dt.timezone.utc)
+            title = "Average Hourly Earnings m/m"
+            backtest_store.record_prediction(bconn, title, "XAUUSD", october, 0.55, "bullish", 0.3, 130, False,
+                                             scored_at_utc=october - dt.timedelta(hours=1))
+            backtest_store.record_prediction(bconn, title, "XAUUSD", november, 0.79, "bullish", 0.3, 130, False,
+                                             scored_at_utc=november - dt.timedelta(hours=6))
+            backtest_store.record_prediction(bconn, title, "XAUUSD", november, 0.23, "bearish", 0.3, 130, False,
+                                             scored_at_utc=november + dt.timedelta(minutes=6))
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            query = urlencode({"event_title": title, "event_time_utc": november.isoformat()})
+            scoped = client.get(f"/api/predictions/XAUUSD/article_history?{query}").get_json()["progression"]
+            assert [p["direction"] for p in scoped] == ["bullish"]
+            assert scoped[0]["probability"] == 0.79
+
+            # The Dashboard flip card sends no event time and keeps the whole title progression.
+            unscoped = client.get(f"/api/predictions/XAUUSD/article_history?{urlencode({'event_title': title})}").get_json()["progression"]
+            assert len(unscoped) == 3
+    print("PASS\n")
+
+
+def test_article_history_route_rejects_a_malformed_event_time():
+    print("=== GET /api/predictions/<symbol>/article_history: a malformed event_time_utc is a 400, not a 500 ===")
+    client = webapp_app.app.test_client()
+    resp = client.get("/api/predictions/XAUUSD/article_history?event_title=CPI&event_time_utc=not-a-time")
+    assert resp.status_code == 400
+    print("PASS\n")
+
+
+def test_calendar_date_print_prediction_is_the_pre_release_call():
+    print("=== GET /api/calendar/date/<date>: the print call shown for an occurrence is the pre-release one ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        backtest_db_path = Path(tmp) / "backtest_log.db"
+        with patch.object(store, "DB_PATH", db_path), \
+             patch.object(backtest_store, "DB_PATH", backtest_db_path):
+            event_time = dt.datetime(2026, 11, 6, 13, 30, tzinfo=UTC_TZ)
+            title = "Average Hourly Earnings m/m"
+            _seed_calendar(db_path, [EconomicEvent(title=title, country="USD", impact="High", event_time_utc=event_time,
+                                                   forecast="0.3%", actual="0.4%")])
+            conn = store.get_connection(db_path)
+            store.add_tracked_symbol(conn, "XAUUSD")
+            conn.close()
+
+            from scoring.print_direction import PrintCall
+            bconn = backtest_store.get_connection(backtest_db_path)
+            backtest_store.record_print_prediction_if_changed(
+                bconn, title, event_time, PrintCall(direction="lower", confidence=0.6, article_count=30),
+                now=event_time - dt.timedelta(hours=2),
+            )
+            backtest_store.record_print_prediction_if_changed(
+                bconn, title, event_time, PrintCall(direction="higher", confidence=0.7, article_count=31),
+                now=event_time + dt.timedelta(minutes=6),
+            )
+            bconn.close()
+
+            client = webapp_app.app.test_client()
+            data = client.get("/api/calendar/date/2026-11-06").get_json()
+            assert data["events"][0]["calls"]["XAUUSD"]["print_prediction"]["direction"] == "lower"
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_add_list_remove_symbol()
     test_add_unrecognized_symbol_rejected()
@@ -2276,6 +2347,9 @@ if __name__ == "__main__":
     test_predictions_prefers_future_pending_event_over_a_past_stuck_pending_one()
     test_predictions_stale_resolved_no_longer_masks_a_nearer_pending_event()
     test_article_history_route_returns_full_progression_with_top_contributions()
+    test_article_history_route_with_event_time_is_pre_release_and_one_occurrence()
+    test_article_history_route_rejects_a_malformed_event_time()
+    test_calendar_date_print_prediction_is_the_pre_release_call()
     test_article_history_route_requires_event_title()
     test_article_history_route_empty_for_unknown_event()
     test_predictions_includes_article_count_from_accumulator_db()

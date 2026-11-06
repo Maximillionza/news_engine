@@ -37,6 +37,12 @@ article-sentiment path requires no numeric forecast). Those
 genuinely-numberless events get a separate row per instrument using
 outcomes/price-move confirmation instead, since there's no real
 surprise_direction to compare against at all.
+
+Every call shown or graded here is the last one scored strictly BEFORE the
+release (2026-11-06 fix): the accumulator keeps scoring through the
+post-release grace period, and a row written with the number already public
+is not a prediction. An occurrence with no pre-release row shows no prediction
+at all; it never falls back to a post-release row.
 """
 from __future__ import annotations
 
@@ -255,8 +261,8 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
     # module level above; it was never part of this cycle concern.)
     from scoring.backtest_store import (
         get_connection as get_backtest_connection,
-        get_latest_print_prediction,
-        get_latest_prediction_for_occurrence,
+        get_pre_release_print_prediction,
+        get_pre_release_prediction_for_occurrence,
         get_latest_tier1_predictions_bulk,
         get_outcome,
     )
@@ -308,7 +314,7 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
         for event in numeric_resolved:
             event_time = dt.datetime.fromisoformat(event.event_time_utc)
             try:
-                call = get_latest_print_prediction(bt_conn, event.event_title, event_time)
+                call = get_pre_release_print_prediction(bt_conn, event.event_title, event_time)
             except Exception as exc:  # noqa: BLE001 — one bad lookup must not crash the whole build
                 print(f"[webapp.history] WARNING: could not read print call for {event.event_title}: {exc}")
                 continue
@@ -325,12 +331,12 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
                 # alone can drive without any qualifying article at all.
                 for instrument in tracked_symbols:
                     try:
-                        prediction = get_latest_prediction_for_occurrence(bt_conn, event.event_title, instrument, event_time)
+                        prediction = get_pre_release_prediction_for_occurrence(bt_conn, event.event_title, instrument, event_time)
                     except Exception as exc:  # noqa: BLE001 — one bad lookup must not crash the whole build
                         print(f"[webapp.history] WARNING: could not read fallback prediction for {event.event_title}/{instrument}: {exc}")
                         continue
                     if prediction is None:
-                        continue  # never scored for this instrument at this occurrence — no row, not shown with blanks
+                        continue  # never scored before the release for this instrument at this occurrence — no row, not shown with blanks
 
                     tier1_row = tier1_by_occurrence.get((event.event_title, instrument, event_time.isoformat()))
                     fallback_tier1_conflict = compute_tier1_sentiment_conflict(
@@ -460,12 +466,12 @@ def build_print_call_history(limit: int = DEFAULT_HISTORY_LIMIT, now: Optional[d
             event_time = dt.datetime.fromisoformat(event.event_time_utc)
             for instrument in tracked_symbols:
                 try:
-                    prediction = get_latest_prediction_for_occurrence(bt_conn, event.event_title, instrument, event_time)
+                    prediction = get_pre_release_prediction_for_occurrence(bt_conn, event.event_title, instrument, event_time)
                 except Exception as exc:  # noqa: BLE001 — one bad lookup must not crash the whole build
                     print(f"[webapp.history] WARNING: could not read prediction for {event.event_title}/{instrument}: {exc}")
                     continue
                 if prediction is None:
-                    continue  # no real call for this instrument at this occurrence — no row, not shown with blanks
+                    continue  # no real pre-release call for this instrument at this occurrence — no row, not shown with blanks
 
                 try:
                     outcome_row = get_outcome(bt_conn, event.event_title, instrument, event_time)

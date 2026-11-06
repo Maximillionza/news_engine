@@ -1170,6 +1170,97 @@ def test_contribution_row_dataclass_fields():
     print("PASS\n")
 
 
+def test_pre_release_prediction_is_the_last_row_strictly_before_the_release():
+    print("=== backtest_store: get_pre_release_prediction_for_occurrence returns the last row strictly before the release ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "test.db")
+        event_time = dt.datetime(2026, 11, 6, 13, 30, tzinfo=UTC_TZ)
+        for hours, probability, direction in ((-6, 0.6, "bullish"), (-1, 0.7, "bullish"), (0, 0.4, "bearish"), (1, 0.3, "bearish")):
+            record_prediction(conn, "AHE", "XAUUSD", event_time, probability, direction, 0.5, 40, False,
+                              scored_at_utc=event_time + dt.timedelta(hours=hours))
+
+        pre_release = store.get_pre_release_prediction_for_occurrence(conn, "AHE", "XAUUSD", event_time)
+
+        assert pre_release is not None and pre_release.probability == 0.7 and pre_release.direction == "bullish"
+        # The unbounded reader is unchanged: anything that wants the newest row still gets it.
+        assert store.get_latest_prediction_for_occurrence(conn, "AHE", "XAUUSD", event_time).probability == 0.3
+        conn.close()
+    print("PASS\n")
+
+
+def test_pre_release_prediction_compares_instants_not_strings():
+    print("=== backtest_store: the pre-release cut compares instants, so another stored offset cannot slip past it ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "test.db")
+        event_time = dt.datetime(2026, 11, 6, 13, 30, tzinfo=UTC_TZ)
+        sast = dt.timezone(dt.timedelta(hours=2))
+        # 15:00+02:00 is 13:00 UTC: before the release as an instant, after it as text.
+        record_prediction(conn, "AHE", "XAUUSD", event_time, 0.6, "bullish", 0.5, 40, False,
+                          scored_at_utc=dt.datetime(2026, 11, 6, 15, 0, tzinfo=sast))
+        record_prediction(conn, "AHE", "XAUUSD", event_time, 0.3, "bearish", 0.5, 40, False,
+                          scored_at_utc=dt.datetime(2026, 11, 6, 15, 36, tzinfo=sast))
+
+        pre_release = store.get_pre_release_prediction_for_occurrence(conn, "AHE", "XAUUSD", event_time)
+
+        assert pre_release is not None and pre_release.direction == "bullish"
+        conn.close()
+    print("PASS\n")
+
+
+def test_pre_release_prediction_is_none_without_a_pre_release_row_and_stays_on_its_occurrence():
+    print("=== backtest_store: no pre-release row means None, and an earlier occurrence never fills the gap ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "test.db")
+        october = dt.datetime(2026, 10, 2, 12, 30, tzinfo=UTC_TZ)
+        november = dt.datetime(2026, 11, 6, 13, 30, tzinfo=UTC_TZ)
+        record_prediction(conn, "AHE", "XAUUSD", october, 0.6, "bullish", 0.5, 40, False,
+                          scored_at_utc=october - dt.timedelta(hours=1))
+        record_prediction(conn, "AHE", "XAUUSD", november, 0.3, "bearish", 0.5, 40, False,
+                          scored_at_utc=november + dt.timedelta(minutes=6))
+
+        assert store.get_pre_release_prediction_for_occurrence(conn, "AHE", "XAUUSD", november) is None
+        conn.close()
+    print("PASS\n")
+
+
+def test_pre_release_print_prediction_is_the_last_row_strictly_before_the_release():
+    print("=== backtest_store: get_pre_release_print_prediction returns the last print call strictly before the release ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "test.db")
+        event_time = dt.datetime(2026, 11, 6, 13, 30, tzinfo=UTC_TZ)
+        assert store.get_pre_release_print_prediction(conn, "AHE", event_time) is None
+
+        store.record_print_prediction_if_changed(conn, "AHE", event_time, PrintCall(direction="lower", confidence=0.6, article_count=30),
+                                                 now=event_time - dt.timedelta(hours=1))
+        store.record_print_prediction_if_changed(conn, "AHE", event_time, PrintCall(direction="higher", confidence=0.7, article_count=31),
+                                                 now=event_time)
+
+        assert store.get_pre_release_print_prediction(conn, "AHE", event_time).predicted_vs_forecast == "lower"
+        # The write gate must keep comparing against the true latest row, or an unchanged call would rewrite.
+        assert store.get_latest_print_prediction(conn, "AHE", event_time).predicted_vs_forecast == "higher"
+        conn.close()
+    print("PASS\n")
+
+
+def test_pre_release_prediction_history_is_one_occurrence_most_recent_first():
+    print("=== backtest_store: get_pre_release_prediction_history is this occurrence's pre-release rows only, newest first ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = get_connection(Path(tmp) / "test.db")
+        october = dt.datetime(2026, 10, 2, 12, 30, tzinfo=UTC_TZ)
+        november = dt.datetime(2026, 11, 6, 13, 30, tzinfo=UTC_TZ)
+        record_prediction(conn, "AHE", "XAUUSD", october, 0.55, "bullish", 0.5, 40, False,
+                          scored_at_utc=october - dt.timedelta(hours=1))
+        for hours, probability, direction in ((-6, 0.6, "bullish"), (-1, 0.7, "bullish"), (1, 0.3, "bearish")):
+            record_prediction(conn, "AHE", "XAUUSD", november, probability, direction, 0.5, 40, False,
+                              scored_at_utc=november + dt.timedelta(hours=hours))
+
+        progression = store.get_pre_release_prediction_history(conn, "AHE", "XAUUSD", november)
+
+        assert [p.probability for p in progression] == [0.7, 0.6]
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_record_and_count_predictions()
     test_count_predictions_scoped_to_event_occurrence_not_just_title()
@@ -1193,6 +1284,11 @@ if __name__ == "__main__":
     test_get_latest_print_prediction_none_when_nothing_recorded()
     test_get_latest_print_prediction_is_scoped_to_occurrence_not_title()
     test_get_latest_prediction_for_occurrence_scoped_not_title_leak()
+    test_pre_release_prediction_is_the_last_row_strictly_before_the_release()
+    test_pre_release_prediction_compares_instants_not_strings()
+    test_pre_release_prediction_is_none_without_a_pre_release_row_and_stays_on_its_occurrence()
+    test_pre_release_print_prediction_is_the_last_row_strictly_before_the_release()
+    test_pre_release_prediction_history_is_one_occurrence_most_recent_first()
     test_get_outcome_returns_none_when_unconfirmed()
     test_get_outcome_returns_confirmed_outcome()
     test_record_kalshi_read_if_changed_writes_first_read()

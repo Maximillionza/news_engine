@@ -931,13 +931,14 @@ def record_dismissal(
 
 def record_check(conn: sqlite3.Connection, checked_at_utc: dt.datetime) -> int:
     """
-    Logs one article-fetch check attempt (roughly one Alpha Vantage credit
-    spent, in the worst case) — used by scoring/backtest_accumulator.py to
-    self-throttle its own polling frequency against a rolling 24h budget.
+    Logs one accumulator run that fetched articles (one row per run, however
+    many events it covered; see scoring/backtest_accumulator.py's _RunCheck) —
+    used by scoring/backtest_accumulator.py to self-throttle its own polling
+    frequency against a rolling 24h budget.
     Deliberately NOT keyed to a specific (event, instrument) pair — this
-    tracks aggregate check VOLUME across everything the accumulator is
-    doing, since the resource being protected (Alpha Vantage's daily
-    quota) is shared across all of it, not per-pair.
+    tracks aggregate run VOLUME across everything the accumulator is doing.
+    It limits how often the loop runs, not Alpha Vantage credits, which are
+    spent once per active event per run.
     """
     cursor = conn.execute(
         "INSERT INTO check_log (checked_at_utc) VALUES (?)",
@@ -1009,6 +1010,15 @@ def get_all_confirmed_cases(conn: sqlite3.Connection) -> list[tuple[Prediction, 
     return cases
 
 
+def _print_prediction_from_row(d: dict) -> PrintPrediction:
+    return PrintPrediction(
+        id=d["id"], event_title=d["event_title"], event_time_utc=d["event_time_utc"],
+        predicted_vs_forecast=d["predicted_vs_forecast"], confidence=d["confidence"],
+        article_count=d["article_count"], scored_at_utc=d["scored_at_utc"],
+        source=d["source"],
+    )
+
+
 def get_latest_print_prediction(
     conn: sqlite3.Connection, event_title: str, event_time_utc: dt.datetime,
 ) -> Optional[PrintPrediction]:
@@ -1027,13 +1037,28 @@ def get_latest_print_prediction(
     ).fetchone()
     if row is None:
         return None
-    d = dict(row)
-    return PrintPrediction(
-        id=d["id"], event_title=d["event_title"], event_time_utc=d["event_time_utc"],
-        predicted_vs_forecast=d["predicted_vs_forecast"], confidence=d["confidence"],
-        article_count=d["article_count"], scored_at_utc=d["scored_at_utc"],
-        source=d["source"],
-    )
+    return _print_prediction_from_row(dict(row))
+
+
+def get_pre_release_print_prediction(
+    conn: sqlite3.Connection, event_title: str, event_time_utc: dt.datetime,
+) -> Optional[PrintPrediction]:
+    """
+    The print call the engine actually held going into this occurrence: the
+    last row scored strictly before the release, None if there is none, never
+    a post-release row. See get_pre_release_prediction_for_occurrence() for why.
+    record_print_prediction_if_changed() keeps using the unbounded reader above:
+    its change gate has to compare against the true latest row.
+    """
+    row = conn.execute(
+        "SELECT * FROM print_predictions WHERE event_title = ? AND event_time_utc = ? "
+        "AND julianday(scored_at_utc) < julianday(event_time_utc) "
+        "ORDER BY julianday(scored_at_utc) DESC, id DESC LIMIT 1",
+        (event_title, event_time_utc.isoformat()),
+    ).fetchone()
+    if row is None:
+        return None
+    return _print_prediction_from_row(dict(row))
 
 
 def record_print_prediction_if_changed(
@@ -1087,6 +1112,51 @@ def get_latest_prediction_for_occurrence(
     if row is None:
         return None
     return _prediction_from_row(dict(row))
+
+
+def get_pre_release_prediction_for_occurrence(
+    conn: sqlite3.Connection, event_title: str, instrument: str, event_time_utc: dt.datetime,
+) -> Optional[Prediction]:
+    """
+    The call the engine actually held going into this occurrence: the last
+    prediction scored strictly before the release, None if there is none. The
+    accumulator keeps scoring for POST_RELEASE_GRACE_MINUTES after a print, so
+    get_latest_prediction_for_occurrence() can return a row written with the
+    number already public (AHE 2026-11-06: bullish all week, bearish six
+    minutes after the print). Those rows stay stored; they are just never a
+    prediction, so there is deliberately no fallback to them. Compared as
+    instants via julianday(), as webapp/stats_service.py does, but strictly:
+    Stats uses <=, so a row stamped exactly at the release would count there
+    and not here.
+    """
+    row = conn.execute(
+        "SELECT * FROM predictions WHERE event_title = ? AND instrument = ? AND event_time_utc = ? "
+        "AND julianday(scored_at_utc) < julianday(event_time_utc) "
+        "ORDER BY julianday(scored_at_utc) DESC, id DESC LIMIT 1",
+        (event_title, instrument, event_time_utc.isoformat()),
+    ).fetchone()
+    if row is None:
+        return None
+    return _prediction_from_row(dict(row))
+
+
+def get_pre_release_prediction_history(
+    conn: sqlite3.Connection, event_title: str, instrument: str, event_time_utc: dt.datetime, limit: int = 10,
+) -> list[Prediction]:
+    """
+    get_prediction_history() for one resolved occurrence: its snapshots scored
+    strictly before the release, most recent first, capped at `limit`. Feeds the
+    History tab's "why" panel, which has to explain the call the row shows and
+    grades. Scoped to the occurrence because a title-wide read would mix in
+    earlier months' rows.
+    """
+    rows = conn.execute(
+        "SELECT * FROM predictions WHERE event_title = ? AND instrument = ? AND event_time_utc = ? "
+        "AND julianday(scored_at_utc) < julianday(event_time_utc) "
+        "ORDER BY julianday(scored_at_utc) DESC, id DESC LIMIT ?",
+        (event_title, instrument, event_time_utc.isoformat(), limit),
+    ).fetchall()
+    return [Prediction(**dict(row)) for row in rows]
 
 
 def get_outcome(

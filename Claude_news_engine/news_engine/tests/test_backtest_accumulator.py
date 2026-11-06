@@ -2,6 +2,8 @@
 Tests for scoring/backtest_accumulator.py — no live network, calendar/
 article fetching and scoring are all mocked.
 """
+import contextlib
+import io
 import sys
 import os
 import tempfile
@@ -1430,6 +1432,273 @@ def test_record_prediction_stores_same_incident_rows():
     print("PASS\n")
 
 
+# --- The loop stays awake for the final hour (fix-five, 2026-11-06) ---
+
+NFP_TIME = dt.datetime(2026, 11, 6, 13, 30, tzinfo=UTC_TZ)
+OVER_BUDGET = accumulator.DAILY_CHECK_BUDGET_THRESHOLD
+
+
+def _event_at(event_time, title="Non-Farm Employment Change", actual=None):
+    return EconomicEvent(title=title, country="USD", impact="High", event_time_utc=event_time, forecast="75K", actual=actual)
+
+
+def test_interval_budget_fallback_wakes_at_the_final_window_not_after_the_release():
+    print("=== accumulator interval: at 10:36 UTC, budget exhausted, a 13:30 UTC release wakes the loop at 12:30, not 13:36 ===")
+    now = dt.datetime(2026, 11, 6, 10, 36, tzinfo=UTC_TZ)
+    interval = accumulator.compute_accumulator_interval_seconds([_event_at(NFP_TIME)], now=now, recent_check_count=OVER_BUDGET)
+
+    assert interval == 6840, f"1h54m to the 12:30 window start, got {interval}"
+    wake = now + dt.timedelta(seconds=interval)
+    assert wake == NFP_TIME - dt.timedelta(hours=accumulator.FINAL_WINDOW_HOURS)
+    # On waking the final tier takes over, budget or not, so the release is never slept through.
+    assert accumulator.compute_accumulator_interval_seconds(
+        [_event_at(NFP_TIME)], now=wake, recent_check_count=OVER_BUDGET,
+    ) == accumulator.FINAL_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_interval_caps_at_the_earliest_of_several_unresolved_events():
+    print("=== accumulator interval: with several events the earliest unresolved final window sets the wake, in any list order ===")
+    now = dt.datetime(2026, 11, 6, 8, 0, tzinfo=UTC_TZ)
+    events = [
+        _event_at(dt.datetime(2026, 11, 6, 15, 0, tzinfo=UTC_TZ), title="ISM Services PMI"),
+        _event_at(dt.datetime(2026, 11, 6, 10, 30, tzinfo=UTC_TZ), title="Early Event"),
+        _event_at(NFP_TIME),
+    ]
+    interval = accumulator.compute_accumulator_interval_seconds(events, now=now, recent_check_count=OVER_BUDGET)
+    assert interval == 90 * 60, f"09:30 is the first window start, got {interval}"
+    print("PASS\n")
+
+
+def test_interval_cap_ignores_a_resolved_event():
+    print("=== accumulator interval: a resolved event sets no wake time, the next unresolved one does ===")
+    now = dt.datetime(2026, 11, 6, 10, 36, tzinfo=UTC_TZ)
+    resolved_soon = _event_at(dt.datetime(2026, 11, 6, 12, 0, tzinfo=UTC_TZ), title="Resolved Early", actual="1.0%")
+    interval = accumulator.compute_accumulator_interval_seconds(
+        [resolved_soon, _event_at(NFP_TIME)], now=now, recent_check_count=OVER_BUDGET,
+    )
+    assert interval == 6840, f"the resolved 12:00 event would have forced 24 minutes, got {interval}"
+
+    # Nothing unresolved at all: no cap, and the far tier stands.
+    assert accumulator.compute_accumulator_interval_seconds(
+        [resolved_soon], now=now, recent_check_count=OVER_BUDGET,
+    ) == accumulator.FAR_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_interval_cap_ignores_an_unresolved_event_already_past_its_grace():
+    print("=== accumulator interval: a past event with no actual has no final window ahead, so it cannot pull the wake to the floor ===")
+    now = dt.datetime(2026, 11, 6, 10, 36, tzinfo=UTC_TZ)
+    past = _event_at(dt.datetime(2026, 11, 5, 13, 30, tzinfo=UTC_TZ), title="Yesterday, Never Filled")
+    interval = accumulator.compute_accumulator_interval_seconds(
+        [past, _event_at(NFP_TIME)], now=now, recent_check_count=OVER_BUDGET,
+    )
+    assert interval == 6840
+    print("PASS\n")
+
+
+def test_interval_cap_with_no_events_changes_nothing():
+    print("=== accumulator interval: no events means no cap, budget exhausted or not ===")
+    now = dt.datetime(2026, 11, 6, 10, 36, tzinfo=UTC_TZ)
+    for events in (None, []):
+        assert accumulator.compute_accumulator_interval_seconds(events, now=now, recent_check_count=OVER_BUDGET) == accumulator.FAR_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_interval_cap_never_goes_below_the_floor():
+    print("=== accumulator interval: seconds short of the window start, the sleep is the floor, not a busy loop ===")
+    now = NFP_TIME - dt.timedelta(hours=accumulator.FINAL_WINDOW_HOURS, seconds=5)
+    interval = accumulator.compute_accumulator_interval_seconds([_event_at(NFP_TIME)], now=now, recent_check_count=OVER_BUDGET)
+    assert interval == accumulator.MIN_WAKE_INTERVAL_SECONDS
+    assert 0 < accumulator.MIN_WAKE_INTERVAL_SECONDS < accumulator.FINAL_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_interval_inside_the_final_window_is_final_even_over_budget():
+    print("=== accumulator interval: already inside the window, FINAL_INTERVAL_SECONDS applies, budget or not ===")
+    now = NFP_TIME - dt.timedelta(minutes=40)
+    assert accumulator.compute_accumulator_interval_seconds(
+        [_event_at(NFP_TIME)], now=now, recent_check_count=OVER_BUDGET,
+    ) == accumulator.FINAL_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_interval_cap_also_shortens_the_normal_tiers():
+    print("=== accumulator interval: every returned interval is capped, not only the budget fallback ===")
+    # Day-of-event tier (15 min), five minutes short of the window: wakes at the window, not 10 minutes into it.
+    now = NFP_TIME - dt.timedelta(hours=accumulator.FINAL_WINDOW_HOURS, minutes=5)
+    assert accumulator.compute_accumulator_interval_seconds([_event_at(NFP_TIME)], now=now) == 5 * 60
+
+    # Far tier (12 h), event days away: the cap is not binding and the tier stands.
+    far = _event_at(NFP_TIME + dt.timedelta(hours=accumulator.PRE_EVENT_WINDOW_HOURS + 5))
+    assert accumulator.compute_accumulator_interval_seconds([far], now=NFP_TIME) == accumulator.FAR_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+# --- The check budget counts runs (fix-five, 2026-11-06) ---
+
+def _run_cycles(tmp, events, runs=1, now=None, fetch=None):
+    """Runs `runs` accumulator cycles over `events`, an hour apart, and returns the check_log row count."""
+    db_path = Path(tmp) / "test.db"
+    now = now or dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    fetch = fetch or (lambda event, *args, **kwargs: EventNewsBundle(event=event, articles=[], as_of_utc=now))
+    with patch.object(accumulator, "fetch_calendar", return_value=events), \
+         patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
+         patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+         patch.object(accumulator, "build_event_news_bundle", side_effect=fetch), \
+         patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
+         patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
+        for hour in range(runs):
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now + dt.timedelta(hours=hour))
+    conn = store.get_connection(db_path)
+    rows = store.count_recent_checks(conn, since=now - dt.timedelta(days=30))
+    conn.close()
+    return rows
+
+
+def _four_active_events(now):
+    return [_fake_event(hours_from_now=30 + i, now=now, title=f"Event {i}") for i in range(4)]
+
+
+def test_four_active_events_in_one_run_write_one_check():
+    print("=== accumulator: 4 active events in one run write ONE check_log row, not one per event ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        assert _run_cycles(tmp, _four_active_events(now), now=now) == 1
+    print("PASS\n")
+
+
+def test_budget_threshold_is_reached_by_runs_not_by_events():
+    print("=== accumulator: 4 active events stay under the budget after 5 runs (they used to hit 20) and reach it after 20 runs ===")
+    assert accumulator.DAILY_CHECK_BUDGET_THRESHOLD == 20
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    with tempfile.TemporaryDirectory() as tmp:
+        assert _run_cycles(tmp, _four_active_events(now), runs=5, now=now) == 5
+    with tempfile.TemporaryDirectory() as tmp:
+        assert _run_cycles(tmp, _four_active_events(now), runs=20, now=now) == accumulator.DAILY_CHECK_BUDGET_THRESHOLD
+    print("PASS\n")
+
+
+def test_run_with_one_failed_fetch_and_the_rest_ok_still_writes_one_check():
+    print("=== accumulator: a run counts once as soon as any fetch succeeds, whichever event failed ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+
+    def first_fails(event, *args, **kwargs):
+        if event.title == "Event 0":
+            raise RuntimeError("article fetch blew up")
+        return EventNewsBundle(event=event, articles=[], as_of_utc=now)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        assert _run_cycles(tmp, _four_active_events(now), now=now, fetch=first_fails) == 1
+    print("PASS\n")
+
+
+def test_run_where_every_fetch_fails_writes_no_check():
+    print("=== accumulator: a check still means a successful article fetch, so a run of failures writes nothing ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+
+    def always_fails(event, *args, **kwargs):
+        raise RuntimeError("article fetch blew up")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        assert _run_cycles(tmp, _four_active_events(now), now=now, fetch=always_fails) == 0
+    print("PASS\n")
+
+
+def test_run_with_no_active_event_writes_no_check():
+    print("=== accumulator: a run that fetches nothing writes no check, same as before ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    outside_the_window = _fake_event(hours_from_now=PRE_EVENT_WINDOW_HOURS + 10, now=now)
+    with tempfile.TemporaryDirectory() as tmp:
+        assert _run_cycles(tmp, [outside_the_window], now=now) == 0
+    print("PASS\n")
+
+
+def test_run_check_stamps_the_run_time_for_the_last_check_readers():
+    print("=== accumulator: the run's one row carries the run time, which is what get_last_check_utc() and ops health read ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    with tempfile.TemporaryDirectory() as tmp:
+        _run_cycles(tmp, _four_active_events(now), now=now)
+        conn = store.get_connection(Path(tmp) / "test.db")
+        assert store.get_last_check_utc(conn) == now
+        conn.close()
+    print("PASS\n")
+
+
+def test_manual_single_event_check_still_writes_its_own_check():
+    print("=== score_and_record_event: called on its own (scripts/run_manual_sentiment_check.py) it still logs its fetch ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=200, now=now)      # a manual check runs outside the automatic window
+        conn = store.get_connection(Path(tmp) / "test.db")
+        with patch.object(accumulator, "build_event_news_bundle", return_value=_bundle(event, [], now)), \
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
+            accumulator.score_and_record_event(conn, event, [event], ["XAUUSD"], [], now=now)
+        assert store.count_recent_checks(conn, since=now - dt.timedelta(hours=24)) == 1
+        conn.close()
+    print("PASS\n")
+
+
+# --- The "check budget" log line follows the budget, not the size of the sleep ---
+
+def _iteration_with(event, recent_checks):
+    """One loop pass over `event` with the rolling count pinned. Returns (interval, what it printed)."""
+    printed = io.StringIO()
+    with patch.object(accumulator, "run_accumulator_cycle", return_value=[event]), \
+         patch.object(accumulator, "get_connection", return_value=MagicMock()), \
+         patch.object(accumulator, "count_recent_checks", return_value=recent_checks), \
+         patch.object(accumulator, "touch_heartbeat"), \
+         contextlib.redirect_stdout(printed):
+        interval = accumulator.run_accumulator_iteration(["XAUUSD"])
+    return interval, printed.getvalue()
+
+
+def test_budget_log_prints_for_a_back_off_the_final_window_cap_shortened():
+    print("=== accumulator: a back-off cut below 3 hours by the cap (the 10:36 Friday case) is still logged ===")
+    now = dt.datetime.now(UTC_TZ)
+    interval, printed = _iteration_with(_fake_event(hours_from_now=2.9, now=now), OVER_BUDGET)
+    assert accumulator.DAY_OF_EVENT_INTERVAL_SECONDS < interval < accumulator.BUDGET_FALLBACK_INTERVAL_SECONDS
+    assert "check budget" in printed
+    print("PASS\n")
+
+
+def test_budget_log_prints_for_a_full_three_hour_back_off():
+    print("=== accumulator: an uncut 3-hour back-off is logged ===")
+    now = dt.datetime.now(UTC_TZ)
+    interval, printed = _iteration_with(_fake_event(hours_from_now=8, now=now), OVER_BUDGET)
+    assert interval == accumulator.BUDGET_FALLBACK_INTERVAL_SECONDS
+    assert "check budget" in printed
+    print("PASS\n")
+
+
+def test_budget_log_stays_quiet_on_the_12_hour_far_tier():
+    print("=== accumulator: the 12-hour far tier is not a budget back-off, so it logs none ===")
+    now = dt.datetime.now(UTC_TZ)
+    interval, printed = _iteration_with(_fake_event(hours_from_now=PRE_EVENT_WINDOW_HOURS + 100, now=now), OVER_BUDGET)
+    assert interval == accumulator.FAR_INTERVAL_SECONDS
+    assert "check budget" not in printed
+    print("PASS\n")
+
+
+def test_budget_log_stays_quiet_under_budget():
+    print("=== accumulator: under the threshold nothing backs off and nothing is logged ===")
+    now = dt.datetime.now(UTC_TZ)
+    interval, printed = _iteration_with(_fake_event(hours_from_now=8, now=now), 0)
+    assert interval == accumulator.DAY_OF_EVENT_INTERVAL_SECONDS
+    assert "check budget" not in printed
+    print("PASS\n")
+
+
+def test_budget_log_stays_quiet_when_the_cap_alone_sets_the_sleep():
+    print("=== accumulator: over budget, but the window opens sooner than the normal tier anyway: no back-off happened ===")
+    now = dt.datetime.now(UTC_TZ)
+    interval, printed = _iteration_with(_fake_event(hours_from_now=1.1, now=now), OVER_BUDGET)
+    assert interval < accumulator.DAY_OF_EVENT_INTERVAL_SECONDS
+    assert "check budget" not in printed
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_and_record_event_skips_fx_cross_instruments_without_calling_score_bundle()
     test_interval_far_when_nothing_active()
@@ -1437,8 +1706,28 @@ if __name__ == "__main__":
     test_interval_tighter_day_of_event()
     test_interval_final_within_1h_or_grace()
     test_interval_budget_fallback_applies_to_hourly_and_day_of_event_only()
+    test_interval_budget_fallback_wakes_at_the_final_window_not_after_the_release()
+    test_interval_caps_at_the_earliest_of_several_unresolved_events()
+    test_interval_cap_ignores_a_resolved_event()
+    test_interval_cap_ignores_an_unresolved_event_already_past_its_grace()
+    test_interval_cap_with_no_events_changes_nothing()
+    test_interval_cap_never_goes_below_the_floor()
+    test_interval_inside_the_final_window_is_final_even_over_budget()
+    test_interval_cap_also_shortens_the_normal_tiers()
+    test_budget_log_prints_for_a_back_off_the_final_window_cap_shortened()
+    test_budget_log_prints_for_a_full_three_hour_back_off()
+    test_budget_log_stays_quiet_on_the_12_hour_far_tier()
+    test_budget_log_stays_quiet_under_budget()
+    test_budget_log_stays_quiet_when_the_cap_alone_sets_the_sleep()
     test_run_accumulator_cycle_logs_a_check_on_successful_fetch()
     test_run_accumulator_cycle_does_not_log_a_check_on_failed_fetch()
+    test_four_active_events_in_one_run_write_one_check()
+    test_budget_threshold_is_reached_by_runs_not_by_events()
+    test_run_with_one_failed_fetch_and_the_rest_ok_still_writes_one_check()
+    test_run_where_every_fetch_fails_writes_no_check()
+    test_run_with_no_active_event_writes_no_check()
+    test_run_check_stamps_the_run_time_for_the_last_check_readers()
+    test_manual_single_event_check_still_writes_its_own_check()
     test_checks_every_cycle_regardless_of_how_far_out_the_event_is()
     test_no_cap_on_recorded_snapshots_multiple_material_changes_all_recorded()
     test_unchanged_score_is_checked_but_not_recorded()

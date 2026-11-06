@@ -26,10 +26,10 @@ entirely by the accumulator's own outer loop
 (compute_accumulator_interval_seconds, below — its OWN tiers, decoupled
 from webapp.scheduler's, see that function for why): hourly baseline once
 an event enters its pre-event window, tighter (15min) the day of the
-event, tightest (5min) in the final hour. A rolling-24h check-count
-budget (DAILY_CHECK_BUDGET_THRESHOLD) throttles the hourly/day-of-event
-tiers back to a 3-hour floor if checking gets too frequent for Alpha
-Vantage's real 25/day quota — the final-hour tier is always exempt.
+event, tightest (5min) in the final hour. A rolling-24h budget of runs
+(DAILY_CHECK_BUDGET_THRESHOLD; see _RunCheck) throttles the hourly/day-of-event
+tiers back to a 3-hour floor when runs get too frequent; it limits run
+frequency, not Alpha Vantage credits. The final-hour tier is always exempt.
 Whether a check actually gets WRITTEN to scoring/backtest_store.py's log
 is a completely separate decision, gated purely by _is_material_change()
 — a direction flip (contradicts), or a same-direction move of at least
@@ -115,16 +115,16 @@ FINAL_WINDOW_HOURS = 1
 # POST_RELEASE_GRACE_MINUTES after a release. See that constant's comment
 # in config/settings.py for the live bug this caused.
 
-# Budget protection: hourly/day-of-event checking is a real, deliberate
-# increase in article-fetch volume (see module docstring). If the rolling
-# 24h check count gets close to Alpha Vantage's real 25/day quota, fall
-# back to a slower cadence rather than either exhausting the quota outright
-# or (worse) going fully silent — "spare a small %": reserve ~20% (5 of 25)
-# as a floor. Once DAILY_CHECK_BUDGET_THRESHOLD checks have happened in the
-# last 24h, further hourly/day-of-event checks back off to
-# BUDGET_FALLBACK_INTERVAL_SECONDS until the rolling window frees up
-# capacity again. Never applied to FINAL_INTERVAL_SECONDS — missing the
-# check right before an actual release is worse than a little extra spend.
+# Run-frequency budget: hourly/day-of-event checking is a real, deliberate
+# increase in article-fetch volume (see module docstring). Once
+# DAILY_CHECK_BUDGET_THRESHOLD runs have happened in the last 24h, further
+# hourly/day-of-event checks back off to BUDGET_FALLBACK_INTERVAL_SECONDS
+# until the rolling window frees up again, rather than going fully silent.
+# Never applied to FINAL_INTERVAL_SECONDS — missing the check right before a
+# release is worse than a little extra spend. This is NOT a guard on Alpha
+# Vantage's 25/day quota: check_log counts runs (fix-five, 2026-11-06) while
+# Alpha Vantage is fetched once per active event per run. The value 20 dates
+# from when it was sized as that quota less ~20%; the owner kept it.
 DAILY_CHECK_BUDGET_THRESHOLD = 20
 BUDGET_FALLBACK_INTERVAL_SECONDS = 3 * 60 * 60
 
@@ -475,6 +475,24 @@ def _read_kalshi_signal(event: EconomicEvent) -> tuple[Optional[KalshiRead], Opt
     return None, None
 
 
+# Shortest sleep on the way to a final window, in seconds. Only reached when the
+# window opens within this long; stops the loop spinning in those last moments.
+MIN_WAKE_INTERVAL_SECONDS = 60
+
+
+def _seconds_until_next_final_window(events: list, now: dt.datetime) -> Optional[float]:
+    """
+    Seconds until the soonest final window that has yet to open among the
+    unresolved events, or None if there is none. A resolved event needs no
+    wake-up, and one whose window is already open or long past has no start
+    ahead of it (compute_accumulator_interval_seconds() handles an open window
+    itself).
+    """
+    window = dt.timedelta(hours=FINAL_WINDOW_HOURS)
+    waits = [(event.event_time_utc - window - now).total_seconds() for event in events if not event.actual]
+    return min((wait for wait in waits if wait > 0), default=None)
+
+
 def compute_accumulator_interval_seconds(
     events: Optional[list],
     now: Optional[dt.datetime] = None,
@@ -486,6 +504,9 @@ def compute_accumulator_interval_seconds(
     active event that cycle, per the module docstring). `recent_check_count`
     is the rolling-24h check count from scoring.backtest_store.count_recent_checks() —
     see DAILY_CHECK_BUDGET_THRESHOLD above for how it throttles the result.
+    Whatever the tier, the loop wakes no later than the start of the next
+    unresolved event's final window, so no sleep can carry it past a release
+    (2026-11-06: a 3-hour back-off at 10:36 UTC slept through a 13:30 UTC print).
     """
     if not events:
         return FAR_INTERVAL_SECONDS
@@ -505,7 +526,32 @@ def compute_accumulator_interval_seconds(
 
     if tightest in (DAY_OF_EVENT_INTERVAL_SECONDS, HOURLY_INTERVAL_SECONDS) and recent_check_count >= DAILY_CHECK_BUDGET_THRESHOLD:
         tightest = max(tightest, BUDGET_FALLBACK_INTERVAL_SECONDS)
+
+    wait = _seconds_until_next_final_window(events, now)
+    if wait is not None:
+        tightest = min(tightest, max(int(wait), MIN_WAKE_INTERVAL_SECONDS))
     return tightest
+
+
+class _RunCheck:
+    """
+    The one check_log row of an accumulator run. mark() writes it the first time
+    an article fetch succeeds and is a no-op after that, so a run counts once
+    however many events it covers (it used to count once per event, which took 4
+    active events to the budget threshold in 5 runs), and a run with no successful
+    fetch counts nothing, same as before. Written on the first success rather than
+    at the end of the run so that a run dying part-way still counts.
+    """
+
+    def __init__(self, conn, now: dt.datetime) -> None:
+        self._conn = conn
+        self._now = now
+        self._recorded = False
+
+    def mark(self) -> None:
+        if not self._recorded:
+            record_check(self._conn, self._now)
+            self._recorded = True
 
 
 def score_and_record_event(
@@ -517,6 +563,7 @@ def score_and_record_event(
     now: Optional[dt.datetime] = None,
     macro_backdrop=None,  # MacroBackdropRead | None — duck-typed, see scoring/probability_engine.py's _check_macro_backdrop()/_check_equity_risk_sentiment()/_check_oil_shock()
     cot_positioning=None,  # CotPositioningRead | None — duck-typed, see scoring/probability_engine.py's _check_cot_crowding()
+    run_check: Optional[_RunCheck] = None,
 ) -> dict:
     """
     Runs the FULL article-based scoring pipeline for ONE event, across
@@ -546,6 +593,10 @@ def score_and_record_event(
     event-specific), so a caller scoring multiple events in one cycle
     should fetch it once, not once per event.
 
+    `run_check` is the caller's run-wide _RunCheck. A caller that omits it
+    (scripts/run_manual_sentiment_check.py, one event per process) is its own
+    run and logs its own check.
+
     Returns {instrument: ProbabilityResult} for instruments that were
     actually scored (a failed article fetch for the whole event, or a
     per-instrument scoring exception, is logged and simply absent from
@@ -560,10 +611,10 @@ def score_and_record_event(
         print(f"[backtest_accumulator] WARNING: article fetch failed for {event.title}: {exc}")
         return results
 
-    # Logged on a successful fetch only — roughly one Alpha Vantage
-    # credit spent, in the worst case. Feeds compute_accumulator_interval_seconds()'s
-    # budget-fallback check on the NEXT cycle (see module docstring).
-    record_check(conn, now)
+    # Logged on a successful fetch only, once per run. Feeds
+    # compute_accumulator_interval_seconds()'s budget-fallback check on the
+    # NEXT cycle (see module docstring).
+    (run_check or _RunCheck(conn, now)).mark()
 
     # Graph-driven (config.settings.EVENT_INFLUENCE_LINKS) precursor
     # lookup against the dashboard's persisted event_history — replaces
@@ -699,6 +750,7 @@ def run_accumulator_cycle(
         macro_backdrop_fetched = False
         cot_positioning = None
         cot_positioning_fetched = False
+        run_check = _RunCheck(conn, now)
         for event in active:
             # Every tracked instrument is checked for every active event on
             # every cycle — no per-pair check budget (see module docstring
@@ -723,7 +775,7 @@ def run_accumulator_cycle(
                 cot_positioning_fetched = True
             score_and_record_event(
                 conn, event, all_events, instruments, sources, now=now,
-                macro_backdrop=macro_backdrop, cot_positioning=cot_positioning,
+                macro_backdrop=macro_backdrop, cot_positioning=cot_positioning, run_check=run_check,
             )
 
         return events
@@ -746,7 +798,10 @@ def run_accumulator_iteration(instruments: list[str]) -> int:
             finally:
                 conn.close()
             interval = compute_accumulator_interval_seconds(events, now=now, recent_check_count=recent_checks)
-            if interval >= BUDGET_FALLBACK_INTERVAL_SECONDS:
+            # The budget stretched this sleep only if it beats the same call with no
+            # checks counted. Interval size can't tell: the final-window cap can cut a
+            # back-off below 3 hours, and the far tier is over 3 hours with no budget involved.
+            if interval > compute_accumulator_interval_seconds(events, now=now):
                 print(f"[backtest_accumulator] check budget: {recent_checks} in the last 24h — backing off to {interval}s")
     except Exception as exc:  # noqa: BLE001 — the loop must survive any unhandled error
         print(f"[backtest_accumulator] ERROR: cycle failed, will retry next interval: {exc}")

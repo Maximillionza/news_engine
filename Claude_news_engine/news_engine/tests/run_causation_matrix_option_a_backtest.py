@@ -47,7 +47,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.settings import UTC_TZ
 from data_layer.calendar_feed import EconomicEvent
 from scoring.backtest import BacktestCase, BacktestReport, Tier1Prediction
-from scoring.backtest_store import get_connection, get_latest_prediction_for_occurrence
+from scoring.backtest_store import get_connection, get_pre_release_prediction_for_occurrence
 from scoring.probability_engine import Direction, ProbabilityResult
 
 
@@ -64,7 +64,7 @@ def _case_from_real_prediction(
     """
     conn = get_connection()
     try:
-        prediction = get_latest_prediction_for_occurrence(conn, event.title, instrument, event.event_time_utc)
+        prediction = get_pre_release_prediction_for_occurrence(conn, event.title, instrument, event.event_time_utc)
     finally:
         conn.close()
     if prediction is None:

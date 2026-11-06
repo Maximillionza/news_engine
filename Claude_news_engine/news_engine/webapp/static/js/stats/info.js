@@ -3,7 +3,7 @@
 // Information-icon panel: lists the components behind a composite metric (nowcast, news lean,
 // Combined), and the click-through readings for one release (spec §5). Pure string builders.
 import { escapeHtml } from "../format.js";
-import { tier1Criteria, sastText, expectedWord, signedLean, newsCountText, NEWS_LOW_TRUST_NOTE } from "./rows.js";
+import { tier1Criteria, sastText, expectedWord, signedLean, newsCountText, NEWS_LOW_TRUST_NOTE, marketCallText } from "./rows.js";
 
 export function componentsHtml(data) {
   const rows = (data.components || []).map((c) =>
@@ -37,8 +37,26 @@ function brentLine(b) {
   return `${head}${snap} → ${rel}${change} — source FRED/EIA`;
 }
 
+// FIX 5: a market-implied call has a stored direction and usually a number; neither is blended into Combined.
+function marketLines(row, hand) {
+  const call = row.tier1 || {};
+  const text = marketCallText(row) || "no direction stored";
+  let expected = "no call (the stored direction has no hotter/cooler mapping)";
+  if (call.direction_word === "in line") expected = "in line with the forecast, so this call is not graded";
+  else if (Object.keys(call.leans || {}).length > 0) expected = `${call.direction_word} than the forecast`;
+  return [
+    `Tier 1 market-implied: ${text}${call.implied == null ? " (no implied number stored)" : ""}`,
+    `Stored value: ${hand.value ?? "—"}`,
+    `Confidence: ${hand.confidence ?? "—"}`,
+    `Source: ${hand.source ?? "—"}`,
+    `Expected outcome: ${expected}`,
+    "Weights: none (a market-implied call is not blended into Combined)",
+  ];
+}
+
 function tier1Lines(row, d, unit, view) {
   const hand = d.hand_logged;
+  if (hand && row.tier1_tier === "market_implied") return marketLines(row, hand);
   if (hand) {
     const hasCall = row.tier1 && Object.keys(row.tier1.leans || {}).length > 0;
     return [
@@ -94,7 +112,8 @@ function combinedLines(row, d, unit) {
   if (callLine) out.push(callLine);
   if (row.news_low_trust) out.push(NEWS_LOW_TRUST_NOTE);
   if (d.combined_surprise == null || row.forecast == null) {
-    out.push("Combined: n/a (Tier 1 has no number for this release)");
+    out.push(row.tier1_tier === "market_implied" ? "Combined: n/a (a market-implied call is not blended)"
+      : "Combined: n/a (Tier 1 has no number for this release)");
     return out;
   }
   const w = d.weights || { tier1: 0.7, news: 0.3 };

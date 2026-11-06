@@ -54,8 +54,14 @@ export function fetchHealth() {
   return fetchJson("/api/health");
 }
 
+// eventTimeUtc scopes the progression to one occurrence's pre-release snapshots (the History why panel).
+export function articleHistoryUrl(symbol, eventTitle, eventTimeUtc) {
+  const occurrence = eventTimeUtc ? `&event_time_utc=${encodeURIComponent(eventTimeUtc)}` : "";
+  return `/api/predictions/${symbol}/article_history?event_title=${encodeURIComponent(eventTitle)}${occurrence}`;
+}
+
 export function fetchArticleHistory(symbol, eventTitle) {
-  return fetchJson(`/api/predictions/${symbol}/article_history?event_title=${encodeURIComponent(eventTitle)}`);
+  return fetchJson(articleHistoryUrl(symbol, eventTitle));
 }
 
 export function fetchEventHistory(eventTitle) {

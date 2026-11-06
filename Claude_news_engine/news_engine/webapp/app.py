@@ -28,7 +28,7 @@ from webapp.history import build_print_call_history, compute_history_stats, STAT
 from webapp.symbols import classify_symbol, UnrecognizedSymbolError
 from scoring.backtest_store import (
     get_connection as get_backtest_connection, get_latest_two_predictions,
-    get_latest_print_prediction, get_latest_kalshi_read,
+    get_pre_release_print_prediction, get_latest_kalshi_read, get_pre_release_prediction_history,
     # Aliased — webapp/app.py already has its own route handler FUNCTION
     # named get_prediction_history() (the essence-only one, further down
     # this file) which would otherwise shadow this import at module scope.
@@ -275,7 +275,7 @@ def get_calendar_for_date(date_str: str):
                     "article_count": accumulator_prediction.article_count,
                 }
 
-            print_call = get_latest_print_prediction(backtest_conn, event["title"], event_time)
+            print_call = get_pre_release_print_prediction(backtest_conn, event["title"], event_time)
             print_prediction = None
             if print_call is not None:
                 print_prediction = _print_prediction_dict(print_call)
@@ -334,12 +334,27 @@ def get_article_prediction_history_route(symbol: str):
     that drove each step. Distinct from /history above, which is the
     essence-only (no-articles) score's progression — a different pipeline
     entirely (see webapp/scheduler.py's module docstring).
+
+    With event_time_utc (the History tab's "why" panel) the progression is that
+    one occurrence's pre-release snapshots only, so the panel explains the call
+    the row shows and grades. Without it (the Dashboard flip card) it is the
+    whole title progression, as before.
     """
     event_title = request.args.get("event_title", "")
     if not event_title:
         return jsonify({"error": "event_title is required"}), 400
+    event_time_text = request.args.get("event_time_utc")
+    event_time = None
+    if event_time_text:
+        try:
+            event_time = dt.datetime.fromisoformat(event_time_text)
+        except ValueError:
+            return jsonify({"error": "event_time_utc must be an ISO 8601 time"}), 400
     backtest_conn = get_backtest_connection()
-    runs = get_article_prediction_history(backtest_conn, event_title, symbol.strip().upper())
+    if event_time is None:
+        runs = get_article_prediction_history(backtest_conn, event_title, symbol.strip().upper())
+    else:
+        runs = get_pre_release_prediction_history(backtest_conn, event_title, symbol.strip().upper(), event_time)
     backtest_conn.close()
     return jsonify({
         "progression": [
@@ -512,12 +527,14 @@ def _stats_conns():
 
 
 # StatsRow.tol and MethodCall.side are internal scoring inputs and are deliberately not served;
-# StatsRow.agreement and StatsRow.news_call are the only things derived from side that leave the server.
+# StatsRow.agreement, StatsRow.news_call and MethodCall.direction_word are the only things derived from side that
+# leave the server.
 def _method_dict(call):
     if call is None:
         return None
     return {"predicted": call.predicted, "surprise": call.surprise, "verdict": call.verdict, "miss": call.miss,
-            "leans": call.leans, "note": call.note, "kind": call.kind}
+            "leans": call.leans, "note": call.note, "kind": call.kind,
+            "implied": call.implied, "direction_word": call.direction_word}
 
 
 def _detail_dict(d):

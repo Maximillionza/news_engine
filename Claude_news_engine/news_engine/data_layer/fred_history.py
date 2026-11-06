@@ -28,6 +28,7 @@ import re
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -44,6 +45,9 @@ _RETRY_BACKOFF_SECONDS = 2.0
 _ERROR_TEXT_MAX_CHARS = 200
 _URL_IN_TEXT = re.compile(r"https?://\S+", re.IGNORECASE)
 _RequestTimeout = requests.Timeout
+# FRED is run by the St. Louis Fed, so its calendar day is taken to be US Central. That is the safe side of any
+# US clock: a realtime date on or before Central's today is never ahead of FRED, however far UTC has rolled on.
+FRED_TZ = ZoneInfo("America/Chicago")
 
 
 class FredMaintenanceError(RuntimeError):
@@ -135,6 +139,15 @@ class VintageReading:
     previous_first_print: Optional[str]      # prior period's own first print
 
 
+def fred_today(now: Optional[dt.datetime] = None) -> dt.date:
+    """
+    FRED's current date, the latest day it accepts as a realtime date. It answers
+    anything later with HTTP 400 ("Variable realtime_end can not be after today's
+    date"), and it runs behind UTC: 00:00 to 05:00/06:00 UTC is still yesterday there.
+    """
+    return (now or dt.datetime.now(dt.timezone.utc)).astimezone(FRED_TZ).date()
+
+
 def _fred_error_text(resp: Any, api_key: str) -> str:
     """
     FRED's own `error_message` for a failed answer (e.g. "The series does not exist in ALFRED but may exist in
@@ -153,12 +166,18 @@ def _fred_error_text(resp: Any, api_key: str) -> str:
 
 
 class FredClient:
-    """Small caching ALFRED client. Pace between requests is the caller's choice."""
+    """
+    Small caching ALFRED client. Pace between requests is the caller's choice.
+    Realtime dates are clamped to `today` (FRED's own date) here, in the one place
+    every request passes through, so no caller can ask for a day FRED refuses.
+    """
 
-    def __init__(self, api_key: str, pace_seconds: float = 0.0, sleep: Callable[[float], None] = time.sleep) -> None:
+    def __init__(self, api_key: str, pace_seconds: float = 0.0, sleep: Callable[[float], None] = time.sleep,
+                 today: Callable[[], dt.date] = fred_today) -> None:
         self._api_key = api_key
         self._pace_seconds = pace_seconds
         self._sleep = sleep
+        self._today = today
         self._initial_cache: dict[tuple[str, dt.date, dt.date], list[InitialRelease]] = {}
         self._vintage_cache: dict[tuple[str, dt.date, dt.date], list[tuple[dt.date, float]]] = {}
 
@@ -199,7 +218,15 @@ class FredClient:
             raise FredFetchError(f"FRED returned an unparseable body for {params.get('series_id')}") from None
 
     def initial_releases(self, series_id: str, start: dt.date, end: dt.date) -> list[InitialRelease]:
-        """First prints whose release (vintage) date falls in [start, end], ascending by vintage."""
+        """
+        First prints whose release (vintage) date falls in [start, end], ascending
+        by vintage. `end` may lie in the future (a lag window reaching past today):
+        nothing can have been released there, so it stops at FRED's today, and a
+        window that starts after today holds nothing to ask for.
+        """
+        end = min(end, self._today())
+        if start > end:
+            return []
         key = (series_id, start, end)
         if key not in self._initial_cache:
             obs = self._get_observations({
@@ -217,7 +244,11 @@ class FredClient:
         return self._initial_cache[key]
 
     def vintage_levels(self, series_id: str, vintage_date: dt.date, observation_start: dt.date) -> list[tuple[dt.date, float]]:
-        """Levels as they stood on `vintage_date` (ascending); FRED's "." gaps skipped."""
+        """
+        Levels as they stood on `vintage_date` (ascending); FRED's "." gaps skipped.
+        A date past FRED's today reads FRED's today, the latest vintage there is.
+        """
+        vintage_date = min(vintage_date, self._today())
         key = (series_id, vintage_date, observation_start)
         if key not in self._vintage_cache:
             obs = self._get_observations({

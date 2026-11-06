@@ -1,5 +1,5 @@
 import { escapeHtml, directionLabel, directionClass, directionPct, confidenceColorClass } from "../format.js";
-import { fetchHistory, fetchHistoryStats } from "../api.js";
+import { articleHistoryUrl, fetchHistory, fetchHistoryStats } from "../api.js";
 import { articleProgressionEntryHtml } from "../dashboard/article-progression.js";
 import { sourceBadge } from "./source-badge.js";
 
@@ -243,7 +243,7 @@ function renderHistoryTable(rows) {
     // it's in" gap already fixed on the Dashboard card's own History/
     // breakdown toggles.
     const drillToggle = r.instrument
-      ? ` <button class="history-drill-toggle-btn" data-target="${drillId}" data-event-title="${escapeHtml(r.event_title)}" data-instrument="${escapeHtml(r.instrument)}" aria-expanded="false" aria-controls="${drillId}">why ▾</button>`
+      ? ` <button class="history-drill-toggle-btn" data-target="${drillId}" data-event-title="${escapeHtml(r.event_title)}" data-instrument="${escapeHtml(r.instrument)}" data-event-time="${escapeHtml(r.event_time_utc)}" aria-expanded="false" aria-controls="${drillId}">why ▾</button>`
       : "";
     return `<tr>
       <td>${escapeHtml(r.event_title)}${sourceBadge(r.source)}<br><span class="meta-text-sm">${dateLabel}</span>${drillToggle}</td>
@@ -279,11 +279,11 @@ document.getElementById("history-tbody").addEventListener("click", async (e) => 
   row.style.display = "";
   btn.setAttribute("aria-expanded", "true");
   if (panel.dataset.loaded === "true") return;
-  const resp = await fetch(`/api/predictions/${btn.dataset.instrument}/article_history?event_title=${encodeURIComponent(btn.dataset.eventTitle)}`);
+  const resp = await fetch(articleHistoryUrl(btn.dataset.instrument, btn.dataset.eventTitle, btn.dataset.eventTime));
   const data = await resp.json();
   panel.dataset.loaded = "true";
   const progression = data.progression || [];
   panel.innerHTML = progression.length === 0
-    ? "<div class=\"meta-text\">No article-based read recorded for this event yet.</div>"
+    ? "<div class=\"meta-text\">No article-based read recorded before this release.</div>"
     : progression.map((entry, i) => articleProgressionEntryHtml(entry, i === 0)).join("");
 });

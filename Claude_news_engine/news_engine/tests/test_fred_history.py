@@ -364,3 +364,111 @@ def test_aminvts_reading_inside_vintage(monkeypatch):
     assert reading.previous == "0.5%"
     assert reading.previous_first_print == "0.7%"
     assert fh.previous_check(reading, "0.7%") == "match"
+
+
+# --- realtime_end stops at FRED's today (fix-five, 2026-11-06) ---
+
+class StrictFredRequests(FakeRequests):
+    """FakeRequests that also refuses a window past FRED's today, as the live API does with HTTP 400."""
+
+    def __init__(self, fred_date, **kwargs):
+        super().__init__(**kwargs)
+        self.fred_date = fred_date
+
+    def get(self, url, params=None, timeout=None):
+        for name in ("realtime_start", "realtime_end"):
+            if D.fromisoformat(params[name]) > self.fred_date:
+                self.calls.append(dict(params))
+                return FakeResp({"error_message": f"Bad Request. Variable {name} can not be after today's date ({self.fred_date})."}, status=400)
+        return super().get(url, params=params, timeout=timeout)
+
+
+def _clock_client(fake, monkeypatch, utc_now):
+    """A client whose date is FRED's date at `utc_now`."""
+    monkeypatch.setattr(fh, "requests", fake)
+    return fh.FredClient(SECRET, pace_seconds=0, sleep=lambda _s: None, today=lambda: fh.fred_today(utc_now))
+
+
+def _utc(*args):
+    return dt.datetime(*args, tzinfo=dt.timezone.utc)
+
+
+@pytest.mark.parametrize("utc_now, expected", [
+    (_utc(2026, 11, 6, 15, 24), D(2026, 11, 6)),    # the same date on both sides of the Atlantic
+    (_utc(2026, 11, 7, 0, 0), D(2026, 11, 6)),      # UTC has just rolled over, Central time has not
+    (_utc(2026, 11, 7, 5, 59), D(2026, 11, 6)),     # last UTC minute of the lag in winter (UTC-6)
+    (_utc(2026, 11, 7, 6, 0), D(2026, 11, 7)),      # FRED has caught up
+    (_utc(2026, 7, 1, 4, 59), D(2026, 6, 30)),      # last UTC minute of the lag in summer (UTC-5)
+    (_utc(2026, 7, 1, 5, 0), D(2026, 7, 1)),
+])
+def test_fred_today_lags_utc_until_central_midnight(utc_now, expected):
+    assert fh.fred_today(utc_now) == expected
+
+
+def test_initial_releases_clamps_a_future_end_to_fred_today(monkeypatch):
+    # The live ADP case: released 2026-11-04, the +3-day lag window ends 2026-11-07, FRED's today is 2026-11-06.
+    fake = StrictFredRequests(D(2026, 11, 6), initial={"ADPMNUSNERSA": [_init_obs(D(2026, 10, 1), D(2026, 11, 4))]})
+    client = _clock_client(fake, monkeypatch, _utc(2026, 11, 6, 15, 24))
+
+    out = client.initial_releases("ADPMNUSNERSA", D(2026, 9, 5), D(2026, 11, 7))
+
+    assert out == [fh.InitialRelease(period=D(2026, 10, 1), vintage_date=D(2026, 11, 4))]
+    assert fake.calls[0]["realtime_end"] == "2026-11-06"
+
+
+def test_initial_releases_clamps_to_fred_today_when_utc_has_rolled_over(monkeypatch):
+    # 02:00 UTC on the 7th: a caller asking up to "today" in UTC is one day ahead of FRED.
+    fake = StrictFredRequests(D(2026, 11, 6), initial={"ADPMNUSNERSA": [_init_obs(D(2026, 10, 1), D(2026, 11, 4))]})
+    client = _clock_client(fake, monkeypatch, _utc(2026, 11, 7, 2, 0))
+
+    assert len(client.initial_releases("ADPMNUSNERSA", D(2026, 9, 5), D(2026, 11, 7))) == 1
+    assert fake.calls[0]["realtime_end"] == "2026-11-06"
+
+
+def test_initial_releases_leaves_a_past_end_alone(monkeypatch):
+    fake = StrictFredRequests(D(2026, 11, 6))
+    client = _clock_client(fake, monkeypatch, _utc(2026, 11, 6, 15, 24))
+    client.initial_releases("ADPMNUSNERSA", D(2026, 9, 5), D(2026, 10, 1))
+    assert fake.calls[0]["realtime_end"] == "2026-10-01"
+
+
+def test_initial_releases_window_wholly_in_the_future_asks_fred_nothing(monkeypatch):
+    fake = StrictFredRequests(D(2026, 11, 6))
+    client = _clock_client(fake, monkeypatch, _utc(2026, 11, 6, 15, 24))
+    assert client.initial_releases("ADPMNUSNERSA", D(2026, 11, 7), D(2026, 11, 10)) == []
+    assert fake.calls == []
+
+
+def test_vintage_levels_of_utc_today_reads_fred_today_during_the_lag(monkeypatch):
+    # verify_official_actuals' current_values() passes today's date here.
+    fake = StrictFredRequests(D(2026, 11, 6), vintages={("ICSA", "2026-11-06"): {D(2026, 10, 31): 220000.0}})
+    client = _clock_client(fake, monkeypatch, _utc(2026, 11, 7, 2, 0))
+
+    assert client.vintage_levels("ICSA", D(2026, 11, 7), D(2026, 10, 1)) == [(D(2026, 10, 31), 220000.0)]
+    assert fake.calls[0]["realtime_start"] == fake.calls[0]["realtime_end"] == "2026-11-06"
+
+
+def test_vintage_levels_of_a_past_day_is_unchanged(monkeypatch):
+    fake = StrictFredRequests(D(2026, 11, 6), vintages={("ICSA", "2026-10-29"): {D(2026, 10, 24): 218000.0}})
+    client = _clock_client(fake, monkeypatch, _utc(2026, 11, 6, 15, 24))
+    client.vintage_levels("ICSA", D(2026, 10, 29), D(2026, 10, 1))
+    assert fake.calls[0]["realtime_start"] == fake.calls[0]["realtime_end"] == "2026-10-29"
+
+
+def test_reading_for_event_date_two_days_ago_reaches_fred(monkeypatch):
+    # The whole path that raised the live 400: event date + max_lag_days lands after FRED's today.
+    fake = StrictFredRequests(
+        D(2026, 11, 6),
+        initial={"ADPMNUSNERSA": [_init_obs(D(2026, 9, 1), D(2026, 10, 7)), _init_obs(D(2026, 10, 1), D(2026, 11, 4))]},
+        vintages={
+            ("ADPMNUSNERSA", "2026-11-04"): {D(2026, 8, 1): 134000000.0, D(2026, 9, 1): 134090000.0, D(2026, 10, 1): 134157000.0},
+            ("ADPMNUSNERSA", "2026-10-07"): {D(2026, 8, 1): 134000000.0, D(2026, 9, 1): 134090000.0},
+        },
+    )
+    client = _clock_client(fake, monkeypatch, _utc(2026, 11, 6, 15, 24))
+
+    reading = fh.reading_for_event_date(client, "ADP Non-Farm Employment Change", D(2026, 11, 4))
+
+    assert reading is not None and reading.vintage_date == D(2026, 11, 4)
+    assert reading.actual == "67K"
+    assert reading.previous == "90K"

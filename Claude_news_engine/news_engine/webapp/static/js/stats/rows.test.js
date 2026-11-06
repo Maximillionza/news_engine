@@ -5,7 +5,7 @@ import {
   tier1RowHtml, combinedRowHtml, sentimentRowHtml, verdictChip, leanText,
   pickNextRow, briefCardHtml, scoreboardHtml, filterRows, yearsPresent, disclaimerHtml, componentFor, orderTier1,
   toSast, emptyRowHtml, tier1BodyHtml, tier1Criteria, rowKey, CRITERIA, AGREEMENT_TITLE,
-  newsCallText, NEWS_LOW_TRUST_NOTE,
+  newsCallText, NEWS_LOW_TRUST_NOTE, marketCallText,
 } from "./rows.js";
 
 const base = { event_title: "CPI m/m", event_time_utc: "2026-10-14T12:30:00+00:00", forecast: 0.3, forecast_text: "0.3%",
@@ -338,6 +338,88 @@ test("tier tag shows the served tier", () => {
   assert.ok(tier1RowHtml({ ...base, tier1_tier: "formula" }).includes(">formula<"));
   assert.ok(combinedRowHtml({ ...combinedBase, tier1_tier: "market_implied" }).includes(">market-implied<"));
   assert.ok(tier1RowHtml({ ...base, tier1_tier: "judgment" }).includes(">judgment<"));
+});
+
+// ---- FIX 5: market-implied calls show direction, implied number and verdict --------------------------
+const marketCall = { predicted: null, surprise: null, miss: null, verdict: "right", leans: { XAUUSD: "sell" }, note: "hand-logged",
+  kind: null, implied: 75, direction_word: "hotter" };
+const nfpRow = { ...base, event_title: "Non-Farm Employment Change", forecast: 65, forecast_text: "65K", actual: 165, actual_text: "165K",
+  nowcast_as_of_utc: null, tier1_tier: "market_implied", tier1: marketCall };
+const gdpRow = { ...base, event_title: "Advance GDP q/q", forecast: 3.2, forecast_text: "3.2%", actual: 3.4, actual_text: "3.4%",
+  nowcast_as_of_utc: null, tier1_tier: "market_implied",
+  tier1: { ...marketCall, verdict: null, leans: {}, implied: 3.1765, direction_word: "in line" } };
+const RIGHT = '<span class="chip chip-right">Right</span>';
+const NOCALL = '<span class="chip chip-none">No call</span>';
+const WRONG = '<span class="chip chip-wrong">Wrong</span>';
+
+test("marketCallText gives the direction word and the number in the event's unit and precision", () => {
+  assert.equal(marketCallText(nfpRow), "hotter · 75K");
+  assert.equal(marketCallText(gdpRow), "in line · 3.2%");
+  assert.equal(marketCallText({ ...nfpRow, forecast_text: "54.5", tier1: { ...marketCall, implied: 54.3559, direction_word: "cooler" } }),
+    "cooler · 54.4");
+  assert.equal(marketCallText({ ...nfpRow, forecast_text: "4.00%", tier1: { ...marketCall, implied: 4.25 } }), "hotter · 4.25%");
+});
+
+test("marketCallText shows the direction alone when no number could be read", () => {
+  assert.equal(marketCallText({ ...nfpRow, tier1: { ...marketCall, implied: null, direction_word: "bearish" } }), "bearish");
+});
+
+test("marketCallText never prints a negative zero", () => {
+  const row = { ...gdpRow, forecast_text: "0.0%", tier1: { ...marketCall, implied: -0.04, direction_word: "in line" } };
+  assert.equal(marketCallText(row), "in line · 0.0%");
+});
+
+test("marketCallText is empty for a row with no word: formula, judgment, or no call", () => {
+  assert.equal(marketCallText(base), "");
+  assert.equal(marketCallText(handRow), "");
+  assert.equal(marketCallText({ ...base, tier1: null }), "");
+});
+
+test("the Combined table's Tier 1 cell reads word, number and verdict for a market-implied row", () => {
+  const nfp = combinedRowHtml(nfpRow);
+  assert.ok(nfp.includes(`hotter · 75K · ${RIGHT}`) && nfp.includes(">market-implied<"));
+  assert.ok(!nfp.includes(`— ${RIGHT}`));
+  const gdp = combinedRowHtml(gdpRow);
+  assert.ok(gdp.includes(`in line · 3.2% · ${NOCALL}`) && !gdp.includes(`— ${NOCALL}`));
+  assert.ok(combinedRowHtml({ ...nfpRow, tier1: { ...marketCall, verdict: "wrong" } }).includes(`hotter · 75K · ${WRONG}`));
+});
+
+test("a market-implied row with no readable number shows direction and verdict and no invented number", () => {
+  const html = combinedRowHtml({ ...nfpRow, tier1: { ...marketCall, implied: null, direction_word: "bearish", verdict: null } });
+  assert.ok(html.includes(`bearish · ${NOCALL}`) && !html.includes(`— ${NOCALL}`));
+});
+
+test("a pending market-implied call says pending, not No call", () => {
+  const pending = { ...nfpRow, status: "pending", actual: null, actual_text: null, tier1: { ...marketCall, verdict: null } };
+  const html = combinedRowHtml(pending);
+  assert.ok(html.includes("hotter · 75K · pending") && !html.includes(NOCALL));
+});
+
+test("the Tier 1 table shows word and number in the call column and the verdict in the result column", () => {
+  const nfp = tier1RowHtml(nfpRow);
+  assert.ok(nfp.includes("hotter · 75K") && !nfp.includes("hand-logged call") && nfp.includes(">market-implied<"));
+  assert.ok(nfp.includes(`<td>${RIGHT}</td>`));
+  const gdp = tier1RowHtml(gdpRow);
+  assert.ok(gdp.includes("in line · 3.2%") && gdp.includes(`<td>${NOCALL}</td>`));
+  assert.ok(tier1RowHtml({ ...nfpRow, tier1: { ...marketCall, implied: null, direction_word: "bearish" } }).includes("<td>bearish"));
+});
+
+test("formula and judgment rows render exactly as before", () => {
+  const judgment = { ...handRow, tier1_tier: "judgment" };
+  assert.ok(tier1RowHtml(judgment).includes("hand-logged call"));
+  assert.ok(combinedRowHtml(judgment).includes(`— ${RIGHT}`));
+  assert.ok(combinedRowHtml({ ...base, tier1_tier: "formula" }).includes(`0.4 ${RIGHT}`));
+});
+
+test("market-implied rows get their own hover criteria; a judgment row keeps the hand-logged text", () => {
+  assert.equal(tier1Criteria(nfpRow), CRITERIA.marketImplied);
+  assert.ok(!/hand-researched|no number/i.test(CRITERIA.marketImplied));
+  assert.equal(tier1Criteria({ ...handRow, tier1_tier: "judgment" }), HAND_TEXT);
+});
+
+test("the market-implied word and number are escaped", () => {
+  const html = combinedRowHtml({ ...nfpRow, forecast_text: "65<b>", tier1: { ...marketCall, direction_word: "<i>" } });
+  assert.ok(!html.includes("<i>") && !html.includes("<b>"));
 });
 
 test("tier tag is absent when tier1_tier is null", () => {

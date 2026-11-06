@@ -1,5 +1,6 @@
 # tests/test_stats_service.py
 import datetime as dt
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -1086,6 +1087,140 @@ def test_judgment_fedwatch_row_keeps_the_shared_map(conns):
     row = svc.build_rows(dash, bt, event_title="Federal Funds Rate")[-1]
     assert row.tier1_tier == "market_implied"
     assert row.tier1.side is None and row.tier1.verdict is None
+
+
+# --- FIX 5: market-implied calls show their direction word and implied number, display only ------------------
+
+NFP = "Non-Farm Employment Change"
+GDP = "Advance GDP q/q"
+ISM = "ISM Manufacturing PMI"
+FED = "Federal Funds Rate"
+
+
+def _nfp_2026_11_06(dash, bt):
+    """The live NFP shape: a Kalshi median of 75K against a 65K forecast and a 165K print."""
+    _event(dash, NFP, _t(11, 6), "65K", "165K")
+    _kalshi_row(bt, NFP, _t(11, 6), "Kalshi KXPAYROLLS-26OCT implied median 75.0000 vs forecast 65K: "
+                                    "hotter than forecast (13 liquid strikes, read 2026-11-06 07:00 SAST)", "bearish")
+
+
+def _gdp_in_line(dash, bt):
+    """The live Advance GDP shape: a median inside one step of the forecast, so no graded call."""
+    _event(dash, GDP, _t(10, 29), "3.2%", "3.4%")
+    _kalshi_row(bt, GDP, _t(10, 29), "Kalshi KXGDP-26OCT30 implied median 3.1765 vs forecast 3.2%: "
+                                     "in line with forecast (9 liquid strikes, read 2026-10-29 07:00 SAST)", "neutral")
+
+
+def test_kalshi_call_carries_its_word_and_implied_number_and_stays_graded_by_direction_alone(conns):
+    dash, bt = conns
+    _nfp_2026_11_06(dash, bt)
+    row = svc.build_rows(dash, bt, event_title=NFP)[-1]
+    assert row.tier1.direction_word == "hotter" and row.tier1.implied == 75.0
+    assert row.tier1.verdict == "right" and row.tier1.side == 1
+    # predicted, surprise and miss stay empty: the number must not reach mean_miss, Combined or the brief card.
+    assert row.tier1.predicted is None and row.tier1.surprise is None and row.tier1.miss is None
+    assert row.combined is None
+
+
+def test_in_line_kalshi_call_reads_in_line_with_its_number_and_stays_no_call(conns):
+    dash, bt = conns
+    _gdp_in_line(dash, bt)
+    row = svc.build_rows(dash, bt, event_title=GDP)[-1]
+    assert row.tier1.direction_word == "in line" and row.tier1.implied == 3.1765
+    assert row.tier1.verdict is None and row.tier1.side is None and row.tier1.leans == {}
+
+
+def test_cooler_kalshi_call_reads_cooler_and_pending_keeps_no_verdict(conns):
+    dash, bt = conns
+    _event(dash, ISM, _t(11, 2), "54.5", None)
+    _kalshi_row(bt, ISM, _t(11, 2), "Kalshi KXISMPMI-26OCT implied median 54.3559 vs forecast 54.5: "
+                                    "cooler than forecast (8 liquid strikes, read 2026-11-02 07:00 SAST)", "bullish")
+    row = svc.build_rows(dash, bt, event_title=ISM)[-1]
+    assert row.status == "pending" and row.tier1.verdict is None
+    assert row.tier1.direction_word == "cooler" and row.tier1.implied == 54.3559
+
+
+def test_chart_plots_the_implied_number_as_the_tier1_point_and_nowhere_else(conns):
+    dash, bt = conns
+    _nfp_2026_11_06(dash, bt)
+    rows = svc.build_rows(dash, bt, event_title=NFP)
+    point = svc.build_chart(rows, "tier1")["points"][-1]
+    assert point["predicted"] == 75.0 and point["verdict"] == "right"
+    assert svc.build_chart(rows, "combined")["points"][-1]["predicted"] is None
+    assert svc.build_chart(rows, "news")["points"][-1]["predicted"] is None
+
+
+def test_chart_plots_an_in_line_market_call_with_no_verdict(conns):
+    dash, bt = conns
+    _gdp_in_line(dash, bt)
+    point = svc.build_chart(svc.build_rows(dash, bt, event_title=GDP), "tier1")["points"][-1]
+    assert point["predicted"] == 3.1765 and point["verdict"] is None
+
+
+def test_kalshi_row_whose_number_cannot_be_read_keeps_direction_and_verdict_and_no_chart_point(conns):
+    dash, bt = conns
+    _event(dash, NFP, _t(11, 6), "65K", "165K")
+    _kalshi_row(bt, NFP, _t(11, 6), "Kalshi ladder read by hand, median not recorded", "bearish")
+    rows = svc.build_rows(dash, bt, event_title=NFP)
+    assert rows[-1].tier1.direction_word == "hotter" and rows[-1].tier1.implied is None
+    assert rows[-1].tier1.verdict == "right"
+    assert svc.build_chart(rows, "tier1")["points"][-1]["predicted"] is None
+
+
+def test_neutral_kalshi_row_without_a_readable_label_is_not_called_in_line(conns):
+    # 'in line' is only ever read from the stored text; a bare neutral stays 'neutral' (no fabricated direction).
+    dash, bt = conns
+    _event(dash, NFP, _t(11, 6), "65K", "65K")
+    _kalshi_row(bt, NFP, _t(11, 6), "Kalshi ladder read by hand, median not recorded", "neutral")
+    row = svc.build_rows(dash, bt, event_title=NFP)[-1]
+    assert row.tier1.direction_word == "neutral" and row.tier1.implied is None and row.tier1.verdict is None
+
+
+@pytest.mark.parametrize("direction", ["bearish", "neutral"])
+def test_fedwatch_row_shows_its_stored_direction_with_no_number_and_no_chart_point(conns, direction):
+    # Federal Funds Rate is outside the shared map and a FedWatch row is read with it, so there is no hotter/cooler
+    # side to name. A kalshi_reads row is one strike's probability, not a median, so it never supplies the number.
+    dash, bt = conns
+    _event(dash, FED, _t(12, 9), "4.00%", "4.00%")
+    bs.record_tier1_prediction(bt, FED, "XAUUSD", _t(12, 9), "CME FedWatch: ~85% hike priced", "Likely",
+                               "https://fxstreet.com/x", direction, logged_at_utc=_t(12, 9) - dt.timedelta(days=2))
+    bt.execute("INSERT INTO kalshi_reads (event_title, event_time_utc, strike, implied_direction, implied_probability, "
+               "open_interest, read_at_utc) VALUES (?,?,?,?,?,?,?)",
+               (FED, _t(12, 9).isoformat(), 4.0, "lower", 0.075, 69628.35, _t(12, 7).isoformat()))
+    rows = svc.build_rows(dash, bt, event_title=FED)
+    assert rows[-1].tier1_tier == "market_implied"
+    assert rows[-1].tier1.direction_word == direction and rows[-1].tier1.implied is None
+    assert rows[-1].tier1.verdict is None
+    assert svc.build_chart(rows, "tier1")["points"][-1]["predicted"] is None
+
+
+def test_formula_and_judgment_rows_carry_no_word_and_no_implied_number(conns):
+    dash, bt = conns
+    _event(dash, "PPI m/m", _t(9, 10), "0.3%", "0.1%")
+    bs.record_tier1_prediction(bt, "PPI m/m", "XAUUSD", _t(9, 10), "0.4% hot", "Likely", "BLS", "bearish",
+                               logged_at_utc=_t(9, 10) - dt.timedelta(days=2))
+    _event(dash, "CPI m/m", _t(10), "0.3%", "0.4%")
+    _snap(bt, "CPI m/m", _t(10), 0.4)
+    judgment = svc.build_rows(dash, bt, event_title="PPI m/m")[-1]
+    formula = svc.build_rows(dash, bt, event_title="CPI m/m")[-1]
+    assert judgment.tier1_tier == "judgment" and formula.tier1_tier == "formula"
+    for call in (judgment.tier1, formula.tier1):
+        assert call.direction_word is None and call.implied is None
+    assert svc.build_chart([formula], "tier1")["points"][-1]["predicted"] == 0.4
+    assert svc.build_chart([judgment], "tier1")["points"][-1]["predicted"] is None
+
+
+def test_the_scoreboard_does_not_see_the_implied_number_or_the_word(conns):
+    dash, bt = conns
+    _nfp_2026_11_06(dash, bt)
+    _gdp_in_line(dash, bt)
+    rows = svc.build_rows(dash, bt)
+    stripped = [replace(r, tier1=replace(r.tier1, implied=None, direction_word=None)) for r in rows]
+    board = svc.build_scoreboard(rows)
+    assert board == svc.build_scoreboard(stripped)
+    tier1 = board["methods"]["tier1"]
+    assert tier1["scored"] == 1 and tier1["right"] == 1 and tier1["mean_miss"] is None
+    assert board["in_line_baseline"]["tier1"]["scored"] == 1 and board["methods"]["combined"]["scored"] == 0
 
 
 # --- FIX A3: pre-registered evidence floor (3 signal-bearing articles) ---------------------------------------
