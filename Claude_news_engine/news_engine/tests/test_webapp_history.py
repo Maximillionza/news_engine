@@ -47,7 +47,7 @@ def test_resolved_event_with_real_call_is_judged():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_print_prediction_if_changed(
             bt_conn, "Core CPI m/m", event_time,
-            PrintCall(direction="lower", confidence=0.51, article_count=89), now=event_time,
+            PrintCall(direction="lower", confidence=0.51, article_count=89), now=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -78,7 +78,7 @@ def test_resolved_event_with_shrug_print_call_and_no_accumulator_prediction_excl
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_print_prediction_if_changed(
             bt_conn, "CPI m/m", event_time,
-            PrintCall(direction="in_line", confidence=0.15, article_count=89), now=event_time,
+            PrintCall(direction="in_line", confidence=0.15, article_count=89), now=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -109,7 +109,7 @@ def test_resolved_event_with_shrug_print_call_falls_back_to_real_accumulator_pre
         # phrases — a real, contentless stub (not None).
         backtest_store.record_print_prediction_if_changed(
             bt_conn, "CPI m/m", event_time,
-            PrintCall(direction="in_line", confidence=0.15, article_count=8), now=event_time,
+            PrintCall(direction="in_line", confidence=0.15, article_count=8), now=event_time - dt.timedelta(hours=1),
         )
         # XAUUSD is inverse-mapped and CPI m/m is higher_bullish, so a
         # 'bearish' gold call implies a 'higher' surprise (same math the
@@ -117,7 +117,7 @@ def test_resolved_event_with_shrug_print_call_falls_back_to_real_accumulator_pre
         # prediction_when_no_print_call test above already relies on).
         backtest_store.record_prediction(
             bt_conn, "CPI m/m", "XAUUSD", event_time,
-            0.7, "bearish", 0.6, 40, False, scored_at_utc=event_time,
+            0.7, "bearish", 0.6, 40, False, scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -151,11 +151,11 @@ def test_resolved_event_in_line_surprise_graded_against_real_outcome_not_the_num
         # 8 articles, zero phrase hits -> contentless print-call stub.
         backtest_store.record_print_prediction_if_changed(
             bt_conn, "Unemployment Claims", event_time,
-            PrintCall(direction="in_line", confidence=0.15, article_count=8), now=event_time,
+            PrintCall(direction="in_line", confidence=0.15, article_count=8), now=event_time - dt.timedelta(hours=1),
         )
         backtest_store.record_prediction(
             bt_conn, "Unemployment Claims", "XAUUSD", event_time,
-            0.56, "bullish", 0.21, 92, False, scored_at_utc=event_time,
+            0.56, "bullish", 0.21, 92, False, scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -197,7 +197,7 @@ def test_unresolved_numeric_event_excluded_entirely():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_print_prediction_if_changed(
             bt_conn, "PPI m/m", event_time,
-            PrintCall(direction="in_line", confidence=0.15, article_count=93), now=event_time,
+            PrintCall(direction="in_line", confidence=0.15, article_count=93), now=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -253,7 +253,7 @@ def test_resolved_numeric_event_falls_back_to_accumulator_prediction_when_no_pri
         # higher_bullish surprise implies a BEARISH call for gold.
         backtest_store.record_prediction(
             bt_conn, "CPI m/m", "XAUUSD", event_time,
-            0.7, "bearish", 0.6, 40, False, scored_at_utc=event_time,
+            0.7, "bearish", 0.6, 40, False, scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -290,7 +290,7 @@ def test_resolved_numeric_event_fallback_missed_when_direction_mismatches():
         # call is BULLISH for gold (inverse-mapped) -- the wrong sign.
         backtest_store.record_prediction(
             bt_conn, "CPI m/m", "XAUUSD", event_time,
-            0.7, "bullish", 0.6, 40, False, scored_at_utc=event_time,
+            0.7, "bullish", 0.6, 40, False, scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -320,7 +320,7 @@ def test_resolved_numeric_event_fallback_neutral_direction_not_judged():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_prediction(
             bt_conn, "CPI m/m", "XAUUSD", event_time,
-            0.5, "neutral", 0.6, 40, False, scored_at_utc=event_time,
+            0.5, "neutral", 0.6, 40, False, scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -352,7 +352,7 @@ def test_resolved_numeric_event_fallback_produces_one_row_per_instrument():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_prediction(
             bt_conn, "CPI m/m", "XAUUSD", event_time,
-            0.7, "bearish", 0.6, 40, False, scored_at_utc=event_time,
+            0.7, "bearish", 0.6, 40, False, scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         # No US30 prediction recorded for this occurrence — must not produce a row.
         bt_conn.close()
@@ -387,11 +387,11 @@ def test_unchanged_vs_previous_badge_does_not_affect_outcome():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_print_prediction_if_changed(
             bt_conn, "CPI m/m", unchanged_time,
-            PrintCall(direction="in_line", confidence=0.4, article_count=50), now=unchanged_time,
+            PrintCall(direction="in_line", confidence=0.4, article_count=50), now=unchanged_time - dt.timedelta(hours=1),
         )
         backtest_store.record_print_prediction_if_changed(
             bt_conn, "PPI m/m", changed_time,
-            PrintCall(direction="higher", confidence=0.4, article_count=50), now=changed_time,
+            PrintCall(direction="higher", confidence=0.4, article_count=50), now=changed_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -424,7 +424,7 @@ def test_history_row_carries_source_and_prefers_seeded_when_mixed():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_print_prediction_if_changed(
             bt_conn, "Core CPI m/m", event_time,
-            PrintCall(direction="lower", confidence=0.51, article_count=89), now=event_time, source="live",
+            PrintCall(direction="lower", confidence=0.51, article_count=89), now=event_time - dt.timedelta(hours=1), source="live",
         )
         bt_conn.close()
 
@@ -452,7 +452,7 @@ def test_history_row_carries_live_web_fallback_source_intact():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_print_prediction_if_changed(
             bt_conn, "Core CPI m/m", event_time,
-            PrintCall(direction="lower", confidence=0.51, article_count=89), now=event_time, source="live",
+            PrintCall(direction="lower", confidence=0.51, article_count=89), now=event_time - dt.timedelta(hours=1), source="live",
         )
         bt_conn.close()
 
@@ -480,7 +480,7 @@ def test_history_row_carries_fred_source_intact():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_print_prediction_if_changed(
             bt_conn, "Core CPI m/m", event_time,
-            PrintCall(direction="lower", confidence=0.51, article_count=89), now=event_time, source="live",
+            PrintCall(direction="lower", confidence=0.51, article_count=89), now=event_time - dt.timedelta(hours=1), source="live",
         )
         bt_conn.close()
 
@@ -512,7 +512,7 @@ def test_text_only_event_with_prediction_produces_fallback_row():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_prediction(
             bt_conn, "FOMC Statement", "XAUUSD", event_time,
-            0.62, "bullish", 0.5, 40, False, scored_at_utc=event_time,
+            0.62, "bullish", 0.5, 40, False, scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -551,7 +551,7 @@ def test_text_only_event_confirmed_outcome_judged_correctly():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_prediction(
             bt_conn, "FOMC Statement", "XAUUSD", event_time,
-            0.62, "bullish", 0.5, 40, False, scored_at_utc=event_time,
+            0.62, "bullish", 0.5, 40, False, scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         backtest_store.record_outcome(bt_conn, "FOMC Statement", "XAUUSD", event_time, "bearish", "gold sold off on hawkish tone")
         bt_conn.close()
@@ -584,11 +584,11 @@ def test_final_no_reaction_outcome_grades_a_directional_call_missed_and_a_neutra
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_prediction(
             bt_conn, "FOMC Statement", "XAUUSD", event_time,
-            0.62, "bullish", 0.5, 40, False, scored_at_utc=event_time,
+            0.62, "bullish", 0.5, 40, False, scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         backtest_store.record_prediction(
             bt_conn, "FOMC Statement", "US30", event_time,
-            0.5, "neutral", 0.5, 40, False, scored_at_utc=event_time,
+            0.5, "neutral", 0.5, 40, False, scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         backtest_store.record_outcome(bt_conn, "FOMC Statement", "XAUUSD", event_time, "neutral", note)
         backtest_store.record_outcome(bt_conn, "FOMC Statement", "US30", event_time, "neutral", note)
@@ -622,7 +622,7 @@ def test_a_dismissal_leaves_history_pending():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_prediction(
             bt_conn, "FOMC Statement", "XAUUSD", event_time,
-            0.62, "bullish", 0.5, 40, False, scored_at_utc=event_time,
+            0.62, "bullish", 0.5, 40, False, scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         backtest_store.record_dismissal(bt_conn, "FOMC Statement", "XAUUSD", event_time, "rescheduled")
         bt_conn.close()
@@ -656,7 +656,7 @@ def test_text_only_event_missing_prediction_for_one_instrument_produces_no_row_f
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_prediction(
             bt_conn, "FOMC Statement", "XAUUSD", event_time,
-            0.62, "bullish", 0.5, 40, False, scored_at_utc=event_time,
+            0.62, "bullish", 0.5, 40, False, scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         # No prediction recorded for US30 for this occurrence.
         bt_conn.close()
@@ -791,7 +791,7 @@ def test_pre_filter_limit_does_not_starve_rare_row_type():
         store.upsert_event_history(dash_conn, target_event, "in_line", now=target_time)
         backtest_store.record_print_prediction_if_changed(
             bt_conn, "CPI m/m", target_time,
-            PrintCall(direction="in_line", confidence=0.6, article_count=50), now=target_time,
+            PrintCall(direction="in_line", confidence=0.6, article_count=50), now=target_time - dt.timedelta(hours=1),
         )
         dash_conn.close()
         bt_conn.close()
@@ -824,7 +824,7 @@ def test_null_surprise_direction_is_not_judged_as_missed():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_print_prediction_if_changed(
             bt_conn, "CPI m/m", event_time,
-            PrintCall(direction="higher", confidence=0.6, article_count=50), now=event_time,
+            PrintCall(direction="higher", confidence=0.6, article_count=50), now=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -856,7 +856,7 @@ def test_text_only_low_confidence_prediction_not_judged():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_prediction(
             bt_conn, "FOMC Statement", "XAUUSD", event_time,
-            0.51, "neutral", 0.009, 40, False, scored_at_utc=event_time,  # confidence=0.9%, well below the floor
+            0.51, "neutral", 0.009, 40, False, scored_at_utc=event_time - dt.timedelta(hours=1),  # confidence=0.9%, well below the floor
         )
         backtest_store.record_outcome(bt_conn, "FOMC Statement", "XAUUSD", event_time, "neutral", "muted reaction")
         bt_conn.close()
@@ -902,7 +902,7 @@ def test_numeric_row_recognizes_cloud_web_fallback_source():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_print_prediction_if_changed(
             bt_conn, "Core CPI m/m", event_time,
-            PrintCall(direction="lower", confidence=0.51, article_count=89), now=event_time, source="live",
+            PrintCall(direction="lower", confidence=0.51, article_count=89), now=event_time - dt.timedelta(hours=1), source="live",
         )
         bt_conn.close()
 
@@ -932,7 +932,7 @@ def test_fallback_row_recognizes_cloud_web_fallback_source():
         # No print_predictions row at all -- exercises the fallback branch.
         backtest_store.record_prediction(
             bt_conn, "CPI m/m", "XAUUSD", event_time,
-            0.7, "bearish", 0.6, 40, False, scored_at_utc=event_time,
+            0.7, "bearish", 0.6, 40, False, scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -965,7 +965,7 @@ def test_fallback_row_flags_tier1_sentiment_conflict():
         backtest_store.record_prediction(
             bt_conn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
             probability=0.44, direction="bearish", confidence=0.33, article_count=142,
-            contradiction_flag=False, source="live", scored_at_utc=event_time,
+            contradiction_flag=False, source="live", scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         backtest_store.record_tier1_prediction(
             bt_conn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
@@ -1001,7 +1001,7 @@ def test_fallback_row_no_conflict_when_tier1_agrees():
         backtest_store.record_prediction(
             bt_conn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
             probability=0.56, direction="bullish", confidence=0.4, article_count=142,
-            contradiction_flag=False, source="live", scored_at_utc=event_time,
+            contradiction_flag=False, source="live", scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         backtest_store.record_tier1_prediction(
             bt_conn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
@@ -1037,7 +1037,7 @@ def test_fallback_row_no_tier1_conflict_field_when_no_tier1_row_exists():
         backtest_store.record_prediction(
             bt_conn, event_title="Unemployment Rate", instrument="XAUUSD", event_time_utc=event_time,
             probability=0.46, direction="bearish", confidence=0.35, article_count=89,
-            contradiction_flag=False, source="live", scored_at_utc=event_time,
+            contradiction_flag=False, source="live", scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -1073,7 +1073,7 @@ def test_fallback_row_carries_real_tier1_prediction():
         backtest_store.record_prediction(
             bt_conn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
             probability=0.56, direction="bullish", confidence=0.4, article_count=142,
-            contradiction_flag=False, source="live", scored_at_utc=event_time,
+            contradiction_flag=False, source="live", scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         backtest_store.record_tier1_prediction(
             bt_conn, event_title="PPI m/m", instrument="XAUUSD", event_time_utc=event_time,
@@ -1113,7 +1113,7 @@ def test_fallback_row_tier1_prediction_none_when_no_tier1_row_exists():
         backtest_store.record_prediction(
             bt_conn, event_title="Unemployment Rate", instrument="XAUUSD", event_time_utc=event_time,
             probability=0.46, direction="bearish", confidence=0.35, article_count=89,
-            contradiction_flag=False, source="live", scored_at_utc=event_time,
+            contradiction_flag=False, source="live", scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -1144,7 +1144,7 @@ def test_text_only_row_carries_real_tier1_prediction():
         backtest_store.record_prediction(
             bt_conn, event_title="FOMC Statement", instrument="XAUUSD", event_time_utc=event_time,
             probability=0.6, direction="bearish", confidence=0.5, article_count=40,
-            contradiction_flag=False, source="live", scored_at_utc=event_time,
+            contradiction_flag=False, source="live", scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         backtest_store.record_tier1_prediction(
             bt_conn, event_title="FOMC Statement", instrument="XAUUSD", event_time_utc=event_time,
@@ -1190,7 +1190,7 @@ def _fedwatch_conflict_rows(title, forecast, actual, surprise):
         backtest_store.record_prediction(
             bt_conn, event_title=title, instrument="XAUUSD", event_time_utc=event_time,
             probability=0.4, direction="bearish", confidence=0.5, article_count=40,
-            contradiction_flag=False, source="live", scored_at_utc=event_time,
+            contradiction_flag=False, source="live", scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         backtest_store.record_tier1_prediction(
             bt_conn, event_title=title, instrument="XAUUSD", event_time_utc=event_time,
@@ -1251,7 +1251,7 @@ def test_fallback_row_appears_for_a_tracked_symbol_never_in_config_settings_inst
         backtest_store.record_prediction(
             bt_conn, event_title="PPI m/m", instrument="XAGUSD", event_time_utc=event_time,
             probability=0.56, direction="bullish", confidence=0.4, article_count=90,
-            contradiction_flag=False, source="live", scored_at_utc=event_time,
+            contradiction_flag=False, source="live", scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -1282,7 +1282,7 @@ def test_fallback_row_absent_for_an_untracked_symbol_even_with_real_prediction_d
         backtest_store.record_prediction(
             bt_conn, event_title="PPI m/m", instrument="EURUSD", event_time_utc=event_time,
             probability=0.56, direction="bullish", confidence=0.4, article_count=90,
-            contradiction_flag=False, source="live", scored_at_utc=event_time,
+            contradiction_flag=False, source="live", scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         bt_conn.close()
 
@@ -1403,7 +1403,7 @@ def test_history_keeps_publisher_source():
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_print_prediction_if_changed(
             bt_conn, "Core CPI m/m", event_time,
-            PrintCall(direction="lower", confidence=0.51, article_count=89), now=event_time, source="live",
+            PrintCall(direction="lower", confidence=0.51, article_count=89), now=event_time - dt.timedelta(hours=1), source="live",
         )
         bt_conn.close()
 
@@ -1431,7 +1431,7 @@ def _one_tick_history_rows(forecast, actual, gold_direction, outcome_direction=N
         bt_conn = backtest_store.get_connection(backtest_db)
         backtest_store.record_prediction(
             bt_conn, "Unemployment Claims", "XAUUSD", event_time,
-            0.7, gold_direction, 0.6, 40, False, scored_at_utc=event_time,
+            0.7, gold_direction, 0.6, 40, False, scored_at_utc=event_time - dt.timedelta(hours=1),
         )
         if outcome_direction is not None:
             backtest_store.record_outcome(bt_conn, "Unemployment Claims", "XAUUSD", event_time, outcome_direction, "Dukascopy: test (auto)")
@@ -1454,6 +1454,192 @@ def test_one_tick_miss_is_graded_not_shrugged():
     assert pending[0].outcome is None and pending[0].unjudged_reason == "pending"
     graded = _one_tick_history_rows("205K", "205K", "bullish", outcome_direction="bullish")
     assert graded[0].outcome == "Confirmed"
+    print("PASS\n")
+
+
+# --- History shows only the pre-release score (fix-five, 2026-11-06) ---
+
+AHE_TITLE = "Average Hourly Earnings m/m"
+AHE_TIME = dt.datetime(2026, 11, 6, 13, 30, tzinfo=UTC_TZ)
+AHE_NOW = AHE_TIME + dt.timedelta(hours=2)
+
+
+def _seed_ahe_print(dash_db):
+    """AHE 2026-11-06 as it resolved: a higher print against the forecast, gold tracked."""
+    dash_conn = store.get_connection(dash_db)
+    store.add_tracked_symbol(dash_conn, "XAUUSD")
+    store.upsert_event_history(
+        dash_conn, _resolved_event(AHE_TITLE, AHE_TIME, "0.3%", "0.2%", "0.4%"), "higher", now=AHE_NOW,
+    )
+    dash_conn.close()
+
+
+def _seed_fomc_text_only(dash_db, event_time, now):
+    dash_conn = store.get_connection(dash_db)
+    store.add_tracked_symbol(dash_conn, "XAUUSD")
+    store.upsert_event_history(dash_conn, _resolved_event("FOMC Statement", event_time, None, None, None), None, now=now)
+    dash_conn.close()
+
+
+def _history_rows(dash_db, backtest_db, now=AHE_NOW):
+    with patch.object(store, "DB_PATH", dash_db), patch.object(backtest_store, "DB_PATH", backtest_db):
+        return history.build_print_call_history(now=now)
+
+
+def test_ahe_shape_history_shows_the_pre_release_call_and_grades_it():
+    print("=== History: AHE 2026-11-06 shape, pre-release bullish then post-release bearish: shows bullish, Missed for a higher print ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db, backtest_db = Path(tmp) / "dashboard.db", Path(tmp) / "backtest.db"
+        _seed_ahe_print(dash_db)
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, AHE_TITLE, "XAUUSD", AHE_TIME, 0.79, "bullish", 0.6, 40, False,
+            scored_at_utc=dt.datetime(2026, 11, 6, 7, 36, tzinfo=UTC_TZ),
+        )
+        for minutes, probability in ((6, 0.23), (27, 0.52)):      # the two live post-release rows
+            backtest_store.record_prediction(
+                bt_conn, AHE_TITLE, "XAUUSD", AHE_TIME, probability, "bearish", 0.6, 40, False,
+                scored_at_utc=AHE_TIME + dt.timedelta(minutes=minutes),
+            )
+        bt_conn.close()
+
+        rows = _history_rows(dash_db, backtest_db)
+
+        assert len(rows) == 1
+        assert rows[0].ne_prediction == "bullish"
+        # Gold up means USD down, so bullish gold implies a LOWER print; the print came in higher.
+        assert rows[0].outcome == "Missed"
+
+        # Post-release rows stay stored; only the display and the grade change.
+        bt_conn = backtest_store.get_connection(backtest_db)
+        assert backtest_store.count_predictions(bt_conn, AHE_TITLE, "XAUUSD", AHE_TIME) == 3
+        bt_conn.close()
+    print("PASS\n")
+
+
+def test_numeric_occurrence_with_only_post_release_rows_shows_no_prediction():
+    print("=== History: a numeric occurrence with no pre-release row shows no prediction, never a post-release one ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db, backtest_db = Path(tmp) / "dashboard.db", Path(tmp) / "backtest.db"
+        _seed_ahe_print(dash_db)
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, AHE_TITLE, "XAUUSD", AHE_TIME, 0.23, "bearish", 0.6, 40, False,
+            scored_at_utc=AHE_TIME + dt.timedelta(minutes=6),
+        )
+        bt_conn.close()
+
+        assert _history_rows(dash_db, backtest_db) == []
+    print("PASS\n")
+
+
+def test_row_scored_exactly_at_the_release_is_not_pre_release():
+    print("=== History: a row stamped exactly at the release is not a pre-release call ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db, backtest_db = Path(tmp) / "dashboard.db", Path(tmp) / "backtest.db"
+        _seed_ahe_print(dash_db)
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, AHE_TITLE, "XAUUSD", AHE_TIME, 0.23, "bearish", 0.6, 40, False, scored_at_utc=AHE_TIME,
+        )
+        bt_conn.close()
+
+        assert _history_rows(dash_db, backtest_db) == []
+    print("PASS\n")
+
+
+def test_text_only_path_shows_and_grades_the_pre_release_call():
+    print("=== History: a text-only event shows and grades the pre-release call, not a later post-release flip ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db, backtest_db = Path(tmp) / "dashboard.db", Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 17, 18, 0, tzinfo=UTC_TZ)
+        now = event_time + dt.timedelta(hours=2)
+        _seed_fomc_text_only(dash_db, event_time, now)
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, "FOMC Statement", "XAUUSD", event_time, 0.62, "bullish", 0.5, 40, False,
+            scored_at_utc=event_time - dt.timedelta(hours=3),
+        )
+        backtest_store.record_prediction(
+            bt_conn, "FOMC Statement", "XAUUSD", event_time, 0.30, "bearish", 0.5, 40, False,
+            scored_at_utc=event_time + dt.timedelta(minutes=10),
+        )
+        backtest_store.record_outcome(bt_conn, "FOMC Statement", "XAUUSD", event_time, "bearish", "fell")
+        bt_conn.close()
+
+        rows = _history_rows(dash_db, backtest_db, now=now)
+
+        assert len(rows) == 1
+        assert rows[0].ne_prediction == "bullish"
+        assert rows[0].outcome == "Missed"     # the post-release bearish flip would have read Confirmed
+    print("PASS\n")
+
+
+def test_text_only_occurrence_with_only_post_release_rows_shows_no_prediction():
+    print("=== History: a text-only occurrence with no pre-release row shows no prediction ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db, backtest_db = Path(tmp) / "dashboard.db", Path(tmp) / "backtest.db"
+        event_time = dt.datetime(2026, 9, 17, 18, 0, tzinfo=UTC_TZ)
+        now = event_time + dt.timedelta(hours=2)
+        _seed_fomc_text_only(dash_db, event_time, now)
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_prediction(
+            bt_conn, "FOMC Statement", "XAUUSD", event_time, 0.30, "bearish", 0.5, 40, False,
+            scored_at_utc=event_time + dt.timedelta(minutes=10),
+        )
+        bt_conn.close()
+
+        assert _history_rows(dash_db, backtest_db, now=now) == []
+    print("PASS\n")
+
+
+def test_print_call_path_uses_the_pre_release_print_call():
+    print("=== History: the print-call path grades the pre-release print call, not a post-release flip ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db, backtest_db = Path(tmp) / "dashboard.db", Path(tmp) / "backtest.db"
+        _seed_ahe_print(dash_db)
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_print_prediction_if_changed(
+            bt_conn, AHE_TITLE, AHE_TIME, PrintCall(direction="lower", confidence=0.6, article_count=30),
+            now=AHE_TIME - dt.timedelta(hours=2),
+        )
+        backtest_store.record_print_prediction_if_changed(
+            bt_conn, AHE_TITLE, AHE_TIME, PrintCall(direction="higher", confidence=0.7, article_count=31),
+            now=AHE_TIME + dt.timedelta(minutes=6),
+        )
+        bt_conn.close()
+
+        rows = _history_rows(dash_db, backtest_db)
+
+        assert len(rows) == 1
+        assert rows[0].instrument is None
+        assert rows[0].ne_prediction == "lower"
+        assert rows[0].outcome == "Missed"     # the post-release 'higher' would have read Confirmed
+    print("PASS\n")
+
+
+def test_post_release_print_call_never_blocks_the_pre_release_accumulator_fallback():
+    print("=== History: a print call made only after the release counts as no print call, so the pre-release accumulator row is shown ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        dash_db, backtest_db = Path(tmp) / "dashboard.db", Path(tmp) / "backtest.db"
+        _seed_ahe_print(dash_db)
+        bt_conn = backtest_store.get_connection(backtest_db)
+        backtest_store.record_print_prediction_if_changed(
+            bt_conn, AHE_TITLE, AHE_TIME, PrintCall(direction="higher", confidence=0.7, article_count=31),
+            now=AHE_TIME + dt.timedelta(minutes=6),
+        )
+        backtest_store.record_prediction(
+            bt_conn, AHE_TITLE, "XAUUSD", AHE_TIME, 0.79, "bullish", 0.6, 40, False,
+            scored_at_utc=AHE_TIME - dt.timedelta(hours=6),
+        )
+        bt_conn.close()
+
+        rows = _history_rows(dash_db, backtest_db)
+
+        assert len(rows) == 1
+        assert rows[0].instrument == "XAUUSD"
+        assert rows[0].ne_prediction == "bullish"
+        assert rows[0].outcome == "Missed"
     print("PASS\n")
 
 
@@ -1491,4 +1677,11 @@ if __name__ == "__main__":
     test_compute_history_stats_accuracy_none_when_zero_calls_made()
     test_compute_history_stats_empty_rows_returns_empty_stats()
     test_one_tick_miss_is_graded_not_shrugged()
+    test_ahe_shape_history_shows_the_pre_release_call_and_grades_it()
+    test_numeric_occurrence_with_only_post_release_rows_shows_no_prediction()
+    test_row_scored_exactly_at_the_release_is_not_pre_release()
+    test_text_only_path_shows_and_grades_the_pre_release_call()
+    test_text_only_occurrence_with_only_post_release_rows_shows_no_prediction()
+    test_print_call_path_uses_the_pre_release_print_call()
+    test_post_release_print_call_never_blocks_the_pre_release_accumulator_fallback()
     print("All webapp_history tests passed.")
