@@ -26,8 +26,8 @@ entirely by the accumulator's own outer loop
 (compute_accumulator_interval_seconds, below — its OWN tiers, decoupled
 from webapp.scheduler's, see that function for why): hourly baseline once
 an event enters its pre-event window, tighter (15min) the day of the
-event, tightest (5min) in the final hour. A rolling-24h check-count
-budget (DAILY_CHECK_BUDGET_THRESHOLD) throttles the hourly/day-of-event
+event, tightest (5min) in the final hour. A rolling-24h budget of runs
+(DAILY_CHECK_BUDGET_THRESHOLD; see _RunCheck) throttles the hourly/day-of-event
 tiers back to a 3-hour floor if checking gets too frequent for Alpha
 Vantage's real 25/day quota — the final-hour tier is always exempt.
 Whether a check actually gets WRITTEN to scoring/backtest_store.py's log
@@ -533,6 +533,27 @@ def compute_accumulator_interval_seconds(
     return tightest
 
 
+class _RunCheck:
+    """
+    The one check_log row of an accumulator run. mark() writes it the first time
+    an article fetch succeeds and is a no-op after that, so a run counts once
+    however many events it covers (it used to count once per event, which took 4
+    active events to the budget threshold in 5 runs), and a run with no successful
+    fetch counts nothing, same as before. Written on the first success rather than
+    at the end of the run so that a run dying part-way still counts.
+    """
+
+    def __init__(self, conn, now: dt.datetime) -> None:
+        self._conn = conn
+        self._now = now
+        self._recorded = False
+
+    def mark(self) -> None:
+        if not self._recorded:
+            record_check(self._conn, self._now)
+            self._recorded = True
+
+
 def score_and_record_event(
     conn,
     event: EconomicEvent,
@@ -542,6 +563,7 @@ def score_and_record_event(
     now: Optional[dt.datetime] = None,
     macro_backdrop=None,  # MacroBackdropRead | None — duck-typed, see scoring/probability_engine.py's _check_macro_backdrop()/_check_equity_risk_sentiment()/_check_oil_shock()
     cot_positioning=None,  # CotPositioningRead | None — duck-typed, see scoring/probability_engine.py's _check_cot_crowding()
+    run_check: Optional[_RunCheck] = None,
 ) -> dict:
     """
     Runs the FULL article-based scoring pipeline for ONE event, across
@@ -571,6 +593,10 @@ def score_and_record_event(
     event-specific), so a caller scoring multiple events in one cycle
     should fetch it once, not once per event.
 
+    `run_check` is the caller's run-wide _RunCheck. A caller that omits it
+    (scripts/run_manual_sentiment_check.py, one event per process) is its own
+    run and logs its own check.
+
     Returns {instrument: ProbabilityResult} for instruments that were
     actually scored (a failed article fetch for the whole event, or a
     per-instrument scoring exception, is logged and simply absent from
@@ -585,10 +611,10 @@ def score_and_record_event(
         print(f"[backtest_accumulator] WARNING: article fetch failed for {event.title}: {exc}")
         return results
 
-    # Logged on a successful fetch only — roughly one Alpha Vantage
-    # credit spent, in the worst case. Feeds compute_accumulator_interval_seconds()'s
-    # budget-fallback check on the NEXT cycle (see module docstring).
-    record_check(conn, now)
+    # Logged on a successful fetch only, once per run. Feeds
+    # compute_accumulator_interval_seconds()'s budget-fallback check on the
+    # NEXT cycle (see module docstring).
+    (run_check or _RunCheck(conn, now)).mark()
 
     # Graph-driven (config.settings.EVENT_INFLUENCE_LINKS) precursor
     # lookup against the dashboard's persisted event_history — replaces
@@ -724,6 +750,7 @@ def run_accumulator_cycle(
         macro_backdrop_fetched = False
         cot_positioning = None
         cot_positioning_fetched = False
+        run_check = _RunCheck(conn, now)
         for event in active:
             # Every tracked instrument is checked for every active event on
             # every cycle — no per-pair check budget (see module docstring
@@ -748,7 +775,7 @@ def run_accumulator_cycle(
                 cot_positioning_fetched = True
             score_and_record_event(
                 conn, event, all_events, instruments, sources, now=now,
-                macro_backdrop=macro_backdrop, cot_positioning=cot_positioning,
+                macro_backdrop=macro_backdrop, cot_positioning=cot_positioning, run_check=run_check,
             )
 
         return events

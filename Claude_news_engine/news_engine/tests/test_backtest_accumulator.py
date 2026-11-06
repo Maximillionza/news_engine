@@ -1533,6 +1533,111 @@ def test_interval_cap_also_shortens_the_normal_tiers():
     print("PASS\n")
 
 
+# --- The check budget counts runs (fix-five, 2026-11-06) ---
+
+def _run_cycles(tmp, events, runs=1, now=None, fetch=None):
+    """Runs `runs` accumulator cycles over `events`, an hour apart, and returns the check_log row count."""
+    db_path = Path(tmp) / "test.db"
+    now = now or dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    fetch = fetch or (lambda event, *args, **kwargs: EventNewsBundle(event=event, articles=[], as_of_utc=now))
+    with patch.object(accumulator, "fetch_calendar", return_value=events), \
+         patch.object(accumulator, "filter_relevant_events", side_effect=lambda events, **kwargs: events), \
+         patch.object(accumulator, "build_all_preview_sources", return_value=[]), \
+         patch.object(accumulator, "build_event_news_bundle", side_effect=fetch), \
+         patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
+         patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
+        for hour in range(runs):
+            accumulator.run_accumulator_cycle(["XAUUSD"], db_path=db_path, now=now + dt.timedelta(hours=hour))
+    conn = store.get_connection(db_path)
+    rows = store.count_recent_checks(conn, since=now - dt.timedelta(days=30))
+    conn.close()
+    return rows
+
+
+def _four_active_events(now):
+    return [_fake_event(hours_from_now=30 + i, now=now, title=f"Event {i}") for i in range(4)]
+
+
+def test_four_active_events_in_one_run_write_one_check():
+    print("=== accumulator: 4 active events in one run write ONE check_log row, not one per event ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        assert _run_cycles(tmp, _four_active_events(now), now=now) == 1
+    print("PASS\n")
+
+
+def test_budget_threshold_is_reached_by_runs_not_by_events():
+    print("=== accumulator: 4 active events stay under the budget after 5 runs (they used to hit 20) and reach it after 20 runs ===")
+    assert accumulator.DAILY_CHECK_BUDGET_THRESHOLD == 20
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    with tempfile.TemporaryDirectory() as tmp:
+        assert _run_cycles(tmp, _four_active_events(now), runs=5, now=now) == 5
+    with tempfile.TemporaryDirectory() as tmp:
+        assert _run_cycles(tmp, _four_active_events(now), runs=20, now=now) == accumulator.DAILY_CHECK_BUDGET_THRESHOLD
+    print("PASS\n")
+
+
+def test_run_with_one_failed_fetch_and_the_rest_ok_still_writes_one_check():
+    print("=== accumulator: a run counts once as soon as any fetch succeeds, whichever event failed ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+
+    def first_fails(event, *args, **kwargs):
+        if event.title == "Event 0":
+            raise RuntimeError("article fetch blew up")
+        return EventNewsBundle(event=event, articles=[], as_of_utc=now)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        assert _run_cycles(tmp, _four_active_events(now), now=now, fetch=first_fails) == 1
+    print("PASS\n")
+
+
+def test_run_where_every_fetch_fails_writes_no_check():
+    print("=== accumulator: a check still means a successful article fetch, so a run of failures writes nothing ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+
+    def always_fails(event, *args, **kwargs):
+        raise RuntimeError("article fetch blew up")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        assert _run_cycles(tmp, _four_active_events(now), now=now, fetch=always_fails) == 0
+    print("PASS\n")
+
+
+def test_run_with_no_active_event_writes_no_check():
+    print("=== accumulator: a run that fetches nothing writes no check, same as before ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    outside_the_window = _fake_event(hours_from_now=PRE_EVENT_WINDOW_HOURS + 10, now=now)
+    with tempfile.TemporaryDirectory() as tmp:
+        assert _run_cycles(tmp, [outside_the_window], now=now) == 0
+    print("PASS\n")
+
+
+def test_run_check_stamps_the_run_time_for_the_last_check_readers():
+    print("=== accumulator: the run's one row carries the run time, which is what get_last_check_utc() and ops health read ===")
+    now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+    with tempfile.TemporaryDirectory() as tmp:
+        _run_cycles(tmp, _four_active_events(now), now=now)
+        conn = store.get_connection(Path(tmp) / "test.db")
+        assert store.get_last_check_utc(conn) == now
+        conn.close()
+    print("PASS\n")
+
+
+def test_manual_single_event_check_still_writes_its_own_check():
+    print("=== score_and_record_event: called on its own (scripts/run_manual_sentiment_check.py) it still logs its fetch ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        now = dt.datetime(2026, 8, 10, 12, 0, tzinfo=UTC_TZ)
+        event = _fake_event(hours_from_now=200, now=now)      # a manual check runs outside the automatic window
+        conn = store.get_connection(Path(tmp) / "test.db")
+        with patch.object(accumulator, "build_event_news_bundle", return_value=_bundle(event, [], now)), \
+             patch.object(accumulator, "score_bundle", return_value=_fake_result()), \
+             patch.object(accumulator, "DASHBOARD_DB_PATH", Path(tmp) / "dashboard.db"):
+            accumulator.score_and_record_event(conn, event, [event], ["XAUUSD"], [], now=now)
+        assert store.count_recent_checks(conn, since=now - dt.timedelta(hours=24)) == 1
+        conn.close()
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_and_record_event_skips_fx_cross_instruments_without_calling_score_bundle()
     test_interval_far_when_nothing_active()
@@ -1550,6 +1655,13 @@ if __name__ == "__main__":
     test_interval_cap_also_shortens_the_normal_tiers()
     test_run_accumulator_cycle_logs_a_check_on_successful_fetch()
     test_run_accumulator_cycle_does_not_log_a_check_on_failed_fetch()
+    test_four_active_events_in_one_run_write_one_check()
+    test_budget_threshold_is_reached_by_runs_not_by_events()
+    test_run_with_one_failed_fetch_and_the_rest_ok_still_writes_one_check()
+    test_run_where_every_fetch_fails_writes_no_check()
+    test_run_with_no_active_event_writes_no_check()
+    test_run_check_stamps_the_run_time_for_the_last_check_readers()
+    test_manual_single_event_check_still_writes_its_own_check()
     test_checks_every_cycle_regardless_of_how_far_out_the_event_is()
     test_no_cap_on_recorded_snapshots_multiple_material_changes_all_recorded()
     test_unchanged_score_is_checked_but_not_recorded()

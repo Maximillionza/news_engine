@@ -931,9 +931,10 @@ def record_dismissal(
 
 def record_check(conn: sqlite3.Connection, checked_at_utc: dt.datetime) -> int:
     """
-    Logs one article-fetch check attempt (roughly one Alpha Vantage credit
-    spent, in the worst case) — used by scoring/backtest_accumulator.py to
-    self-throttle its own polling frequency against a rolling 24h budget.
+    Logs one accumulator run that fetched articles (one row per run, however
+    many events it covered; see scoring/backtest_accumulator.py's _RunCheck) —
+    used by scoring/backtest_accumulator.py to self-throttle its own polling
+    frequency against a rolling 24h budget.
     Deliberately NOT keyed to a specific (event, instrument) pair — this
     tracks aggregate check VOLUME across everything the accumulator is
     doing, since the resource being protected (Alpha Vantage's daily
