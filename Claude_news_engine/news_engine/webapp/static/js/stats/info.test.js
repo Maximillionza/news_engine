@@ -73,6 +73,28 @@ test("hand-logged readings show the researched value, confidence and source and 
   assert.ok(readingsHtml(row, "combined").includes("Combined: n/a"));
 });
 
+test("market-implied readings name the call and its number, and never claim a hand-researched direction", () => {
+  const row = { ...ROW, event_title: "Non-Farm Employment Change", forecast: 65, forecast_text: "65K", nowcast_as_of_utc: null, combined: null,
+    tier1_tier: "market_implied",
+    tier1: { predicted: null, verdict: "right", leans: { XAUUSD: "sell" }, note: "hand-logged", kind: null, implied: 75, direction_word: "hotter" },
+    detail: { ...DETAIL, forecast_text: "65K", nowcast_value: null, nowcast_as_of_utc: null, tier1_surprise: null, combined_surprise: null,
+      news_lean: null, news_scale: null, news_surprise: null,
+      hand_logged: { value: "Kalshi KXPAYROLLS-26OCT implied median 75.0000", confidence: "Likely", source: "Kalshi market-implied" } } };
+  for (const view of ["tier1", "combined"]) {
+    const html = readingsHtml(row, view);
+    assert.ok(html.includes("Tier 1 market-implied: hotter · 75K"));
+    assert.ok(html.includes("Stored value: Kalshi KXPAYROLLS-26OCT") && html.includes("Source: Kalshi market-implied"));
+    assert.ok(html.includes("Weights: none (a market-implied call is not blended into Combined)"));
+    assert.ok(!html.includes("hand-researched") && !html.includes("direction only"));
+  }
+  assert.ok(readingsHtml(row, "combined").includes("Combined: n/a (a market-implied call is not blended)"));
+  const inLine = readingsHtml({ ...row, tier1: { ...row.tier1, verdict: null, leans: {}, direction_word: "in line" } }, "tier1");
+  assert.ok(inLine.includes("Expected outcome: in line with the forecast, so this call is not graded"));
+  const noNumber = readingsHtml({ ...row, tier1: { ...row.tier1, verdict: null, leans: {}, implied: null, direction_word: "bearish" } }, "tier1");
+  assert.ok(noNumber.includes("Tier 1 market-implied: bearish (no implied number stored)"));
+  assert.ok(noNumber.includes("Expected outcome: no call (the stored direction has no hotter/cooler mapping)"));
+});
+
 test("readings escape every served string", () => {
   const evil = { ...ROW, event_title: "<script>", detail: { ...DETAIL, forecast_text: "<b>",
     hand_logged: { value: "<i>", confidence: "<u>", source: "<s>" } } };

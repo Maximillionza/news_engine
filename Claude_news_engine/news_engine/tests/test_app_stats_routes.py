@@ -18,7 +18,7 @@ ROW_KEYS = {"event_title", "event_time_utc", "forecast", "actual", "forecast_tex
             "tier1_tracked", "nowcast_as_of_utc", "pre_news_period", "tier1", "news", "combined", "detail",
             "impact", "impact_effective", "impact_inferred", "impact_bucket", "agreement", "tier1_tier",
             "news_call", "news_no_call_reason", "news_low_trust"}
-CALL_KEYS = {"predicted", "surprise", "verdict", "miss", "leans", "note", "kind"}
+CALL_KEYS = {"predicted", "surprise", "verdict", "miss", "leans", "note", "kind", "implied", "direction_word"}
 DETAIL_KEYS = {"forecast_text", "nowcast_value", "nowcast_as_of_utc", "tier1_surprise", "news_lean", "news_scale",
                "news_surprise", "combined_surprise", "weights", "hand_logged", "news_article_count", "brent"}
 BRENT_KEYS = {"snapshot_price", "snapshot_price_date", "release_price", "release_price_date", "change_pct", "source"}
@@ -193,6 +193,27 @@ def test_events_route_serves_market_implied_for_a_fedwatch_row(monkeypatch):
     assert set(rows["Federal Funds Rate"]) == ROW_KEYS and set(rows["PPI m/m"]) == ROW_KEYS
     assert rows["Federal Funds Rate"]["tier1_tier"] == "market_implied"
     assert rows["PPI m/m"]["tier1_tier"] == "judgment"
+
+
+def test_market_implied_call_serves_its_word_and_number_and_the_chart_plots_it(monkeypatch):
+    # FIX 5, the 2026-11-06 NFP shape: hotter, 75K, Right; predicted stays empty so nothing grades the number.
+    dash, bt = ws.get_connection(":memory:"), bs.get_connection(":memory:")
+    title, when = "Non-Farm Employment Change", dt.datetime(2026, 11, 6, 13, 30, tzinfo=UTC)
+    dash.execute(
+        "INSERT INTO event_history (event_title, event_time_utc, forecast, previous, actual, surprise_direction, "
+        "recorded_at_utc, updated_at_utc, source, impact, country) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (title, when.isoformat(), "65K", "50K", "165K", None, when.isoformat(), when.isoformat(), "t", "High", "USD"))
+    dash.commit()
+    bs.record_tier1_prediction(bt, title, "XAUUSD", when,
+                               "Kalshi KXPAYROLLS-26OCT implied median 75.0000 vs forecast 65K: hotter than forecast",
+                               "Likely", "Kalshi market-implied", "bearish", logged_at_utc=when - dt.timedelta(hours=8))
+    monkeypatch.setattr(app_module, "_stats_connections", lambda: (dash, bt))
+    client = app_module.app.test_client()
+    call = client.get("/api/stats/events").get_json()["rows"][0]["tier1"]
+    assert call["direction_word"] == "hotter" and call["implied"] == 75.0
+    assert call["verdict"] == "right" and call["predicted"] is None and call["miss"] is None
+    point = client.get("/api/stats/chart?event=Non-Farm%20Employment%20Change&method=tier1").get_json()["points"][0]
+    assert point["predicted"] == 75.0 and point["verdict"] == "right"
 
 
 def test_filters_and_empty_result(client):

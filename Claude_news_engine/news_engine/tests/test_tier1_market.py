@@ -95,6 +95,12 @@ def test_market_call_divides_payroll_strikes_to_thousands():
     assert tm.implied_in_value_text("CME FedWatch (via FXStreet): 91% hold") is None
     assert tm.implied_key_in_value_text(text) == (70.0, "50K")
     assert tm.implied_key_in_value_text("CME FedWatch (via FXStreet): 91% hold") is None
+    assert tm.implied_side_in_value_text(text) == 1
+    assert tm.implied_side_in_value_text("CME FedWatch (via FXStreet): 91% hold") is None
+    assert tm.implied_side_in_value_text(None) is None
+    in_line = "Kalshi KXGDP-26OCT30 implied median 3.1765 vs forecast 3.2%: in line with forecast (9 liquid strikes"
+    cooler = "Kalshi KXISMPMI-26OCT implied median 54.3559 vs forecast 54.5: cooler than forecast (8 liquid strikes"
+    assert tm.implied_side_in_value_text(in_line) == 0 and tm.implied_side_in_value_text(cooler) == -1
 
 
 def test_market_call_continuous_gdp_and_discrete_fed():

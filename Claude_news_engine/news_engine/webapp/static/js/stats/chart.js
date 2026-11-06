@@ -1,13 +1,14 @@
 // webapp/static/js/stats/chart.js
 //
 // Stats tab line chart: Forecast (dotted grey), Actual (solid), Predicted (dashed; green when the
-// call was Right, red when Wrong, grey while pending). A release with no call leaves a gap, never a zero. Pure: returns
-// an SVG string so it can be unit-tested under plain Node.
+// call was Right, red when Wrong, grey when ungraded: pending, or an in-line market-implied call).
+// A release with no number to plot leaves a gap, never a zero. Pure: returns an SVG string so it can be
+// unit-tested under plain Node.
 import { escapeHtml } from "../format.js";
 
 const GREEN = "#2e7d32";
 const RED = "#c62828";
-const GREY = "#9e9e9e";   // pending: a call exists but is not yet scored
+const GREY = "#9e9e9e";   // a number exists but no verdict: pending, or an in-line market-implied call
 // Sub-tab labels (index.html), used in the "no calls" note.
 const METHOD_NAME = { tier1: "Tier 1", news: "News sentiment", combined: "Combined" };
 const DEFAULT_W = 640, H = 210, L = 44, R = 28, T = 12, B = 26;
@@ -42,7 +43,7 @@ export function buildChartSvg(chart, opts = {}) {
   const y = (v) => T + ((hi - v) * (H - T - B)) / (hi - lo);
   const unit = escapeHtml((chart && chart.unit) || "");
 
-  // Right = green, Wrong = red, anything else (null verdict = pending) = grey.
+  // Right = green, Wrong = red, anything else (null verdict) = grey.
   const colourFor = (verdict) => (verdict === "right" ? GREEN : verdict === "wrong" ? RED : GREY);
   let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Forecast, actual and predicted by release">`;
   for (let k = 0; k <= 4; k++) {

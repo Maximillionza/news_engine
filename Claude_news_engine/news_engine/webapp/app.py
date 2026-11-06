@@ -527,12 +527,14 @@ def _stats_conns():
 
 
 # StatsRow.tol and MethodCall.side are internal scoring inputs and are deliberately not served;
-# StatsRow.agreement and StatsRow.news_call are the only things derived from side that leave the server.
+# StatsRow.agreement, StatsRow.news_call and MethodCall.direction_word are the only things derived from side that
+# leave the server.
 def _method_dict(call):
     if call is None:
         return None
     return {"predicted": call.predicted, "surprise": call.surprise, "verdict": call.verdict, "miss": call.miss,
-            "leans": call.leans, "note": call.note, "kind": call.kind}
+            "leans": call.leans, "note": call.note, "kind": call.kind,
+            "implied": call.implied, "direction_word": call.direction_word}
 
 
 def _detail_dict(d):

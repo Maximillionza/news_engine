@@ -48,6 +48,27 @@ function num(n) {
   return n === null || n === undefined || Number.isNaN(Number(n)) ? "—" : String(Number(Number(n).toFixed(2)));
 }
 
+// The unit after a forecast's number ("65K" -> "K", "3.2%" -> "%", "54.5" -> "") and its published decimals.
+function unitOf(text) { return String(text ?? "").replace(/^-?[\d.,]+/, "").trim(); }
+function decimalsOf(text) {
+  const m = /-?\d+(?:\.(\d+))?/.exec(String(text ?? ""));
+  return m && m[1] ? m[1].length : 0;
+}
+
+// The implied median at the forecast's own precision and unit: 3.1765 against "3.2%" -> "3.2%".
+function impliedText(value, forecastText) {
+  const fixed = Number(value).toFixed(decimalsOf(forecastText));
+  return `${Number(fixed) === 0 ? fixed.replace("-", "") : fixed}${unitOf(forecastText)}`;
+}
+
+// FIX 5: "hotter · 75K" for a market-implied call, the word alone when no number could be read, "" for every
+// other row (the server sets direction_word on market-implied rows only). Not escaped: callers escape it.
+export function marketCallText(row) {
+  const call = row.tier1;
+  if (!call || !call.direction_word) return "";
+  return call.implied == null ? call.direction_word : `${call.direction_word} · ${impliedText(call.implied, row.forecast_text)}`;
+}
+
 export function verdictChip(verdict) {
   if (verdict === "right") return '<span class="chip chip-right">Right</span>';
   if (verdict === "wrong") return '<span class="chip chip-wrong">Wrong</span>';
@@ -87,11 +108,15 @@ export const CRITERIA = {
   nowcast: "Scored when a Cleveland Fed nowcast was recorded before the release and a forecast and actual exist. "
     + "Call = nowcast above or below the forecast by at least one rounding step. Click the row for the inputs.",
   handLogged: "Scored when a hand-researched Tier 1 call was logged before the release. Direction only - no number.",
+  marketImplied: "Scored when a market-implied Tier 1 call was logged before the release and a forecast and actual exist. "
+    + "Right or Wrong follows the call's direction against the forecast; an in-line call is not graded. "
+    + "The implied number is shown for reference.",
 };
 
 export function tier1Criteria(row) {
   if (!row.tier1_tracked) return "";
-  return isNowcastRow(row) ? CRITERIA.nowcast : CRITERIA.handLogged;
+  if (isNowcastRow(row)) return CRITERIA.nowcast;
+  return row.tier1_tier === "market_implied" ? CRITERIA.marketImplied : CRITERIA.handLogged;
 }
 
 // Identifies a row for the click-through panel (title + release instant is unique in event_history).
@@ -138,7 +163,8 @@ export function tier1RowHtml(row) {
   // Tracked, but Tier 1 may have recorded no call for this occurrence (e.g. no nowcast was captured).
   const call = row.tier1 || { predicted: null, verdict: null, leans: {}, note: null, kind: null };
   const tag = reconTag(row);
-  const predicted = call.predicted == null ? (call.note === "hand-logged" ? "hand-logged call" : "no call") : num(call.predicted);
+  const predicted = marketCallText(row)
+    || (call.predicted == null ? (call.note === "hand-logged" ? "hand-logged call" : "no call") : num(call.predicted));
   const actual = row.status === "pending" ? "pending" : escapeHtml(row.actual_text ?? "");
   const result = row.status === "pending" ? "pending" : verdictChip(call.verdict);
   const asOf = row.nowcast_as_of_utc
@@ -154,6 +180,9 @@ export function combinedRowHtml(row) {
   const title = escapeHtml(row.event_title);
   const c = row.combined;
   const cell = (call) => (call == null ? "—" : `${num(call.predicted)} ${verdictChip(call.verdict)}`);
+  const market = marketCallText(row);
+  const tier1Cell = market
+    ? `${escapeHtml(market)} · ${row.status === "pending" ? "pending" : verdictChip(row.tier1.verdict)}` : cell(row.tier1);
   const newsCell = (call) => {
     if (call == null) return "—";
     const word = newsWordWithCount(row);
@@ -162,7 +191,7 @@ export function combinedRowHtml(row) {
   const flag = c && c.note === "news_missing" ? ' <span class="meta-text-sm">Tier 1 only</span>' : "";
   const attrs = row.tier1_tracked ? clickAttrs(row, "combined", "combined") : "";
   return `<tr${attrs}><td>${title}${reconTag(row)}</td><td>${dateCell(row)}</td><td>${escapeHtml(row.forecast_text ?? "")}</td>`
-    + `<td>${cell(row.tier1) + (row.tier1 ? tierTag(row) : "")}</td><td>${newsCell(row.news)}</td><td>${row.tier1_tracked ? cell(c) + flag + agreementChip(row.agreement) : "n/a"}</td>`
+    + `<td>${tier1Cell + (row.tier1 ? tierTag(row) : "")}</td><td>${newsCell(row.news)}</td><td>${row.tier1_tracked ? cell(c) + flag + agreementChip(row.agreement) : "n/a"}</td>`
     + `<td>${row.status === "pending" ? "pending" : escapeHtml(row.actual_text ?? "")}</td></tr>`;
 }
 
@@ -243,7 +272,7 @@ export function briefCardHtml(row, method, disclaimers, impactFiltered = false) 
     return `<div class="brief-card"><b>Next release</b><div class="meta-text-sm">${none}</div></div>`;
   }
   const call = row[method];
-  const unit = String(row.forecast_text ?? "").replace(/^-?[\d.,]+/, "").trim();
+  const unit = unitOf(row.forecast_text);
   const lean = leanText(call.leans);
   const newsTail = method === "news" ? ` · ${escapeHtml(newsCountText(row) || "")}` : "";
   const newsNote = method === "news" ? lowTrustHtml(row) : "";

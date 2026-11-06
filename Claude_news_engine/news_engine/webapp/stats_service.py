@@ -11,6 +11,9 @@ if it was written after the number came out (Phase 0 found 9 such accumulator ro
 Occurrence keys and time bounds are compared as instants via SQLite julianday(), not as strings, so an
 equivalent stored form ('Z', a space separator, another offset) neither drops a row nor slips past the
 bound. julianday() resolves to the millisecond, so a stamp under 1 ms after the release counts as at it.
+
+A market-implied Tier 1 call is graded by direction only. Its implied number is shown and charted (MethodCall.implied)
+but never graded: it stays out of `predicted`, so miss, mean_miss, Combined and the brief card do not see it.
 """
 from __future__ import annotations
 
@@ -24,7 +27,9 @@ from typing import Callable, Optional
 from config.settings import EVENT_SURPRISE_DIRECTION
 from data_layer import brent_feed
 from data_layer.subject_rules import news_low_trust
-from data_layer.tier1_events import TIER1_FORMULA, TIER1_MARKET_IMPLIED_SOURCE, tier1_row_tier, tier1_titles
+from data_layer.tier1_events import (
+    TIER1_FORMULA, TIER1_MARKET_IMPLIED, TIER1_MARKET_IMPLIED_SOURCE, tier1_row_tier, tier1_titles,
+)
 from scoring.backtest_store import get_scored_nowcast_snapshot
 from webapp.history import _implied_surprise_direction
 from webapp.reaction_rules import impact_info, title_tag_counts
@@ -33,7 +38,7 @@ from webapp.stats_methods import (
     tier1_surprise,
 )
 from webapp.stats_rules import judge, miss_size, parse_number, side, tolerance
-from webapp.tier1_market import MARKET_SERIES
+from webapp.tier1_market import MARKET_SERIES, implied_in_value_text, implied_side_in_value_text
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +48,7 @@ MIN_SCORED_FOR_PERCENT = 20                                          # below thi
 TRACKED_SYMBOLS = ("XAUUSD", "US30")
 METHODS = ("tier1", "news", "combined")
 NEWS_INSTRUMENT = "XAUUSD"     # accumulator and hand-logged Tier 1 calls are read from the gold rows
+SIDE_WORDS = {1: "hotter", 0: "in line", -1: "cooler"}   # a market-implied call's side, as the Stats cell says it
 
 
 @dataclass(frozen=True)
@@ -55,6 +61,10 @@ class MethodCall:
     leans: dict[str, str] = field(default_factory=dict)
     note: Optional[str] = None      # 'hand-logged' | 'scaled' | 'unsized' (News side, no scale) | 'news_missing'
     kind: Optional[str] = None      # 'live' | 'reconstructed' for Tier 1 snapshots
+    # FIX 5, market-implied rows only, display only: the side stays the only thing graded, so the number lives
+    # here and not in `predicted`, which feeds miss, mean_miss and the brief card.
+    implied: Optional[float] = None         # the median stored on the row, in the forecast's unit
+    direction_word: Optional[str] = None    # 'hotter' | 'in line' | 'cooler', else the stored direction
 
 
 @dataclass(frozen=True)
@@ -244,6 +254,23 @@ def _market_implied_sign(title: str, source: Optional[str]) -> Optional[str]:
     return MARKET_SERIES[title].surprise_direction
 
 
+def _market_reading(tier: Optional[str], logged: sqlite3.Row, call_side: Optional[int]) -> tuple[Optional[float], Optional[str]]:
+    """
+    (implied number, direction word) for a market-implied row; (None, None) for any other tier. Nothing is inferred:
+    the number and the 'in line' word come only from the text a Kalshi row was written with. kalshi_reads is not
+    consulted, its rows hold one strike's probability, not a median. Without readable text the word is the graded
+    side, else the stored direction itself: a neutral row is no call, so it is never relabelled 'in line'.
+    """
+    if tier != TIER1_MARKET_IMPLIED:
+        return None, None
+    implied = stored_side = None
+    if logged["source"] == TIER1_MARKET_IMPLIED_SOURCE:
+        implied = implied_in_value_text(logged["value"])
+        stored_side = implied_side_in_value_text(logged["value"])
+    shown_side = call_side if stored_side is None else stored_side
+    return implied, SIDE_WORDS.get(shown_side, logged["predicted_direction"])
+
+
 def _call(predicted: Optional[float], surprise: Optional[float], forecast: float, tol: float,
           actual: Optional[float], title: str, note: Optional[str] = None, kind: Optional[str] = None,
           explicit_side: Optional[int] = None, side_fixed: bool = False,
@@ -397,6 +424,8 @@ def _build_one(bt_conn: sqlite3.Connection, r: sqlite3.Row, title: str, when: dt
             hand_logged = {"value": logged["value"], "confidence": logged["confidence"], "source": logged["source"]}
             tier1_tracked = True
             tier1_tier = tier1_row_tier(logged["source"], logged["value"], title)   # B12/T6: a FedWatch citation -> market_implied, unless the registry makes the title judgment
+            implied, direction_word = _market_reading(tier1_tier, logged, logged_side)
+            tier1 = replace(tier1, implied=implied, direction_word=direction_word)
         else:
             tier1_tracked = title in NOWCAST_EVENTS      # tracked but no snapshot yet: row shows no call
 
@@ -471,6 +500,7 @@ def build_chart(rows: list[StatsRow], method: str) -> dict:
     One point per scoreable occurrence; a month with no call has predicted/verdict None (a gap, not 0).
     `label` is the x-axis text: 'YYYY-MM' when every month has at most one point, otherwise 'YYYY-MM-DD'
     on every point (weekly titles such as Unemployment Claims would otherwise repeat a month label).
+    A market-implied Tier 1 call plots its implied number; only MethodCall.implied of a Tier 1 call is ever set.
     """
     if method not in METHODS:
         raise ValueError(f"method must be one of {METHODS}")
@@ -482,7 +512,7 @@ def build_chart(rows: list[StatsRow], method: str) -> dict:
         points.append({
             "month": row.event_time_utc.strftime("%Y-%m"), "event_time_utc": row.event_time_utc.isoformat(),
             "forecast": row.forecast, "actual": row.actual,
-            "predicted": None if call is None else call.predicted,
+            "predicted": None if call is None else (call.implied if call.predicted is None else call.predicted),
             "verdict": None if call is None else call.verdict,
         })
     months = [p["month"] for p in points]

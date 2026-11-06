@@ -65,6 +65,25 @@ test("a method with no calls keeps forecast and actual and says so", () => {
   assert.ok(t1.includes("No Tier 1 calls for this selection"));
 });
 
+test("a market-implied Tier 1 point is drawn, and one without a readable number leaves a gap", () => {
+  const svg = buildChartSvg({ method: "tier1", unit: "K", points: [
+    { label: "a", forecast: 65, actual: 165, predicted: 75, verdict: "right" },
+    { label: "b", forecast: 60, actual: 70, predicted: null, verdict: "right" },
+  ] });
+  assert.equal((svg.match(/data-predicted="dot"/g) || []).length, 1);
+  assert.equal((svg.match(/data-predicted="seg"/g) || []).length, 0);
+  assert.ok(/data-predicted="dot"[^>]*fill="#2e7d32"/.test(svg));
+  assert.ok(!svg.includes("No Tier 1 calls"));
+});
+
+test("an in-line market call on a scored release is a grey point, never green or red", () => {
+  const svg = buildChartSvg({ method: "tier1", unit: "%", points: [
+    { label: "a", forecast: 3.2, actual: 3.4, predicted: 3.1765, verdict: null },
+  ] });
+  assert.ok(/data-predicted="dot"[^>]*fill="#9e9e9e"/.test(svg));
+  assert.ok(!svg.includes("#2e7d32") && !svg.includes("#c62828"));
+});
+
 test("pending (null-verdict) dots and segments are grey", () => {
   const svg = buildChartSvg({ unit: "%", points: [
     { label: "a", forecast: 0.3, actual: 0.3, predicted: 0.4, verdict: "right" },

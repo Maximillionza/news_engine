@@ -66,8 +66,9 @@ _LEAN_TO_DIRECTION = {"buy": "bullish", "sell": "bearish", "mixed": "neutral"}
 # ": <side label> ("; these read both back for the dedupe.
 _IMPLIED_IN_TEXT = re.compile(r"^Kalshi \S+ implied median (-?\d+\.\d{4}) vs forecast ")
 _IMPLIED_KEY_IN_TEXT = re.compile(
-    r"^Kalshi \S+ implied median (-?\d+\.\d{4}) vs forecast (.*): (?:" + SIDE_LABEL_ALTERNATION + r") \(",
+    r"^Kalshi \S+ implied median (-?\d+\.\d{4}) vs forecast (.*): (" + SIDE_LABEL_ALTERNATION + r") \(",
     re.DOTALL)
+_SIDE_BY_LABEL = {label: stored_side for stored_side, label in SIDE_LABELS.items()}
 
 
 @dataclass(frozen=True)
@@ -156,6 +157,12 @@ def implied_key_in_value_text(text: str) -> Optional[tuple[float, str]]:
     """(median, forecast text) a market-implied row was written from - the dedupe key; None for any other text."""
     match = _IMPLIED_KEY_IN_TEXT.match(text or "")
     return (float(match.group(1)), match.group(2)) if match else None
+
+
+def implied_side_in_value_text(text: str) -> Optional[int]:
+    """The +1 / 0 / -1 side a market-implied row was written with; None for any other text."""
+    match = _IMPLIED_KEY_IN_TEXT.match(text or "")
+    return _SIDE_BY_LABEL[match.group(3)] if match else None
 
 
 def record_market_calls(bt_conn: Optional[sqlite3.Connection], event_title: str, release_utc: dt.datetime,
