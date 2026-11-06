@@ -1430,6 +1430,109 @@ def test_record_prediction_stores_same_incident_rows():
     print("PASS\n")
 
 
+# --- The loop stays awake for the final hour (fix-five, 2026-11-06) ---
+
+NFP_TIME = dt.datetime(2026, 11, 6, 13, 30, tzinfo=UTC_TZ)
+OVER_BUDGET = accumulator.DAILY_CHECK_BUDGET_THRESHOLD
+
+
+def _event_at(event_time, title="Non-Farm Employment Change", actual=None):
+    return EconomicEvent(title=title, country="USD", impact="High", event_time_utc=event_time, forecast="75K", actual=actual)
+
+
+def test_interval_budget_fallback_wakes_at_the_final_window_not_after_the_release():
+    print("=== accumulator interval: at 10:36 UTC, budget exhausted, a 13:30 UTC release wakes the loop at 12:30, not 13:36 ===")
+    now = dt.datetime(2026, 11, 6, 10, 36, tzinfo=UTC_TZ)
+    interval = accumulator.compute_accumulator_interval_seconds([_event_at(NFP_TIME)], now=now, recent_check_count=OVER_BUDGET)
+
+    assert interval == 6840, f"1h54m to the 12:30 window start, got {interval}"
+    wake = now + dt.timedelta(seconds=interval)
+    assert wake == NFP_TIME - dt.timedelta(hours=accumulator.FINAL_WINDOW_HOURS)
+    # On waking the final tier takes over, budget or not, so the release is never slept through.
+    assert accumulator.compute_accumulator_interval_seconds(
+        [_event_at(NFP_TIME)], now=wake, recent_check_count=OVER_BUDGET,
+    ) == accumulator.FINAL_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_interval_caps_at_the_earliest_of_several_unresolved_events():
+    print("=== accumulator interval: with several events the earliest unresolved final window sets the wake, in any list order ===")
+    now = dt.datetime(2026, 11, 6, 8, 0, tzinfo=UTC_TZ)
+    events = [
+        _event_at(dt.datetime(2026, 11, 6, 15, 0, tzinfo=UTC_TZ), title="ISM Services PMI"),
+        _event_at(dt.datetime(2026, 11, 6, 10, 30, tzinfo=UTC_TZ), title="Early Event"),
+        _event_at(NFP_TIME),
+    ]
+    interval = accumulator.compute_accumulator_interval_seconds(events, now=now, recent_check_count=OVER_BUDGET)
+    assert interval == 90 * 60, f"09:30 is the first window start, got {interval}"
+    print("PASS\n")
+
+
+def test_interval_cap_ignores_a_resolved_event():
+    print("=== accumulator interval: a resolved event sets no wake time, the next unresolved one does ===")
+    now = dt.datetime(2026, 11, 6, 10, 36, tzinfo=UTC_TZ)
+    resolved_soon = _event_at(dt.datetime(2026, 11, 6, 12, 0, tzinfo=UTC_TZ), title="Resolved Early", actual="1.0%")
+    interval = accumulator.compute_accumulator_interval_seconds(
+        [resolved_soon, _event_at(NFP_TIME)], now=now, recent_check_count=OVER_BUDGET,
+    )
+    assert interval == 6840, f"the resolved 12:00 event would have forced 24 minutes, got {interval}"
+
+    # Nothing unresolved at all: no cap, and the far tier stands.
+    assert accumulator.compute_accumulator_interval_seconds(
+        [resolved_soon], now=now, recent_check_count=OVER_BUDGET,
+    ) == accumulator.FAR_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_interval_cap_ignores_an_unresolved_event_already_past_its_grace():
+    print("=== accumulator interval: a past event with no actual has no final window ahead, so it cannot pull the wake to the floor ===")
+    now = dt.datetime(2026, 11, 6, 10, 36, tzinfo=UTC_TZ)
+    past = _event_at(dt.datetime(2026, 11, 5, 13, 30, tzinfo=UTC_TZ), title="Yesterday, Never Filled")
+    interval = accumulator.compute_accumulator_interval_seconds(
+        [past, _event_at(NFP_TIME)], now=now, recent_check_count=OVER_BUDGET,
+    )
+    assert interval == 6840
+    print("PASS\n")
+
+
+def test_interval_cap_with_no_events_changes_nothing():
+    print("=== accumulator interval: no events means no cap, budget exhausted or not ===")
+    now = dt.datetime(2026, 11, 6, 10, 36, tzinfo=UTC_TZ)
+    for events in (None, []):
+        assert accumulator.compute_accumulator_interval_seconds(events, now=now, recent_check_count=OVER_BUDGET) == accumulator.FAR_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_interval_cap_never_goes_below_the_floor():
+    print("=== accumulator interval: seconds short of the window start, the sleep is the floor, not a busy loop ===")
+    now = NFP_TIME - dt.timedelta(hours=accumulator.FINAL_WINDOW_HOURS, seconds=5)
+    interval = accumulator.compute_accumulator_interval_seconds([_event_at(NFP_TIME)], now=now, recent_check_count=OVER_BUDGET)
+    assert interval == accumulator.MIN_WAKE_INTERVAL_SECONDS
+    assert 0 < accumulator.MIN_WAKE_INTERVAL_SECONDS < accumulator.FINAL_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_interval_inside_the_final_window_is_final_even_over_budget():
+    print("=== accumulator interval: already inside the window, FINAL_INTERVAL_SECONDS applies, budget or not ===")
+    now = NFP_TIME - dt.timedelta(minutes=40)
+    assert accumulator.compute_accumulator_interval_seconds(
+        [_event_at(NFP_TIME)], now=now, recent_check_count=OVER_BUDGET,
+    ) == accumulator.FINAL_INTERVAL_SECONDS
+    print("PASS\n")
+
+
+def test_interval_cap_also_shortens_the_normal_tiers():
+    print("=== accumulator interval: every returned interval is capped, not only the budget fallback ===")
+    # Day-of-event tier (15 min), five minutes short of the window: wakes at the window, not 10 minutes into it.
+    now = NFP_TIME - dt.timedelta(hours=accumulator.FINAL_WINDOW_HOURS, minutes=5)
+    assert accumulator.compute_accumulator_interval_seconds([_event_at(NFP_TIME)], now=now) == 5 * 60
+
+    # Far tier (12 h), event days away: the cap is not binding and the tier stands.
+    far = _event_at(NFP_TIME + dt.timedelta(hours=accumulator.PRE_EVENT_WINDOW_HOURS + 5))
+    assert accumulator.compute_accumulator_interval_seconds([far], now=NFP_TIME) == accumulator.FAR_INTERVAL_SECONDS
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_and_record_event_skips_fx_cross_instruments_without_calling_score_bundle()
     test_interval_far_when_nothing_active()
@@ -1437,6 +1540,14 @@ if __name__ == "__main__":
     test_interval_tighter_day_of_event()
     test_interval_final_within_1h_or_grace()
     test_interval_budget_fallback_applies_to_hourly_and_day_of_event_only()
+    test_interval_budget_fallback_wakes_at_the_final_window_not_after_the_release()
+    test_interval_caps_at_the_earliest_of_several_unresolved_events()
+    test_interval_cap_ignores_a_resolved_event()
+    test_interval_cap_ignores_an_unresolved_event_already_past_its_grace()
+    test_interval_cap_with_no_events_changes_nothing()
+    test_interval_cap_never_goes_below_the_floor()
+    test_interval_inside_the_final_window_is_final_even_over_budget()
+    test_interval_cap_also_shortens_the_normal_tiers()
     test_run_accumulator_cycle_logs_a_check_on_successful_fetch()
     test_run_accumulator_cycle_does_not_log_a_check_on_failed_fetch()
     test_checks_every_cycle_regardless_of_how_far_out_the_event_is()

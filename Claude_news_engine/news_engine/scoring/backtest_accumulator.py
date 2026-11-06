@@ -475,6 +475,24 @@ def _read_kalshi_signal(event: EconomicEvent) -> tuple[Optional[KalshiRead], Opt
     return None, None
 
 
+# Shortest sleep on the way to a final window, in seconds. Only reached when the
+# window opens within this long; stops the loop spinning in those last moments.
+MIN_WAKE_INTERVAL_SECONDS = 60
+
+
+def _seconds_until_next_final_window(events: list, now: dt.datetime) -> Optional[float]:
+    """
+    Seconds until the soonest final window that has yet to open among the
+    unresolved events, or None if there is none. A resolved event needs no
+    wake-up, and one whose window is already open or long past has no start
+    ahead of it (compute_accumulator_interval_seconds() handles an open window
+    itself).
+    """
+    window = dt.timedelta(hours=FINAL_WINDOW_HOURS)
+    waits = [(event.event_time_utc - window - now).total_seconds() for event in events if not event.actual]
+    return min((wait for wait in waits if wait > 0), default=None)
+
+
 def compute_accumulator_interval_seconds(
     events: Optional[list],
     now: Optional[dt.datetime] = None,
@@ -486,6 +504,9 @@ def compute_accumulator_interval_seconds(
     active event that cycle, per the module docstring). `recent_check_count`
     is the rolling-24h check count from scoring.backtest_store.count_recent_checks() —
     see DAILY_CHECK_BUDGET_THRESHOLD above for how it throttles the result.
+    Whatever the tier, the loop wakes no later than the start of the next
+    unresolved event's final window, so no sleep can carry it past a release
+    (2026-11-06: a 3-hour back-off at 10:36 UTC slept through a 13:30 UTC print).
     """
     if not events:
         return FAR_INTERVAL_SECONDS
@@ -505,6 +526,10 @@ def compute_accumulator_interval_seconds(
 
     if tightest in (DAY_OF_EVENT_INTERVAL_SECONDS, HOURLY_INTERVAL_SECONDS) and recent_check_count >= DAILY_CHECK_BUDGET_THRESHOLD:
         tightest = max(tightest, BUDGET_FALLBACK_INTERVAL_SECONDS)
+
+    wait = _seconds_until_next_final_window(events, now)
+    if wait is not None:
+        tightest = min(tightest, max(int(wait), MIN_WAKE_INTERVAL_SECONDS))
     return tightest
 
 
