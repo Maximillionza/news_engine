@@ -2,6 +2,8 @@
 Tests for scoring/backtest_accumulator.py — no live network, calendar/
 article fetching and scoring are all mocked.
 """
+import contextlib
+import io
 import sys
 import os
 import tempfile
@@ -1638,6 +1640,65 @@ def test_manual_single_event_check_still_writes_its_own_check():
     print("PASS\n")
 
 
+# --- The "check budget" log line follows the budget, not the size of the sleep ---
+
+def _iteration_with(event, recent_checks):
+    """One loop pass over `event` with the rolling count pinned. Returns (interval, what it printed)."""
+    printed = io.StringIO()
+    with patch.object(accumulator, "run_accumulator_cycle", return_value=[event]), \
+         patch.object(accumulator, "get_connection", return_value=MagicMock()), \
+         patch.object(accumulator, "count_recent_checks", return_value=recent_checks), \
+         patch.object(accumulator, "touch_heartbeat"), \
+         contextlib.redirect_stdout(printed):
+        interval = accumulator.run_accumulator_iteration(["XAUUSD"])
+    return interval, printed.getvalue()
+
+
+def test_budget_log_prints_for_a_back_off_the_final_window_cap_shortened():
+    print("=== accumulator: a back-off cut below 3 hours by the cap (the 10:36 Friday case) is still logged ===")
+    now = dt.datetime.now(UTC_TZ)
+    interval, printed = _iteration_with(_fake_event(hours_from_now=2.9, now=now), OVER_BUDGET)
+    assert accumulator.DAY_OF_EVENT_INTERVAL_SECONDS < interval < accumulator.BUDGET_FALLBACK_INTERVAL_SECONDS
+    assert "check budget" in printed
+    print("PASS\n")
+
+
+def test_budget_log_prints_for_a_full_three_hour_back_off():
+    print("=== accumulator: an uncut 3-hour back-off is logged ===")
+    now = dt.datetime.now(UTC_TZ)
+    interval, printed = _iteration_with(_fake_event(hours_from_now=8, now=now), OVER_BUDGET)
+    assert interval == accumulator.BUDGET_FALLBACK_INTERVAL_SECONDS
+    assert "check budget" in printed
+    print("PASS\n")
+
+
+def test_budget_log_stays_quiet_on_the_12_hour_far_tier():
+    print("=== accumulator: the 12-hour far tier is not a budget back-off, so it logs none ===")
+    now = dt.datetime.now(UTC_TZ)
+    interval, printed = _iteration_with(_fake_event(hours_from_now=PRE_EVENT_WINDOW_HOURS + 100, now=now), OVER_BUDGET)
+    assert interval == accumulator.FAR_INTERVAL_SECONDS
+    assert "check budget" not in printed
+    print("PASS\n")
+
+
+def test_budget_log_stays_quiet_under_budget():
+    print("=== accumulator: under the threshold nothing backs off and nothing is logged ===")
+    now = dt.datetime.now(UTC_TZ)
+    interval, printed = _iteration_with(_fake_event(hours_from_now=8, now=now), 0)
+    assert interval == accumulator.DAY_OF_EVENT_INTERVAL_SECONDS
+    assert "check budget" not in printed
+    print("PASS\n")
+
+
+def test_budget_log_stays_quiet_when_the_cap_alone_sets_the_sleep():
+    print("=== accumulator: over budget, but the window opens sooner than the normal tier anyway: no back-off happened ===")
+    now = dt.datetime.now(UTC_TZ)
+    interval, printed = _iteration_with(_fake_event(hours_from_now=1.1, now=now), OVER_BUDGET)
+    assert interval < accumulator.DAY_OF_EVENT_INTERVAL_SECONDS
+    assert "check budget" not in printed
+    print("PASS\n")
+
+
 if __name__ == "__main__":
     test_score_and_record_event_skips_fx_cross_instruments_without_calling_score_bundle()
     test_interval_far_when_nothing_active()
@@ -1653,6 +1714,11 @@ if __name__ == "__main__":
     test_interval_cap_never_goes_below_the_floor()
     test_interval_inside_the_final_window_is_final_even_over_budget()
     test_interval_cap_also_shortens_the_normal_tiers()
+    test_budget_log_prints_for_a_back_off_the_final_window_cap_shortened()
+    test_budget_log_prints_for_a_full_three_hour_back_off()
+    test_budget_log_stays_quiet_on_the_12_hour_far_tier()
+    test_budget_log_stays_quiet_under_budget()
+    test_budget_log_stays_quiet_when_the_cap_alone_sets_the_sleep()
     test_run_accumulator_cycle_logs_a_check_on_successful_fetch()
     test_run_accumulator_cycle_does_not_log_a_check_on_failed_fetch()
     test_four_active_events_in_one_run_write_one_check()

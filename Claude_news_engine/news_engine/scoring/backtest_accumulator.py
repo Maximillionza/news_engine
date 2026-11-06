@@ -28,8 +28,8 @@ from webapp.scheduler's, see that function for why): hourly baseline once
 an event enters its pre-event window, tighter (15min) the day of the
 event, tightest (5min) in the final hour. A rolling-24h budget of runs
 (DAILY_CHECK_BUDGET_THRESHOLD; see _RunCheck) throttles the hourly/day-of-event
-tiers back to a 3-hour floor if checking gets too frequent for Alpha
-Vantage's real 25/day quota — the final-hour tier is always exempt.
+tiers back to a 3-hour floor when runs get too frequent; it limits run
+frequency, not Alpha Vantage credits. The final-hour tier is always exempt.
 Whether a check actually gets WRITTEN to scoring/backtest_store.py's log
 is a completely separate decision, gated purely by _is_material_change()
 — a direction flip (contradicts), or a same-direction move of at least
@@ -115,16 +115,16 @@ FINAL_WINDOW_HOURS = 1
 # POST_RELEASE_GRACE_MINUTES after a release. See that constant's comment
 # in config/settings.py for the live bug this caused.
 
-# Budget protection: hourly/day-of-event checking is a real, deliberate
-# increase in article-fetch volume (see module docstring). If the rolling
-# 24h check count gets close to Alpha Vantage's real 25/day quota, fall
-# back to a slower cadence rather than either exhausting the quota outright
-# or (worse) going fully silent — "spare a small %": reserve ~20% (5 of 25)
-# as a floor. Once DAILY_CHECK_BUDGET_THRESHOLD checks have happened in the
-# last 24h, further hourly/day-of-event checks back off to
-# BUDGET_FALLBACK_INTERVAL_SECONDS until the rolling window frees up
-# capacity again. Never applied to FINAL_INTERVAL_SECONDS — missing the
-# check right before an actual release is worse than a little extra spend.
+# Run-frequency budget: hourly/day-of-event checking is a real, deliberate
+# increase in article-fetch volume (see module docstring). Once
+# DAILY_CHECK_BUDGET_THRESHOLD runs have happened in the last 24h, further
+# hourly/day-of-event checks back off to BUDGET_FALLBACK_INTERVAL_SECONDS
+# until the rolling window frees up again, rather than going fully silent.
+# Never applied to FINAL_INTERVAL_SECONDS — missing the check right before a
+# release is worse than a little extra spend. This is NOT a guard on Alpha
+# Vantage's 25/day quota: check_log counts runs (fix-five, 2026-11-06) while
+# Alpha Vantage is fetched once per active event per run. The value 20 dates
+# from when it was sized as that quota less ~20%; the owner kept it.
 DAILY_CHECK_BUDGET_THRESHOLD = 20
 BUDGET_FALLBACK_INTERVAL_SECONDS = 3 * 60 * 60
 
@@ -798,7 +798,10 @@ def run_accumulator_iteration(instruments: list[str]) -> int:
             finally:
                 conn.close()
             interval = compute_accumulator_interval_seconds(events, now=now, recent_check_count=recent_checks)
-            if interval >= BUDGET_FALLBACK_INTERVAL_SECONDS:
+            # The budget stretched this sleep only if it beats the same call with no
+            # checks counted. Interval size can't tell: the final-window cap can cut a
+            # back-off below 3 hours, and the far tier is over 3 hours with no budget involved.
+            if interval > compute_accumulator_interval_seconds(events, now=now):
                 print(f"[backtest_accumulator] check budget: {recent_checks} in the last 24h — backing off to {interval}s")
     except Exception as exc:  # noqa: BLE001 — the loop must survive any unhandled error
         print(f"[backtest_accumulator] ERROR: cycle failed, will retry next interval: {exc}")

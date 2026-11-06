@@ -936,9 +936,9 @@ def record_check(conn: sqlite3.Connection, checked_at_utc: dt.datetime) -> int:
     used by scoring/backtest_accumulator.py to self-throttle its own polling
     frequency against a rolling 24h budget.
     Deliberately NOT keyed to a specific (event, instrument) pair — this
-    tracks aggregate check VOLUME across everything the accumulator is
-    doing, since the resource being protected (Alpha Vantage's daily
-    quota) is shared across all of it, not per-pair.
+    tracks aggregate run VOLUME across everything the accumulator is doing.
+    It limits how often the loop runs, not Alpha Vantage credits, which are
+    spent once per active event per run.
     """
     cursor = conn.execute(
         "INSERT INTO check_log (checked_at_utc) VALUES (?)",
@@ -1125,7 +1125,9 @@ def get_pre_release_prediction_for_occurrence(
     number already public (AHE 2026-11-06: bullish all week, bearish six
     minutes after the print). Those rows stay stored; they are just never a
     prediction, so there is deliberately no fallback to them. Compared as
-    instants via julianday(), same as webapp/stats_service.py.
+    instants via julianday(), as webapp/stats_service.py does, but strictly:
+    Stats uses <=, so a row stamped exactly at the release would count there
+    and not here.
     """
     row = conn.execute(
         "SELECT * FROM predictions WHERE event_title = ? AND instrument = ? AND event_time_utc = ? "
